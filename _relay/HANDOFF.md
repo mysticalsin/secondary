@@ -1,6 +1,19 @@
 # HANDOFF
 
-Updated: 2026-11-05. By: Claude (Sonnet, B3 wiki on top of the B2 integration). Earlier: tasks G0.7 and G0.8 of the roadmap.
+Updated: 2026-11-05. By: Claude (Opus, B3 wiki security fixes; Sonnet built B3). Earlier: tasks G0.7 and G0.8 of the roadmap.
+
+## B3 wiki security review fixes (2026-11-05, Claude Opus, `main`, commits ac56af8 and d4f9508, dev redeployed, nothing pushed)
+
+Source: `docs/security/B3-WIKI-SECURITY-REVIEW.md` in the OneDrive project. Regression tests: `workers/api/test/wiki-hardening.test.ts` (28 of 29 failed on the old code, all pass now). Existing wiki tests now decide as a second person and send `revisionHash`.
+
+- H-01: `wikiDecide` refuses author, editors (`edits` table) and the author of a source (L-03). Approve needs `revisionHash` (`GET .../proposals/:id` returns `revision`, `revisionHash`, `approvals`, `required`). An edit bumps the item revision, so older approvals stop counting. Company Global proposals need 2 distinct approvers (`status: "pending"` after the first). Generated pages cannot be edited.
+- H-02, M-01: every proposal carries `titleSources`; routes mask title, rationale, detail, fact text and queue rows as "restricted source" unless all are readable. Lines need every citation readable. A page with citations but none readable is hidden (index, read, history, search). The log stores ids only (`*.proposed {id, sourceIds}`); `GET .../log` looks titles up per viewer. `readableMany` in `wiki/routes.ts` batches the connector check once per request.
+- M-02: `wikiForgetSources` runs from `sourceDelete`, `remove`, `purgeExpired`. `pseudonymise(from, to, aliases)` also rewrites text (email from `TenantPolicy.emailOfPrincipal`). Subject export carries the personal wiki.
+- M-03: history `?limit&before` with `X-Next-Before`, 1000 line pages, coarse diff above 1000 lines, 500 pages per load. M-04: `generalise` and `residualIdentifiers` in `wiki/text.ts`, promote returns 422 when anything survives. M-05: `WIKI_SEARCH_PER_MIN`, `WIKI_WRITE_PER_MIN` (default 30), 20 hit pages per query, 10 minute ingest debounce, wiki gets 40% of the daily AI budget (own counter `wiki:<day>`).
+- L-01 to L-06 done. L-07 (source excerpt beside each fact in review) not done. `wiki_jobs` gained an `attempts` column, added by a migration in the constructor.
+- Dev limit: only `acme_lead` can both write and decide on `a_acme`, so the e2e wiki tests now run on circle `c_bid` (head_bid writes, reviewer decides).
+- Deploy: `bash scripts/deploy.sh dev` exited 0 (audit, api, connector, mcp, ops uploaded). `https://secondary-api-dev.tony-walteur.workers.dev/v1/health` and `/v1/me` both answer 302 to the Cloudflare Access login, because an Access application now covers the whole host. `/v1/health` could therefore not be read back as 200 from outside. Check it with an Access token or from inside.
+- Totals: biome clean, build and typecheck clean, tests fixtures 23, contracts 91, policy 56, web 49, audit 8, connector 50, ops 13, api 466, mcp 79, Playwright 50 passed.
 
 ## B3 Living Wiki (2026-11-05, Claude, branch `b3/wiki`, not merged, nothing deployed)
 
