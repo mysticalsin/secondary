@@ -513,12 +513,15 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     // Source-backed items (connector). Two gates, both fail closed: the caller needs content level on the
     // item's gate node, and the connector must confirm in the last ACL_MAX_AGE_SECONDS that the source still
     // lets this user read the file. Anything unconfirmed is left out without a trace.
+    // The `connector` kill switch stops source hits too (M-04).
     const sourceHits = (
-      await Promise.all(
-        admittedScopes(view).map((scope) =>
-          workspaceStub(c.env, s.tenantId, scope).sourceSearch(match, SEARCH_LIMIT),
-        ),
-      )
+      s.switches.connector
+        ? await Promise.all(
+            admittedScopes(view).map((scope) =>
+              workspaceStub(c.env, s.tenantId, scope).sourceSearch(match, SEARCH_LIMIT),
+            ),
+          )
+        : []
     )
       .flat()
       .filter((h) => view.nodes.get(h.gateNodeId)?.level === "content")

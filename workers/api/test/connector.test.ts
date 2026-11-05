@@ -242,3 +242,24 @@ describe("deletion propagation", () => {
     expect(ids(await json(await search("head_bid", "marker31", stub.env)))).toEqual([]);
   });
 });
+
+describe("M-04: the connector kill switch stops source reads", () => {
+  const setConnector = (enabled: boolean) =>
+    as("platform_admin", "/v1/admin/switches", { body: { switch: "connector", enabled } });
+
+  it("search hides source hits and /v1/sources/:id answers 503 while the switch is off", async () => {
+    await upsert([item(40)]);
+    const stub = connectorStub(() => true);
+    expect(ids(await json(await search("head_bid", "marker40", stub.env)))).toEqual([id(40)]);
+    expect((await setConnector(false)).status).toBe(200);
+    try {
+      expect(ids(await json(await search("head_bid", "marker40", stub.env)))).toEqual([]);
+      const open = await as("head_bid", `/v1/sources/${id(40)}`, { env: stub.env });
+      expect(open.status).toBe(503);
+      expect(await json(open)).toEqual({ error: "switched_off", switch: "connector" });
+    } finally {
+      expect((await setConnector(true)).status).toBe(200);
+    }
+    expect((await as("head_bid", `/v1/sources/${id(40)}`, { env: stub.env })).status).toBe(200);
+  });
+});

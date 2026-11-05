@@ -124,12 +124,15 @@ export async function readableMany(
     ),
   ];
   if (need.length) {
-    const yes = await checkSourceAccess(
-      c.env,
-      s.tenantId,
-      { id: s.principal.id, email: s.principal.email },
-      need,
-    );
+    // With the connector switched off no synced file counts as readable (M-04).
+    const yes = s.switches.connector
+      ? await checkSourceAccess(
+          c.env,
+          s.tenantId,
+          { id: s.principal.id, email: s.principal.email },
+          need,
+        )
+      : new Set<string>();
     for (const id of need) cache.set(id, yes.has(id));
   }
   return perGroup.map((passed) => {

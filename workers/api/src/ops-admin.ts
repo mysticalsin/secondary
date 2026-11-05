@@ -40,7 +40,11 @@ const GATES: { name: SwitchName; match: (method: string, path: string) => boolea
       p === "/v1/briefs" ||
       p.startsWith("/v1/briefs/"),
   },
-  { name: "connector", match: (_m, p) => p.startsWith("/v1/connectors/") },
+  // Synced source files are served from /v1/sources/:id; search hits are gated in the handler (M-04).
+  {
+    name: "connector",
+    match: (_m, p) => p.startsWith("/v1/connectors/") || p.startsWith("/v1/sources/"),
+  },
 ];
 
 export const switchedOff = (name: SwitchName) => ({ error: "switched_off", switch: name });
