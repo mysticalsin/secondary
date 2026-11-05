@@ -40,14 +40,17 @@ export function pinnedToEu(config, target) {
 if (typeof process !== "undefined" && process.argv[1]?.endsWith("assert-eu.mjs")) {
   const { readFileSync } = await import("node:fs");
   const target = process.argv[2] ?? "";
-  const path = new URL("../workers/api/wrangler.jsonc", import.meta.url);
-  if (
-    !["dev", "staging", "prod"].includes(target) ||
-    !pinnedToEu(parseJsonc(readFileSync(path, "utf8")), target)
-  ) {
-    console.error(
-      `error: workers/api/wrangler.jsonc must set DO_JURISDICTION to "eu" for ${target}`,
-    );
-    process.exit(1);
+  // The api and the public pages worker both create Durable Objects: both must say eu.
+  for (const worker of ["api", "pages"]) {
+    const path = new URL(`../workers/${worker}/wrangler.jsonc`, import.meta.url);
+    if (
+      !["dev", "staging", "prod"].includes(target) ||
+      !pinnedToEu(parseJsonc(readFileSync(path, "utf8")), target)
+    ) {
+      console.error(
+        `error: workers/${worker}/wrangler.jsonc must set DO_JURISDICTION to "eu" for ${target}`,
+      );
+      process.exit(1);
+    }
   }
 }

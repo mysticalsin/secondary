@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy one environment: audit, api, connector, mcp, ops. Usage: scripts/deploy.sh <dev|staging|prod>
+# Deploy one environment: audit, api, connector, mcp, ops, pages. Usage: scripts/deploy.sh <dev|staging|prod>
 # Needs `wrangler login` (or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID) in the environment.
 # Prod needs CONFIRM_PROD=yes and BACKUP_KEY (from the key vault) in the environment.
 # Idempotent: resources and secrets are created only when missing. Secret values are generated in
@@ -50,7 +50,8 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm -r build
 
 # ---- R2 buckets (EU jurisdiction) ----
-for b in "secondary-blobs-$SFX" "secondary-audit-$SFX" "secondary-backups-$SFX"; do
+# secondary-pages holds the published landing pages: the api writes them, workers/pages serves and counts them.
+for b in "secondary-blobs-$SFX" "secondary-audit-$SFX" "secondary-backups-$SFX" "secondary-pages-$SFX"; do
   if wr r2 bucket list --jurisdiction eu 2>/dev/null | grep -Eq "^name:[[:space:]]+${b}\$"; then
     echo "==> R2 bucket $b exists"
   else
@@ -124,6 +125,9 @@ deploy connector
 deploy mcp
 MCP_URL="$(printf '%s\n' "$DEPLOY_OUT" | grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' | head -n1 || true)"
 deploy ops
+# The public pages worker: bucket and per-page counter only, no secret, no link to the brain. Its counter Durable Object is created by its migration.
+deploy pages
+PAGES_URL="$(printf '%s\n' "$DEPLOY_OUT" | grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' | head -n1 || true)"
 
 # ---- secrets (only when missing) ----
 has_secret() { # worker name
@@ -187,5 +191,6 @@ echo "  connector: GRAPH_CLIENT_SECRET   api: ENTRA_CLIENT_SECRET, SCIM_TOKEN, A
 echo "  Each feature stays off until its secret exists: Graph sync, Entra sign-in, SCIM, the AI processor."
 echo "  api: ${API_URL:-<see wrangler output above>}"
 echo "  mcp: ${MCP_URL:-<see wrangler output above>}"
+echo "  pages: ${PAGES_URL:-<see wrangler output above>} (set PAGES_BASE_URL in workers/api/wrangler.jsonc to this origin if it differs)"
 echo "Check: curl <api-url>/v1/ready should answer {\"ready\":true,...}."
 echo "Next: create the Cloudflare Access apps, then run scripts/set-access.sh <team-domain> <api-aud> <mcp-aud>."

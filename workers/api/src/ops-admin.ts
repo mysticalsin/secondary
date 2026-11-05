@@ -41,6 +41,13 @@ const GATES: { name: SwitchName; match: (method: string, path: string) => boolea
       p === "/v1/briefs" ||
       p.startsWith("/v1/briefs/"),
   },
+  // Landing Page Studio: composing, editing, review and publishing stop. Unpublishing stays open, so a page
+  // can always be taken down.
+  {
+    name: "lp",
+    match: (m, p) =>
+      (p === "/v1/lp" || p.startsWith("/v1/lp/")) && !(m === "POST" && p.endsWith("/unpublish")),
+  },
   // Synced source files are served from /v1/sources/:id; search hits are gated in the handler (M-04).
   {
     name: "connector",

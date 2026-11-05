@@ -7,6 +7,7 @@
 import { canDoInView } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
+import { lpDigestItems } from "../lp/retention.ts";
 import { personalScope } from "../scope.ts";
 import type { AppEnv } from "../types.ts";
 import { audit, type C, notFound, sess } from "../ux/util.ts";
@@ -129,6 +130,9 @@ export async function composeDigest(c: C): Promise<Digest> {
     }
   }
 
+  // Landing Page Studio: the caller's own published pages and their week.
+  const pages: Item[] = (await lpDigestItems(c)).map((p) => ({ label: p.label, meta: p.meta }));
+
   const cap = (xs: Item[]) =>
     [...xs].sort((a, b) => a.label.localeCompare(b.label)).slice(0, MAX_ITEMS);
   const sections = [
@@ -136,6 +140,8 @@ export async function composeDigest(c: C): Promise<Digest> {
     { title: "New leads", items: cap(newLeads) },
     { title: "Commitments due", items: cap(commitments) },
     { title: "Wins", items: cap(wins) },
+    // Only when there is a published page: a digest without one is the digest it always was.
+    ...(pages.length ? [{ title: "Landing pages", items: pages }] : []),
   ];
   return {
     weekOf: mondayOf(now),

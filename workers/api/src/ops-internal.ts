@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
 import { appendReceipt, newReceiptId } from "./audit.ts";
+import { expireLandingPages } from "./lp/retention.ts";
 import { reapplyErasures } from "./ops-rights.ts";
 import { getOrg } from "./org.ts";
 import { internalKeys, opsKeys, replayStore } from "./replay.ts";
@@ -204,14 +205,17 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     };
     let purged = 0;
     let scopes = 0;
+    let pagesExpired = 0;
     for (const tenantId of tenantIds(c.env)) {
       for (const id of await tenantStub(c.env, tenantId).listPrincipalIds()) {
         scopes++;
         purged += await workspaceStub(c.env, tenantId, `personal:${id}`).purgeExpired(cutoffs);
       }
       await tenantStub(c.env, tenantId).tombstonePurge(now);
+      // Landing pages whose clock ran out: the public object goes, the prospect's data is purged.
+      pagesExpired += await expireLandingPages(c.env, tenantId, now);
     }
-    return c.json({ ok: true, scopes, purged });
+    return c.json({ ok: true, scopes, purged, pagesExpired });
   });
 
   // The weekly digest: one email draft per person, never sent, once per person and week.

@@ -10,6 +10,7 @@ import { canDoInView, personalRootId } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
 import { humanIdsOf } from "../human.ts";
+import { LP_QID, lpQuestions, resolveLpQuestion } from "../lp/questions.ts";
 import { parseCandidateId, personalScope, scopeOfNode } from "../scope.ts";
 import type { SensitivityFlag } from "../sensitivity.ts";
 import type { AppEnv } from "../types.ts";
@@ -39,7 +40,7 @@ export type Question = {
 
 const MAX_LIST = 200;
 const NOTE_MAX = 2_000;
-const QID = /^(?:cand:[a-z0-9][A-Za-z0-9_.:@-]*:[0-9a-f]{8}|ask:[0-9a-f]{16})$/;
+const QID = /^(?:cand:[a-z0-9][A-Za-z0-9_.:@-]*:[0-9a-f]{8}|ask:[0-9a-f]{16}|lp:[0-9a-f]{16})$/;
 
 const FLAG_REASON: Record<SensitivityFlag["type"], string> = {
   email: "Contains an email address",
@@ -251,6 +252,8 @@ export async function questionsOf(c: C): Promise<Question[]> {
       },
     });
   }
+  // Landing pages sent to review (kind release), for the people who may release them.
+  out.push(...(await lpQuestions(c)));
   return out
     .sort((x, y) => y.createdAt.localeCompare(x.createdAt) || x.id.localeCompare(y.id))
     .slice(0, MAX_LIST);
@@ -296,6 +299,12 @@ export function questionRoutes(): Hono<AppEnv> {
     const revisionHash = b.revisionHash as string | undefined;
     const note = typeof b.note === "string" ? b.note.trim() : "";
     const view = viewOf(s);
+
+    // ---- a landing page: the same rules as POST /v1/lp/:id/approve ----
+    if (LP_QID.test(id)) {
+      const res = await resolveLpQuestion(c, id, action, revisionHash, note);
+      return c.json(res.body, res.status as 200 | 400 | 403 | 404 | 409 | 503);
+    }
 
     // ---- an ingest question: the owner's own, answered with the owner's rights today ----
     if (id.startsWith("ask:")) {

@@ -1,5 +1,16 @@
 # HANDOFF
 
+## Landing Page Studio backend (2026-11-05, Claude, branch `lp/api`, not merged, nothing deployed)
+
+Design: `docs/DESIGN-LP-STUDIO.md`; contract: `docs/API-CONTRACT.md` "Landing Page Studio" (including `LandingRenderData`).
+
+- api: `workers/api/src/lp/*` (store = new Durable Object `LandingPages` `LP`, migration v2; refs, compose, checks, render, review, stats, retention, questions, routes). One mount line in `routes.ts`, export in `index.ts`, `lp` kill switch (`switches.ts`, gate in `ops-admin.ts`), MCP routes in `auth.ts`, a release question in `uxv2/questions.ts`, a digest section in `uxv2/digest.ts`, expiry in the ops retention job, optional `channels` on the story permission route (`ux/records.ts`). New bucket binding `PAGES`, var `PAGES_BASE_URL`.
+- pages: new `workers/pages` (`secondary-pages-<env>`): bucket plus per-page counter only. `deploy.sh` creates the bucket and deploys it; `assert-eu.mjs` checks it.
+- mcp: `lp_compose`, `lp_compose_batch`, `lp_list`.
+- Open: a switch-off does not take published pages down (unpublish stays open); erasure of a person does not yet drop their landing pages (they expire at 90 days); the LP store is not in the ops backup.
+
+Updated: 2026-11-05. By: Claude (LP backend).
+
 ## Dev wiki seed, role-aware suggestions, index-first answers (2026-11-05, Claude Opus, `main`, nothing pushed)
 
 Problem was live: the deployed dev brain had 0 wiki pages and Ask said "unknown" to its own suggestions.
