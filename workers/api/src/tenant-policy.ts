@@ -542,7 +542,7 @@ export class TenantPolicy extends DurableObject<Env> {
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */
   private rememberAddress(principalId: string, email: string): void {
     const e = email.trim().toLowerCase();
-    if (!e || !e.includes("@")) return;
+    if (!e.includes("@")) return;
     this.sql.exec(
       "INSERT INTO gov_identity (principal_id, email) VALUES (?, ?) ON CONFLICT(principal_id) DO UPDATE SET email = excluded.email",
       principalId,
