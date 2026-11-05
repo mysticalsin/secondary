@@ -96,6 +96,10 @@ function condOK(g: Grant, n: Matchable, p: Principal, nda: ReadonlySet<string>):
 
 /** The node's scope id for a grant's scope type, when memberships can be held on that type. */
 function isMemberOf(g: Grant, n: Matchable, p: Principal): boolean {
+  // A department membership never admits a restricted circle or topic: those need their own circle
+  // membership (and its two-person approval). Otherwise one approver could open every restricted
+  // circle in the department.
+  if (g.scope_type === "department" && n.restricted) return false;
   const id =
     g.scope_type === "department"
       ? n.dept

@@ -230,6 +230,27 @@ describe("views never leak", () => {
     expect(viewOf(bare).nodes.get("c_bid")?.level ?? null).not.toBe("content");
   });
 
+  it("H-03: a department membership never admits a restricted circle, a circle membership does", () => {
+    const bare: Principal = { ...PERSONAS.consultant, id: "u_dept", memberships: [] };
+    const viewOf = (p: Principal) => admittedView(p, org, ctx());
+    const dept: Principal = {
+      ...bare,
+      memberships: [{ scope_type: "department", scope_id: "d_hr" }],
+    };
+    // c_hr_pp is restricted, c_hr_legal is not, both sit in d_hr.
+    const v = viewOf(dept);
+    expect(v.nodes.get("c_hr_legal")?.level).toBe("content");
+    expect(v.nodes.get("c_hr_pp")?.level ?? null).not.toBe("content");
+    expect(canDo(dept, org, "c_hr_pp", "contribute", ctx()).allowed).toBe(false);
+    // Restricted circles need their own circle membership.
+    const circle: Principal = {
+      ...dept,
+      memberships: [...dept.memberships, { scope_type: "circle", scope_id: "c_hr_pp" }],
+    };
+    expect(viewOf(circle).nodes.get("c_hr_pp")?.level).toBe("content");
+    expect(canDo(circle, org, "c_hr_pp", "contribute", ctx()).allowed).toBe(true);
+  });
+
   it("a membership widens nothing for a role without membership grants", () => {
     const joined: Principal = {
       ...PERSONAS.auditor,
