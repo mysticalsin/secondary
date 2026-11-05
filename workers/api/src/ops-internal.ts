@@ -16,6 +16,7 @@ import { internalKeys, opsKeys, replayStore } from "./replay.ts";
 import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps } from "./types.ts";
+import { runWeeklyDigests } from "./uxv2/digest-job.ts";
 
 const TENANT_ID = /^[a-z0-9_]{3,64}$/;
 const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
@@ -212,6 +213,11 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     }
     return c.json({ ok: true, scopes, purged });
   });
+
+  // The weekly digest: one email draft per person, never sent, once per person and week.
+  r.post("/digest", async (c) =>
+    c.json({ ok: true, ...(await runWeeklyDigests(c.env, deps.now?.() ?? Date.now())) }),
+  );
 
   r.all("*", (c) => c.json({ error: "not_found" }, 404));
   return r;

@@ -28,7 +28,7 @@ function Block({
         </div>
         <div>
           <dt>{t("usage.saved")}</dt>
-          <dd className="num">{Math.round(b.savedPct)}%</dd>
+          <dd className="num">{Math.round(b.savedPct * 100)}%</dd>
         </div>
       </dl>
       <p className="muted">{t("usage.saved.how")}</p>

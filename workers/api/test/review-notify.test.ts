@@ -91,4 +91,26 @@ describe("review notifications", () => {
     const r = await json(await as("reviewer", "/v1/admin/notifications", { method: "GET" }));
     expect(r.unread).toBeGreaterThan(0);
   });
+
+  it("a persona that signs in under its own address still reads the notices of the person it stands for, and marks them read", async () => {
+    await contribute();
+    const own = { email: "dev+reviewer@example.invalid" };
+    const read = async () =>
+      json(await as("reviewer", "/v1/admin/notifications", { method: "GET", ...own }));
+    const before = await read();
+    expect(before.items.some((x: Loose) => x.kind === "review_requested")).toBe(true);
+    expect(before.unread).toBeGreaterThan(0);
+    const done = await json(
+      await as("reviewer", "/v1/admin/notifications/read", { body: {}, ...own }),
+    );
+    expect(done.unread).toBe(0);
+    // Another persona under its own address does not see them.
+    const other = await json(
+      await as("auditor", "/v1/admin/notifications", {
+        method: "GET",
+        email: "dev+auditor@example.invalid",
+      }),
+    );
+    expect(other.items.some((x: Loose) => x.kind === "review_requested")).toBe(false);
+  });
 });

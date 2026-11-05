@@ -259,3 +259,12 @@ export async function runRetention(d: BackupDeps): Promise<{ purged: number }> {
   logEvent({ event: "retention_done", worker: "ops", env: d.ENVIRONMENT, count: out.purged });
   return { purged: out.purged };
 }
+
+/** The weekly digest job: the API composes each person's digest and stores it as a draft. It never sends. */
+export async function runDigests(d: BackupDeps): Promise<{ drafted: number }> {
+  const res = await callApi(d, "POST", "/v1/internal/ops/digest", "{}");
+  if (!res.ok) throw new Error(`digest ${res.status}`);
+  const out = (await res.json()) as { drafted: number };
+  logEvent({ event: "digest_done", worker: "ops", env: d.ENVIRONMENT, count: out.drafted });
+  return { drafted: out.drafted };
+}

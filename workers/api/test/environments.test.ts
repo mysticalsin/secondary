@@ -197,7 +197,7 @@ describe("environments: audit, mcp, ops", () => {
         `API:service:secondary-api-${e}`,
         `BACKUPS:r2:secondary-backups-${e}:eu`,
       ]);
-      expect(c.triggers.crons).toHaveLength(2);
+      expect(c.triggers.crons).toEqual(["17 2 * * *", "47 3 * * *", "23 5 * * 1"]);
       expect(c.vars.BACKUP_RETENTION_DAYS).toBe("35");
       expect(c.vars.ENVIRONMENT).toBe(e);
       for (const k of SECRET_NAMES) expect(c.vars, k).not.toHaveProperty(k);

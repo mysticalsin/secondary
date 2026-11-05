@@ -143,7 +143,7 @@ function UsageFooter({ u }: { u: AskUsage }) {
     <footer className="usage-foot" data-testid="usage-foot">
       <p>
         <span>{t("ask.usage.used", { n: nf.format(u.inputTokens + u.outputTokens) })}</span>
-        <span className="saved">{t("ask.usage.saved", { pct: Math.round(u.savedPct) })}</span>
+        <span className="saved">{t("ask.usage.saved", { pct: Math.round(u.savedPct * 100) })}</span>
       </p>
       <details>
         <summary>{t("ask.usage.how")}</summary>

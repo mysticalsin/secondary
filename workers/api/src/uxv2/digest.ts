@@ -34,7 +34,7 @@ export type Digest = {
 };
 
 /** The Monday of the week that contains `now`, as a date. */
-function mondayOf(now: number): string {
+export function mondayOf(now: number): string {
   const d = new Date(now);
   const back = (d.getUTCDay() + 6) % 7;
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back))
@@ -164,41 +164,48 @@ export function renderDigest(d: Digest): string {
   return lines.join("\n").trim();
 }
 
+/**
+ * Stores the email draft in the person's own workspace. A draft only: this code has no way to send it.
+ * Shared by the on-demand route and the weekly job (digest-job.ts).
+ */
+export async function saveDraft(c: C, id: string, d: Digest): Promise<void> {
+  const s = sess(c);
+  await stubOf(c, personalScope(s.principal.id)).create(
+    {
+      id,
+      label: `Weekly digest ${d.weekOf}`,
+      kind: DIGEST_KIND,
+      plane: "PERSONAL_HOSTED",
+      origin: "personal",
+      status: "draft",
+      authorId: s.principal.id,
+      body: JSON.stringify({
+        to: s.principal.email,
+        subject: `Weekly digest, week of ${d.weekOf}`,
+        markdown: renderDigest(d),
+        weekOf: d.weekOf,
+        state: "draft",
+      }),
+    },
+    s.ctx.now,
+  );
+  await recordUsage(c.env, s.tenantId, s.principal.id, s.ctx.now, {
+    capability: "digest",
+    runs: 1,
+  });
+}
+
 export function digestRoutes(): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
 
   r.get("/digest/preview", async (c) => c.json(await composeDigest(c)));
 
   r.post("/digest/draft", async (c) => {
-    const s = sess(c);
     const d = await composeDigest(c);
     if (!(await audit(c, { action: "digest.draft", nodeId: null, scopeId: null, revision: null })))
       return c.json({ error: "audit_unavailable" }, 503);
     const id = `dg:${hex(8)}`;
-    await stubOf(c, personalScope(s.principal.id)).create(
-      {
-        id,
-        label: `Weekly digest ${d.weekOf}`,
-        kind: DIGEST_KIND,
-        plane: "PERSONAL_HOSTED",
-        origin: "personal",
-        status: "draft",
-        authorId: s.principal.id,
-        body: JSON.stringify({
-          to: s.principal.email,
-          subject: `Weekly digest, week of ${d.weekOf}`,
-          markdown: renderDigest(d),
-          weekOf: d.weekOf,
-          // A draft only. This code has no way to send it.
-          state: "draft",
-        }),
-      },
-      s.ctx.now,
-    );
-    await recordUsage(c.env, s.tenantId, s.principal.id, s.ctx.now, {
-      capability: "digest",
-      runs: 1,
-    });
+    await saveDraft(c, id, d);
     return c.json({ draftId: id }, 201);
   });
 

@@ -1,5 +1,17 @@
 # HANDOFF
 
+## UX v2 integrated on `main` (2026-11-05, Claude, nothing pushed, dev redeployed)
+
+Merged `--no-ff`: `uxv2/api` (28e95e2), then `uxv2/web`. Worktrees `.worktrees/uxv2-*` removed (both clean). Design: `docs/DESIGN-UX-V2.md`; shapes: `docs/API-CONTRACT.md` "UX v2 endpoints".
+
+- Client aligned to the API: `savedPct` is a fraction (0..1), shown as a percentage (`Ask.tsx`, `Usage.tsx`); contradiction `sources` are `{id,title}`; mock option actions are the API's (`prefer_incoming`, `keep_current`, lint `approve`/`reject`, release `approve`/`request_changes`); the client sends `revisionHash` from the question detail. `workers/api/test/uxv2-mock-contract.test.ts` runs the same call against the real API and the web mock (`apps/web/src/mock/uxv2.ts`) and fails when the mock has a field or JSON type the API lacks, or a `savedPct` outside 0..1.
+- Bell root cause (`e2e/access-flow.spec.ts` now opens `/` again): the directory and every delivery know the seeded principal (`u_reviewer`), but since 07b1fda a dev persona signs in under its own address and so has another principal id; the bell read an inbox nobody wrote to. The old test only passed on Today because Today prints "waiting for review" itself. Fix: `admin/routes.ts` `inboxIds`, `admin/store.ts` `inbox` and `markRead` read and mark the session id plus, for a dev persona, the seeded person it stands for. Test `review-notify.test.ts` (failed on the old code).
+- Weekly digest job: ops cron `23 5 * * 1` (all three environments) calls `POST /v1/internal/ops/digest` (ops-signed); `workers/api/src/uxv2/digest-job.ts` composes each directory person's digest under their own rights and stores a draft in their Personal Brain through the same `saveDraft` the manual route uses. Drafts only, no send path. The id is a hash of person and week, so a second run or a doubled cron adds nothing; a week with nothing to report makes no draft; a receipt `digest.scheduled` comes first. Tests `uxv2-digest-job.test.ts`, `ops.test.ts`; `environments.test.ts` lists the three crons.
+- Gates: build, typecheck and `biome check .` clean (25 CSS `noDescendingSpecificity` warnings in `styles/uxv2.css`, left as they are). Tests fixtures 23, contracts 91, policy 57, web 62, audit 10, connector 53, ops 17, mcp 87, api 591 (991 in all). Playwright real stack 50 passed; mock suite (`e2e/playwright.uxv2.config.ts`) 26 passed. `bash scripts/deploy.sh dev` exited 0 (host behind Access, curl answers 302).
+- Deploy note: the ops worker now has a third cron; deploy ops and api together.
+
+Updated: 2026-11-05. By: Claude (UX v2 integration).
+
 ## Staging re-check items closed (2026-11-05, Claude Opus, `main`, nothing pushed, dev redeployed)
 
 Source: `docs/security/STAGING-GO-NOGO.md` (OneDrive project). Each fix has a regression test that failed on the old code first and passes now. Nothing is left in `docs/security/ACCEPTED-RISKS.md` for these items (only the M-08 wording changed).

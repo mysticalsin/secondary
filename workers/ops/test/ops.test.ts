@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
 import { fromJsonl, restoreBackup, runBackup, toJsonl } from "../src/backup.ts";
 import { decryptBackup, encryptBackup } from "../src/crypto.ts";
-import { createOpsApp } from "../src/index.ts";
+import worker, { createOpsApp } from "../src/index.ts";
 
 const KEY = "test-backup-key-0123456789abcdef0123456";
 const call = (
@@ -339,5 +339,31 @@ describe("restore guards", () => {
     const last = seen[seen.length - 1] as string;
     expect(last).toMatch(/actor=[0-9a-f]{16}(&|$)/);
     expect(last).not.toContain("ops-service-token");
+  });
+});
+
+describe("scheduled jobs", () => {
+  const seen: string[] = [];
+  const fake = {
+    ...env,
+    OPS_HMAC_KEY: "test-ops-hmac-key-0123456789abcdef012345",
+    API: {
+      fetch: async (url: string, init: RequestInit) => {
+        seen.push(`${init.method} ${new URL(url).pathname}`);
+        return Response.json({ ok: true, purged: 0, drafted: 3, snapshots: [] });
+      },
+    },
+  } as unknown as Env;
+
+  it("the Monday cron asks the API for the weekly digest drafts, and does not back up or purge", async () => {
+    seen.length = 0;
+    await worker.scheduled({ cron: "23 5 * * 1" } as ScheduledController, fake);
+    expect(seen).toEqual(["POST /v1/internal/ops/digest"]);
+  });
+
+  it("the retention cron does not run the digest", async () => {
+    seen.length = 0;
+    await worker.scheduled({ cron: "47 3 * * *" } as ScheduledController, fake);
+    expect(seen).toEqual(["POST /v1/internal/ops/retention"]);
   });
 });

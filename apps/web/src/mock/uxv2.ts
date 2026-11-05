@@ -352,13 +352,16 @@ function questionsFor(role: string): Question[] {
       summary: "Two sources disagree about when the Acme renewal is due.",
       options: [
         { action: "keep_current", label: "Keep the current page" },
-        { action: "accept_incoming", label: "Use the new source" },
+        { action: "prefer_incoming", label: "Use the new source" },
       ],
       detail: {
-        current: { text: "Renewal is due 2027-03-31.", sources: ["Contract summary"] },
+        current: {
+          text: "Renewal is due 2027-03-31.",
+          sources: [{ id: "ctr:acme:1", title: "Contract summary" }],
+        },
         incoming: {
           text: "Renewal moved to 2027-06-30.",
-          sources: ["Kickoff meeting record, 2 Nov"],
+          sources: [{ id: "mtg:acme:1", title: "Kickoff meeting record, 2 Nov" }],
         },
       },
     },
@@ -370,9 +373,10 @@ function questionsFor(role: string): Question[] {
       createdAt: "2026-11-04T08:00:00.000Z",
       summary: "No other page points to it. Link it or leave it.",
       options: [
-        { action: "dismiss", label: "Leave it" },
-        { action: "link", label: "Add a link" },
+        { action: "approve", label: "Add a link" },
+        { action: "reject", label: "Leave it" },
       ],
+      detail: { approvals: 0, required: 1, revisionHash: "c".repeat(64) },
     },
   ];
   if (["ceo", "head_bid", "reviewer"].includes(role))
@@ -394,7 +398,10 @@ function questionsFor(role: string): Question[] {
         workspaceId: "core",
         createdAt: "2026-11-04T16:00:00.000Z",
         summary: "Two different people must approve before this goes company wide.",
-        options: [{ action: "approve", label: "Approve release" }],
+        options: [
+          { action: "approve", label: "Approve release" },
+          { action: "request_changes", label: "Ask for changes" },
+        ],
         detail: { approvals: 1, required: 2, revisionHash: "b".repeat(64) },
       },
     );
@@ -476,7 +483,7 @@ function usage(role: string, period: string): Usage {
     tokens: Math.round(totalTokens * k),
     runs: Math.round(14 * k),
     answers: Math.round(22 * k),
-    savedPct: 94,
+    savedPct: 0.94,
   };
   const out: Usage = {
     me,
@@ -490,7 +497,7 @@ function usage(role: string, period: string): Usage {
     out.tenant = {
       tokens: me.tokens * 18,
       runs: me.runs * 14,
-      savedPct: 92,
+      savedPct: 0.92,
       answers: me.answers * 14,
     };
   return out;
@@ -570,7 +577,7 @@ export async function* mockAsk(
         outputTokens: 30,
         indexTokensRead: 380,
         fullContextEstimate: 48000,
-        savedPct: 99,
+        savedPct: 0.99,
         processor: "deterministic",
       },
     };
@@ -609,7 +616,7 @@ export async function* mockAsk(
       outputTokens: 180,
       indexTokensRead: 1840,
       fullContextEstimate: 48000,
-      savedPct: 96,
+      savedPct: 0.96,
       processor: "deterministic",
     },
   };
@@ -682,7 +689,11 @@ export function handleV2(
     if (!item) throw new ApiError(404, "This question is already resolved.");
     if (item.kind === "release" && role === "head_bid" && body.action === "approve")
       throw new ApiError(403, "You wrote this change, so a different person has to approve it.");
-    if ((item.kind === "review" || item.kind === "release") && !body.revisionHash)
+    if (
+      (item.kind === "review" || item.kind === "release" || item.kind === "lint") &&
+      /^(approve|accept)/.test(String(body.action)) &&
+      !body.revisionHash
+    )
       throw new ApiError(400, "Name the revision you read before approving.");
     list.splice(i, 1);
     return { ok: true };

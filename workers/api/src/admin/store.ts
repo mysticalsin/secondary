@@ -476,11 +476,18 @@ export class GovStore {
     for (const id of new Set(ids)) this.notify(id, kind, title, ref, now);
   }
 
-  inbox(principalId: string): { unread: number; items: Notification[] } {
+  /**
+   * `principalIds` is the session's own id, and in dev also the seeded person the persona stands for:
+   * a persona signs in under its own address (a distinct human for the two-person rules), but the
+   * directory, and so every delivery, knows the seeded principal.
+   */
+  inbox(principalIds: string | readonly string[]): { unread: number; items: Notification[] } {
+    const ids = [...new Set([principalIds].flat())];
+    const marks = ids.map(() => "?").join(", ");
     const items = this.sql
       .exec(
-        "SELECT id, kind, title, ref, at, read_at FROM gov_notifications WHERE principal_id = ? ORDER BY id DESC LIMIT 50",
-        principalId,
+        `SELECT id, kind, title, ref, at, read_at FROM gov_notifications WHERE principal_id IN (${marks}) ORDER BY id DESC LIMIT 50`,
+        ...ids,
       )
       .toArray()
       .map((r) => ({
@@ -494,30 +501,32 @@ export class GovStore {
     const unread = n(
       this.sql
         .exec(
-          "SELECT COUNT(*) AS c FROM gov_notifications WHERE principal_id = ? AND read_at IS NULL",
-          principalId,
+          `SELECT COUNT(*) AS c FROM gov_notifications WHERE principal_id IN (${marks}) AND read_at IS NULL`,
+          ...ids,
         )
         .one().c,
     );
     return { unread, items };
   }
 
-  markRead(principalId: string, ids: number[] | null, now: number): number {
+  markRead(principalIds: string | readonly string[], ids: number[] | null, now: number): number {
+    const who = [...new Set([principalIds].flat())];
+    const marks = who.map(() => "?").join(", ");
     if (ids === null)
       this.sql.exec(
-        "UPDATE gov_notifications SET read_at = ? WHERE principal_id = ? AND read_at IS NULL",
+        `UPDATE gov_notifications SET read_at = ? WHERE principal_id IN (${marks}) AND read_at IS NULL`,
         now,
-        principalId,
+        ...who,
       );
     else
       for (const id of ids)
         this.sql.exec(
-          "UPDATE gov_notifications SET read_at = ? WHERE principal_id = ? AND id = ? AND read_at IS NULL",
+          `UPDATE gov_notifications SET read_at = ? WHERE principal_id IN (${marks}) AND id = ? AND read_at IS NULL`,
           now,
-          principalId,
+          ...who,
           id,
         );
-    return this.inbox(principalId).unread;
+    return this.inbox(who).unread;
   }
 
   /** Other modules (for example the review queue) deliver a notice through the same inbox. */

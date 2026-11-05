@@ -18,6 +18,7 @@ export interface AskUsage {
   outputTokens: number;
   indexTokensRead: number;
   fullContextEstimate: number;
+  /** A fraction between 0 and 1 (shown as a percentage). */
   savedPct: number;
   processor: "anthropic" | "deterministic";
 }
@@ -44,7 +45,8 @@ export type QuestionKind = "ingest" | "contradiction" | "lint" | "review" | "rel
 
 export interface QuestionSide {
   text: string;
-  sources: string[];
+  validFrom?: string;
+  sources: { id: string; title: string }[];
 }
 
 export interface Question {
@@ -57,7 +59,7 @@ export interface Question {
   options: { action: string; label: string }[];
   /**
    * Contradiction: `{current, incoming}` (contract). Ingest: `reason` (assumed). Review and release:
-   * `approvals`, `required`, `revisionHash` (assumed), the two-person status.
+   * `approvals`, `required`, `revisionHash` (candidates and wiki proposals), the two-person status.
    */
   detail?: {
     current?: QuestionSide;
@@ -101,6 +103,7 @@ export interface UsageBlock {
   tokens: number;
   runs: number;
   answers?: number;
+  /** A fraction between 0 and 1. */
   savedPct: number;
   byCapability?: { capability: string; tokens: number; runs: number }[];
 }

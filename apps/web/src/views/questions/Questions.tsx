@@ -31,9 +31,11 @@ const inFilter = (k: QuestionKind, f: string) =>
   f === "all" || f === k || (f === "approval" && (k === "review" || k === "release"));
 
 /** The option that says yes (include, approve) is the one primary action on a card. */
-const isPrimary = (action: string) => /^(ingest|approve|release|include)/.test(action);
+const isPrimary = (action: string) =>
+  /^(ingest|approve|accept|prefer|release|include)/.test(action);
 
-function Sources({ list }: { list: string[] }) {
+function Sources({ list: sources }: { list: { id: string; title: string }[] }) {
+  const list = sources.map((x) => x.title);
   const { t } = useI18n();
   if (!list.length) return null;
   return (

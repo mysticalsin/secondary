@@ -9,6 +9,7 @@ import {
   type AdmittedView,
   canDoInView,
   type Org,
+  PERSONAS,
   type Principal,
   type Role,
 } from "@secondary/policy";
@@ -903,7 +904,13 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
 
   // ---- in-app notifications ----
 
-  r.get("/notifications", async (c) => c.json(await who(c).gov.inbox(sess(c).principal.id)));
+  // A dev persona also reads the inbox of the seeded person it stands for (see `inbox` in the store).
+  const inboxIds = (c: C): string[] => {
+    const s = sess(c);
+    return s.persona ? [s.principal.id, PERSONAS[s.persona].id] : [s.principal.id];
+  };
+
+  r.get("/notifications", async (c) => c.json(await who(c).gov.inbox(inboxIds(c))));
 
   r.post("/notifications/read", async (c) => {
     const w = who(c);
@@ -913,7 +920,7 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
       Array.isArray(input.ids) && input.ids.every((x) => Number.isInteger(x))
         ? (input.ids as number[])
         : null;
-    return c.json({ ok: true, unread: await w.gov.markRead(w.s.principal.id, ids, w.now) });
+    return c.json({ ok: true, unread: await w.gov.markRead(inboxIds(c), ids, w.now) });
   });
 
   // ---- audit viewer ----

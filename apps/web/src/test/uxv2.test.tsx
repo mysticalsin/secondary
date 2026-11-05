@@ -146,11 +146,11 @@ describe("Questions: contradiction", () => {
     summary: "Two sources disagree.",
     options: [
       { action: "keep_current", label: "Keep the current page" },
-      { action: "accept_incoming", label: "Use the new source" },
+      { action: "prefer_incoming", label: "Use the new source" },
     ],
     detail: {
-      current: { text: "Due 2027-03-31.", sources: ["Contract summary"] },
-      incoming: { text: "Moved to 2027-06-30.", sources: ["Kickoff record"] },
+      current: { text: "Due 2027-03-31.", sources: [{ id: "c1", title: "Contract summary" }] },
+      incoming: { text: "Moved to 2027-06-30.", sources: [{ id: "k1", title: "Kickoff record" }] },
     },
   };
 
@@ -164,7 +164,7 @@ describe("Questions: contradiction", () => {
     expect(screen.getByText(/Contract summary/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "This one is right: New source" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledWith("q1"));
-    expect(answer).toHaveBeenCalledWith("q1", { action: "accept_incoming" });
+    expect(answer).toHaveBeenCalledWith("q1", { action: "prefer_incoming" });
   });
 
   it("shows the server's reason when a decision is refused", async () => {
