@@ -7,6 +7,10 @@ import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
+import { accessAllowed, entraEnabled } from "./auth/config.ts";
+import { emailFromSession } from "./auth/identity.ts";
+import { SESSION_COOKIE } from "./auth/limits.ts";
+import { isUnsafeMethod, sameOrigin } from "./auth/session.ts";
 import {
   HEADER_PRINCIPAL,
   HEADER_SIGNATURE,
@@ -158,8 +162,21 @@ export const authenticate =
       if (verdict !== "ok")
         return c.json({ error: "forbidden", reason: "Not available to MCP clients" }, 403);
     } else {
-      const token = c.req.header("Cf-Access-Jwt-Assertion") ?? getCookie(c, "CF_Authorization");
-      email = token ? await verifyAccessJwt(token, c.env, deps) : devBypassEmail(c.env, c.req.url);
+      // Entra browser session first (AUTH_MODE entra or both). A bad cookie falls through to Access
+      // only in `both`; in `entra` mode nothing else can identify the request.
+      const cookie = entraEnabled(c.env) ? getCookie(c, SESSION_COOKIE) : undefined;
+      if (cookie) {
+        email = await emailFromSession(cookie, c.env, now);
+        // CSRF: a session cookie is sent by the browser on its own, so a mutation must come from our origin.
+        if (email && isUnsafeMethod(c.req.method) && !sameOrigin(c.req.raw))
+          return c.json({ error: "forbidden" }, 403);
+      }
+      if (!email && accessAllowed(c.env)) {
+        const token = c.req.header("Cf-Access-Jwt-Assertion") ?? getCookie(c, "CF_Authorization");
+        email = token
+          ? await verifyAccessJwt(token, c.env, deps)
+          : devBypassEmail(c.env, c.req.url);
+      }
     }
     if (!email) return c.json({ error: "unauthorized" }, 401);
 
@@ -190,6 +207,8 @@ export const authenticate =
       await seedTenant(c.env, { tenantId, now }, false);
       s = await stub.session(sessionInput);
     }
+    // Deprovisioned in the directory (SCIM): no identity source can sign this principal in.
+    if (!s.active) return c.json({ error: "unauthorized" }, 401);
     if (s.limited) {
       c.header("Retry-After", String(s.retryAfter));
       return c.json({ error: "rate_limited" }, 429);

@@ -140,3 +140,15 @@ What `workers/api` must do:
 - **Release rules.** Whoever wrote or edited an item counts as its author, on every revision, for review and approve. Only the contributor edits a candidate (others comment or request changes). Knowledge reviewers hold `review` and `approve_release` on Company Global. A global release needs two distinct approvers, none of them the contributor or an editor. `own_drafts` means authored by the caller.
 - **MCP dev sign-in.** `X-Dev-Email` and `X-Dev-Persona` count only on a loopback host (localhost, 127.0.0.1) in dev with Access unset. Anywhere else `/authorize` answers 401 until the Access team domain and aud are configured.
 - **Web.** Planes in the UI use the policy names. `GET /v1/admin/roles` and `/v1/admin/audit` are bare arrays, so the web derives "structure only" from the viewer's roles (Platform admin, Auditor).
+
+## Identity (B2 ID workstream)
+
+Code: `workers/api/src/auth/*` (Entra OIDC, sessions) and `workers/api/src/scim/*`. Setup: `docs/runbooks/ENTRA-SETUP.md`.
+
+- `AUTH_MODE` is `access` (default), `entra` or `both`. Entra login needs vars `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID` and secret `ENTRA_CLIENT_SECRET`; without all three it is off. `SCIM_TOKEN` (32+ characters) turns SCIM on. Optional var `SCIM_TENANT_ID` (default `DEFAULT_TENANT_ID`).
+- `GET /auth/providers` (no auth) returns `{entra, access, loginUrl}`. The web hides the Entra button when `entra` is false.
+- `GET /auth/login?returnTo=/path` redirects (302) to Entra with PKCE S256, state and nonce. `GET /auth/callback` verifies the ID token (signature, iss, aud, tid, nonce, exp), creates the session and redirects (303). Failures: 400 `invalid_state`, 401 `sign_in_failed`, 403 `account_disabled`. `POST /auth/logout` (needs a same-origin `Origin`) deletes the session.
+- Session cookie `__Host-secondary_session` (Secure, HttpOnly, SameSite=Lax, Path=/), value `<tenantId>.<random>`; the server stores only a hash. 8 hours absolute, 30 minutes idle. On every request the principal's status is re-read. A session-cookie request with a non-GET method must carry an `Origin` equal to the request origin, else 403.
+- A principal deprovisioned in SCIM answers 401 on every identity source (session, Access JWT) until reactivated.
+- Roles of a request are the stored role assignments plus the roles mapped from the principal's Entra groups (`TenantPolicy.groupMapSet/List/Delete`, keyed by group object id). A SCIM-provisioned principal takes groups from SCIM only, others from the groups claim of their last login.
+- SCIM 2.0 at `/scim/v2` with `Authorization: Bearer <SCIM_TOKEN>`: `Users` and `Groups` (GET list with `filter=attr eq "value"` on `userName`, `externalId`, `id` / `displayName`, `externalId`; `startIndex`, `count`; GET/POST; PATCH add, remove, replace; DELETE), `ServiceProviderConfig`, `ResourceTypes`. A group is matched to the role table by its `externalId` (the Entra object id). PUT, Bulk, sort and complex filters are not supported.

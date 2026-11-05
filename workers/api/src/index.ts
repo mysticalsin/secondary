@@ -1,5 +1,7 @@
 import { Hono } from "hono";
+import { authRoutes } from "./auth/routes.ts";
 import { v1Routes } from "./routes.ts";
+import { scimRoutes } from "./scim/routes.ts";
 import { onError, requestId, securityHeaders } from "./security.ts";
 import type { AppDeps, AppEnv } from "./types.ts";
 
@@ -13,6 +15,8 @@ export function createApp(deps: AppDeps = {}): Hono<AppEnv> {
   app.use("*", requestId, securityHeaders);
   app.onError(onError);
   app.route("/v1", v1Routes(deps));
+  app.route("/auth", authRoutes(deps));
+  app.route("/scim/v2", scimRoutes(deps));
   // Everything that is not the API is the static SPA. Only GET and HEAD reach it.
   app.on(["GET", "HEAD"], "*", (c) => c.env.ASSETS.fetch(c.req.raw));
   app.all("*", (c) => c.json({ error: "method_not_allowed" }, 405));
