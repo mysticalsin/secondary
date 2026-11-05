@@ -196,6 +196,8 @@ export async function restoreBackup(
   d: BackupDeps,
   key: string,
   dryRun = false,
+  /** Who asked, as a short handle (workers/ops/src/access.ts accessActor). It goes into the audit receipt. */
+  actor = "key",
 ): Promise<RestoreResult> {
   if (d.RESTORE_ENABLED !== "yes") return { ok: false, error: "restore_disabled" };
   const obj = await d.BACKUPS.get(key);
@@ -224,7 +226,7 @@ export async function restoreBackup(
   const res = await callApi(
     d,
     "POST",
-    `/v1/internal/ops/restore?${query({ tenant, kind, scope })}`,
+    `/v1/internal/ops/restore?${query({ tenant, kind, scope })}&actor=${encodeURIComponent(actor)}`,
     JSON.stringify({ tables: snap.tables }),
   );
   if (!res.ok) return { ok: false, error: res.status === 422 ? "invalid_snapshot" : "api_refused" };

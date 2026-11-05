@@ -269,3 +269,45 @@ describe("retention job", () => {
     expect(l).toContain("old note");
   });
 });
+
+describe("M-02: every restore is on the audit record", () => {
+  const date = () => new Date().toISOString().slice(0, 10);
+
+  it("leaves a receipt before and after, naming who asked, and refuses when the audit worker is down", async () => {
+    await runBackup(deps());
+    const key = `${date()}/${ALPHA}/ws-personal:u_ceo.jsonl.enc`;
+    const before = JSON.stringify(await wsOf(ALPHA, "personal:u_ceo").exportAll());
+
+    // Audit down: the API refuses, and the workspace is not touched.
+    await wsOf(ALPHA, "personal:u_ceo").wipe();
+    const down = { AUDIT: { fetch: async () => new Response("down", { status: 503 }) } };
+    expect(await restoreBackup(deps({}, down), key, false, "0123456789abcdef")).toEqual({
+      ok: false,
+      error: "api_refused",
+    });
+    expect(JSON.stringify(await wsOf(ALPHA, "personal:u_ceo").exportAll())).not.toBe(before);
+
+    // Audit up: restored, with two receipts under the actor's handle.
+    const r = await restoreBackup(deps(), key, false, "0123456789abcdef");
+    expect(r).toMatchObject({ ok: true, kind: "workspace" });
+    expect(JSON.stringify(await wsOf(ALPHA, "personal:u_ceo").exportAll())).toBe(before);
+    const rec = (
+      (await json(
+        await as("auditor", "/v1/audit/receipts?principal=ops:0123456789abcdef"),
+      )) as Loose
+    ).receipts as Loose[];
+    expect(rec.map((x) => x.action).sort()).toEqual(["ops_restore", "ops_restore_done"]);
+    expect(rec.every((x) => x.scopeId === "personal:u_ceo" && x.decision === "allow")).toBe(true);
+    // Ids and counts only.
+    expect(JSON.stringify(rec)).not.toContain("canary");
+  });
+
+  it("an actor handle that is not a handle is recorded as unknown", async () => {
+    const key = `${date()}/${ALPHA}/ws-personal:u_ceo.jsonl.enc`;
+    expect(await restoreBackup(deps(), key, false, "<script>")).toMatchObject({ ok: true });
+    const rec = (
+      (await json(await as("auditor", "/v1/audit/receipts?principal=ops:unknown"))) as Loose
+    ).receipts as Loose[];
+    expect(rec.length).toBeGreaterThanOrEqual(2);
+  });
+});

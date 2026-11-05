@@ -3,7 +3,7 @@
 
 import { Hono } from "hono";
 import { logEvent } from "../../../packages/contracts/src/log.ts";
-import { accessConfigured, type CertsFetcher, verifyAccess } from "./access.ts";
+import { accessActor, accessConfigured, type CertsFetcher, verifyAccess } from "./access.ts";
 import {
   type BackupDeps,
   listBackups,
@@ -100,7 +100,9 @@ function mountRoutes(app: Hono<{ Bindings: Env }>): void {
       !/^\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_.:/@-]{1,200}\.jsonl\.enc$/.test(key)
     )
       return c.json({ error: "invalid_key" }, 400);
-    const r = await restoreBackup(deps(c.env), key, body?.dryRun === true);
+    // Who asked goes into the receipt the API writes before it restores anything (M-02).
+    const actor = (await accessActor(c.req.header("Cf-Access-Jwt-Assertion"))) ?? "key";
+    const r = await restoreBackup(deps(c.env), key, body?.dryRun === true, actor);
     logEvent({
       event: "restore",
       worker: "ops",

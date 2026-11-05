@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
+import { appendReceipt, newReceiptId } from "./audit.ts";
 import { reapplyErasures } from "./ops-rights.ts";
 import { getOrg } from "./org.ts";
 import { internalKeys, opsKeys, replayStore } from "./replay.ts";
@@ -122,6 +123,31 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
         return c.json({ error: "invalid_json" }, 400);
       }
       const tables = (body as { tables?: unknown } | null)?.tables;
+      // M-02: a restore is on the record before it happens, and does not happen without the record.
+      const actor = c.req.query("actor") ?? "";
+      const receipt = (action: string, reason: string) =>
+        appendReceipt(c.env, {
+          receiptId: newReceiptId(),
+          at: new Date(deps.now?.() ?? Date.now()).toISOString(),
+          tenantId: t.tenant,
+          principalId: `ops:${/^[a-f0-9]{16}$|^key$/.test(actor) ? actor : "unknown"}`,
+          action,
+          nodeId: null,
+          scopeId: t.kind === "tenant" ? null : t.scope.slice(0, 128),
+          decision: "allow",
+          reason,
+          revision: null,
+          requestId: null,
+          clientId: null,
+          tool: null,
+        });
+      if (
+        !(await receipt(
+          "ops_restore",
+          `restore of ${t.kind === "tenant" ? "the directory" : "a workspace"} requested`,
+        ))
+      )
+        return c.json({ error: "audit_unavailable" }, 503);
       try {
         const rows =
           t.kind === "tenant"
@@ -129,6 +155,10 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
             : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
         // Anyone erased since the snapshot was taken is erased again (M-03).
         const erasuresReapplied = await reapplyErasures(c.env, t.tenant, t.kind, t.scope);
+        await receipt(
+          "ops_restore_done",
+          `restored ${rows} rows, ${erasuresReapplied} erasures applied again`,
+        );
         return c.json({ ok: true, rows, erasuresReapplied });
       } catch {
         return c.json({ error: "invalid_snapshot" }, 422);

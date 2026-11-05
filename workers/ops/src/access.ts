@@ -97,3 +97,16 @@ export async function verifyAccess(
     (claims.nbf === undefined || (typeof claims.nbf === "number" && claims.nbf - 30 <= s))
   );
 }
+
+/**
+ * A short, non-reversible handle for whoever Access let in (email, or the service token name), for the
+ * receipt of a restore. Call it only on a token `verifyAccess` accepted.
+ */
+export async function accessActor(token: string | undefined | null): Promise<string | null> {
+  const p = token?.split(".")[1];
+  const claims = p ? json(p) : null;
+  const who = claims?.email ?? claims?.common_name ?? claims?.sub;
+  if (typeof who !== "string" || !who) return null;
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(who.toLowerCase()));
+  return [...new Uint8Array(d).slice(0, 8)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}

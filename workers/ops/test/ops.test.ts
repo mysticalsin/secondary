@@ -249,4 +249,57 @@ describe("restore guards", () => {
         error: "restore_disabled",
       });
   });
+
+  it("M-02: the API call for a restore names who asked (a handle, never the identity)", async () => {
+    const meta = { v: 1, env: "staging", tenant: "tenant_x", kind: "tenant", scope: "" };
+    const key = "2026-11-05/tenant_x/tenant.jsonl.enc";
+    const plain = new TextEncoder().encode(
+      toJsonl(meta, { config: [] }),
+    ) as Uint8Array<ArrayBuffer>;
+    await env.BACKUPS.put(key, await encryptBackup(KEY, key, plain));
+    const seen: string[] = [];
+    const api = {
+      fetch: async (url: string) => {
+        seen.push(url);
+        return Response.json({ ok: true });
+      },
+    } as unknown as Fetcher;
+    const d = {
+      BACKUPS: env.BACKUPS,
+      API: api,
+      ENVIRONMENT: "staging",
+      OPS_HMAC_KEY: env.OPS_HMAC_KEY,
+      BACKUP_KEY: KEY,
+      RESTORE_ENABLED: "yes",
+    };
+    await restoreBackup(d, key, false, "0123456789abcdef");
+    expect(seen[0]).toContain("actor=0123456789abcdef");
+
+    // Through the worker behind Access: the handle comes from the verified token and is not the name.
+    const app = createOpsApp({ certs: async () => ({ keys: [jwk] }) });
+    const staging = {
+      ...env,
+      ENVIRONMENT: "staging",
+      ACCESS_TEAM_DOMAIN: TEAM,
+      ACCESS_AUD: AUD,
+      RESTORE_ENABLED: "yes",
+      API: api,
+    };
+    const res = await app.fetch(
+      new Request("https://ops.test/restore", {
+        method: "POST",
+        headers: {
+          "X-Ops-Key": env.OPS_ADMIN_KEY as string,
+          "Cf-Access-Jwt-Assertion": await accessJwt(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ key }),
+      }),
+      staging as unknown as Env,
+    );
+    expect(res.status).toBe(200);
+    const last = seen[seen.length - 1] as string;
+    expect(last).toMatch(/actor=[0-9a-f]{16}(&|$)/);
+    expect(last).not.toContain("ops-service-token");
+  });
 });
