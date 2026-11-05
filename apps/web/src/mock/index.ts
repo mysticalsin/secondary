@@ -31,6 +31,7 @@ import { STAGES } from "../types";
 import { ACCOUNTS, DEPARTMENTS, GOVERNANCES, hash, type Leaf, ORG, REGIONS, THEMES } from "./org";
 import { canDo, ROLES, roleOf, vis } from "./policy";
 import { detectSensitivity } from "./sensitive";
+import { handleV2, NOT_HANDLED } from "./uxv2";
 
 const notInMock = (method: string, p: string) =>
   new ApiError(501, `Not part of the dev mock (${method} ${p}). Run the live stack for this.`);
@@ -844,6 +845,9 @@ export async function handle(
   const url = new URL(path, "http://mock.invalid");
   const p = url.pathname;
   const b = (body ?? {}) as Record<string, unknown>;
+
+  const v2 = handleV2(method, p, url.searchParams, b, role);
+  if (v2 !== NOT_HANDLED) return v2;
 
   if (method === "GET") {
     if (p === "/v1/health") return { ok: true, env: "dev", version: "mock" };

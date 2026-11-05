@@ -7,6 +7,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import "./styles/tokens.css";
 import "./styles/app.css";
+import "./styles/uxv2.css";
 import { AppProvider } from "./state";
 
 const el = document.getElementById("root");

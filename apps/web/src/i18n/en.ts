@@ -1,5 +1,8 @@
 // English. This file defines the keys; fr.ts must define every one of them.
+import { ux2En } from "./ux2";
+
 export const en = {
+  ...ux2En,
   // common
   "common.cancel": "Cancel",
   "common.clear": "Clear",
@@ -64,9 +67,9 @@ export const en = {
   "tour.back": "Back",
   "tour.next": "Next",
   "tour.done": "Done",
-  "tour.1.title": "This is Today",
+  "tour.1.title": "Start with a question",
   "tour.1.body":
-    "Today shows what needs you: reviews waiting, decisions still open and commitments that are late. It only draws what your role can see.",
+    "Ask is home. Type a question and get a cited answer from the brain. Questions holds what needs you. Today is still under More.",
   "tour.2.title": "Find things on the Map",
   "tour.2.body":
     "The Map shows where knowledge lives. Use the lens and view buttons, or press Command or Control K to search from anywhere.",

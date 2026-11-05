@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { useI18n } from "../../i18n";
 import type { WikiCitation, WikiPage } from "./types";
 
-const TOKEN = /(\{src:[^}]+\}|\[\[[^\]]+\]\])/g;
+const TOKEN = /(\{src:[^}]+\}|\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)\s]+\))/g;
+/** Images come from the brain's own files, a secure address, or an inline image. Nothing else loads. */
+const IMG_OK = /^(https:\/\/|\/v1\/|data:image\/)/;
 
 /** Wiki Markdown is plain: headings, bullets, paragraphs, citations and page links. Nothing is HTML. */
 export function Markdown({
@@ -38,6 +40,13 @@ export function Markdown({
             {n}
           </a>
         );
+      }
+      const img = /^!\[([^\]]*)\]\(([^)\s]+)\)$/.exec(part);
+      if (img) {
+        const url = img[2] as string;
+        return IMG_OK.test(url) ? (
+          <img key={k} className="wiki-img" src={url} alt={img[1] ?? ""} loading="lazy" />
+        ) : null;
       }
       const ref = /^\[\[(.+)\]\]$/.exec(part)?.[1];
       if (ref) {
