@@ -31,27 +31,60 @@ export function isDev(env: Env): boolean {
   return (env.ENVIRONMENT as string) === "dev";
 }
 
-export function allowedRedirectHosts(env: Env): Set<string> {
-  return new Set(
-    (env.ALLOWED_REDIRECT_HOSTS ?? "")
-      .split(",")
-      .map((h) => h.trim().toLowerCase())
-      .filter(Boolean),
-  );
+/** One allowed redirect URI: an exact path, or a path prefix when the entry ends with `*`. */
+export interface RedirectRule {
+  protocol: "https:" | "http:";
+  host: string;
+  path: string;
+  prefix: boolean;
 }
 
-/** https only, except plain http on a loopback host (Claude Code, MCP Inspector). Fails closed on anything unparsable. */
-export function isRedirectAllowed(redirectUri: string, hosts: Set<string>): boolean {
+/**
+ * ALLOWED_REDIRECT_URIS, comma separated. Each entry is a full URL: `https://claude.ai/api/mcp/auth_callback`
+ * matches that path only, `https://chatgpt.com/connector/oauth/*` matches the path prefix. Loopback hosts
+ * (`http://localhost/*`) accept any port. A host alone is not enough: any tenant of a shared host could
+ * register a callback there (B1 L3). Entries that do not parse, or that allow plain http off loopback, are dropped.
+ */
+export function allowedRedirects(env: Env): RedirectRule[] {
+  return (env.ALLOWED_REDIRECT_URIS ?? "").split(",").flatMap((raw) => {
+    const entry = raw.trim();
+    if (!entry) return [];
+    const prefix = entry.endsWith("*");
+    let u: URL;
+    try {
+      u = new URL(prefix ? entry.slice(0, -1) : entry);
+    } catch {
+      return [];
+    }
+    const host = u.hostname.toLowerCase();
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && LOOPBACK_HOSTS.has(host))) return [];
+    if (u.username || u.password || u.search || u.hash) return [];
+    return [{ protocol: u.protocol, host, path: u.pathname, prefix }];
+  });
+}
+
+/**
+ * The redirect URI must match a rule on scheme, host and path. https only, except plain http on a loopback
+ * host (Claude Code, MCP Inspector). A port is accepted on loopback only; credentials and fragments never.
+ * Fails closed on anything unparsable. The URL parser has already resolved dot segments, so `..` cannot
+ * climb out of a prefix.
+ */
+export function isRedirectAllowed(redirectUri: string, rules: RedirectRule[]): boolean {
   let u: URL;
   try {
     u = new URL(redirectUri);
   } catch {
     return false;
   }
+  if (u.username || u.password || u.hash) return false;
   const host = u.hostname.toLowerCase();
-  if (!hosts.has(host)) return false;
-  if (u.protocol === "https:") return true;
-  return u.protocol === "http:" && LOOPBACK_HOSTS.has(host);
+  if (u.port && !LOOPBACK_HOSTS.has(host)) return false;
+  return rules.some(
+    (r) =>
+      r.protocol === u.protocol &&
+      r.host === host &&
+      (r.prefix ? u.pathname.startsWith(r.path) : u.pathname === r.path),
+  );
 }
 
 /** Canonical origin of this server: the pinned MCP_PUBLIC_URL, or the request origin in dev only. */

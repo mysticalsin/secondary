@@ -4,12 +4,13 @@ import { writeAudit } from "./audit.ts";
 import { authorizeHandler } from "./authorize.ts";
 import {
   type AuthProps,
-  allowedRedirectHosts,
+  allowedRedirects,
   BASELINE_SCOPES,
   isRedirectAllowed,
   publicBase,
   SCOPES,
 } from "./config.ts";
+import { rateLimited } from "./rate-limit.ts";
 import { mcpEnabled } from "./switch.ts";
 import { buildServer } from "./tools.ts";
 
@@ -86,7 +87,7 @@ function providerFor(env: Env, base: string): OAuthProvider<Env> {
     // Allowlist at registration too, so a bad client is refused before it ever reaches /authorize.
     async clientRegistrationCallback({ clientMetadata }) {
       const uris = Array.isArray(clientMetadata.redirect_uris) ? clientMetadata.redirect_uris : [];
-      const hosts = allowedRedirectHosts(state.env);
+      const hosts = allowedRedirects(state.env);
       const bad = uris.find((u) => typeof u !== "string" || !isRedirectAllowed(u, hosts));
       if (uris.length === 0 || bad !== undefined) {
         let host = "invalid";
@@ -120,6 +121,8 @@ export default {
       // Fail closed: outside dev the canonical URL must be pinned, it is the token audience.
       return new Response("MCP_PUBLIC_URL is not configured", { status: 500 });
     }
-    return providerFor(env, base).fetch(request, env, ctx);
+    return rateLimited(request, env).then(
+      (limited) => limited ?? providerFor(env, base).fetch(request, env, ctx),
+    );
   },
 } satisfies ExportedHandler<Env>;

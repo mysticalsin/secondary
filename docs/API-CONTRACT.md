@@ -75,7 +75,8 @@ Clarifications fixed by `packages/policy` (B1):
 
 - Built with `agents` (createMcpHandler or McpAgent) and `@cloudflare/workers-oauth-provider`. The server follows MCP spec 2026-07-28: RFC 9728 protected resource metadata, RFC 8707 resource indicator and audience checks, and no token passthrough.
 - The OAuth authorize step signs the user in through Cloudflare Access (upstream IdP), so the user identity is the same principal as the web app. Consent screen is Mantu-branded.
-- Client allowlist (B-05): redirect URI hosts on an allowlist (claude.ai, claude.com, chatgpt.com, chat.openai.com, dust.tt, eu.dust.tt, localhost for Claude Code and MCP Inspector). Anything else is rejected and audited.
+- Client allowlist (B-05, L3): redirect URIs on an allowlist of exact URLs or path prefixes (`ALLOWED_REDIRECT_URIS`: the Claude and ChatGPT callbacks, the Dust OAuth path, loopback for Claude Code and MCP Inspector). A host alone never matches, a port is accepted on loopback only, and credentials, fragments and plain http off loopback are refused. Anything else is rejected and audited. PKCE with S256 is required for every client, confidential ones included.
+- Rate limits (L4): `/register` (10 a minute, 50 a day per address, 2000 a day in all), `/token` and `/authorize` (60 a minute per address) answer 429 with `Retry-After`. See `docs/runbooks/MCP-EDGE-LIMITS.md`.
 - Tools are read and draft only in B1, and every one goes through `packages/policy`:
   - `whoami`
   - `search(q)`

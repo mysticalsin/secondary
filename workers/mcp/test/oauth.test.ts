@@ -110,7 +110,7 @@ describe("audience (RFC 8707) and no token passthrough", () => {
   });
 });
 
-describe("client allowlist (redirect host)", () => {
+describe("client allowlist (redirect URI)", () => {
   it("rejects dynamic registration for a host that is not on the list, and audits it", async () => {
     const { res, body } = await register(env, "https://evil.example/callback");
     expect(res.status).toBe(400);
@@ -129,12 +129,12 @@ describe("client allowlist (redirect host)", () => {
     expect((await register(env, "https://evilclaude.ai/cb")).res.status).toBe(400);
   });
 
-  it("accepts every allowlisted host, and http on localhost", async () => {
+  it("accepts every allowlisted callback, and http on localhost with any port", async () => {
     for (const uri of [
       "https://claude.ai/api/mcp/auth_callback",
-      "https://claude.com/cb",
+      "https://claude.com/api/mcp/auth_callback",
+      "https://chatgpt.com/connector_platform_oauth_redirect",
       "https://chatgpt.com/connector/oauth/abc",
-      "https://chat.openai.com/aip/x/oauth/callback",
       "https://dust.tt/oauth/cb",
       "https://eu.dust.tt/oauth/cb",
       "http://localhost:6274/oauth/callback",
@@ -144,10 +144,38 @@ describe("client allowlist (redirect host)", () => {
     }
   });
 
-  it("re-checks the host at /authorize and audits when the list changed", async () => {
+  it("L3: an allowed host is not enough, the path must match too", async () => {
+    for (const uri of [
+      // A custom GPT on a shared host, the consent phishing path of the review.
+      "https://chat.openai.com/aip/g-attacker/oauth/callback",
+      "https://chatgpt.com/aip/g-attacker/oauth/callback",
+      "https://claude.ai/evil",
+      "https://claude.ai/api/mcp/auth_callback/extra",
+      "https://claude.ai/api/mcp/auth_callbackx",
+      "https://chatgpt.com/connector/oauthx/abc",
+      // Dot segments resolve before the match, so they cannot climb out of a prefix.
+      "https://chatgpt.com/connector/oauth/../../aip/g-attacker/cb",
+      "https://chatgpt.com/connector/oauth/%2e%2e/%2e%2e/aip/g-attacker/cb",
+      // Not the default port, credentials, a fragment.
+      "https://claude.ai:8443/api/mcp/auth_callback",
+      "https://user:pw@claude.ai/api/mcp/auth_callback",
+      "https://claude.ai@evil.example/api/mcp/auth_callback",
+      "https://claude.ai/api/mcp/auth_callback#frag",
+      // Plain http off loopback.
+      "http://chatgpt.com/connector/oauth/abc",
+    ]) {
+      expect((await register(env, uri)).res.status, uri).toBe(400);
+    }
+    // A query string does not change which page receives the code.
+    expect((await register(env, "https://claude.ai/api/mcp/auth_callback?x=1")).res.status).toBe(
+      201,
+    );
+  });
+
+  it("re-checks the URI at /authorize and audits when the list changed", async () => {
     const { body } = await register();
     const { challenge } = await pkce();
-    const narrowed = envWith({ ALLOWED_REDIRECT_HOSTS: "dust.tt" });
+    const narrowed = envWith({ ALLOWED_REDIRECT_URIS: "https://dust.tt/oauth/*" });
     const res = await send(
       new Request(
         authorizeUrl({ clientId: body.client_id as string, scope: "secondary.read", challenge }),
@@ -168,8 +196,50 @@ describe("client allowlist (redirect host)", () => {
   });
 
   it("an empty allowlist denies everything", async () => {
-    const none = envWith({ ALLOWED_REDIRECT_HOSTS: "" });
+    const none = envWith({ ALLOWED_REDIRECT_URIS: "" });
     expect((await register(none)).res.status).toBe(400);
+  });
+});
+
+describe("L3: PKCE for every client", () => {
+  it("a confidential client without a code challenge is refused at /authorize, and audited", async () => {
+    const reg = await send(
+      new Request(`${BASE}/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          client_name: "Confidential Host",
+          redirect_uris: [REDIRECT],
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          token_endpoint_auth_method: "client_secret_basic",
+        }),
+      }),
+    );
+    expect(reg.status).toBe(201);
+    const { client_id } = (await reg.json()) as { client_id: string };
+    const { challenge } = await pkce();
+    const url = new URL(authorizeUrl({ clientId: client_id, scope: "secondary.read", challenge }));
+    // With a challenge the request reaches the consent page.
+    expect((await send(new Request(url, { headers: devHeaders({}) }))).status).toBe(200);
+    // The plain method is refused by the provider itself, with an error back to the client.
+    url.searchParams.set("code_challenge_method", "plain");
+    const plain = await send(new Request(url, { headers: devHeaders({}) }));
+    expect(plain.status).toBe(302);
+    expect(new URL(plain.headers.get("location") as string).searchParams.get("error")).toBe(
+      "invalid_request",
+    );
+    // No challenge at all: the provider lets a confidential client through, so we refuse.
+    url.searchParams.delete("code_challenge");
+    url.searchParams.delete("code_challenge_method");
+    const none = await send(new Request(url, { headers: devHeaders({}) }));
+    expect(none.status).toBe(400);
+    expect(await none.text()).toContain("PKCE");
+    expect(none.headers.get("location")).toBeNull();
+    expect((await auditEvents()).find((e) => e.action === "authorize.rejected")).toMatchObject({
+      outcome: "denied",
+      reason: "pkce_required",
+    });
   });
 });
 

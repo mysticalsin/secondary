@@ -31,8 +31,8 @@
     // Cloudflare Access in front of /authorize. Empty until Access is configured: /authorize then answers 401, except dev test headers on a loopback host.
     "ACCESS_TEAM_DOMAIN": "tony-walteur.cloudflareaccess.com",
     "ACCESS_AUD": "feb4350db153fcca208d1e398e2f5660ab2abf50f3e1d366464addcda517dd89",
-    // Redirect URI hosts allowed to receive authorization codes (B-05).
-    "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt,localhost,127.0.0.1"
+    // Redirect URIs allowed to receive authorization codes (B-05, L3): exact URLs, or a path prefix ending in *. Never a bare host.
+    "ALLOWED_REDIRECT_URIS": "https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://chatgpt.com/connector_platform_oauth_redirect,https://chatgpt.com/connector/oauth/*,https://dust.tt/oauth/*,https://eu.dust.tt/oauth/*,http://localhost/*,http://127.0.0.1/*"
   },
   // Environments: each block is complete (wrangler does not inherit bindings or vars). Staging and prod
   // have their own KV namespace and no loopback redirect hosts. MCP_PUBLIC_URL must be pinned per
@@ -54,7 +54,7 @@
         "MCP_PUBLIC_URL": "",
         "ACCESS_TEAM_DOMAIN": "",
         "ACCESS_AUD": "",
-        "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt"
+        "ALLOWED_REDIRECT_URIS": "https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://chatgpt.com/connector_platform_oauth_redirect,https://chatgpt.com/connector/oauth/*,https://dust.tt/oauth/*,https://eu.dust.tt/oauth/*"
       }
     },
     "prod": {
@@ -75,7 +75,7 @@
         "MCP_PUBLIC_URL": "",
         "ACCESS_TEAM_DOMAIN": "",
         "ACCESS_AUD": "",
-        "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt"
+        "ALLOWED_REDIRECT_URIS": "https://claude.ai/api/mcp/auth_callback,https://claude.com/api/mcp/auth_callback,https://chatgpt.com/connector_platform_oauth_redirect,https://chatgpt.com/connector/oauth/*,https://dust.tt/oauth/*,https://eu.dust.tt/oauth/*"
       }
     }
   }

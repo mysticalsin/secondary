@@ -3,7 +3,7 @@ import { authenticate } from "./access.ts";
 import { writeAudit } from "./audit.ts";
 import {
   type AuthProps,
-  allowedRedirectHosts,
+  allowedRedirects,
   isRedirectAllowed,
   SCOPES,
   type Scope,
@@ -52,13 +52,32 @@ async function rejectRedirect(env: Env, clientId: string, redirectUri: string, w
   );
 }
 
+/** PKCE with S256 for every client, confidential ones included (B1 L3). The token endpoint then checks the verifier. */
+const hasPkce = (r: { codeChallenge?: string; codeChallengeMethod?: string }): boolean =>
+  !!r.codeChallenge && r.codeChallengeMethod === "S256";
+
+async function rejectNoPkce(env: Env, clientId: string, who?: string) {
+  await writeAudit(env, {
+    kind: "mcp.oauth",
+    action: "authorize.rejected",
+    outcome: "denied",
+    reason: "pkce_required",
+    client_id: clientId,
+    ...(who ? { who } : {}),
+  });
+  return html(
+    400,
+    errorPage("Invalid request", "This application must use PKCE (S256). Nothing was shared."),
+  );
+}
+
 async function handleGet(request: Request, env: Env): Promise<Response> {
   const identity = await authenticate(request, env);
   if (!identity) {
     return html(401, errorPage("Sign-in required", "Sign in through Mantu Access and try again."));
   }
   const oauth = env.OAUTH_PROVIDER;
-  const hosts = allowedRedirectHosts(env);
+  const hosts = allowedRedirects(env);
 
   let authReq: Awaited<ReturnType<typeof oauth.parseAuthRequest>>;
   try {
@@ -80,6 +99,8 @@ async function handleGet(request: Request, env: Env): Promise<Response> {
   if (!isRedirectAllowed(authReq.redirectUri, hosts)) {
     return rejectRedirect(env, authReq.clientId, authReq.redirectUri, identity.sub);
   }
+
+  if (!hasPkce(authReq)) return rejectNoPkce(env, authReq.clientId, identity.sub);
 
   const details = await oauth.describeConsent(authReq);
   const consent = await oauth.beginConsent(authReq);
@@ -110,7 +131,7 @@ async function handlePost(request: Request, env: Env): Promise<Response> {
   const form = await request.formData();
   const handle = String(form.get("handle") ?? "");
   const oauth = env.OAUTH_PROVIDER;
-  const hosts = allowedRedirectHosts(env);
+  const hosts = allowedRedirects(env);
 
   try {
     if (form.get("decision") !== "approve") {
@@ -138,6 +159,8 @@ async function handlePost(request: Request, env: Env): Promise<Response> {
         identity.sub,
       );
     }
+    if (!hasPkce(approved.request))
+      return rejectNoPkce(env, approved.request.clientId, identity.sub);
     const props: AuthProps = {
       userId: identity.sub,
       email: identity.email,
