@@ -277,6 +277,10 @@ export function Settings() {
   const caps = useAdminCaps();
   const admin =
     !!me?.capabilities?.configure || !!(caps?.steward || caps?.auditor || caps?.elevation);
+  // The console's rights arrive a moment after the page. Until they do, an admin route waits.
+  const known = !!me && caps !== null;
+  const guard = (el: JSX.Element) =>
+    admin ? el : known ? <Navigate to="/settings/profile" replace /> : null;
   const items: { to: string; label: Key; admin?: boolean; gap?: boolean }[] = [
     { to: "profile", label: "v4.settings.profile" },
     { to: "brains", label: "v4.settings.brains" },
@@ -306,7 +310,7 @@ export function Settings() {
         </nav>
         <div className="setbody">
           <Routes>
-            <Route index element={<Navigate to="profile" replace />} />
+            <Route index element={<Navigate to="/settings/profile" replace />} />
             <Route path="profile" element={<Profile />} />
             <Route path="brains" element={<YourBrains />} />
             <Route path="agents" element={<AgentsSection />} />
@@ -314,13 +318,10 @@ export function Settings() {
             <Route path="privacy" element={<Privacy />} />
             <Route path="appearance" element={<Appearance />} />
             <Route path="usage" element={<Usage />} />
-            <Route path="members" element={admin ? <Admin /> : <Navigate to="profile" replace />} />
-            <Route
-              path="pilot"
-              element={admin ? <PilotPage /> : <Navigate to="profile" replace />}
-            />
+            <Route path="members" element={guard(<Admin />)} />
+            <Route path="pilot" element={guard(<PilotPage />)} />
             <Route path="journal" element={<Journal />} />
-            <Route path="*" element={<Navigate to="profile" replace />} />
+            <Route path="*" element={<Navigate to="/settings/profile" replace />} />
           </Routes>
         </div>
       </div>

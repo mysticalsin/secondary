@@ -1,5 +1,19 @@
 # HANDOFF
 
+## v4 UI on `main` (2026-11-05, Claude Opus, nothing pushed, nothing deployed)
+
+Design: `docs/DESIGN-V4-BRAINS-UI.md` (normative). Shapes: `docs/API-CONTRACT.md` "v4".
+
+- Web (`apps/web`): new light-default shell (Mantu logo from `public/brand/`, search bar, sidebar with Home, Waiting for you badge, Private, governance brains with Accounts expanding to account brains, Company Global, All brains, user menu with Settings, language, dev persona). Dark mode in Settings > Appearance (`lib/theme.ts`, tokens in `styles/tokens.css`, shell in `styles/v4.css`). Views: Home, brain page (`lib/contents.ts` builds collections, Sources > Session reports > person folders and loose pages from the wiki index), page reading, Members and access (`views/brains/Access.tsx`, `Choice.tsx`), Waiting for you (`views/waiting/`), proposal view with inline diff and change markers, Settings (`views/settings/`: Profile, Your brains, Agents with tabs, Sign-in and security, Privacy, Appearance, Usage, Members and Pilot access for admins, Journal), search, All brains with request access. FR and EN in `i18n/v4.ts`.
+- Removed: Map, Today, Accounts, Governances, Review, Routines, Usage as top-level, the node drawer, palette, tour, generated views (`genui`), brief views, `Personal.tsx`. Unused CSS pruned.
+- Seen changes: Approve needs `seenChanges {revisionHash, indexes}` on every path (API 409 `changes_not_seen`). The proposal view marks a change seen after it has been on screen, or from its "Mark as seen" button (keyboard and screen readers). Approve stays disabled until all are seen.
+- API (earlier commits): `GET /v1/brains/nav`, `GET /v1/brains?scope=all`, MCP `list_brains`, `propose_page`, `propose_change`, `write_session_report`, cross-brain isolation tests (3 leaks fixed, see `workers/api/test/v4-isolation.test.ts`). Waiting items now carry `detail.authorId`.
+- Tests: web 54, api 746, mcp 101, policy 74, contracts 91, fixtures 23, connector 53, audit 10, ops 16. Mock e2e `e2e/v4.e2e.ts` 22 tests (`pnpm --filter @secondary/web e2e:mock`). Real stack `e2e/v4-real.spec.ts` 9 tests plus `mcp.spec.ts` (`pnpm e2e`, needs `pnpm dev:all`): sidebar per persona, MCP proposal lands in the right brain's waiting list, seen-changes rule, request access loop, axe at 1280 and 400, French and dark. Screenshots in `e2e/screens/v4-*.png` (mock) and `v4-real-*.png`.
+- Gaps: Trash lists nothing (the API does not expose archived pages). "Publish them" opens the waiting list for that brain (a bulk publish would skip the seen rule). Profile shows Entra claims only when `/v1/me` carries `profile` (the API does not yet, the mock does). Adding a member by e-mail resolves through `/v1/admin/principals` (stewards and admins), otherwise the typed value is sent as a principal id. The real schema lists many empty collection types, the page hides them unless the brain's template expects them. Dev mock keeps state in memory, so e2e moves inside the app after a write.
+- Not done: no deploy, no push. The v3 note below still lists the dev `LandingPages` class deletion migration (applies on the next api deploy).
+
+Updated: 2026-11-05. By: Claude (Opus, v4 UI).
+
 ## v3 brains integrated on `main`; Studio, LP and Digest removed (2026-11-05, Claude Opus, nothing pushed, nothing deployed)
 
 Studio, LP and Digest removed by sponsor decision 2026-11-05.

@@ -191,7 +191,7 @@ function Members({
             ))}
           </select>
           <button type="submit" className="btn primary big" disabled={busy || !who.trim()}>
-            {t("b3.acc.add")}
+            {t("v4.add")}
           </button>
         </form>
       ) : null}

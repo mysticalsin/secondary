@@ -272,7 +272,7 @@ test.describe("members and access", () => {
     // Add by e-mail.
     await page.getByPlaceholder("Add a name or Mantu e-mail").fill("acme_lead@example.invalid");
     await page.getByLabel("Role", { exact: true }).selectOption("contributor");
-    await page.getByRole("button", { name: "Add member" }).click();
+    await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByRole("heading", { name: /Who has access/ })).toContainText("4 people");
     // Publication, business fields and hidden versions.
     await expect(page.getByRole("heading", { name: "Publication" })).toBeVisible();
@@ -436,8 +436,11 @@ test.describe("settings", () => {
     const an = admin.getByRole("navigation", { name: "Settings" });
     await expect(an.getByRole("link", { name: "Members" })).toBeVisible();
     await expect(an.getByRole("link", { name: "Pilot access" })).toBeVisible();
+    await expect(admin.locator(".setbody")).not.toBeEmpty();
+    await expect(admin.getByRole("tab").first()).toBeVisible();
     await admin.goto("/settings/pilot");
     await settle(admin);
+    await expect(admin.locator(".setbody")).not.toBeEmpty();
     await axe(admin, "settings pilot");
     await admin.context().close();
   });

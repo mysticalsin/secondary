@@ -19,7 +19,7 @@ export interface McpResult {
   extras: Record<string, boolean>;
 }
 
-async function rpc(base: string, token: string, method: string, params: object = {}) {
+export async function rpc(base: string, token: string, method: string, params: object = {}) {
   const res = await fetch(`${base}/mcp`, {
     method: "POST",
     headers: {

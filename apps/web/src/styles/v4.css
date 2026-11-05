@@ -623,7 +623,7 @@ h3 {
 
 /* ---------- pages ---------- */
 .v4app .main > .v4page {
-  max-width: 980px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 28px 32px 64px;
 }
@@ -716,7 +716,7 @@ ul.contents {
   border-radius: 8px;
 }
 .crow-main:hover {
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
 }
 .chev-btn {
   display: inline-grid;
@@ -1611,6 +1611,9 @@ code {
   .addrow {
     flex-wrap: wrap;
   }
+  .addrow .input {
+    flex-basis: 100%;
+  }
   .kindtag {
     display: none;
   }
@@ -1631,4 +1634,14 @@ code {
     /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over every rule */
     animation: none !important;
   }
+}
+
+/* The active step number sits on purple. */
+.steps li[aria-current="step"] .step-n {
+  color: #fff;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--purple);
 }
