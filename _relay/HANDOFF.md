@@ -112,3 +112,14 @@ Open items: no admin route for the group to role table yet (GOV exposes `groupMa
 ## B2 AI workstream, 2026-11-05 (Claude, branch b2/ai)
 
 Built `workers/api/src/ai/*` (processor, budget, evidence, R-110 segments, briefs, LLM planner, routes) mounted with one line in `routes.ts`, and `apps/web/src/views/brief/*` ("Prepare brief" on Today, account page and each meeting). Contract in `docs/API-CONTRACT.md`, "AI processor". No real key was used: tests stub fetch. Not done: a mock-mode handler for `/v1/briefs` (dev:mock shows "AI processor not configured"), live call against the Anthropic API (needs the key from Tony), Entra or Graph transcript sources (R-110 runs on any evidence body already).
+
+## B2 security review fixes, 2026-11-05 (main, not pushed, not deployed)
+
+Review: `docs/security/B2-SECURITY-REVIEW.md` in the vault copy. Fixed on `main` with a regression test each (new tests were run against the pre-fix code and failed there):
+
+- H-03 `packages/policy/src/engine.ts` (department membership skips restricted nodes). H-04 `admin/store.ts` `decide` (`beneficiary_decision`). H-05/M-06 `ai/brief.ts` `gate(env, switchOn)`, `ops-admin.ts` ai gate, `ai/config.ts` (AI_ENABLED and AI_PROCESSOR_CONTRACT=approved). H-06 `ops-admin.ts` rights export is two-person.
+- H-01/H-02/M-09/M-10/M-11 identity: `auth/identity-store.ts` (`principals.subject` = `tid:oid`, SCIM-managed fail closed), `auth/oidc.ts`, `auth/routes.ts`, `tenant-policy.ts`. New vars `ENTRA_ALLOW_GUESTS`, `ACCESS_LINKED_EMAILS`. Test helper: `entra-helpers.ts` gives each test user their own `oid`; SCIM_TOKEN is no longer on by default there.
+- M-01/M-02/L-01/L-02/L-05: `OPS_HMAC_KEY` (api and ops only), MCP kill switch route `/v1/internal/mcp/switches`, ops behind Access (`workers/ops/src/access.ts`), staging `RESTORE_ENABLED=no`, key id and nonce on every signed call (`packages/contracts/src/signed-call.ts`, v2 wire format), replay cache in TenantPolicy and ConnectorState.
+- Deploy notes: set `OPS_HMAC_KEY` on api and ops, delete `INTERNAL_HMAC_KEY` from ops, configure Access for ops before staging, set `AI_ENABLED` and `AI_PROCESSOR_CONTRACT` only when the processor contract is signed. All HMAC senders and verifiers must deploy together once (v1 to v2).
+- `workers/api` tests run one file at a time (`fileParallelism: false`): the AUDIT stand-in is shared and made ops-rights flaky. e2e ports are configurable (`DEV_API_PORT`, `DEV_MCP_PORT`, `DEV_REGISTRY_PATH`) so a second stack can run beside another agent's.
+- Not done: M-03, M-04, M-05, M-07, M-08, M-12, L-03, L-04, L-06 to L-08, I-01 to I-05 from the review; audit receipt for each ops restore (M-02, only a log event).
