@@ -23,11 +23,15 @@ export const MOCK = import.meta.env.VITE_MOCK === "1";
 
 const PERSONA_KEY = "secondary.persona";
 
+// The persona picker opens on the first persona (CEO), so send that until the viewer picks another.
+// The API ignores this header outside ENVIRONMENT=dev.
+const DEFAULT_PERSONA = "ceo";
+
 export function getPersona(): string | null {
   try {
-    return window.localStorage.getItem(PERSONA_KEY);
+    return window.localStorage.getItem(PERSONA_KEY) ?? DEFAULT_PERSONA;
   } catch {
-    return null;
+    return DEFAULT_PERSONA;
   }
 }
 
