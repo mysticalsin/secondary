@@ -213,6 +213,7 @@ describe("binding inventory", () => {
       "ASSETS:assets",
       "AUDIT:service:secondary-audit-dev",
       "BLOBS:r2:eu",
+      "CONNECTOR:service:secondary-connector-dev",
       "TENANT_POLICY:durable_object:TenantPolicy",
       "WORKSPACE:durable_object:Workspace",
     ]);
@@ -255,7 +256,13 @@ describe("M1: public surface of each worker (config)", () => {
     expect(api.workers_dev).toBe(true);
     expect(api.preview_urls).toBe(false);
     expect(api.routes).toBeUndefined();
-    for (const k of ["SEED_TOKEN", "INTERNAL_HMAC_KEY", "AUDIT_KEY_API", "AUDIT_KEY_READ"])
+    for (const k of [
+      "SEED_TOKEN",
+      "INTERNAL_HMAC_KEY",
+      "CONNECTOR_HMAC_KEY",
+      "AUDIT_KEY_API",
+      "AUDIT_KEY_READ",
+    ])
       expect(api.vars, k).not.toHaveProperty(k);
   });
 

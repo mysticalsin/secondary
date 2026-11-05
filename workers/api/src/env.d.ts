@@ -9,4 +9,6 @@ interface Env {
   AUDIT_KEY_READ?: string;
   /** Local-dev only. Honoured for localhost hosts in ENVIRONMENT=dev. */
   DEV_AUTH_BYPASS_EMAIL?: string;
+  /** Secret (at least 32 characters). Shared with workers/connector: signs calls in both directions. */
+  CONNECTOR_HMAC_KEY?: string;
 }

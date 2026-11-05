@@ -1,0 +1,56 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "secondary-connector-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // global_fetch_strictly_public: Graph download URLs come from a remote service, so the worker may only fetch public hosts.
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // No public URL: reached only through service bindings (api) and its own cron, queue and workflow.
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": {
+    // Used through `namespace.jurisdiction("eu")`: registry, delta cursors, SourceRecords and the ACL cache.
+    "bindings": [{ "name": "CONNECTOR_STATE", "class_name": "ConnectorState" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ConnectorState"] }],
+  "services": [{ "binding": "API", "service": "secondary-api-dev" }],
+  "queues": {
+    "producers": [{ "binding": "SYNC_QUEUE", "queue": "secondary-sync-dev" }],
+    "consumers": [
+      {
+        "queue": "secondary-sync-dev",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 5
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "secondary-source-sync-dev",
+      "binding": "SOURCE_SYNC",
+      "class_name": "SourceSyncWorkflow"
+    }
+  ],
+  // Every 15 minutes: enqueue one sync per enabled source. A kill switch (CONNECTOR_ENABLED) makes it a no-op.
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "vars": {
+    "ENVIRONMENT": "dev",
+    // Kill switch. Anything but "true" stops sync, and every permission check then answers "not confirmed".
+    "CONNECTOR_ENABLED": "false",
+    "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
+    // JSON array of tenant ids the cron syncs. Empty means [DEFAULT_TENANT_ID].
+    "CONNECTOR_TENANTS": "",
+    // Entra tenant and app (client) ids, set by values only. Empty keeps the Graph client disabled.
+    "GRAPH_TENANT_ID": "",
+    "GRAPH_CLIENT_ID": "",
+    // Maximum age of a permission check before it must be repeated. Stale or failed means hidden.
+    "ACL_MAX_AGE_SECONDS": "900",
+    // Calendar is delegated-only and stays off until Entra delegated tokens exist (see docs/runbooks/GRAPH-SITES-SELECTED.md).
+    "CALENDAR_ENABLED": "false",
+    "DO_JURISDICTION": "eu"
+  }
+  // Secrets (wrangler secret put ...), intentionally not set here:
+  //   GRAPH_CLIENT_SECRET   Entra app client secret (client credentials, Sites.Selected).
+  //   CONNECTOR_HMAC_KEY    32+ chars, shared with workers/api. Signs calls in both directions.
+}

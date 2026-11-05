@@ -140,3 +140,11 @@ What `workers/api` must do:
 - **Release rules.** Whoever wrote or edited an item counts as its author, on every revision, for review and approve. Only the contributor edits a candidate (others comment or request changes). Knowledge reviewers hold `review` and `approve_release` on Company Global. A global release needs two distinct approvers, none of them the contributor or an editor. `own_drafts` means authored by the caller.
 - **MCP dev sign-in.** `X-Dev-Email` and `X-Dev-Persona` count only on a loopback host (localhost, 127.0.0.1) in dev with Access unset. Anywhere else `/authorize` answers 401 until the Access team domain and aud are configured.
 - **Web.** Planes in the UI use the policy names. `GET /v1/admin/roles` and `/v1/admin/audit` are bare arrays, so the web derives "structure only" from the viewer's roles (Platform admin, Auditor).
+
+## Connector (B2 CONN)
+
+- `workers/connector` syncs SharePoint/OneDrive into Workspaces and confirms read access. Runbook: `docs/runbooks/GRAPH-SITES-SELECTED.md`.
+- `POST /internal/connector/{upsert,delete,purge}` on the api: signed with `CONNECTOR_HMAC_KEY`, principal `secondary-connector` only. Not under `/v1`.
+- The api calls `POST /internal/acl/check` on the connector (signed with the user's id and email). Only an explicit `allowed: true` shows an item.
+- `GET /v1/search` may return `kind: "source"` results. `GET /v1/sources/:id` returns the file record, or 403 `source permission could not be confirmed`. A caller without content access to the item's gate node gets 404. The web app does not render `source` results yet.
+

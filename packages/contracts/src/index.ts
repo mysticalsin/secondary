@@ -57,3 +57,4 @@ export function validate(schemaName: string, obj: unknown): ValidationResult {
       });
   return { valid, errors };
 }
+export * from "./source-record.ts";

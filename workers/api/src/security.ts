@@ -41,7 +41,8 @@ export const securityHeaders: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.res = new Response(c.res.body, c.res);
   }
   for (const [k, v] of Object.entries(STATIC_HEADERS)) c.res.headers.set(k, v);
-  if (new URL(c.req.url).pathname.startsWith("/v1/"))
+  const path = new URL(c.req.url).pathname;
+  if (path.startsWith("/v1/") || path.startsWith("/internal/"))
     c.res.headers.set("Cache-Control", "no-store");
 };
 

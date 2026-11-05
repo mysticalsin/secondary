@@ -72,6 +72,22 @@ export type RecentEntry = {
   kind: string;
 };
 
+/** A file synced from a connector (SharePoint/OneDrive). Text extract only for UTF-8 text and Markdown. */
+export type SourceItem = {
+  id: string;
+  sourceId: string;
+  /** Policy node a reader needs at content level before the item is even considered. */
+  gateNodeId: string;
+  plane: string;
+  title: string;
+  body: string | null;
+  webUrl: string | null;
+  mime: string | null;
+  size: number;
+  eTag: string;
+  syncedAt: number;
+};
+
 export type Comment = { id: number; itemId: string; authorId: string; text: string; at: number };
 
 export type Fail = {
@@ -128,6 +144,12 @@ export class Workspace extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS contributions (
           item_id TEXT NOT NULL, scope_id TEXT NOT NULL, candidate_id TEXT NOT NULL, at INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS contributions_item ON contributions (item_id);
+        CREATE TABLE IF NOT EXISTS source_items (
+          id TEXT PRIMARY KEY, source_id TEXT NOT NULL, gate_node_id TEXT NOT NULL, plane TEXT NOT NULL,
+          title TEXT NOT NULL, body TEXT, web_url TEXT, mime TEXT, size INTEGER NOT NULL,
+          etag TEXT NOT NULL, synced_at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS source_items_source ON source_items (source_id);
+        CREATE VIRTUAL TABLE IF NOT EXISTS source_fts USING fts5(title, body, id UNINDEXED);
         CREATE TABLE IF NOT EXISTS outbox (
           id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, payload TEXT NOT NULL,
           created_at INTEGER NOT NULL, dispatched INTEGER NOT NULL DEFAULT 0);
@@ -181,6 +203,115 @@ export class Workspace extends DurableObject<Env> {
   private reindex(id: string, label: string): void {
     this.sql.exec("DELETE FROM items_fts WHERE id = ?", id);
     this.sql.exec("INSERT INTO items_fts (label, id) VALUES (?, ?)", label, id);
+  }
+
+  // ---- connector items (source-backed, read-time permission checked by the API) ----
+
+  /** Idempotent upsert keyed by item id. An unchanged eTag is a no-op, so a replayed sync page changes nothing. */
+  sourceUpsert(rows: SourceItem[]): number {
+    let changed = 0;
+    this.ctx.storage.transactionSync(() => {
+      for (const r of rows) {
+        const cur = this.sql
+          .exec("SELECT etag, source_id FROM source_items WHERE id = ?", r.id)
+          .toArray()[0];
+        if (cur && cur.etag === r.eTag && cur.source_id === r.sourceId) continue;
+        this.sql.exec(
+          `INSERT INTO source_items (id, source_id, gate_node_id, plane, title, body, web_url, mime, size, etag, synced_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET source_id = excluded.source_id, gate_node_id = excluded.gate_node_id,
+             plane = excluded.plane, title = excluded.title, body = excluded.body, web_url = excluded.web_url,
+             mime = excluded.mime, size = excluded.size, etag = excluded.etag, synced_at = excluded.synced_at`,
+          r.id,
+          r.sourceId,
+          r.gateNodeId,
+          r.plane,
+          r.title,
+          r.body,
+          r.webUrl,
+          r.mime,
+          r.size,
+          r.eTag,
+          r.syncedAt,
+        );
+        this.sql.exec("DELETE FROM source_fts WHERE id = ?", r.id);
+        this.sql.exec(
+          "INSERT INTO source_fts (title, body, id) VALUES (?, ?, ?)",
+          r.title,
+          r.body ?? "",
+          r.id,
+        );
+        changed++;
+      }
+    });
+    return changed;
+  }
+
+  /** Deletion propagation: the row and its search entry go together. */
+  sourceDelete(ids: string[]): number {
+    let n = 0;
+    this.ctx.storage.transactionSync(() => {
+      for (const id of ids) {
+        n += this.sql
+          .exec("DELETE FROM source_items WHERE id = ? RETURNING id", id)
+          .toArray().length;
+        this.sql.exec("DELETE FROM source_fts WHERE id = ?", id);
+      }
+    });
+    return n;
+  }
+
+  /** A source was removed or disabled: drop everything it put here. */
+  sourcePurge(sourceId: string): number {
+    const ids = this.sql
+      .exec("SELECT id FROM source_items WHERE source_id = ?", sourceId)
+      .toArray()
+      .map((r) => r.id as string);
+    return this.sourceDelete(ids);
+  }
+
+  private sourceRow(r: Record<string, SqlStorageValue>): SourceItem {
+    return {
+      id: r.id as string,
+      sourceId: r.source_id as string,
+      gateNodeId: r.gate_node_id as string,
+      plane: r.plane as string,
+      title: r.title as string,
+      body: (r.body as string | null) ?? null,
+      webUrl: (r.web_url as string | null) ?? null,
+      mime: (r.mime as string | null) ?? null,
+      size: r.size as number,
+      eTag: r.etag as string,
+      syncedAt: r.synced_at as number,
+    };
+  }
+
+  sourceGet(id: string): SourceItem | null {
+    const row = this.sql.exec("SELECT * FROM source_items WHERE id = ?", id).toArray()[0];
+    return row ? this.sourceRow(row) : null;
+  }
+
+  /** `match` is an FTS5 expression built by the API from sanitised tokens. Never returns bodies. */
+  sourceSearch(
+    match: string,
+    limit: number,
+  ): { id: string; rank: number; title: string; plane: string; gateNodeId: string }[] {
+    return this.sql
+      .exec(
+        `SELECT f.id AS id, bm25(source_fts) AS rank, s.title AS title, s.plane AS plane, s.gate_node_id AS gate
+         FROM source_fts f JOIN source_items s ON s.id = f.id
+         WHERE source_fts MATCH ? ORDER BY rank, f.id LIMIT ?`,
+        match,
+        limit,
+      )
+      .toArray()
+      .map((r) => ({
+        id: r.id as string,
+        rank: r.rank as number,
+        title: r.title as string,
+        plane: r.plane as string,
+        gateNodeId: r.gate as string,
+      }));
   }
 
   // ---- reads ----
