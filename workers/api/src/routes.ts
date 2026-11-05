@@ -52,6 +52,31 @@ const NODE_ID = /^[a-z0-9][a-z0-9_.:-]{0,127}$/;
 const MAX_TEXT = 2_000;
 const MAX_BODY_TEXT = 8_000;
 const SEARCH_LIMIT = 25;
+/** Rows read per round trip, and the most rows one workspace is scanned for visible hits (B1 L5). */
+const SEARCH_PAGE = 50;
+const SEARCH_SCAN_MAX = 500;
+
+/**
+ * The best `SEARCH_LIMIT` hits of a workspace that the caller may see. A page of hits is read, the
+ * rows outside the view are dropped, and the next page is read until enough visible hits are found,
+ * so hidden rows never crowd out visible ones (L5). A hidden row is never returned or counted.
+ */
+async function visibleHits<T>(
+  page: (offset: number) => Promise<T[]>,
+  visible: (hit: T) => boolean,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (
+    let offset = 0;
+    out.length < SEARCH_LIMIT && offset < SEARCH_SCAN_MAX;
+    offset += SEARCH_PAGE
+  ) {
+    const rows = await page(offset);
+    for (const h of rows) if (visible(h) && out.length < SEARCH_LIMIT) out.push(h);
+    if (rows.length < SEARCH_PAGE) break;
+  }
+  return out;
+}
 const VALIDATION_MAX_AGE_MS = 24 * 3_600_000;
 
 const bad = (code: string, status: 400 | 404 | 409 | 422 = 400) =>
@@ -494,9 +519,13 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     const view = viewOf(s);
     const hits = (
       await Promise.all(
-        admittedScopes(view).map((scope) =>
-          workspaceStub(c.env, s.tenantId, scope).search(match, SEARCH_LIMIT),
-        ),
+        admittedScopes(view).map((scope) => {
+          const stub = workspaceStub(c.env, s.tenantId, scope);
+          return visibleHits(
+            (offset) => stub.search(match, SEARCH_PAGE, offset),
+            (h) => view.nodes.has(h.id),
+          );
+        }),
       )
     ).flat();
     const seen = new Set<string>();
@@ -518,9 +547,13 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     const sourceHits = (
       s.switches.connector
         ? await Promise.all(
-            admittedScopes(view).map((scope) =>
-              workspaceStub(c.env, s.tenantId, scope).sourceSearch(match, SEARCH_LIMIT),
-            ),
+            admittedScopes(view).map((scope) => {
+              const stub = workspaceStub(c.env, s.tenantId, scope);
+              return visibleHits(
+                (offset) => stub.sourceSearch(match, SEARCH_PAGE, offset),
+                (h) => view.nodes.get(h.gateNodeId)?.level === "content",
+              );
+            }),
           )
         : []
     )

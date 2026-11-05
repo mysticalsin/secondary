@@ -324,14 +324,16 @@ export class Workspace extends WikiBase {
   sourceSearch(
     match: string,
     limit: number,
+    offset = 0,
   ): { id: string; rank: number; title: string; plane: string; gateNodeId: string }[] {
     return this.sql
       .exec(
         `SELECT f.id AS id, bm25(source_fts) AS rank, s.title AS title, s.plane AS plane, s.gate_node_id AS gate
          FROM source_fts f JOIN source_items s ON s.id = f.id
-         WHERE source_fts MATCH ? ORDER BY rank, f.id LIMIT ?`,
+         WHERE source_fts MATCH ? ORDER BY rank, f.id LIMIT ? OFFSET ?`,
         match,
         limit,
+        offset,
       )
       .toArray()
       .map((r) => ({
@@ -346,13 +348,14 @@ export class Workspace extends WikiBase {
   // ---- reads ----
 
   /** `match` is an FTS5 expression built by the API from sanitised tokens. */
-  search(match: string, limit: number): { id: string; rank: number }[] {
+  search(match: string, limit: number, offset = 0): { id: string; rank: number }[] {
     return this.sql
       .exec(
         `SELECT id, bm25(items_fts) AS rank FROM items_fts WHERE items_fts MATCH ?
-         ORDER BY rank, id LIMIT ?`,
+         ORDER BY rank, id LIMIT ? OFFSET ?`,
         match,
         limit,
+        offset,
       )
       .toArray()
       .map((r) => ({ id: r.id as string, rank: r.rank as number }));
