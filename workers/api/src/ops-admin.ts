@@ -1,7 +1,7 @@
 // Operations admin routes (authenticated, Platform admin / "configure" only) and the kill switch gate.
 //   GET  /v1/admin/switches            state of the four switches and pending re-enable requests
 //   POST /v1/admin/switches            { switch, enabled }; re-enabling needs a second person in prod
-//   GET  /v1/admin/rights/export       ?principal=<id or email>; needs a second person (202 until then)
+//   POST /v1/admin/rights/export       { principal } (id or email); needs a second person (202 until then)
 //   POST /v1/admin/rights/erase        { principal }; always needs a second person
 
 import { Hono, type MiddlewareHandler } from "hono";
@@ -133,9 +133,13 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
   // H-06: an export returns a person's whole Personal Brain, so one configure holder is not enough.
   // The first request records, a different configure holder confirms within 24 hours and receives
   // the bundle. Both steps are audited with the subject's pseudonym, never the id or the content.
-  r.get("/rights/export", async (c) => {
+  // N-03: both steps are a POST (JSON body, behind the mutation guard), so a link or a cross-site
+  // navigation cannot confirm for a second admin. A GET is refused.
+  r.get("/rights/export", (c) => c.json({ error: "method_not_allowed" }, 405, { Allow: "POST" }));
+  r.post("/rights/export", async (c) => {
     const s = await requireConfigure(c);
-    const raw = c.req.query("principal") ?? "";
+    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    const raw = typeof body?.principal === "string" ? body.principal : "";
     if (!SUBJECT_PARAM.test(raw)) return c.json({ error: "invalid_principal" }, 400);
     const org = requireOrg(s);
     const principalId = await resolveSubject(c.env, s.tenantId, raw);

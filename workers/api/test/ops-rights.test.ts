@@ -18,8 +18,9 @@ const ADMIN_A = { email: "admin-a@example.invalid" };
 const ADMIN_B = { email: "admin-b@example.invalid" };
 
 const exportReq = (principal: string, persona = "platform_admin", who = ADMIN_A, env?: Loose) =>
-  as(persona, `/v1/admin/rights/export?principal=${encodeURIComponent(principal)}`, {
+  as(persona, "/v1/admin/rights/export", {
     ...who,
+    body: { principal },
     ...(env ? { env } : {}),
   });
 /** Admin A asks, admin B confirms (H-06): returns the response B gets. */
@@ -71,7 +72,9 @@ describe("rights export", () => {
   it("is for the configure role only and validates the principal", async () => {
     for (const p of ["ceo", "consultant", "auditor", "reviewer"])
       expect((await exportOf(SUBJECT, p)).status, p).toBe(403);
-    expect((await call(`/v1/admin/rights/export?principal=${SUBJECT}`)).status).toBe(401);
+    expect((await call("/v1/admin/rights/export", { body: { principal: SUBJECT } })).status).toBe(
+      401,
+    );
     for (const bad of ["", "has space", "a/b", "x".repeat(300)])
       expect((await exportOf(bad)).status, bad).toBe(400);
   });
@@ -93,6 +96,33 @@ describe("rights export", () => {
     const audit = await json(await as("auditor", `/v1/audit/receipts?principal=${await meId()}`));
     const reasons = (audit as Loose).receipts.map((r: Loose) => `${r.action}:${r.reason}`);
     expect(reasons.some((r: string) => r.startsWith("rights_export") && r.includes(pz))).toBe(true);
+  });
+
+  it("N-03: the confirmation is a POST behind the mutation guard; a GET or a cross-site POST confirms nothing", async () => {
+    const subject = "u_nobody";
+    expect((await exportReq(subject)).status).toBe(202);
+    // A link, an image or a top-level navigation is a GET: it is refused, whoever follows it.
+    const get = await as("platform_admin", `/v1/admin/rights/export?principal=${subject}`, {
+      ...ADMIN_B,
+    });
+    expect(get.status).toBe(405);
+    expect(get.headers.get("Allow")).toBe("POST");
+    expect(await get.text()).not.toContain("personalBrain");
+    // A POST that comes from another site is refused before the handler runs.
+    for (const headers of [
+      { "Sec-Fetch-Site": "cross-site" },
+      { "Sec-Fetch-Site": "same-site" },
+      { Origin: "https://evil.example.test" },
+    ]) {
+      const cross = await as("platform_admin", "/v1/admin/rights/export", {
+        ...ADMIN_B,
+        body: { principal: subject },
+        headers,
+      });
+      expect(cross.status, JSON.stringify(headers)).toBe(403);
+    }
+    // The request is still waiting for a real confirmation from the same origin.
+    expect((await exportReq(subject, "platform_admin", ADMIN_B)).status).toBe(200);
   });
 
   it("H-06: export is refused while no pseudonym key is configured", async () => {

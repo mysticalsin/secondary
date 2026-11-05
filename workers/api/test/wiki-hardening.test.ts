@@ -399,7 +399,7 @@ describe("M-02: retention and rights reach the derived wiki", () => {
 
 async function adminExport(principal: string): Promise<Loose> {
   const req = (email: string) =>
-    as("platform_admin", `/v1/admin/rights/export?principal=${principal}`, { email });
+    as("platform_admin", "/v1/admin/rights/export", { email, body: { principal } });
   const first = await req("admin-wiki-a@example.invalid");
   const res = first.status === 202 ? await req("admin-wiki-b@example.invalid") : first;
   expect(res.status, await res.clone().text()).toBe(200);

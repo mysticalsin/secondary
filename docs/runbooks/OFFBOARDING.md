@@ -18,7 +18,7 @@ Default: keep for the retention period of the data protection notice, then it is
 
 If the person (or the DPO) asks for erasure or an export:
 
-- Export: `GET /v1/admin/rights/export?principal=<id>` as a platform admin. Hand the file over through the DPO, not by chat or email.
+- Export: `POST /v1/admin/rights/export` with `{"principal":"<id>"}` as a platform admin. Hand the file over through the DPO, not by chat or email.
 - Erase: `POST /v1/admin/rights/erase {"principal":"<id>"}`. Needs two different platform admins (the first call returns 202 `pending`, the second completes it within 24 hours). It deletes the Personal Brain, replaces their id by a keyed pseudonym in company items, comments, approvals and audit receipts, removes the directory entry, asks the connector to forget the person's cached read decisions (cache keys are an HMAC of the address) and bumps the epoch. The receipts are pseudonymised first, so a failure there leaves everything else untouched and the erase can be asked for again; a tombstone then lets a later restore apply the erasure again. The erase itself is audited by pseudonym.
 
 Prefer the id over the email in the URL. Do the Entra disable first: a person still signing in is recreated as a new anonymous principal.

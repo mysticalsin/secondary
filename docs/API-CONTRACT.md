@@ -176,7 +176,7 @@ Roles are data in TenantPolicy (seeded from `packages/policy` roles, versioned w
 ## Operations: kill switches and data subject rights
 
 - `GET|POST /v1/admin/switches` (configure holders): `mcp`, `connector`, `ai`, `contribute`. Re-enabling needs a second person in prod.
-- `GET /v1/admin/rights/export?principal=<id or email>` (H-06): a person's Personal Brain, authored items and receipt metadata. It needs two different configure holders within 24 hours: the first call answers 202 `{status:"pending", needs:"second_person", pseudonym}` and returns no data; the second person's call returns the bundle (`Content-Disposition: attachment`). Both steps are audited as `rights_export_request` and `rights_export` with the subject's pseudonym in the reason (never the id or the content). 503 `export_disabled` while `PSEUDONYM_KEY` is not set.
+- `POST /v1/admin/rights/export` with `{"principal":"<id or email>"}` (a GET answers 405, N-03) (H-06): a person's Personal Brain, authored items and receipt metadata. It needs two different configure holders within 24 hours: the first call answers 202 `{status:"pending", needs:"second_person", pseudonym}` and returns no data; the second person's call returns the bundle (`Content-Disposition: attachment`). Both steps are audited as `rights_export_request` and `rights_export` with the subject's pseudonym in the reason (never the id or the content). 503 `export_disabled` while `PSEUDONYM_KEY` is not set.
 - `POST /v1/admin/rights/erase {principal}`: always two people, unchanged.
 
 ## Connector (B2 CONN)

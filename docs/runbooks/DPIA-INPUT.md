@@ -41,7 +41,7 @@ Secondary is a company knowledge map for Mantu: a Company Map of departments, ci
 
 ## 5. Data subject rights as built
 
-- Access and portability: `GET /v1/admin/rights/export?principal=<id or email>` returns a JSON bundle (Personal Brain, authored company items, comments, approval and edit metadata, receipt metadata for the last 30 days). Platform admin only, audited.
+- Access and portability: `POST /v1/admin/rights/export` with `{"principal":"<id or email>"}` returns a JSON bundle (Personal Brain, authored company items, comments, approval and edit metadata, receipt metadata for the last 30 days). Platform admin only, audited.
 - Erasure: `POST /v1/admin/rights/erase`, two different admins. Deletes the Personal Brain and its index entries, pseudonymises the person in company items, comments, approvals and audit receipts with a keyed hash (`PSEUDONYM_KEY`), removes the directory entry, revokes sessions. Company content is not deleted, because the company owns it; the author link is removed.
 - Rectification: through the normal edit and review flow.
 - Restriction and objection: kill switches per tenant feature; role removal per person.
