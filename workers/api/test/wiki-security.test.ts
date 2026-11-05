@@ -144,6 +144,7 @@ describe("HMAC v2: the wiki routes accept only the signed internal call", () => 
   const principal: InternalPrincipal = {
     v: 1,
     iss: "secondary-mcp",
+    grant_id: "g_test",
     aud: "secondary-api",
     sub: "sub-wiki",
     email: "acme_lead@example.invalid",

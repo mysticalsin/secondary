@@ -8,7 +8,6 @@ import { scimRoutes } from "./scim/routes.ts";
 import { onError, requestId, securityHeaders } from "./security.ts";
 import type { AppDeps, AppEnv } from "./types.ts";
 
-export { LandingPages } from "./lp/store.ts";
 export { TenantPolicy } from "./tenant-policy.ts";
 export type { AppDeps } from "./types.ts";
 export { Workspace } from "./workspace.ts";

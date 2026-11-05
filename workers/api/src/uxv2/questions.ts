@@ -6,13 +6,12 @@
 // an author, a two-person release counts distinct people, and approving names the revision that was
 // read (`revisionHash`). A question the caller cannot see answers 404, like a missing one.
 
-import { canDoInView, personalRootId } from "@secondary/policy";
+import { type BrainRole, canDoInView, personalRootId, roleAllows } from "@secondary/policy";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
 import { needFlag } from "../brains/open.ts";
 import { humanIdsOf } from "../human.ts";
-import { LP_QID, lpQuestions, resolveLpQuestion } from "../lp/questions.ts";
 import { parseCandidateId, personalScope, scopeOfNode } from "../scope.ts";
 import type { SensitivityFlag } from "../sensitivity.ts";
 import type { AppEnv } from "../types.ts";
@@ -44,7 +43,7 @@ const MAX_LIST = 200;
 const BATCH_MAX = 50;
 const KINDS = new Set(["ingest", "contradiction", "lint", "review", "release"]);
 const NOTE_MAX = 2_000;
-const QID = /^(?:cand:[a-z0-9][A-Za-z0-9_.:@-]*:[0-9a-f]{8}|ask:[0-9a-f]{16}|lp:[0-9a-f]{16})$/;
+const QID = /^(?:cand:[a-z0-9][A-Za-z0-9_.:@-]*:[0-9a-f]{8}|ask:[0-9a-f]{16})$/;
 
 const FLAG_REASON: Record<SensitivityFlag["type"], string> = {
   email: "Contains an email address",
@@ -134,6 +133,17 @@ export async function questionsOf(c: C): Promise<Question[]> {
   const me = s.principal;
   const scopes = admittedScopes(view);
   const lists = await Promise.all(scopes.map((sc) => stubOf(c, sc).pending(100)));
+  // A stored brain role only narrows (H-2): a person demoted in a brain no longer decides its items here.
+  const human = await humanIdsOf(c.env, s);
+  const roles = new Map<string, Promise<BrainRole | null>>();
+  const roleIn = (sc: string): Promise<BrainRole | null> => {
+    let p = roles.get(sc);
+    if (!p) {
+      p = sc.startsWith("personal:") ? Promise.resolve(null) : stubOf(c, sc).brainRoleOf(human);
+      roles.set(sc, p);
+    }
+    return p;
+  };
 
   // A wiki proposal shows its text only to someone who can read every source it rests on (H-02).
   const groups = lists.flatMap((list, i) => {
@@ -160,6 +170,7 @@ export async function questionsOf(c: C): Promise<Question[]> {
   for (const [gi, g] of groups.entries()) {
     const ok = oks[gi] as Readable;
     const stub = stubOf(c, g.scope);
+    if (!roleAllows(await roleIn(g.scope), "review")) continue;
     for (const r of g.items) {
       const whole = sourcesReadable(proposalSources(r), ok);
       const row = wikiQueueRow(view, me, r, whole);
@@ -202,7 +213,8 @@ export async function questionsOf(c: C): Promise<Question[]> {
   }
 
   // Contribution candidates: the same rule as the review queue (never your own, rights on the live record).
-  for (const list of lists)
+  for (const [li, list] of lists.entries()) {
+    const role = await roleIn(scopes[li] as string);
     for (const r of list) {
       if (r.kind !== "candidate" || r.authorId === me.id) continue;
       const node = r.targetNode ?? r.id;
@@ -211,8 +223,10 @@ export async function questionsOf(c: C): Promise<Question[]> {
       const rec = { authorId: r.authorId, status: r.status, revision: r.revision };
       const approve = canDoInView(view, me, node, "approve_release", view.ctx, rec);
       const review = canDoInView(view, me, node, "review", view.ctx, rec);
-      if (!approve.allowed && !review.allowed) continue;
-      const kind: QuestionKind = approve.allowed ? "release" : "review";
+      const mayApprove = approve.allowed && roleAllows(role, "approve_release");
+      const mayReview = review.allowed && roleAllows(role, "review");
+      if (!mayApprove && !mayReview) continue;
+      const kind: QuestionKind = mayApprove ? "release" : "review";
       out.push({
         id: r.id,
         kind,
@@ -235,6 +249,7 @@ export async function questionsOf(c: C): Promise<Question[]> {
         },
       });
     }
+  }
 
   // The owner's own ingest questions.
   for (const a of await stubOf(c, personalScope(me.id)).listByKind(ASK_KIND, 100)) {
@@ -256,8 +271,6 @@ export async function questionsOf(c: C): Promise<Question[]> {
       },
     });
   }
-  // Landing pages sent to review (kind release), for the people who may release them.
-  out.push(...(await lpQuestions(c)));
   return out
     .sort((x, y) => y.createdAt.localeCompare(x.createdAt) || x.id.localeCompare(y.id))
     .slice(0, MAX_LIST);
@@ -297,12 +310,6 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
   const revisionHash = b.revisionHash as string | undefined;
   const note = typeof b.note === "string" ? b.note.trim() : "";
   const view = viewOf(s);
-
-  // ---- a landing page: the same rules as POST /v1/lp/:id/approve ----
-  if (LP_QID.test(id)) {
-    const res = await resolveLpQuestion(c, id, action, revisionHash, note);
-    return c.json(res.body, res.status as 200 | 400 | 403 | 404 | 409 | 503);
-  }
 
   // ---- an ingest question: the owner's own, answered with the owner's rights today ----
   if (id.startsWith("ask:")) {
@@ -365,6 +372,15 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
     if (!personal && !WIKI_NODE_KINDS.has(view.nodes.get(node)?.kind ?? "")) throw notFound();
     const right = mayDecide(view, s.principal, node);
     if (!right.allowed) return deny(c, `wiki.${action}`, id, scope, right.reason);
+    // The stored brain role only narrows (H-2): a demoted steward cannot decide here either.
+    if (!personal && !roleAllows(await stub.brainRoleOf(sameHuman), "review"))
+      return deny(
+        c,
+        `wiki.${action}`,
+        id,
+        scope,
+        "Your role in this brain does not include review",
+      );
     const kind = wikiKind(item);
     const allowed =
       kind === "contradiction" ? ["prefer_incoming", "keep_current"] : ["approve", "reject"];
@@ -493,6 +509,14 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
     rec,
   );
   if (!d.allowed) return deny(c, wantsRelease ? "approve_release" : "review", id, scope, d.reason);
+  if (!roleAllows(await stub.brainRoleOf(sameHuman), wantsRelease ? "approve_release" : "review"))
+    return deny(
+      c,
+      wantsRelease ? "approve_release" : "review",
+      id,
+      scope,
+      "Your role in this brain does not include this decision",
+    );
   if (!revisionHash)
     return c.json(
       { error: "revision_required", reason: "Name the revision you read: send revisionHash" },

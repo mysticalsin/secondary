@@ -15,6 +15,7 @@ const id = (n: number) => `src:${SOURCE}:${hex(n)}`;
 const connectorPrincipal: InternalPrincipal = {
   v: 1,
   iss: "secondary-mcp",
+  grant_id: "g_test",
   aud: "secondary-api",
   sub: "secondary-connector",
   email: "connector@service.invalid",

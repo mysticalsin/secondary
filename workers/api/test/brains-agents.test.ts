@@ -145,7 +145,7 @@ describe("agent connections", () => {
           method: "POST",
         })
       ).status,
-    ).toBe(404);
+    ).toBe(400);
     expect(
       (await as("consultant", "/v1/agents/hosts/nowhere/revoke", { email: ME, method: "POST" }))
         .status,
@@ -166,10 +166,38 @@ describe("agent connections", () => {
     );
   });
 
-  it("a call without a grant id is unaffected (older callers), and holds no token", async () => {
-    expect((await mcp("ag.old@example.invalid", undefined)).status).toBe(200);
+  it("M-3: an MCP call that names no connection is refused, never served unchecked", async () => {
+    const r = await mcp("ag.old@example.invalid", undefined);
+    expect(r.status).toBe(400);
+    expect(await json<Loose>(r)).toEqual({ error: "grant_required" });
     const a = await agents("consultant", "ag.old@example.invalid");
     expect(a.hosts.every((h: Loose) => h.connected === false)).toBe(true);
+  });
+
+  it("M-3: revoke-all is its own endpoint and needs an explicit confirm; a bad id revokes nothing", async () => {
+    const who = "ag.all@example.invalid";
+    expect((await mcp(who, "grant-all-1", { host: "chatgpt", client: "c1" })).status).toBe(200);
+    expect((await mcp(who, "grant-all-2", { host: "codex", client: "c2" })).status).toBe(200);
+    const post = (path: string, body?: Loose) =>
+      as("consultant", `/v1/agents${path}`, {
+        email: who,
+        method: "POST",
+        ...(body ? { body } : {}),
+      });
+    // No id, a malformed id, and a body without confirm: 400 each, and both connections still work.
+    expect((await post("/connections/%20/revoke")).status).toBe(400);
+    expect((await post("/revoke-all", {})).status).toBe(400);
+    expect((await post("/revoke-all", { confirm: "yes" })).status).toBe(400);
+    expect((await mcp(who, "grant-all-1", { host: "chatgpt", client: "c1" })).status).toBe(200);
+    expect((await mcp(who, "grant-all-2", { host: "codex", client: "c2" })).status).toBe(200);
+    // Confirmed: every connection of the caller goes, and only theirs.
+    const done = await post("/revoke-all", { confirm: true });
+    expect(await json<Loose>(done)).toEqual({ ok: true, revoked: 2 });
+    expect((await mcp(who, "grant-all-1", { host: "chatgpt", client: "c1" })).status).toBe(403);
+    expect((await mcp(who, "grant-all-2", { host: "codex", client: "c2" })).status).toBe(403);
+    expect((await mcp(ME, "grant-gpt-1", { host: "chatgpt", client: "client-gpt" })).status).toBe(
+      200,
+    );
   });
 });
 
@@ -296,5 +324,34 @@ describe("pilot cohorts", () => {
     expect((await as("consultant", "/v1/brains", { email: IN })).status).toBe(200);
     await admin(`/${id}`, { method: "DELETE" });
     expect((await as("consultant", "/v1/brains", { email: OUT })).status).toBe(200);
+  });
+});
+
+describe("agent config: the MCP public URL", () => {
+  it("returns the configured MCP_PUBLIC_URL plus /mcp", async () => {
+    await seed();
+    // (.dev.vars may override the wrangler value locally, so the value is passed in)
+    const r = await as("consultant", "/v1/agents/config", {
+      email: ME,
+      env: { MCP_PUBLIC_URL: "https://secondary-mcp-dev.tony-walteur.workers.dev" },
+    });
+    expect(r.status).toBe(200);
+    expect(await json<Loose>(r)).toEqual({
+      mcpUrl: "https://secondary-mcp-dev.tony-walteur.workers.dev/mcp",
+    });
+  });
+
+  it("trims a trailing slash, and says null when nothing usable is configured", async () => {
+    const withUrl = (v: string) =>
+      as("consultant", "/v1/agents/config", { email: ME, env: { MCP_PUBLIC_URL: v } });
+    expect(await json<Loose>(await withUrl("https://mcp.example.test/"))).toEqual({
+      mcpUrl: "https://mcp.example.test/mcp",
+    });
+    for (const bad of ["", "   ", "javascript:alert(1)", "mcp.example.test", "https://a/b"])
+      expect(await json<Loose>(await withUrl(bad)), bad).toEqual({ mcpUrl: null });
+  });
+
+  it("needs a signed-in caller", async () => {
+    expect((await call("/v1/agents/config", { token: null })).status).toBe(401);
   });
 });

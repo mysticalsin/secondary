@@ -10,6 +10,7 @@ const KEY = (rawEnv as unknown as Env).INTERNAL_HMAC_KEY as string;
 const principal = (over: Partial<InternalPrincipal> = {}): InternalPrincipal => ({
   v: 1,
   iss: "secondary-mcp",
+  grant_id: "g_test",
   aud: "secondary-api",
   sub: "sub-1",
   email: "ceo@example.invalid",

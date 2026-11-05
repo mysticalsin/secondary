@@ -1,12 +1,10 @@
 // Français. Doit définir chaque clé de en.ts (le compilateur le vérifie).
 import type { en } from "./en";
-import { lpFr } from "./lp";
 import { ux2Fr } from "./ux2";
 import { v3Fr } from "./v3";
 
 export const fr: Record<keyof typeof en, string> = {
   ...ux2Fr,
-  ...lpFr,
   ...v3Fr,
   "common.cancel": "Annuler",
   "common.clear": "Effacer",

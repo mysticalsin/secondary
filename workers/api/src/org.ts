@@ -69,9 +69,15 @@ export const seedPrincipals = (emailDomain: string): SeedPrincipal[] =>
     memberships: PERSONAS[r].memberships.map((m) => ({ ...m })),
   }));
 
-export const makeCtx = (now: number, ndaGrants: string[], elevatedUntil: number | null): Ctx => ({
+export const makeCtx = (
+  now: number,
+  ndaGrants: string[],
+  elevatedUntil: number | null,
+  openBrains: string[] = [],
+): Ctx => ({
   now,
   ...(ndaGrants.length ? { ndaGrants } : {}),
+  ...(openBrains.length ? { openBrains } : {}),
   ...(elevatedUntil !== null ? { elevatedUntil } : {}),
 });
 

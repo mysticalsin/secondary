@@ -2,17 +2,8 @@
 // Synthetic data only (docs: CLAUDE.md data rules). Loaded only when VITE_MOCK=1.
 import { ApiError } from "../api";
 import type { ViewPlan } from "../types";
-import type {
-  AskEvent,
-  Digest,
-  Question,
-  Routine,
-  RoutineRun,
-  TreeNode,
-  Usage,
-} from "../uxv2/types";
+import type { AskEvent, Question, Routine, RoutineRun, TreeNode, Usage } from "../uxv2/types";
 import type { WikiFact, WikiPage, WikiRevision, WikiSearchHit } from "../views/wiki/types";
-import { handleLp, NO as LP_NO, lpAnswer, lpQuestions } from "./lp";
 
 export const NOT_HANDLED = Symbol("not handled");
 
@@ -500,7 +491,6 @@ function usage(role: string, period: string): Usage {
     me,
     byCapability: [
       { capability: "ask", tokens: Math.round(me.tokens * 0.55), runs: me.answers },
-      { capability: "digest", tokens: Math.round(me.tokens * 0.2), runs: Math.round(2 * k) },
       { capability: "routines", tokens: Math.round(me.tokens * 0.25), runs: Math.round(8 * k) },
     ],
   };
@@ -513,30 +503,6 @@ function usage(role: string, period: string): Usage {
     };
   return out;
 }
-
-const DIGEST: Digest = {
-  weekOf: "2026-11-02",
-  stats: { opportunities: 3, newLeads: 2, commitmentsDue: 4, wins: 1 },
-  sections: [
-    {
-      title: "Opportunities traced",
-      items: [
-        { label: "Data platform health check", pageId: "acme-health-check", meta: "Proposal sent" },
-        { label: "Analytics retainer offer", pageId: "success-stories", meta: "Updated this week" },
-      ],
-    },
-    {
-      title: "Commitments due",
-      items: [
-        { label: "Share the draft scope with Acme", pageId: "acme-kickoff", meta: "Due 8 Nov" },
-      ],
-    },
-    {
-      title: "Wins",
-      items: [{ label: "Bid playbook released", pageId: "bid-playbook", meta: "Company Global" }],
-    },
-  ],
-};
 
 // ---------- ask ----------
 
@@ -643,8 +609,6 @@ export function handleV2(
   body: Record<string, unknown>,
   role: string,
 ): unknown {
-  const lp = handleLp(method, p, search, body, role);
-  if (lp !== LP_NO) return lp;
   if (method === "GET" && p === "/v1/brain/tree") {
     const root = search.get("root");
     const ws = root === "personal" ? ["me"] : ["core", "a_acme"];
@@ -693,12 +657,9 @@ export function handleV2(
       return { results: self ? backlinks(role, ws, self.id) : [] };
     }
   }
-  if (method === "GET" && p === "/v1/questions")
-    return [...questionsFor(role), ...lpQuestions(role)];
+  if (method === "GET" && p === "/v1/questions") return questionsFor(role);
   const qa = p.match(/^\/v1\/questions\/([^/]+)$/);
   if (method === "POST" && qa) {
-    const lpDone = lpAnswer(decodeURIComponent(qa[1] as string), role, body);
-    if (lpDone !== LP_NO) return lpDone;
     const list = questionsFor(role);
     const i = list.findIndex((x) => x.id === decodeURIComponent(qa[1] as string));
     const item = list[i];
@@ -745,20 +706,6 @@ export function handleV2(
     }
   }
   if (method === "GET" && p === "/v1/usage") return usage(role, search.get("period") ?? "7d");
-  if (method === "GET" && p === "/v1/digest/preview") {
-    // Only links to pages the reader can open, like the server.
-    const open = (id?: string) => {
-      const pg = PAGES.find((x) => x.id === id);
-      return !id || (!!pg && seen(role, pg.ws, pg.type) === "full");
-    };
-    return {
-      ...DIGEST,
-      sections: DIGEST.sections
-        .map((sec) => ({ ...sec, items: sec.items.filter((i) => open(i.pageId)) }))
-        .filter((sec) => sec.items.length),
-    };
-  }
-  if (method === "POST" && p === "/v1/digest/draft") return { draftId: "draft_digest_1" };
   return NOT_HANDLED;
 }
 

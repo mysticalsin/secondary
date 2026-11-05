@@ -6,6 +6,7 @@ import {
   type AdmittedView,
   type BrainFacts,
   type BrainRole,
+  type BrainType,
   brainTypeOf,
   canDoInView,
   effectivePublication,
@@ -14,7 +15,7 @@ import {
   roleAllows,
   type ViewNode,
 } from "@secondary/policy";
-import { viewOf } from "../auth.ts";
+import { requireOrg, viewOf } from "../auth.ts";
 import { humanIdsOf } from "../human.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
@@ -55,6 +56,24 @@ export function admittedBrainParams(c: C): { param: string; vn: ViewNode | null 
   return out;
 }
 
+/**
+ * What bounds a brain: its own flags, a contacts subspace, and any restricted or NDA ancestor (a node
+ * under a restricted parent is restricted whatever its own flag says).
+ */
+function factsOf(type: BrainType, vn: ViewNode, org: ReturnType<typeof requireOrg>): BrainFacts {
+  let restricted = !!vn.restricted || !!vn.contacts;
+  let nda = !!vn.nda;
+  for (
+    let p = vn.parentId ? org.nodes.get(vn.parentId) : undefined;
+    p;
+    p = p.parentId ? org.nodes.get(p.parentId) : undefined
+  ) {
+    restricted ||= !!p.restricted;
+    nda ||= !!p.nda;
+  }
+  return { type, restricted, nda };
+}
+
 export async function brainOf(c: C, param: string, humanIds?: string[]): Promise<Brain | null> {
   const s = sess(c);
   const view = viewOf(s);
@@ -88,7 +107,7 @@ export async function brainOf(c: C, param: string, humanIds?: string[]): Promise
     label: vn.label,
     plane: vn.plane,
     personal: false,
-    facts: { type, restricted: !!vn.restricted, nda: !!vn.nda },
+    facts: factsOf(type, vn, requireOrg(s)),
     view,
     vn,
     stub: workspaceStub(c.env, s.tenantId, scope),
@@ -147,6 +166,8 @@ export async function directPublish(
   },
 ): Promise<boolean> {
   if (!w.can.edit) return false;
+  // M-5: text written by an agent (an MCP call) always waits for a person, whatever the brain's mode.
+  if (sess(c).internal) return false;
   const cfg = await w.stub.brainConfig();
   if (cfg.publication !== "direct") return false;
   const type = w.personal ? "personal" : w.vn ? brainTypeOf(w.vn.kind) : null;

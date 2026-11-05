@@ -11,7 +11,6 @@
     "test": "node scripts/gen-validator.mjs && vitest run"
   },
   "dependencies": {
-    "@secondary/lp-template": "workspace:*",
     "@secondary/policy": "workspace:*",
     "hono": "4.13.16",
     "jose": "6.2.15"

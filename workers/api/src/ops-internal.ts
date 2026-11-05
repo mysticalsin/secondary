@@ -10,19 +10,15 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
 import { appendReceipt, newReceiptId } from "./audit.ts";
-import { afterLandingRestore } from "./lp/ops.ts";
-import { expireLandingPages } from "./lp/retention.ts";
-import { lpStub } from "./lp/stub.ts";
 import { reapplyErasures } from "./ops-rights.ts";
 import { getOrg } from "./org.ts";
 import { internalKeys, opsKeys, replayStore } from "./replay.ts";
 import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps } from "./types.ts";
-import { runWeeklyDigests } from "./uxv2/digest-job.ts";
 
-const what = (kind: "tenant" | "workspace" | "lp"): string =>
-  kind === "tenant" ? "the directory" : kind === "lp" ? "the landing pages" : "a workspace";
+const what = (kind: "tenant" | "workspace"): string =>
+  kind === "tenant" ? "the directory" : "a workspace";
 
 const TENANT_ID = /^[a-z0-9_]{3,64}$/;
 const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
@@ -98,8 +94,6 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     const scope = c.req.query("scope") ?? "";
     if (!TENANT_ID.test(tenant)) return null;
     if (kind === "tenant") return { tenant, kind: "tenant" as const, scope: "" };
-    // The Landing Page Studio store: one per tenant, backed up and restored like the directory.
-    if (kind === "lp") return { tenant, kind: "lp" as const, scope: "" };
     if (kind === "workspace" && SCOPE_ID.test(scope))
       return { tenant, kind: "workspace" as const, scope };
     return null;
@@ -111,9 +105,7 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     const tables =
       t.kind === "tenant"
         ? await tenantStub(c.env, t.tenant).exportAll()
-        : t.kind === "lp"
-          ? await lpStub(c.env, t.tenant).exportAll()
-          : await workspaceStub(c.env, t.tenant, t.scope).exportAll();
+        : await workspaceStub(c.env, t.tenant, t.scope).exportAll();
     return c.json({ tenant: t.tenant, kind: t.kind, scope: t.scope, tables });
   });
 
@@ -191,14 +183,9 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
         const rows =
           t.kind === "tenant"
             ? await tenantStub(c.env, t.tenant).importAll(tables)
-            : t.kind === "lp"
-              ? await lpStub(c.env, t.tenant).importAll(tables)
-              : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
+            : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
         // Anyone erased since the snapshot was taken is erased again (M-03).
         const erasuresReapplied = await reapplyErasures(c.env, t.tenant, t.kind, t.scope);
-        // Pages whose clock ran out since the snapshot are expired again, and none comes back public
-        // without its object.
-        if (t.kind === "lp") await afterLandingRestore(c.env, t.tenant, deps.now?.() ?? Date.now());
         await receipt(
           "ops_restore_done",
           `restored ${rows} rows, ${erasuresReapplied} erasures applied again`,
@@ -219,23 +206,15 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     };
     let purged = 0;
     let scopes = 0;
-    let pagesExpired = 0;
     for (const tenantId of tenantIds(c.env)) {
       for (const id of await tenantStub(c.env, tenantId).listPrincipalIds()) {
         scopes++;
         purged += await workspaceStub(c.env, tenantId, `personal:${id}`).purgeExpired(cutoffs);
       }
       await tenantStub(c.env, tenantId).tombstonePurge(now);
-      // Landing pages whose clock ran out: the public object goes, the prospect's data is purged.
-      pagesExpired += await expireLandingPages(c.env, tenantId, now);
     }
-    return c.json({ ok: true, scopes, purged, pagesExpired });
+    return c.json({ ok: true, scopes, purged });
   });
-
-  // The weekly digest: one email draft per person, never sent, once per person and week.
-  r.post("/digest", async (c) =>
-    c.json({ ok: true, ...(await runWeeklyDigests(c.env, deps.now?.() ?? Date.now())) }),
-  );
 
   r.all("*", (c) => c.json({ error: "not_found" }, 404));
   return r;

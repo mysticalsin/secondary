@@ -43,6 +43,8 @@ export type Session = {
   retryAfter: number;
   principal: { id: string; email: string; roleIds: string[]; memberships: Membership[] };
   ndaGrants: string[];
+  /** Node ids opened to Everyone at Mantu (reader or contributor). The engine lifts reading only. */
+  openBrains: string[];
   elevatedUntil: number | null;
   epoch: number;
   config: TenantConfig | null;
@@ -82,6 +84,7 @@ const SNAPSHOT_TABLES = [
   "gov_identity",
   "gov_notifications",
   "pilot_cohorts",
+  "open_brains",
 ] as const;
 
 /** Features a pilot cohort can switch on. A key no cohort mentions is on for everyone. */
@@ -145,6 +148,10 @@ export class TenantPolicy extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS nonces (key TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
         -- Not in SNAPSHOT_TABLES on purpose: a restore replaces the listed tables only, so this list
         -- survives it and is applied again afterwards (M-03). It is never exported or backed up.
+        -- Everyone at Mantu per brain node (the one place the engine reads it from). In SNAPSHOT_TABLES:
+        -- it is tenant security state, and a restore must not leave a brain wider or narrower than saved.
+        CREATE TABLE IF NOT EXISTS open_brains (
+          node_id TEXT PRIMARY KEY, level TEXT NOT NULL CHECK (level IN ('reader', 'contributor')));
         CREATE TABLE IF NOT EXISTS pilot_cohorts (
           id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, flags TEXT NOT NULL,
           created_at INTEGER NOT NULL);
@@ -213,6 +220,7 @@ export class TenantPolicy extends DurableObject<Env> {
         "elevations",
         "rate",
         "erasure_tombstones",
+        "open_brains",
       ])
         this.sql.exec(`DELETE FROM ${t}`);
       this.govStore.reset(now);
@@ -382,6 +390,10 @@ export class TenantPolicy extends DurableObject<Env> {
       retryAfter: Math.max(1, Math.ceil(((window + 1) * WINDOW_MS - input.now) / 1000)),
       principal: { id, email, roleIds, memberships },
       ndaGrants,
+      openBrains: this.sql
+        .exec("SELECT node_id FROM open_brains ORDER BY 1")
+        .toArray()
+        .map((r) => r.node_id as string),
       elevatedUntil: until,
       epoch: this.epoch(),
       config: this.getConfig(),
@@ -459,28 +471,51 @@ export class TenantPolicy extends DurableObject<Env> {
   /** Revoke the caller's own grants, one by id or every grant of a host. Returns the grants revoked. */
   agentRevoke(
     principalId: string,
-    by: { grantId: string } | { host: string },
+    by: { grantId: string } | { host: string } | { all: true },
     now: number,
   ): { grantId: string; clientId: string }[] {
     const hit =
-      "grantId" in by
+      "all" in by
         ? this.sql
             .exec(
-              "UPDATE agent_grants SET revoked_at = ? WHERE principal_id = ? AND grant_id = ? AND revoked_at IS NULL RETURNING grant_id, client_id",
+              "UPDATE agent_grants SET revoked_at = ? WHERE principal_id = ? AND revoked_at IS NULL RETURNING grant_id, client_id",
               now,
               principalId,
-              by.grantId,
             )
             .toArray()
-        : this.sql
-            .exec(
-              "UPDATE agent_grants SET revoked_at = ? WHERE principal_id = ? AND host = ? AND revoked_at IS NULL RETURNING grant_id, client_id",
-              now,
-              principalId,
-              by.host,
-            )
-            .toArray();
+        : "grantId" in by
+          ? this.sql
+              .exec(
+                "UPDATE agent_grants SET revoked_at = ? WHERE principal_id = ? AND grant_id = ? AND revoked_at IS NULL RETURNING grant_id, client_id",
+                now,
+                principalId,
+                by.grantId,
+              )
+              .toArray()
+          : this.sql
+              .exec(
+                "UPDATE agent_grants SET revoked_at = ? WHERE principal_id = ? AND host = ? AND revoked_at IS NULL RETURNING grant_id, client_id",
+                now,
+                principalId,
+                by.host,
+              )
+              .toArray();
     return hit.map((r) => ({ grantId: r.grant_id as string, clientId: r.client_id as string }));
+  }
+
+  // ---- Everyone at Mantu (brain access) ----
+
+  /** Open a brain node to Everyone at Mantu, or close it ("none"). The API has bounded it by type. */
+  openBrainSet(nodeId: string, level: "none" | "reader" | "contributor"): void {
+    if (level === "none") this.sql.exec("DELETE FROM open_brains WHERE node_id = ?", nodeId);
+    else
+      this.sql.exec(
+        "INSERT INTO open_brains (node_id, level) VALUES (?, ?) ON CONFLICT(node_id) DO UPDATE SET level = excluded.level",
+        nodeId,
+        level,
+      );
+    // Sessions and views are rebuilt from the table on every request; the epoch keeps caches honest.
+    this.bump();
   }
 
   // ---- pilot cohorts ----

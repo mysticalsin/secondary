@@ -175,8 +175,6 @@ function route(method: string, path: string, query: URLSearchParams): Response {
         conventions: ["Cite every claim"],
         howToPropose: "wiki_propose",
       });
-    if (path === "/v1/lp")
-      return j([{ id: "lp_0123456789abcdef", status: "draft", stats: { views: 0 } }]);
     if (path === "/v1/review") return j({ candidates: [{ id: "cand1", title: "Pricing FAQ" }] });
   }
   if (method === "POST") {
@@ -191,8 +189,6 @@ function route(method: string, path: string, query: URLSearchParams): Response {
         expiresAt: "2026-11-05T12:00:00.000Z",
       });
     }
-    if (path === "/v1/lp/compose")
-      return j({ id: "lp_0123456789abcdef", status: "draft", revision: 1 }, 201);
     if (path === "/v1/personal/items") return j({ ok: true, id: "pb:u1:n1" });
     if (/^\/v1\/wiki\/[^/]+\/propose$/.test(path))
       return j({ ok: true, proposalId: "cand:a_acme:00000001", status: "candidate" }, 201);

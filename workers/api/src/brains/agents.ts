@@ -71,15 +71,41 @@ export function agentRoutes(_deps: AppDeps): Hono<AppEnv> {
     });
   });
 
+  // Where the MCP door is: the configured MCP_PUBLIC_URL plus /mcp, or null when none is configured (the
+  // web page then guesses). Public configuration, same for everyone: no tenant or person data.
+  r.get("/agents/config", (c) => {
+    const base = (c.env.MCP_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
+    c.header("Cache-Control", "no-store");
+    return c.json({ mcpUrl: /^https?:\/\/[^\s/]+$/.test(base) ? `${base}/mcp` : null });
+  });
+
   r.post("/agents/connections/:id/revoke", async (c) => {
     const s = sess(c);
     const id = c.req.param("id");
-    if (!GRANT_ID.test(id)) throw notFound();
+    // A connection id is required and well formed: nothing is revoked on a guess (M-3).
+    if (!GRANT_ID.test(id)) throw bad("connection_id_required");
     const tenant = tenantStub(c.env, s.tenantId);
     if (!(await tenant.agentList(s.principal.id)).some((x) => x.grantId === id)) throw notFound();
     if (!(await audit(c, { action: "agent.revoke", nodeId: null, scopeId: null, revision: null })))
       return c.json({ error: "audit_unavailable" }, 503);
     const done = await tenant.agentRevoke(s.principal.id, { grantId: id }, s.ctx.now);
+    return c.json({ ok: true, revoked: done.length });
+  });
+
+  // Revoke every connection of the caller, on purpose: the body must say so. Never reached by a missing id.
+  r.post("/agents/revoke-all", async (c) => {
+    const s = sess(c);
+    const body = await readObject(c).catch(() => ({}) as Record<string, unknown>);
+    if (body.confirm !== true) throw bad("confirm_required");
+    if (
+      !(await audit(c, { action: "agent.revoke_all", nodeId: null, scopeId: null, revision: null }))
+    )
+      return c.json({ error: "audit_unavailable" }, 503);
+    const done = await tenantStub(c.env, s.tenantId).agentRevoke(
+      s.principal.id,
+      { all: true },
+      s.ctx.now,
+    );
     return c.json({ ok: true, revoked: done.length });
   });
 

@@ -305,6 +305,34 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     }
     if (!Object.keys(patch).length) throw bad("nothing_to_change");
     const s = sess(c);
+    // M-8: opening a brain to everyone at Mantu takes two people (closing it does not). The second
+    // person confirms the same level on the same brain within 24 hours.
+    const opening =
+      patch.everyone !== undefined &&
+      patch.everyone !== "none" &&
+      effectiveEveryone(b.facts, (await b.stub.brainConfig()).everyone) !== patch.everyone;
+    if (opening) {
+      const step = await tenantStub(c.env, s.tenantId).requestSecond(
+        `brainopen:${b.scope}:${patch.everyone}`,
+        s.principal.id,
+        s.ctx.now,
+        s.principal.email,
+      );
+      if (step === "same")
+        return c.json(
+          { error: "same_person", reason: "A different person must confirm opening this brain" },
+          409,
+        );
+      if (step === "first") {
+        await audit(c, {
+          action: "brain.open_request",
+          nodeId: b.nodeId,
+          scopeId: b.scope,
+          revision: null,
+        });
+        return c.json({ ok: true, status: "pending", needs: "second_person" }, 202);
+      }
+    }
     if (
       !(await audit(c, {
         action: "brain.access",
@@ -315,6 +343,13 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     )
       return c.json({ error: "audit_unavailable" }, 503);
     const next = await b.stub.brainConfigSet(patch, s.principal.id, s.ctx.now);
+    // The engine reads Everyone at Mantu from the tenant (it builds every view); the workspace copy is
+    // what the Access page shows. Bounded above by brain type, and again by the engine on every view.
+    if (patch.everyone !== undefined && !b.personal)
+      await tenantStub(c.env, s.tenantId).openBrainSet(
+        b.nodeId,
+        effectiveEveryone(b.facts, next.everyone),
+      );
     return c.json({
       ok: true,
       publication: effectivePublication(b.facts, next.publication),

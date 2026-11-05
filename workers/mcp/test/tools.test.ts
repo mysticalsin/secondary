@@ -27,9 +27,6 @@ const CONTRACT_TOOLS = [
   "wiki_search",
   "wiki_read",
   "wiki_propose",
-  "lp_compose",
-  "lp_compose_batch",
-  "lp_list",
   "get_brain_guide",
   "coach_propose_structure",
 ];
@@ -129,53 +126,6 @@ describe("scope enforcement", () => {
     const r = await callTool(t.token as string, "personal_note_create", { title: "t", body: "b" });
     expect(r.json?.result.isError).toBeUndefined();
     expect(JSON.parse(textOf(r))).toMatchObject({ ok: true });
-  });
-});
-
-describe("landing page tools", () => {
-  it("compose and batch create drafts through compose only, and list reads", async () => {
-    const t = await getToken({ scope: "secondary.read secondary.contribute" });
-    const token = t.token as string;
-    const row = { role: "CIO", company: "Globex", angle: "cloud migration" };
-    const one = await callTool(token, "lp_compose", row);
-    expect(JSON.parse(textOf(one))).toMatchObject({ status: "draft" });
-    const batch = await callTool(token, "lp_compose_batch", {
-      rows: [row, { ...row, role: "CFO" }],
-    });
-    expect(JSON.parse(textOf(batch))).toMatchObject({ drafts: 2, failed: 0 });
-    expect(JSON.parse(textOf(await callTool(token, "lp_list", {})))).toHaveLength(1);
-    const calls = (await apiCalls()).filter((c) => c.path.startsWith("/v1/lp"));
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
-      "POST /v1/lp/compose",
-      "POST /v1/lp/compose",
-      "POST /v1/lp/compose",
-      "GET /v1/lp",
-    ]);
-    const names = (await rpc(token, "tools/list")).json.result.tools.map(
-      (x: { name: string }) => x.name,
-    );
-    expect(names.filter((n: string) => n.startsWith("lp_")).sort()).toEqual([
-      "lp_compose",
-      "lp_compose_batch",
-      "lp_list",
-    ]);
-  });
-
-  it("compose needs the contribute scope, list only read", async () => {
-    const t = await getToken({ scope: "secondary.read" });
-    const token = t.token as string;
-    expect(
-      (await callTool(token, "lp_compose", { role: "CIO", company: "Globex", angle: "ai" })).res
-        .status,
-    ).toBe(403);
-    expect(
-      (
-        await callTool(token, "lp_compose_batch", {
-          rows: [{ role: "CIO", company: "Globex", angle: "ai" }],
-        })
-      ).res.status,
-    ).toBe(403);
-    expect((await callTool(token, "lp_list", {})).res.status).toBe(200);
   });
 });
 

@@ -2,6 +2,7 @@
 // everything else (canDo, map.ts) works from the admitted view.
 // Fail closed: unknown tenant, role, node, account or scope means deny.
 
+import { everyoneMayOpen } from "./brains.ts";
 import { decidePersonal, isPersonalKind } from "./personal.ts";
 import { ACTION_LABEL } from "./roles.ts";
 import { fnv } from "./seed.ts";
@@ -155,6 +156,14 @@ function scopeOf(n: OrgNode): ScopeRef {
   return s;
 }
 
+const scopeOf2 = (n: OrgNode) => ({
+  kind: n.kind,
+  ...(n.restricted ? { restricted: true } : {}),
+  ...(n.nda ? { nda: true } : {}),
+  ...(n.contacts ? { contacts: true } : {}),
+  ...(n.account !== undefined ? { account: n.account } : {}),
+});
+
 const shapeLeaf = (l: LeafData | null, level: Level): LeafData | null =>
   !l ? null : level === "content" ? l : { ...l, itemList: null, story: null, redacted: true };
 
@@ -162,11 +171,28 @@ type ViewCore = Omit<AdmittedView, "ctx">;
 const CACHE = new WeakMap<Org, Map<string, ViewCore>>();
 const CACHE_LIMIT = 512;
 
-function buildCore(principal: Principal, org: Org, ndaGrants: readonly string[]): ViewCore {
+function buildCore(
+  principal: Principal,
+  org: Org,
+  ndaGrants: readonly string[],
+  openBrains: readonly string[],
+): ViewCore {
   const sameTenant = org.tenantId === principal.tenantId;
   const roles = sameTenant ? rolesOf(principal, org) : [];
   const grants = roles.flatMap((r) => r.grants);
   const nda = new Set(ndaGrants);
+  const open = new Set(openBrains);
+  const lifted = new Set<string>();
+  /** A node under a restricted or NDA ancestor is restricted, whatever its own flags say. */
+  const underRestriction = (n: OrgNode): boolean => {
+    for (
+      let p = n.parentId ? org.nodes.get(n.parentId) : undefined;
+      p;
+      p = p.parentId ? org.nodes.get(p.parentId) : undefined
+    )
+      if (p.restricted || p.nda) return true;
+    return false;
+  };
   /** Any recognised role floors Company Global at structure. No role, no company view. */
   const entitled = roles.length > 0;
   const nodes = new Map<string, ViewNode>();
@@ -175,6 +201,11 @@ function buildCore(principal: Principal, org: Org, ndaGrants: readonly string[])
     if (isPersonalKind(n.kind)) return sameTenant && n.ownerId === principal.id ? "content" : null;
     if (!entitled) return null;
     const l = levelFromGrants(grants, n, principal, nda);
+    // Everyone at Mantu: a recognised person reads (content) an opened team or Global brain. Never more.
+    if (open.has(n.id) && everyoneMayOpen(scopeOf2(n)) && !underRestriction(n)) {
+      lifted.add(n.id);
+      return "content";
+    }
     return l ?? (GLOBAL_KINDS.has(n.kind) ? "structure" : null);
   };
 
@@ -260,16 +291,23 @@ function buildCore(principal: Principal, org: Org, ndaGrants: readonly string[])
     ids,
     roots,
     links,
+    lifted,
   };
 }
 
-function coreView(principal: Principal, org: Org, ndaGrants: readonly string[]): ViewCore {
+function coreView(
+  principal: Principal,
+  org: Org,
+  ndaGrants: readonly string[],
+  openBrains: readonly string[],
+): ViewCore {
   const key = JSON.stringify([
     principal.id,
     principal.tenantId,
     principal.roleIds,
     principal.memberships,
     [...ndaGrants].sort(),
+    [...openBrains].sort(),
   ]);
   let byKey = CACHE.get(org);
   if (!byKey) {
@@ -279,7 +317,7 @@ function coreView(principal: Principal, org: Org, ndaGrants: readonly string[]):
   let core = byKey.get(key);
   if (!core) {
     if (byKey.size >= CACHE_LIMIT) byKey.clear();
-    core = buildCore(principal, org, ndaGrants);
+    core = buildCore(principal, org, ndaGrants, openBrains);
     byKey.set(key, core);
   }
   return core;
@@ -290,7 +328,7 @@ function coreView(principal: Principal, org: Org, ndaGrants: readonly string[]):
  * calls with the same principal, roles, memberships and NDA grants: treat it as read-only.
  */
 export function admittedView(principal: Principal, org: Org, ctx: Ctx): AdmittedView {
-  return { ...coreView(principal, org, ctx.ndaGrants ?? []), ctx };
+  return { ...coreView(principal, org, ctx.ndaGrants ?? [], ctx.openBrains ?? []), ctx };
 }
 
 function elevatedFor(roles: readonly Role[], action: Action, node: ViewNode, ctx: Ctx): boolean {
@@ -348,6 +386,16 @@ export function canDoInView(
         g.actions.includes(action),
     );
   const elev = elevatedFor(view.roles, action, node, ctx);
+  // Everyone at Mantu lifts reading only (never comment, contribute, edit, review or release).
+  if (
+    !gs.length &&
+    (action === "view_content" || action === "view_structure") &&
+    node.level === "content" &&
+    view.roles.length > 0 &&
+    view.lifted.has(node.id) &&
+    everyoneMayOpen(node)
+  )
+    return allow("Open to everyone at Mantu");
   const who =
     (node.circle ? view.nodes.get(node.circle)?.label : undefined) ??
     (node.account ? view.nodes.get(node.account)?.label : undefined) ??

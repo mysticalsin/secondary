@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
 const PORT = Number(process.env.UXV2_PORT ?? 5199);
 export default defineConfig({
   testDir: ".",
-  testMatch: /(uxv2|lp)\.e2e\.ts$/,
+  testMatch: /uxv2\.e2e\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

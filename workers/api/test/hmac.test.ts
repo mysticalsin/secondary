@@ -21,6 +21,7 @@ const ORIGIN = "https://secondary.example.test";
 const principal: InternalPrincipal = {
   v: 1,
   iss: "secondary-mcp",
+  grant_id: "g_test",
   aud: "secondary-api",
   sub: "sub-1",
   email: "ceo@example.invalid",

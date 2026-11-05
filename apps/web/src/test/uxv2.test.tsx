@@ -10,7 +10,6 @@ import type { Question, TreeNode } from "../uxv2/types";
 import { Ask } from "../views/ask/Ask";
 import { BrainTree } from "../views/brain/Tree";
 import { QuestionCard } from "../views/questions/Questions";
-import { DigestCard, Studio } from "../views/studio/Studio";
 
 const say = vi.fn();
 vi.mock("../state", () => ({
@@ -204,45 +203,9 @@ describe("Questions: contradiction", () => {
   });
 });
 
-describe("Studio: digest draft", () => {
-  const digest = {
-    weekOf: "2026-11-02",
-    stats: { opportunities: 3, newLeads: 2, commitmentsDue: 4, wins: 1 },
-    sections: [
-      {
-        title: "Wins",
-        items: [{ label: "Bid playbook released", pageId: "bid-playbook", meta: "Core" }],
-      },
-    ],
-  };
-
-  it("says before and after that the draft is only a draft and nothing is sent", async () => {
-    const draft = vi.spyOn(ux2, "digestDraft").mockResolvedValue({ draftId: "d1" });
-    wrap(<DigestCard d={digest} />);
-    expect(screen.getByTestId("draft-note")).toHaveTextContent("draft only. Nothing is sent");
-    expect(screen.getByRole("link", { name: "Bid playbook released" })).toHaveAttribute(
-      "href",
-      "/brain?page=bid-playbook",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Create email draft" }));
-    expect(await screen.findByTestId("draft-done")).toHaveTextContent("Nothing was sent");
-    expect(draft).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: /send/i })).not.toBeInTheDocument();
-  });
-
-  it("shows the Landing Page Studio list with a New page button", async () => {
-    wrap(<Studio />);
-    const card = await screen.findByTestId("lp-card");
-    expect(within(card).getByRole("button", { name: "New page" })).toBeInTheDocument();
-    expect(card).not.toHaveTextContent("Coming soon");
-  });
-});
-
 describe("FR/EN parity for UX v2", () => {
   it("has a French string for every new key and no em dash", () => {
-    const keys = Object.keys(en).filter((k) =>
-      /^(ask2?|brain|q|digest|lp|studio|rt|usage)\./.test(k),
-    );
+    const keys = Object.keys(en).filter((k) => /^(ask2?|brain|q|rt|usage)\./.test(k));
     expect(keys.length).toBeGreaterThan(100);
     for (const k of keys) {
       const f = (fr as Record<string, string>)[k];

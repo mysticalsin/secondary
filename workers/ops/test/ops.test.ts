@@ -355,13 +355,7 @@ describe("scheduled jobs", () => {
     },
   } as unknown as Env;
 
-  it("the Monday cron asks the API for the weekly digest drafts, and does not back up or purge", async () => {
-    seen.length = 0;
-    await worker.scheduled({ cron: "23 5 * * 1" } as ScheduledController, fake);
-    expect(seen).toEqual(["POST /v1/internal/ops/digest"]);
-  });
-
-  it("the retention cron does not run the digest", async () => {
+  it("the retention cron only runs retention", async () => {
     seen.length = 0;
     await worker.scheduled({ cron: "47 3 * * *" } as ScheduledController, fake);
     expect(seen).toEqual(["POST /v1/internal/ops/retention"]);

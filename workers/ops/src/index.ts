@@ -1,6 +1,5 @@
 // Ops worker: scheduled backups, retention and the admin routes for listing and restoring snapshots.
-// Cron "17 2 * * *" snapshots and prunes, cron "47 3 * * *" runs the retention job, cron "23 5 * * 1"
-// (Mondays) has the API draft each person's weekly digest. Drafts only, nothing is sent.
+// Cron "17 2 * * *" snapshots and prunes, cron "47 3 * * *" runs the retention job.
 
 import { Hono } from "hono";
 import { logEvent } from "../../../packages/contracts/src/log.ts";
@@ -11,7 +10,6 @@ import {
   pruneBackups,
   restoreBackup,
   runBackup,
-  runDigests,
   runRetention,
 } from "./backup.ts";
 
@@ -136,7 +134,6 @@ export default {
     const d = deps(env);
     // The second cron is the retention job; the first snapshots and then prunes old snapshots.
     if (controller.cron === "47 3 * * *") await runRetention(d);
-    else if (controller.cron === "23 5 * * 1") await runDigests(d);
     else {
       await runBackup(d);
       await pruneBackups(d);

@@ -246,7 +246,7 @@ describe("access: bounds from the policy", () => {
     expect(a.members).not.toBeNull();
     const t = await get<Loose>("head_bid", BID, "/c_bid/access");
     expect(t.publication.allowed).toEqual(["review", "direct"]);
-    expect(t.everyone.allowed).toEqual(["none", "reader", "contributor"]);
+    expect(t.everyone.allowed).toEqual(["none", "reader"]);
     // A reader of the brain sees the bounds but not the member list.
     const cons = await get<Loose>("consultant", CONS, "/c_bid/access").catch(() => null);
     expect(cons === null || cons.members === null || cons.error !== undefined).toBe(true);
@@ -280,12 +280,9 @@ describe("access: bounds from the policy", () => {
   });
 
   it("a team brain may publish directly: an editor's proposal goes live, a contributor's still waits", async () => {
-    const set = await put("head_bid", BID, "/c_bid/access", {
-      publication: "direct",
-      everyone: "reader",
-    });
+    const set = await put("head_bid", BID, "/c_bid/access", { publication: "direct" });
     expect(set.status).toBe(200);
-    expect(await json(set)).toMatchObject({ publication: "direct", everyone: "reader" });
+    expect(await json(set)).toMatchObject({ publication: "direct", everyone: "none" });
     // Head of bid is a steward there and may edit: the page is live at once.
     const mine = await as("head_bid", "/v1/wiki/c_bid/propose", {
       email: BID,

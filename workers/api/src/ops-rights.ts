@@ -9,7 +9,6 @@
 import type { Org } from "@secondary/policy";
 import { fetchReceipts, pseudonymiseReceipts } from "./audit.ts";
 import { forgetSourceAccess } from "./connector.ts";
-import { erasePersonPages } from "./lp/ops.ts";
 import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 
@@ -112,8 +111,6 @@ export type EraseSummary = {
   receiptsPseudonymised: number;
   /** The connector confirmed it dropped the person's cached read decisions (M-03). */
   connectorCacheForgotten: boolean;
-  /** Landing pages the person owned (removed with their prospect data) and pages of others that named them as contact. */
-  landingPages: { removed: number; redacted: number };
 };
 
 /** Returns null when the audit worker could not complete (nothing after that step has run). */
@@ -153,7 +150,6 @@ export async function eraseSubject(
     authored.edits += r.edits;
   }
   const personalItemsDeleted = await workspaceStub(env, tenantId, `personal:${principalId}`).wipe();
-  const landingPages = await erasePersonPages(env, tenantId, [principalId], aliases, pseudonym, at);
   const connectorCacheForgotten = email
     ? await forgetSourceAccess(env, tenantId, { id: principalId, email })
     : false;
@@ -164,7 +160,6 @@ export async function eraseSubject(
     authored,
     receiptsPseudonymised,
     connectorCacheForgotten,
-    landingPages,
   };
 }
 
@@ -176,16 +171,12 @@ export async function eraseSubject(
 export async function reapplyErasures(
   env: Env,
   tenantId: string,
-  kind: "tenant" | "workspace" | "lp",
+  kind: "tenant" | "workspace",
   scope: string,
 ): Promise<number> {
   const t = tenantStub(env, tenantId);
   const stones = await t.tombstoneList(Date.now());
   for (const s of stones) {
-    if (kind === "lp") {
-      await erasePersonPages(env, tenantId, [s.principalId], s.aliases, s.pseudonym, Date.now());
-      continue;
-    }
     if (kind === "tenant") {
       await t.erasePrincipal(s.principalId);
       continue;

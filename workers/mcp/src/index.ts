@@ -34,7 +34,7 @@ async function hostFor(env: Env, clientId: string): Promise<string> {
 }
 
 /** Tokens look like {userId}:{grantId}:{secret}. Only the grant id is used, as a label. */
-const grantOf = (token: string): string | undefined => {
+export const grantOf = (token: string): string | undefined => {
   const parts = token.split(":");
   return parts.length === 3 && /^[A-Za-z0-9_-]{1,128}$/.test(parts[1] ?? "") ? parts[1] : undefined;
 };
@@ -52,6 +52,8 @@ const mcpApi: ExportedHandlerWithFetch<Env> = {
       return Response.json({ error: "switched_off", switch: "mcp" }, { status: 503 });
     }
     const grant = grantOf(ctx.auth.token);
+    // Without a grant id the API cannot honour a revocation: refuse rather than call it anyway (M-3).
+    if (!grant) return Response.json({ error: "grant_unknown" }, { status: 403 });
     const host = await hostFor(env, ctx.auth.clientId as string);
     const handler = createMcpHandler(
       () =>

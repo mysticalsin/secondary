@@ -1,6 +1,5 @@
 // Shapes of the UX v2 endpoints (docs/API-CONTRACT.md "UX v2 endpoints"). Fields marked "assumed"
 // are not fixed by the contract yet and are always read defensively.
-import type { LpReviewDetail } from "../lp/types";
 import type { ViewPlan } from "../types";
 
 export type AskEvent =
@@ -69,8 +68,6 @@ export interface Question {
     approvals?: number;
     required?: number;
     revisionHash?: string;
-    /** A landing page waiting for review (assumed shape, see lp/types.ts). */
-    landing?: LpReviewDetail;
   } | null;
 }
 
@@ -115,10 +112,4 @@ export interface Usage {
   me: UsageBlock;
   byCapability: { capability: string; tokens: number; runs: number }[];
   tenant?: UsageBlock;
-}
-
-export interface Digest {
-  weekOf: string;
-  sections: { title: string; items: { label: string; pageId?: string; meta: string }[] }[];
-  stats: { opportunities: number; newLeads: number; commitmentsDue: number; wins: number };
 }

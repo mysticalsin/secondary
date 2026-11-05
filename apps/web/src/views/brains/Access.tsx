@@ -10,7 +10,8 @@ import { v3 } from "./api";
 import { BrainFrame } from "./shared";
 import type { AccessView, BrainRole, Everyone, Publication } from "./types";
 
-const EVERYONE: Everyone[] = ["none", "reader", "contributor"];
+// Everyone at Mantu lifts reading only, so "reader" is the only open level (contributor is not offered).
+const EVERYONE: Everyone[] = ["none", "reader"];
 const PUBLICATION: Publication[] = ["review", "direct"];
 
 /**
@@ -268,7 +269,14 @@ export function AccessPanel({
     if (body.publication) setPub(body.publication);
     if (body.everyone) setEvery(body.everyone);
     try {
-      await v3.setAccess(id, body);
+      const r = await v3.setAccess(id, body);
+      if ("status" in r && r.status === "pending") {
+        // Opening a brain to everyone needs a second person: nothing changed yet.
+        setEvery(view.everyone.level);
+        setPendingNow(true);
+        say(t("b3.acc.pending.say"));
+        return;
+      }
       say(t("b3.acc.saved"));
       reload();
     } catch (e) {

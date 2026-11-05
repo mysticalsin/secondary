@@ -27,9 +27,6 @@ export const TOOL_NAMES = [
   "wiki_search",
   "wiki_read",
   "wiki_propose",
-  "lp_compose",
-  "lp_compose_batch",
-  "lp_list",
   "get_brain_guide",
   "coach_propose_structure",
 ] as const;
@@ -49,9 +46,6 @@ export const TOOL_SCOPES: Record<ToolName, readonly [Scope, ...Scope[]]> = {
   wiki_search: ["secondary.read"],
   wiki_read: ["secondary.read"],
   wiki_propose: ["secondary.read", "secondary.contribute"],
-  lp_compose: ["secondary.read", "secondary.contribute"],
-  lp_compose_batch: ["secondary.read", "secondary.contribute"],
-  lp_list: ["secondary.read"],
   get_brain_guide: ["secondary.read"],
   coach_propose_structure: ["secondary.read", "secondary.contribute"],
 };
@@ -70,14 +64,6 @@ const wikiWs = z
 const wikiPage = z
   .string()
   .regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "a wiki page id as returned by wiki_search");
-const lpRow = z.object({
-  firstName: z.string().trim().max(60).optional(),
-  role: z.string().trim().min(2).max(120),
-  company: z.string().trim().min(2).max(120),
-  angle: z.string().trim().min(2).max(300),
-  brand: z.enum(["amaris", "mantu"]).optional(),
-  lang: z.enum(["en", "fr"]).optional(),
-});
 const lens = z.enum(["departments", "accounts", "topics", "governances"]);
 const noInput = z.object({});
 
@@ -389,75 +375,6 @@ export function buildServer({ env, caller }: ServerDeps): McpServer {
           }),
           () => 1,
         ),
-      ),
-  );
-
-  const composeBody = (row: z.infer<typeof lpRow>) => ({
-    prospect: {
-      role: row.role,
-      company: row.company,
-      ...(row.firstName ? { firstName: row.firstName } : {}),
-    },
-    angle: row.angle,
-    ...(row.brand ? { brand: row.brand } : {}),
-    ...(row.lang ? { lang: row.lang } : {}),
-  });
-
-  server.registerTool(
-    "lp_compose",
-    {
-      title: "Compose a landing page draft",
-      description:
-        "Compose a personalised landing page draft for a prospect (role, company, angle) from what the user may read in the brain. It creates a DRAFT only: the user edits it, the checks run, a different reviewer approves it and the user publishes it in the web app. This tool cannot approve or publish.",
-      inputSchema: lpRow,
-      annotations: draft,
-      scopeChallenge: challenge("lp_compose"),
-    },
-    (row) =>
-      run("lp_compose", [], async (api) =>
-        fromApi(await api.post("/v1/lp/compose", composeBody(row)), () => 1),
-      ),
-  );
-
-  server.registerTool(
-    "lp_compose_batch",
-    {
-      title: "Compose landing page drafts in a batch",
-      description:
-        "Compose drafts for several prospects, for example from a pasted CSV of role, company and angle (at most 20 rows). Every row becomes a DRAFT that still needs the checks and a reviewer's approval. Nothing is submitted, approved or published.",
-      inputSchema: z.object({ rows: z.array(lpRow).min(1).max(20) }),
-      annotations: draft,
-      scopeChallenge: challenge("lp_compose_batch"),
-    },
-    ({ rows }) =>
-      run("lp_compose_batch", [], async (api) => {
-        const results: Json[] = [];
-        for (const [i, row] of rows.entries()) {
-          const r = await api.post("/v1/lp/compose", composeBody(row));
-          results.push(
-            r.ok
-              ? { row: i + 1, ok: true, draft: r.data as Json }
-              : { row: i + 1, ok: false, error: r.error },
-          );
-        }
-        const made = results.filter((x) => x.ok === true).length;
-        const data = { drafts: made, failed: results.length - made, results };
-        return { ok: true, text: toText(data), structured: { result: data } as Json, count: made };
-      }),
-  );
-
-  server.registerTool(
-    "lp_list",
-    {
-      title: "List my landing pages",
-      description: "The user's landing pages with their status and weekly counts. Read only.",
-      inputSchema: noInput,
-      annotations: read,
-      scopeChallenge: challenge("lp_list"),
-    },
-    () =>
-      run("lp_list", [], async (api) =>
-        fromApi(await api.get("/v1/lp"), (d) => (Array.isArray(d) ? d.length : 0)),
       ),
   );
 

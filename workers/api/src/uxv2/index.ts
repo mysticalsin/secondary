@@ -4,7 +4,6 @@
 import { Hono } from "hono";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { askRoutes } from "./ask.ts";
-import { digestRoutes } from "./digest.ts";
 import { exportRoutes } from "./export.ts";
 import { questionRoutes } from "./questions.ts";
 import { routineRoutes } from "./routines.ts";
@@ -18,7 +17,6 @@ export function uxv2Routes(deps: AppDeps): Hono<AppEnv> {
   r.route("/", questionRoutes());
   r.route("/", routineRoutes(deps));
   r.route("/", usageRoutes());
-  r.route("/", digestRoutes());
   r.route("/", exportRoutes());
   return r;
 }

@@ -1,7 +1,6 @@
 // Operations admin routes (authenticated, Platform admin / "configure" only) and the kill switch gate.
-//   GET  /v1/admin/switches            state of the four switches and pending re-enable requests
-//   POST /v1/admin/switches            { switch, enabled, takeOffline? }; re-enabling needs a second person in prod.
-//                                      `takeOffline: true` with `lp` off also takes every published landing page offline
+//   GET  /v1/admin/switches            state of the switches and pending re-enable requests
+//   POST /v1/admin/switches            { switch, enabled }; re-enabling needs a second person in prod.
 //   POST /v1/admin/rights/export       { principal } (id or email); needs a second person (202 until then)
 //   POST /v1/admin/rights/erase        { principal }; always needs a second person
 
@@ -10,7 +9,6 @@ import { HTTPException } from "hono/http-exception";
 import { appendReceipt, newReceiptId } from "./audit.ts";
 import { requireOrg, viewOf } from "./auth.ts";
 import { humanIdsOf } from "./human.ts";
-import { takeLandingPagesOffline } from "./lp/ops.ts";
 import {
   eraseSubject,
   exportSubject,
@@ -42,13 +40,6 @@ const GATES: { name: SwitchName; match: (method: string, path: string) => boolea
       p.startsWith("/v1/ai/") ||
       p === "/v1/briefs" ||
       p.startsWith("/v1/briefs/"),
-  },
-  // Landing Page Studio: composing, editing, review and publishing stop. Unpublishing stays open, so a page
-  // can always be taken down.
-  {
-    name: "lp",
-    match: (m, p) =>
-      (p === "/v1/lp" || p.startsWith("/v1/lp/")) && !(m === "POST" && p.endsWith("/unpublish")),
   },
   // Synced source files are served from /v1/sources/:id; search hits are gated in the handler (M-04).
   {
@@ -121,11 +112,6 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!body || !isSwitchName(body.switch) || typeof body.enabled !== "boolean")
       return c.json({ error: "invalid_switch" }, 400);
     const { switch: name, enabled } = body as { switch: SwitchName; enabled: boolean };
-    // Only the landing page switch can take public pages down, and only when it is being switched off.
-    const takeOffline = body.takeOffline === true;
-    if (body.takeOffline !== undefined && typeof body.takeOffline !== "boolean")
-      return c.json({ error: "invalid_switch" }, 400);
-    if (takeOffline && (name !== "lp" || enabled)) return c.json({ error: "invalid_switch" }, 400);
     // Re-enabling is the risky direction: it is audited first, and in prod it needs a second person.
     if (enabled && !(await audit(c, s, "switch_enable", `${name} on requested`)))
       return c.json({ error: "audit_unavailable" }, 503);
@@ -139,13 +125,6 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     );
     // Turning a switch off must never wait for the audit log (incident response).
     if (!enabled) await audit(c, s, "switch_disable", `${name} off`);
-    // The pages come down after the switch is off and one receipt per page records it (lp.take_offline).
-    // The count is on the admin receipt too, so a failed page shows as a difference.
-    if (takeOffline && res.status !== "pending") {
-      const n = await takeLandingPagesOffline(c.env, s.tenantId, s.principal.id, now());
-      await audit(c, s, "lp_take_offline", `${n} published landing pages taken offline`);
-      return c.json({ ok: true, status: "applied", switch: name, enabled, pagesTakenOffline: n });
-    }
     if (res.status === "pending")
       return c.json({ ok: true, status: "pending", switch: name, needs: "second_person" }, 202);
     return c.json({ ok: true, status: "applied", switch: name, enabled });

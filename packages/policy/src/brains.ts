@@ -116,7 +116,8 @@ export function everyoneBound(b: BrainFacts): Bound<Everyone> {
       default: "none",
       reason: "Everyone at Mantu is never allowed on account, NDA or restricted brains",
     };
-  return { allowed: ["none", "reader", "contributor"], default: "none", reason: null };
+  // "contributor" is not offered: Everyone at Mantu lifts reading only (M-8), so the only open level is reader.
+  return { allowed: ["none", "reader"], default: "none", reason: null };
 }
 
 /** The publication mode that applies now: the stored choice, held inside the bounds. */
@@ -132,3 +133,20 @@ export function effectiveEveryone(b: BrainFacts, stored: Everyone | null): Every
 
 /** Members and roles. A Personal Brain is never shared. */
 export const isShareable = (b: BrainFacts): boolean => b.type !== "personal";
+
+/**
+ * Can Everyone at Mantu reach this node at all? Only a team or Company Global brain that is not
+ * restricted, NDA or a contacts subspace. The engine applies this itself, so a wrong id handed in
+ * by a caller never widens an account, NDA or Personal brain.
+ */
+export function everyoneMayOpen(n: {
+  kind: NodeKind;
+  restricted?: boolean;
+  nda?: boolean;
+  contacts?: boolean;
+  account?: string;
+}): boolean {
+  const type = brainTypeOf(n.kind);
+  if (type !== "team" && type !== "global") return false;
+  return !n.restricted && !n.nda && !n.contacts && !n.account;
+}

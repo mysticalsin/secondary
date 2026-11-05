@@ -108,6 +108,8 @@ export async function plantPage(
   scope: string,
   page: { id: string; type: string; title: string; markdown: string },
   plane = "ACCOUNT_RESTRICTED",
+  /** `seed: true` plants it as the synthetic dev seed does (origin "seed"). */
+  extra: { seed?: boolean } = {},
 ) {
   const ws = wsOf(ALPHA, scope);
   await ws.wikiTouch(ALPHA, scope, Date.now());
@@ -116,7 +118,7 @@ export async function plantPage(
       kind: "wiki_ingest",
       title: `Plant ${page.title}`,
       rationale: "test",
-      origin: "human",
+      origin: extra.seed ? "seed" : "human",
       pages: [
         {
           pageId: page.id,
@@ -136,9 +138,10 @@ export async function plantPage(
     },
     "u_planter",
     Date.now(),
-    { plane },
+    { plane, ...extra },
   );
   if (!made.ok || !made.created) throw new Error(`plant failed: ${JSON.stringify(made)}`);
+  if (extra.seed && made.autoAccepted) return;
   const view = await ws.wikiProposalView(made.id);
   const res = await ws.wikiDecide(made.id, "approve", "u_checker", Date.now(), {
     revisionHash: view?.revisionHash,

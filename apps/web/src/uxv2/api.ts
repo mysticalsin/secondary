@@ -3,7 +3,6 @@ import { getLang, translate } from "../i18n";
 import type {
   AskEvent,
   BrainRoot,
-  Digest,
   Question,
   Routine,
   RoutineInput,
@@ -38,8 +37,6 @@ export const ux2 = {
   runRoutine: (id: string) => request<RoutineRun>("POST", `/v1/routines/${q(id)}/run`, {}),
   runs: (id: string) => request<RoutineRun[]>("GET", `/v1/routines/${q(id)}/runs`),
   usage: (period: "7d" | "30d") => request<Usage>("GET", `/v1/usage?period=${period}`),
-  digest: () => request<Digest>("GET", "/v1/digest/preview"),
-  digestDraft: () => request<{ draftId: string }>("POST", "/v1/digest/draft", {}),
 };
 
 /** Parse a Server-Sent Events body into events. Exported for tests. */

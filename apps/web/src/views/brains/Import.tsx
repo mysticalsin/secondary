@@ -5,7 +5,7 @@ import { ApiError } from "../../api";
 import { type Key, useI18n } from "../../i18n";
 import { importArchive, MAX_IMPORT_BYTES } from "./api";
 import { BrainFrame } from "./shared";
-import type { BrainHome, ImportFormat, ImportResult } from "./types";
+import type { BrainHome, ImportFormat, ImportPreview, ImportResult } from "./types";
 
 const FORMATS: ImportFormat[] = ["okf", "obsidian", "outline"];
 const STEPS: Key[] = [
@@ -83,6 +83,60 @@ export function ImportResults({ id, shared, r }: { id: string; shared: boolean; 
   );
 }
 
+export function ImportVerdicts({ p }: { p: ImportPreview }) {
+  const { t, td } = useI18n();
+  const clean = p.pages.filter((x) => x.verdict === "ingest");
+  const asked = p.pages.filter((x) => x.verdict === "ask");
+  const row = (x: ImportPreview["pages"][number]) => (
+    <li key={x.pageId}>
+      <span className={`chip t-${x.state === "draft" ? "progress" : "done"}`}>
+        {t(x.state === "draft" ? "b3.imp.draft" : "b3.imp.published")}
+      </span>
+      <span>
+        {x.title}
+        {x.replaces ? <span className="muted"> · {t("b3.imp.prev.replaces")}</span> : null}
+        {x.verdict === "ask" ? <span className="muted"> · {x.reason}</span> : null}
+      </span>
+    </li>
+  );
+  return (
+    <div className="stack imp-verdicts" data-testid="import-preview">
+      <p className="muted">{t("b3.imp.prev.lead")}</p>
+      {!p.pages.length ? <p role="status">{t("b3.imp.prev.none")}</p> : null}
+      <section aria-labelledby="iv-in">
+        <h4 id="iv-in">
+          <span className="chip t-done">{t("b3.imp.prev.in")}</span> {clean.length}
+        </h4>
+        <ul className="run-items">{clean.map(row)}</ul>
+      </section>
+      <section aria-labelledby="iv-ask">
+        <h4 id="iv-ask">
+          <span className="chip t-attn">{t("b3.imp.prev.ask")}</span> {asked.length}
+        </h4>
+        <ul className="run-items">{asked.map(row)}</ul>
+      </section>
+      <section aria-labelledby="iv-skip">
+        <h4 id="iv-skip">
+          <span className="chip t-open">{t("b3.imp.prev.skip")}</span> {p.skipped.length}
+        </h4>
+        <ul className="run-items">
+          {p.skipped.map((s) => (
+            <li key={s.path}>
+              <span>
+                <span className="mono">{s.path}</span>
+                <span className="muted">
+                  {" "}
+                  {td("b3.imp.why", s.reason, s.reason.replace(/_/g, " "))}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
 export function ImportWizard({ b }: { b: BrainHome }) {
   const { t } = useI18n();
   const [step, setStep] = useState(0);
@@ -91,9 +145,32 @@ export function ImportWizard({ b }: { b: BrainHome }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [checking, setChecking] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const shared = b.type !== "personal";
   const tooBig = !!file && file.size > MAX_IMPORT_BYTES;
+
+  // The check step runs the classifier as a dry run: verdicts first, nothing stored.
+  const check = async () => {
+    if (!file) return;
+    setChecking(true);
+    setErr(null);
+    setPreview(null);
+    try {
+      setPreview(await importArchive(b.id, format, file, true));
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.reason : t("common.failed"));
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const go = (to: number) => {
+    setStep(to);
+    setErr(null);
+    if (to === 2) void check();
+  };
 
   const submit = async () => {
     if (!file) return;
@@ -200,6 +277,17 @@ export function ImportWizard({ b }: { b: BrainHome }) {
             <li>{t("b3.imp.r2")}</li>
             <li>{t("b3.imp.r3")}</li>
           </ul>
+          {checking ? (
+            <p className="muted" role="status">
+              {t("b3.imp.prev.loading")}
+            </p>
+          ) : null}
+          {preview ? <ImportVerdicts p={preview} /> : null}
+          {!checking && !preview && err ? (
+            <button type="button" className="btn ghost" onClick={check}>
+              {t("b3.imp.prev.retry")}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -211,7 +299,7 @@ export function ImportWizard({ b }: { b: BrainHome }) {
             type="button"
             className="btn ghost"
             disabled={step === 0 || busy}
-            onClick={() => setStep(step - 1)}
+            onClick={() => go(step - 1)}
           >
             {t("b3.back")}
           </button>
@@ -220,12 +308,17 @@ export function ImportWizard({ b }: { b: BrainHome }) {
               type="button"
               className="btn primary"
               disabled={step === 1 && (!file || tooBig)}
-              onClick={() => setStep(step + 1)}
+              onClick={() => go(step + 1)}
             >
               {t("b3.next")}
             </button>
           ) : (
-            <button type="button" className="btn primary" onClick={submit} disabled={busy}>
+            <button
+              type="button"
+              className="btn primary"
+              onClick={submit}
+              disabled={busy || checking || !preview || !preview.pages.length}
+            >
               <FileUp size={16} aria-hidden /> {busy ? t("common.working") : t("b3.imp.go")}
             </button>
           )}

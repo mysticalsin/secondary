@@ -224,6 +224,14 @@ export const v3En = {
   "b3.imp.ask.lead": "These are in your Questions inbox. You decide whether to include them.",
   "b3.imp.review": "Review the drafts",
   "b3.imp.back": "Back to the brain",
+  "b3.imp.prev.loading": "Checking every page with the classifier. Nothing is saved yet.",
+  "b3.imp.prev.lead": "This is what the import would do. Nothing has been written.",
+  "b3.imp.prev.in": "Would import",
+  "b3.imp.prev.ask": "Would import, with changes",
+  "b3.imp.prev.skip": "Would skip",
+  "b3.imp.prev.replaces": "Edit proposal for an existing page",
+  "b3.imp.prev.none": "Nothing in this archive can be imported.",
+  "b3.imp.prev.retry": "Check again",
 
   "b3.jr.title": "Journal",
   "b3.jr.lead":
@@ -600,6 +608,14 @@ export const v3Fr: Record<keyof typeof v3En, string> = {
   "b3.imp.ask.lead": "Ils sont dans votre boîte Questions. Vous décidez de les inclure ou non.",
   "b3.imp.review": "Relire les brouillons",
   "b3.imp.back": "Retour au cerveau",
+  "b3.imp.prev.loading": "Chaque page passe par le classifieur. Rien n'est enregistré.",
+  "b3.imp.prev.lead": "Voici ce que l'import ferait. Rien n'a été écrit.",
+  "b3.imp.prev.in": "Serait importé",
+  "b3.imp.prev.ask": "Serait importé, avec modifications",
+  "b3.imp.prev.skip": "Serait ignoré",
+  "b3.imp.prev.replaces": "Proposition de modification d'une page existante",
+  "b3.imp.prev.none": "Rien dans cette archive ne peut être importé.",
+  "b3.imp.prev.retry": "Vérifier à nouveau",
 
   "b3.jr.title": "Journal",
   "b3.jr.lead":

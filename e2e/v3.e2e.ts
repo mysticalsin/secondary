@@ -129,7 +129,7 @@ test.describe("v3 brains", () => {
     const direct = page.getByRole("radio", { name: /Publish directly/ });
     await expect(direct).toBeDisabled();
     await expect(page.getByText("Account brains always need a review")).toBeVisible();
-    await expect(page.getByRole("radio", { name: /Can read and contribute/ })).toBeDisabled();
+    await expect(page.getByRole("radio", { name: /Can read and contribute/ })).toHaveCount(0);
     await page.getByLabel("Person id").fill("u_newperson");
     await page.getByRole("button", { name: "Add member" }).click();
     await expect(page.getByTestId("pending-banner")).toContainText("Waiting for a second approver");
@@ -193,6 +193,11 @@ test.describe("v3 brains", () => {
     await page.locator("#imp-file").setInputFiles(archive);
     await page.getByRole("button", { name: "Next" }).click();
     await expect(page.getByText("Every page you import becomes a draft")).toBeVisible();
+    // Verdicts come first (dry run): nothing is stored until the button is pressed.
+    const preview = page.getByTestId("import-preview");
+    await expect(preview).toContainText("Would import");
+    await expect(preview).toContainText("Would skip");
+    await expect(preview).toContainText("Edit proposal for an existing page");
     await page.screenshot({ path: `${SCREENS}v3-import-check-1280.png`, fullPage: true });
     await page.getByRole("button", { name: "Run the import" }).click();
     const res = page.getByTestId("import-results");

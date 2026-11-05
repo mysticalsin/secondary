@@ -1,5 +1,18 @@
 # HANDOFF
 
+## v3 brains integrated on `main`; Studio, LP and Digest removed (2026-11-05, Claude Opus, nothing pushed, nothing deployed)
+
+Studio, LP and Digest removed by sponsor decision 2026-11-05.
+
+- Merged `v3/api` then `v3/web` (68dac10) `--no-ff` on top of UX v2. Then removed by decision: the Studio view and rail item, Landing Page Studio (`workers/api/src/lp`, `/v1/lp/*`, MCP `lp_*` tools, `packages/lp-template`, `workers/pages`, web LP views and mocks, LP e2e specs) and the Weekly Digest (`uxv2/digest*`, the Monday ops cron, the web digest UI). Contract sections, deploy-script steps, binding inventory, backup (`kind=lp`) and rights erase entries are gone too. Also dropped the LP-only `channels` and `metric` fields of the story permission route. Web information architecture otherwise unchanged (a redesign follows, `docs/DESIGN-V4-BRAINS-UI.md`).
+- Cloudflare: nothing deleted. The dev api worker still has the `LandingPages` object class and its `secondary-pages-dev` bucket and `secondary-pages-dev` worker exist. `workers/api/wrangler.jsonc` adds migration `v3` (`deleted_classes: ["LandingPages"]`) for dev; deploying the api applies it (data of that class is destroyed then). Remove the pages worker and bucket by hand after confirming.
+- Gap 1, Everyone at Mantu: `Ctx.openBrains` (tenant table `open_brains`, in the tenant snapshot, set by `PUT /v1/brains/:id/access`) lifts a team or Company Global brain to content for any recognised person, `AdmittedView.lifted`, `canDoInView` allows only `view_structure` and `view_content` there. Never account, NDA, restricted, contacts, Personal, nor a node under a restricted or NDA ancestor (the engine re-checks, whatever the table says). Only `reader` is offered. Opening takes two people (M-8, `brainopen:` key); closing one. Tests: `packages/policy/test/everyone.test.ts`, `workers/api/test/brains-everyone.test.ts`.
+- Gap 2, import dry run: `POST /v1/brains/:id/import?dryRun=1` returns the classifier verdicts and writes nothing; the wizard's check step shows them before the import button (`views/brains/Import.tsx`). Gap 3: `GET /v1/agents/config` returns `{mcpUrl}` from the api var `MCP_PUBLIC_URL` (dev: `https://secondary-mcp-dev.tony-walteur.workers.dev`; staging and prod empty, set per environment; `scripts/dev-all.mjs` points it at localhost); Agents uses it and guesses only on null. Gaps 4 and 5 dropped (LP only).
+- Security review `V3-LP-SECURITY-REVIEW.md`, fixed with tests that failed before: H-2 stored brain role checked on Questions list, single decide and batch (`review`, `approve_release`) and on the hidden-version read (`edit`); M-3 an MCP call must carry `grant_id` (api 400 `grant_required`, mcp 403 `grant_unknown`), a bad connection id is 400, `POST /v1/agents/revoke-all {confirm:true}`; M-4 raising a field's visibility or dropping a sensitive field needs a second person bound to the exact schema; M-5 an MCP proposal never publishes directly; M-7 the zip total is counted on real bytes, overlapping entries and local-name mismatch are refused (`test/zip-craft.ts`); M-8 as above. Skipped with LP: H-1, M-1, M-2, M-6. Not done (low): L-5 journal counts for non-deciders, L-6 co-owner demotion needs no second person, L-7, L-8 (dry run `replaces` can confirm a page id).
+- Tests: `workers/api/test/v3-security.test.ts` (H-2, M-4, M-5, M-7), `brains-everyone.test.ts`, `brains-agents.test.ts`, `workers/mcp/test/grant.test.ts`, `apps/web/src/test/import-wizard.test.tsx`.
+
+Updated: 2026-11-05. By: Claude (Opus, v3 integration).
+
 ## Landing Page Studio integrated on `main` (2026-11-05, Claude Opus, nothing pushed, dev redeployed)
 
 Merged `lp/api` (earlier) and `lp/web` (d92ecd6) `--no-ff`. Worktree `.worktrees/v3-api` untouched.

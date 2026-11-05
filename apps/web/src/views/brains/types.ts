@@ -127,6 +127,26 @@ export interface ImportResult {
   asked: number;
 }
 
+/** `POST .../import?dryRun=1`: the classifier's verdicts, nothing stored. */
+export interface ImportPreview {
+  ok: true;
+  dryRun: true;
+  format: ImportFormat;
+  pages: {
+    path: string;
+    pageId: string;
+    title: string;
+    type: string;
+    verdict: "ingest" | "ask";
+    reason: string;
+    excluded: Record<string, number>;
+    replaces: boolean;
+    state: "published" | "draft";
+  }[];
+  skipped: { path: string; reason: string }[];
+  asked: number;
+}
+
 export interface JournalDays {
   days: { date: string; pageId: string }[];
 }

@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Question } from "../uxv2/types";
 import { AccessPanel } from "../views/brains/Access";
-import { commandFor, HostPanel, handleOf } from "../views/brains/Agents";
+import { AgentsPage, commandFor, HostPanel, handleOf } from "../views/brains/Agents";
 import { v3 } from "../views/brains/api";
 import { CoachChat, CoachPage } from "../views/brains/Coach";
 import { validate } from "../views/brains/Fields";
@@ -64,7 +64,9 @@ describe("Access: policy bounds", () => {
     expect(screen.getByRole("radio", { name: /Review required/ })).toBeChecked();
     // Everyone at Mantu cannot be widened on an account brain.
     expect(screen.getByRole("radio", { name: /^Can read\s*Not allowed here/ })).toBeDisabled();
-    expect(screen.getByRole("radio", { name: /Can read and contribute/ })).toBeDisabled();
+    expect(
+      screen.queryByRole("radio", { name: /Can read and contribute/ }),
+    ).not.toBeInTheDocument();
     await userEvent.setup().click(direct);
     expect(put).not.toHaveBeenCalled();
   });
@@ -74,7 +76,7 @@ describe("Access: policy bounds", () => {
       ...accountAccess,
       type: "team",
       publication: { mode: "review", allowed: ["review", "direct"], forced: false, reason: null },
-      everyone: { level: "none", allowed: ["none", "reader", "contributor"], reason: null },
+      everyone: { level: "none", allowed: ["none", "reader"], reason: null },
     };
     const put = vi
       .spyOn(v3, "setAccess")
@@ -88,6 +90,32 @@ describe("Access: policy bounds", () => {
     expect(direct).toBeEnabled();
     await userEvent.setup().click(direct);
     expect(put).toHaveBeenCalledWith("c_bid", { publication: "direct" });
+  });
+
+  it("opening a brain to everyone waits for a second person: the choice snaps back and the banner shows", async () => {
+    const team: AccessView = {
+      ...accountAccess,
+      type: "team",
+      publication: { mode: "review", allowed: ["review", "direct"], forced: false, reason: null },
+      everyone: { level: "none", allowed: ["none", "reader"], reason: null },
+    };
+    const put = vi
+      .spyOn(v3, "setAccess")
+      .mockResolvedValue({ ok: true, status: "pending", needs: "second_person" });
+    render(
+      <MemoryRouter>
+        <AccessPanel id="c_bid" view={team} reload={() => {}} />
+      </MemoryRouter>,
+    );
+    // Only none and reader are offered: nothing past reading.
+    expect(screen.queryByRole("radio", { name: /Contributor/ })).not.toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("radio", { name: /Can read/ }));
+    expect(put).toHaveBeenCalledWith("c_bid", { everyone: "reader" });
+    expect(await screen.findByTestId("pending-banner")).toBeVisible();
+    expect((screen.getByRole("radio", { name: /No access/ }) as HTMLInputElement).checked).toBe(
+      true,
+    );
   });
 
   it("shows the pending banner when a member change waits for a second person", () => {
@@ -311,6 +339,41 @@ describe("Agents: revoke needs an in-page confirmation", () => {
     expect(screen.getAllByRole("button", { name: /Copy/ })).toHaveLength(2);
     expect(commandFor("claude_ai", "x", "https://h/mcp")).toBeNull();
     expect(handleOf("Tony.T@example.invalid")).toBe("tony-t");
+  });
+});
+
+describe("Agents: the MCP URL comes from the API", () => {
+  const load = async (mcpUrl: string | null) => {
+    vi.spyOn(v3, "agents").mockResolvedValue({ hosts: [host] });
+    vi.spyOn(v3, "agentConfig").mockResolvedValue({ mcpUrl });
+    render(
+      <MemoryRouter>
+        <AgentsPage />
+      </MemoryRouter>,
+    );
+    return screen.findByText(/claude mcp add --transport http/);
+  };
+
+  it("builds the connect command from the configured MCP_PUBLIC_URL", async () => {
+    const cmd = await load("https://secondary-mcp-dev.tony-walteur.workers.dev/mcp");
+    expect(cmd).toHaveTextContent(" https://secondary-mcp-dev.tony-walteur.workers.dev/mcp");
+    expect(cmd).not.toHaveTextContent("localhost");
+  });
+
+  it("falls back to a guess from this page only when the API has no URL", async () => {
+    const cmd = await load(null);
+    expect(cmd).toHaveTextContent("http://localhost:8788/mcp");
+  });
+
+  it("also falls back when the config request fails", async () => {
+    vi.spyOn(v3, "agents").mockResolvedValue({ hosts: [host] });
+    vi.spyOn(v3, "agentConfig").mockRejectedValue(new Error("down"));
+    render(
+      <MemoryRouter>
+        <AgentsPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText(/claude mcp add --transport http/)).toBeVisible();
   });
 });
 

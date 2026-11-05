@@ -40,8 +40,8 @@ export function pinnedToEu(config, target) {
 if (typeof process !== "undefined" && process.argv[1]?.endsWith("assert-eu.mjs")) {
   const { readFileSync } = await import("node:fs");
   const target = process.argv[2] ?? "";
-  // The api and the public pages worker both create Durable Objects: both must say eu.
-  for (const worker of ["api", "pages"]) {
+  // The api creates Durable Objects: it must say eu.
+  for (const worker of ["api"]) {
     const path = new URL(`../workers/${worker}/wrangler.jsonc`, import.meta.url);
     if (
       !["dev", "staging", "prod"].includes(target) ||

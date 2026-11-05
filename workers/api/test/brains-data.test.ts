@@ -231,6 +231,7 @@ describe("business fields", () => {
       principal: {
         v: 1,
         iss: "secondary-mcp",
+        grant_id: "g_test",
         aud: "secondary-api",
         sub: "sub-bd",
         email: BID,
@@ -393,17 +394,6 @@ describe("journal", () => {
       await as("head_bid", `/v1/wiki/c_bid/pages/journal-${today}`, { email: BID }),
     );
     expect(page2.markdown).toBe(page.markdown);
-  });
-
-  it("feeds the weekly digest, for people who can read that brain only", async () => {
-    const mine = await json<Loose>(await as("head_bid", "/v1/digest/preview", { email: BID }));
-    const sec = mine.sections.find((x: Loose) => x.title === "Journal");
-    expect(sec.items).toContainEqual(
-      expect.objectContaining({ workspaceId: "c_bid", pageId: `journal-${today}` }),
-    );
-    const other = await json<Loose>(await as("consultant", "/v1/digest/preview", { email: CONS }));
-    const items = other.sections.find((x: Loose) => x.title === "Journal")?.items ?? [];
-    expect(items.some((i: Loose) => i.workspaceId === "c_bid")).toBe(false);
   });
 
   it("needs edit rights, refuses the future, and a quiet day has no page", async () => {

@@ -471,6 +471,98 @@ describe("Outline export", () => {
   });
 });
 
+describe("import dry run", () => {
+  const dry = (persona: string, email: string, id: string, archive: Uint8Array) =>
+    as(persona, `/v1/brains/${id}/import?format=okf&dryRun=1`, {
+      email,
+      method: "POST",
+      rawBody: archive as unknown as string,
+      headers: { "Content-Type": "application/zip" },
+    });
+  const archive = () =>
+    zipOf({
+      "topic/clean.md": okf("topic", "Clean dry page", `## Summary\n- ${WORK}\n`),
+      "topic/hr.md": okf(
+        "topic",
+        "Salary review for the team",
+        "## Summary\n- The salary review is scheduled for March for the whole team.\n",
+      ),
+      "topic/contact.md": okf(
+        "topic",
+        "Vendor contact dry",
+        `## Summary\n- ${WORK}\n- Reach the vendor on vendor.person@example.invalid for the quote.\n`,
+      ),
+      "topic/im-existing.md": okf("topic", "Existing page", `## Summary\n- ${WORK}\n`),
+    });
+
+  it("returns the classifier verdicts and writes nothing", async () => {
+    const queueBefore = (
+      await json<Loose[]>(
+        await as("head_bid", "/v1/wiki/c_bid/proposals?status=candidate", { email: BID }),
+      )
+    ).length;
+    const r = await dry("head_bid", bid(), "c_bid", archive());
+    expect(r.status).toBe(200);
+    const out = await json<Loose>(r);
+    expect(out).toMatchObject({ ok: true, dryRun: true, format: "okf" });
+    expect(out.imported).toBeUndefined();
+    const byId = Object.fromEntries(out.pages.map((p: Loose) => [p.pageId, p]));
+    expect(byId.clean).toMatchObject({ verdict: "ingest", state: "draft", replaces: false });
+    expect(byId.contact).toMatchObject({ verdict: "ask", state: "draft" });
+    expect(byId.contact.reason).toMatch(/contact/i);
+    expect(byId["im-existing"]).toMatchObject({ replaces: true });
+    expect(out.skipped.find((s: Loose) => s.path === "topic/hr.md").reason).toMatch(/HR/);
+    expect(out.asked).toBe(1);
+    // Nothing was stored: no proposal, no page, no audit receipt of an import.
+    const queueAfter = (
+      await json<Loose[]>(
+        await as("head_bid", "/v1/wiki/c_bid/proposals?status=candidate", { email: BID }),
+      )
+    ).length;
+    expect(queueAfter).toBe(queueBefore);
+    expect(JSON.stringify(out)).not.toContain("vendor.person@example.invalid");
+  });
+
+  it("matches what the real import then does, page by page", async () => {
+    const who = bid();
+    const a = archive();
+    const d = await json<Loose>(await dry("head_bid", who, "c_bid", a));
+    const real = await json<Loose>(
+      await send("head_bid", who.replace(/^im\./, "im.x"), "c_bid", "okf", a),
+    );
+    expect(real.imported.map((i: Loose) => i.pageId).sort()).toEqual(
+      d.pages.map((p: Loose) => p.pageId).sort(),
+    );
+    expect(real.skipped.map((s: Loose) => s.path).sort()).toEqual(
+      d.skipped.map((s: Loose) => s.path).sort(),
+    );
+  });
+
+  it("in the Personal Brain it says a clean page would publish directly", async () => {
+    const out = await json<Loose>(await dry("consultant", CONS, "me", archive()));
+    expect(out.pages.find((p: Loose) => p.pageId === "clean").state).toBe("published");
+    expect(out.pages.find((p: Loose) => p.pageId === "contact").state).toBe("draft");
+  });
+
+  it("keeps every guard: contribute right, format, archive checks and a flag", async () => {
+    expect((await dry("consultant", CONS, "c_bid", archive())).status).toBe(404);
+    expect(
+      (
+        await as("head_bid", "/v1/brains/c_bid/import?format=zzz&dryRun=1", {
+          email: bid(),
+          method: "POST",
+          rawBody: archive() as unknown as string,
+          headers: { "Content-Type": "application/zip" },
+        })
+      ).status,
+    ).toBe(400);
+    const bad = await dry("head_bid", bid(), "c_bid", zipOf({ "../evil.md": "x" }));
+    expect(bad.status).toBe(200);
+    expect((await json<Loose>(bad)).skipped[0].reason).toBe("unsafe_path");
+    expect((await dry("head_bid", bid(), "c_bid", new Uint8Array())).status).toBe(422);
+  });
+});
+
 describe("import limits", () => {
   it("five imports a minute per person", async () => {
     const a = zipOf({ "a.md": okf("topic", "Rate A", `## Summary\n- ${WORK}\n`) });

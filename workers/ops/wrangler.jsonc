@@ -12,7 +12,7 @@
   // a valid Access JWT they answer 401, and 404 while Access is not configured. Preview URLs are off.
   "workers_dev": true,
   "preview_urls": false,
-  "triggers": { "crons": ["17 2 * * *", "47 3 * * *", "23 5 * * 1"] },
+  "triggers": { "crons": ["17 2 * * *", "47 3 * * *"] },
   "r2_buckets": [
     { "binding": "BACKUPS", "bucket_name": "secondary-backups-dev", "jurisdiction": "eu" }
   ],
@@ -28,7 +28,7 @@
       "name": "secondary-ops-staging",
       "workers_dev": true,
       "preview_urls": false,
-      "triggers": { "crons": ["17 2 * * *", "47 3 * * *", "23 5 * * 1"] },
+      "triggers": { "crons": ["17 2 * * *", "47 3 * * *"] },
       "r2_buckets": [
         { "binding": "BACKUPS", "bucket_name": "secondary-backups-staging", "jurisdiction": "eu" }
       ],
@@ -49,7 +49,7 @@
       "workers_dev": false,
       "preview_urls": false,
       "routes": [{ "pattern": "secondary-ops.<your-domain>/*", "zone_name": "<your-domain>" }],
-      "triggers": { "crons": ["17 2 * * *", "47 3 * * *", "23 5 * * 1"] },
+      "triggers": { "crons": ["17 2 * * *", "47 3 * * *"] },
       "r2_buckets": [
         { "binding": "BACKUPS", "bucket_name": "secondary-backups-prod", "jurisdiction": "eu" }
       ],

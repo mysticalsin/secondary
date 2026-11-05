@@ -24,19 +24,18 @@
     // Both namespaces are used through `namespace.jurisdiction("eu")` (see src/stubs.ts).
     "bindings": [
       { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
-      { "name": "WORKSPACE", "class_name": "Workspace" },
-      // Landing Page Studio records (docs/DESIGN-LP-STUDIO.md): one object per tenant.
-      { "name": "LP", "class_name": "LandingPages" }
+      { "name": "WORKSPACE", "class_name": "Workspace" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] },
-    { "tag": "v2", "new_sqlite_classes": ["LandingPages"] }
+    { "tag": "v2", "new_sqlite_classes": ["LandingPages"] },
+    // Landing Page Studio was removed (sponsor decision 2026-11-05). Its object class is deleted from the
+    // dev worker, which had created it. Staging and prod never did.
+    { "tag": "v3", "deleted_classes": ["LandingPages"] }
   ],
   "r2_buckets": [
-    { "binding": "BLOBS", "bucket_name": "secondary-blobs-dev", "jurisdiction": "eu" },
-    // Published landing pages and their counters. Written here, served and counted by workers/pages.
-    { "binding": "PAGES", "bucket_name": "secondary-pages-dev", "jurisdiction": "eu" }
+    { "binding": "BLOBS", "bucket_name": "secondary-blobs-dev", "jurisdiction": "eu" }
   ],
   "services": [
     { "binding": "AUDIT", "service": "secondary-audit-dev" },
@@ -62,8 +61,9 @@
     "RETENTION_BRIEF_DAYS": "30",
     // Whether /v1/internal/ops/restore accepts a snapshot. "yes" in dev only. Staging and prod are "no" (M-02).
     "RESTORE_ENABLED": "yes",
-    // Public origin of workers/pages: published landing pages are linked as <origin>/p/<slug>.
-    "PAGES_BASE_URL": "https://secondary-pages-dev.tony-walteur.workers.dev"
+    // Public origin of workers/mcp (the same value as its MCP_PUBLIC_URL). GET /v1/agents/config returns
+    // <origin>/mcp and Settings > Agents prints it in every connect command. Empty: the page guesses.
+    "MCP_PUBLIC_URL": "https://secondary-mcp-dev.tony-walteur.workers.dev"
   },
   // Environments. Wrangler does not inherit bindings or vars into an env, so each block is complete:
   // its own Durable Objects, EU buckets and audit worker. Dev-only features (personas, localhost
@@ -83,17 +83,12 @@
       "durable_objects": {
         "bindings": [
           { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
-          { "name": "WORKSPACE", "class_name": "Workspace" },
-          { "name": "LP", "class_name": "LandingPages" }
+          { "name": "WORKSPACE", "class_name": "Workspace" }
         ]
       },
-      "migrations": [
-        { "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] },
-        { "tag": "v2", "new_sqlite_classes": ["LandingPages"] }
-      ],
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] }],
       "r2_buckets": [
-        { "binding": "BLOBS", "bucket_name": "secondary-blobs-staging", "jurisdiction": "eu" },
-        { "binding": "PAGES", "bucket_name": "secondary-pages-staging", "jurisdiction": "eu" }
+        { "binding": "BLOBS", "bucket_name": "secondary-blobs-staging", "jurisdiction": "eu" }
       ],
       "services": [
         { "binding": "AUDIT", "service": "secondary-audit-staging" },
@@ -110,7 +105,8 @@
         "RETENTION_DRAFT_DAYS": "90",
         "RETENTION_BRIEF_DAYS": "30",
         "RESTORE_ENABLED": "no",
-        "PAGES_BASE_URL": "https://secondary-pages-staging.tony-walteur.workers.dev"
+        // Pin to the staging MCP origin (the same value as workers/mcp MCP_PUBLIC_URL).
+        "MCP_PUBLIC_URL": ""
       }
     },
     "prod": {
@@ -129,17 +125,12 @@
       "durable_objects": {
         "bindings": [
           { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
-          { "name": "WORKSPACE", "class_name": "Workspace" },
-          { "name": "LP", "class_name": "LandingPages" }
+          { "name": "WORKSPACE", "class_name": "Workspace" }
         ]
       },
-      "migrations": [
-        { "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] },
-        { "tag": "v2", "new_sqlite_classes": ["LandingPages"] }
-      ],
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] }],
       "r2_buckets": [
-        { "binding": "BLOBS", "bucket_name": "secondary-blobs-prod", "jurisdiction": "eu" },
-        { "binding": "PAGES", "bucket_name": "secondary-pages-prod", "jurisdiction": "eu" }
+        { "binding": "BLOBS", "bucket_name": "secondary-blobs-prod", "jurisdiction": "eu" }
       ],
       "services": [
         { "binding": "AUDIT", "service": "secondary-audit-prod" },
@@ -156,7 +147,8 @@
         "RETENTION_DRAFT_DAYS": "90",
         "RETENTION_BRIEF_DAYS": "30",
         "RESTORE_ENABLED": "no",
-        "PAGES_BASE_URL": "https://pages.<your-domain>"
+        // Pin to the production MCP origin (the same value as workers/mcp MCP_PUBLIC_URL).
+        "MCP_PUBLIC_URL": ""
       }
     }
   }

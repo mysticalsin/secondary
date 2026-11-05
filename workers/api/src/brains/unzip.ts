@@ -92,6 +92,9 @@ export async function unzipGuarded(
   const dec = new TextDecoder();
   const out: ZipEntry[] = [];
   let total = 0;
+  // What really came out, summed from the bytes themselves (M-7): a header may lie about sizes.
+  let realTotal = 0;
+  const spans: [number, number][] = [];
   for (let i = 0; i < count; i++) {
     if (at + 46 > bytes.length || v.getUint32(at, true) !== 0x02014b50) bad("bad central header");
     const flags = v.getUint16(at + 8, true);
@@ -118,8 +121,13 @@ export async function unzipGuarded(
     if (csize > 0 && usize / csize > limits.maxRatio) big("the compression ratio is too high");
     if (local + 30 > bytes.length || v.getUint32(local, true) !== 0x04034b50)
       bad("bad local header");
-    const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+    const localName = v.getUint16(local + 26, true);
+    const start = local + 30 + localName + v.getUint16(local + 28, true);
     if (start + csize > bytes.length) bad("an entry runs past the end of the archive");
+    // The local header must say the same name as the central one, and no two entries share bytes.
+    if (dec.decode(bytes.subarray(local + 30, local + 30 + localName)) !== path)
+      bad("an entry's local header does not match its name");
+    spans.push([local, start + csize]);
     const raw = bytes.subarray(start, start + csize);
     let data: Uint8Array;
     if (method === 0) data = raw;
@@ -134,8 +142,14 @@ export async function unzipGuarded(
     }
     if (csize > 0 && data.length / Math.max(csize, 1) > limits.maxRatio * 2)
       big("the compression ratio is too high");
+    realTotal += data.length;
+    if (realTotal > limits.maxTotalBytes) big("the archive unpacks larger than allowed");
     out.push({ path, bytes: data });
   }
+  spans.sort((a, b) => a[0] - b[0]);
+  for (let i = 1; i < spans.length; i++)
+    if ((spans[i] as [number, number])[0] < (spans[i - 1] as [number, number])[1])
+      bad("entries overlap");
   return out;
 }
 

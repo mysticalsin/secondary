@@ -156,33 +156,6 @@ test.describe("acceptance", () => {
     await page.context().close();
   });
 
-  test("Studio: digest links open, the draft says nothing is sent, Landing Page Studio offers a new page", async ({
-    browser,
-  }) => {
-    const page = await as(browser, "consultant");
-    await open(page, "/studio");
-    await expect(page.getByTestId("draft-note")).toContainText("Nothing is sent");
-    await expect(
-      page.getByTestId("lp-card").getByRole("button", { name: "New page" }),
-    ).toBeVisible();
-    await expect(page.getByTestId("lp-card")).not.toContainText("Coming soon");
-    await page.screenshot({ path: `${SCREENS}studio-1280.png`, fullPage: true });
-    const links = page.locator(".digest-sec a");
-    const n = await links.count();
-    expect(n).toBeGreaterThan(0);
-    for (let i = 0; i < n; i++) {
-      const href = (await links.nth(i).getAttribute("href")) as string;
-      await page.goto(href);
-      await expect(page.getByRole("heading", { level: 2 }).first()).toBeVisible();
-      await expect(page.getByText("Not found")).toHaveCount(0);
-      await page.goBack();
-    }
-    await open(page, "/studio");
-    await page.getByRole("button", { name: "Create email draft" }).click();
-    await expect(page.getByTestId("draft-done")).toContainText("Nothing was sent");
-    await page.context().close();
-  });
-
   test("Routines: guided wizard creates one and the run history explains each verdict", async ({
     browser,
   }) => {
@@ -245,7 +218,7 @@ test.describe("acceptance", () => {
       return t;
     };
     const cons = await names("consultant");
-    expect(cons.slice(0, 5)).toEqual(["Ask", "Brain", "Questions", "Studio", "My Secondary"]);
+    expect(cons.slice(0, 4)).toEqual(["Ask", "Brain", "Questions", "My Secondary"]);
     expect(cons).toEqual(
       expect.arrayContaining([
         "Today",
@@ -259,11 +232,10 @@ test.describe("acceptance", () => {
     );
     expect(cons).not.toContain("Admin");
     const steward = await names("reviewer");
-    expect(steward.slice(0, 7)).toEqual([
+    expect(steward.slice(0, 6)).toEqual([
       "Ask",
       "Brain",
       "Questions",
-      "Studio",
       "My Secondary",
       "Map",
       "Routines",
@@ -304,7 +276,6 @@ test.describe("acceptance", () => {
     for (const [path, h] of [
       ["/brain", "Le cerveau de l'entreprise, en dossiers"],
       ["/questions", "Votre cerveau a des questions pour vous"],
-      ["/studio", "Mettez le cerveau au travail"],
       ["/routines", "Des routines qui nourrissent votre cerveau"],
       ["/usage", "Ce que coûtent vos questions, et ce qu'elles ont économisé"],
     ] as const) {
@@ -325,7 +296,6 @@ test.describe("every new view: axe, no horizontal overflow, screenshots", () => 
     ["brain", "/brain?ws=core&page=bid-playbook", "head_bid"],
     ["brain-tree", "/brain", "consultant"],
     ["questions", "/questions", "reviewer"],
-    ["studio", "/studio", "acme_lead"],
     ["routines", "/routines", "consultant"],
     ["usage", "/usage", "platform_admin"],
   ];

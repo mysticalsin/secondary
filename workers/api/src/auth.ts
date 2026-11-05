@@ -134,9 +134,6 @@ const INTERNAL_ROUTES: readonly { method: string; path: RegExp; scope: string }[
   // v3 brains: the guide (structure, never content) and a Structure Coach proposal. Nothing applies.
   { method: "GET", path: /^\/v1\/brains\/[^/]+\/guide$/, scope: READ },
   { method: "POST", path: /^\/v1\/brains\/[^/]+\/coach\/propose$/, scope: "secondary.contribute" },
-  // Landing Page Studio: MCP composes drafts and lists pages. It has no route to submit, approve or publish.
-  { method: "GET", path: /^\/v1\/lp$/, scope: READ },
-  { method: "POST", path: /^\/v1\/lp\/compose$/, scope: "secondary.contribute" },
   { method: "POST", path: /^\/v1\/personal\/items$/, scope: "secondary.personal.write" },
   {
     method: "POST",
@@ -256,6 +253,9 @@ export const authenticate =
     if (!s.active) return c.json({ error: "unauthorized" }, 401);
     // A connection the person revoked is refused here, whatever the token still says (the MCP worker
     // also deletes the grant when it sees this answer).
+    // M-3: an MCP call that does not say which connection it is cannot be checked against a revocation, so
+    // it is refused (fail closed) instead of skipping the check.
+    if (internal && !internal.grantId) return c.json({ error: "grant_required" }, 400);
     if (internal?.grantId) {
       const seen = await stub.agentSeen({
         principalId: s.principal.id,
@@ -274,7 +274,7 @@ export const authenticate =
     }
     const session: Session = {
       principal: { ...s.principal, tenantId },
-      ctx: makeCtx(now, s.ndaGrants, s.elevatedUntil),
+      ctx: makeCtx(now, s.ndaGrants, s.elevatedUntil, s.openBrains),
       persona,
       tenantId,
       config: s.config,

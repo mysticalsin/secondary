@@ -404,7 +404,14 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const page = await w.stub.wikiPage(idOf(c.req.param("pid")), revision);
     if (!page || (page.status !== "published" && revision === undefined)) throw notFound();
     // A hidden version is for editors only (API-CONTRACT "Hidden versions").
-    if (page.hidden && !w.can.edit) throw notFound();
+    // The stored brain role narrows here too (H-2): a demoted editor no longer reads hidden versions.
+    if (
+      page.hidden &&
+      (!w.can.edit ||
+        (!w.personal &&
+          !roleAllows(await w.stub.brainRoleOf(await humanIdsOf(c.env, sess(c))), "edit")))
+    )
+      throw notFound();
     const ids = citationsOf(page.markdown);
     const ok = await readableSources(c, w, ids);
     // A page with no readable source is not here for this caller.

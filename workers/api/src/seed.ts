@@ -2,7 +2,6 @@
 // see auth.ts) loads the org once, guarded by the `seeded_at` row inside the TenantPolicy Durable Object.
 
 import { DEFAULT_SEED } from "@secondary/policy";
-import { resetLandingPages } from "./lp/ops.ts";
 import { getOrg, seedPrincipals } from "./org.ts";
 import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
@@ -51,8 +50,6 @@ export async function seedTenant(
   const tenant = tenantStub(env, o.tenantId);
   if (force) {
     await tenant.seed(config, principals, o.now);
-    // The landing pages (and their public objects) belong to the old org: a reseed starts them empty.
-    await resetLandingPages(env, o.tenantId);
   } else if ((await tenant.seedOnce(config, principals, o.now)) === null) return null;
   await Promise.all(
     [...byScope].map(async ([scope, rows]) => {

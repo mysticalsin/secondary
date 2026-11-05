@@ -66,9 +66,7 @@ describe("web mock and real API agree", () => {
     }
   });
 
-  it("digest preview, brain tree", async () => {
-    const dig = await json<Loose>(await as("consultant", "/v1/digest/preview"));
-    expect(drift(mock("GET", "/v1/digest/preview", "consultant"), [dig])).toEqual([]);
+  it("brain tree", async () => {
     const tree = await json<Loose>(await as("consultant", "/v1/brain/tree"));
     expect(drift(mock("GET", "/v1/brain/tree", "consultant"), [tree])).toEqual([]);
   });

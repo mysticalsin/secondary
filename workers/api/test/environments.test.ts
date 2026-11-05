@@ -8,7 +8,6 @@ import auditRaw from "../../audit/wrangler.jsonc?raw";
 import connectorRaw from "../../connector/wrangler.jsonc?raw";
 import mcpRaw from "../../mcp/wrangler.jsonc?raw";
 import opsRaw from "../../ops/wrangler.jsonc?raw";
-import pagesRaw from "../../pages/wrangler.jsonc?raw";
 import apiRaw from "../wrangler.jsonc?raw";
 import { as, call, json, type Loose, SEED_TOKEN } from "./helpers.ts";
 
@@ -37,7 +36,6 @@ const audit = parseJsonc(auditRaw);
 const mcp = parseJsonc(mcpRaw);
 const ops = parseJsonc(opsRaw);
 const connector = parseJsonc(connectorRaw);
-const pages = parseJsonc(pagesRaw);
 const ENVS = ["staging", "prod"] as const;
 const SECRET_NAMES = [
   "SEED_TOKEN",
@@ -82,14 +80,12 @@ describe("environments: api", () => {
         `AUDIT:service:secondary-audit-${e}`,
         `BLOBS:r2:secondary-blobs-${e}:eu`,
         `CONNECTOR:service:secondary-connector-${e}`,
-        "LP:durable_object:LandingPages",
-        `PAGES:r2:secondary-pages-${e}:eu`,
         "TENANT_POLICY:durable_object:TenantPolicy",
         "WORKSPACE:durable_object:Workspace",
       ]);
       expect(c.migrations[0].new_sqlite_classes.sort()).toEqual(["TenantPolicy", "Workspace"]);
-      expect(c.migrations[1]).toEqual({ tag: "v2", new_sqlite_classes: ["LandingPages"] });
-      expect(c.vars.PAGES_BASE_URL).toMatch(/^https:\/\//);
+      // Landing Page Studio is gone: no object class beyond the two, and no pages bucket.
+      expect(c.migrations).toHaveLength(1);
       expect(c.preview_urls).toBe(false);
       expect(c.assets.run_worker_first).toBe(true);
     });
@@ -161,55 +157,12 @@ describe("environments: connector", () => {
     expect(deployRaw).not.toMatch(/(single|shared)_secret [^\n]*GRAPH_CLIENT_SECRET/);
   });
 
+  it("dev: the api pins the dev MCP public URL that /v1/agents/config returns", () => {
+    expect(api.vars.MCP_PUBLIC_URL).toBe("https://secondary-mcp-dev.tony-walteur.workers.dev");
+  });
+
   it("dev: the api names the dev connector", () => {
     expect(bindings(api)).toContain("CONNECTOR:service:secondary-connector-dev");
-  });
-});
-
-describe("environments: pages (the public worker)", () => {
-  const all = [["dev", pages], ...ENVS.map((e) => [e, pages.env[e]] as const)] as const;
-  for (const [e, c] of all) {
-    it(`${e}: own worker and bucket, exactly the bucket and the counter, no brain, no secrets`, () => {
-      expect(c.name).toBe(`secondary-pages-${e}`);
-      // The only bindings: the pages bucket (EU) and the per-page counter. No service, KV, queue or assets.
-      expect(bindings(c)).toEqual([
-        "COUNTER:durable_object:PageCounter",
-        `PAGES:r2:secondary-pages-${e}:eu`,
-      ]);
-      expect(c.migrations).toEqual([{ tag: "v1", new_sqlite_classes: ["PageCounter"] }]);
-      for (const k of ["services", "kv_namespaces", "queues", "d1_databases", "assets", "triggers"])
-        expect(c, k).not.toHaveProperty(k);
-      expect(c.preview_urls).toBe(false);
-      expect(c.vars.ENVIRONMENT).toBe(e);
-      expect(c.vars.DO_JURISDICTION).toBe("eu");
-      for (const k of SECRET_NAMES) expect(c.vars, k).not.toHaveProperty(k);
-    });
-  }
-
-  it("prod has no workers.dev host and a route placeholder", () => {
-    expect(pages.env.prod.workers_dev).toBe(false);
-    expect(pages.env.prod.routes[0].pattern).toContain("<your-domain>");
-  });
-
-  it("the api's pages bucket is the one the pages worker serves, in every environment", () => {
-    expect(bindings(api)).toContain("PAGES:r2:secondary-pages-dev:eu");
-    expect(pages.r2_buckets[0].bucket_name).toBe("secondary-pages-dev");
-    for (const e of ENVS) {
-      expect(api.env[e].r2_buckets.find((b: Loose) => b.binding === "PAGES").bucket_name).toBe(
-        pages.env[e].r2_buckets[0].bucket_name,
-      );
-    }
-  });
-
-  it("deploy.sh creates the bucket in the EU and deploys the pages worker, with no secret for it", () => {
-    expect(deployRaw).toContain('"secondary-pages-$SFX"');
-    expect(deployRaw).toMatch(/^deploy pages$/m);
-    expect(deployRaw).not.toMatch(/secret [^\n]*\bpages\b/);
-    expect(deployRaw).not.toMatch(/\bpages\b[^\n]*_HMAC_KEY/);
-  });
-
-  it("the EU guard covers the pages worker too", () => {
-    for (const t of ["dev", ...ENVS]) expect(pinnedToEu(pages, t), t).toBe(true);
   });
 });
 
@@ -250,7 +203,7 @@ describe("environments: audit, mcp, ops", () => {
         `API:service:secondary-api-${e}`,
         `BACKUPS:r2:secondary-backups-${e}:eu`,
       ]);
-      expect(c.triggers.crons).toEqual(["17 2 * * *", "47 3 * * *", "23 5 * * 1"]);
+      expect(c.triggers.crons).toEqual(["17 2 * * *", "47 3 * * *"]);
       expect(c.vars.BACKUP_RETENTION_DAYS).toBe("35");
       expect(c.vars.ENVIRONMENT).toBe(e);
       for (const k of SECRET_NAMES) expect(c.vars, k).not.toHaveProperty(k);

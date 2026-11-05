@@ -18,6 +18,7 @@ import type {
   FieldDef,
   Health,
   ImportFormat,
+  ImportPreview,
   ImportResult,
   Member,
   Publication,
@@ -33,6 +34,8 @@ const day = (daysAgo: number) => iso(daysAgo).slice(0, 10);
 
 interface MockBrain {
   id: string;
+  /** The level somebody asked for and a second person has not confirmed yet. */
+  openAsked?: Everyone | undefined;
   type: BrainType;
   name: string;
   template: Template;
@@ -465,7 +468,7 @@ function bounds(br: MockBrain): {
     };
   return {
     pub: ["review", "direct"],
-    every: ["none", "reader", "contributor"],
+    every: ["none", "reader"],
     pubReason: null,
     everyReason: null,
   };
@@ -778,6 +781,38 @@ function mockImport(
   };
 }
 
+function mockPreview(
+  br: MockBrain,
+  format: ImportFormat,
+  body: Record<string, unknown>,
+): ImportPreview {
+  const r = mockImport(br, format, body);
+  const rows: [string, "ingest" | "ask", string][] = [
+    ["Welcome", "ingest", "Work content, nothing sensitive found"],
+    ["Customer onboarding", "ingest", "Work content, nothing sensitive found"],
+    ["Pricing principles", "ask", "Contains contact details; they would be masked"],
+    ["Delivery checklist", "ingest", "Work content, nothing sensitive found"],
+  ];
+  return {
+    ok: true,
+    dryRun: true,
+    format,
+    pages: r.imported.map((p, i) => ({
+      path: `${p.pageId}.md`,
+      pageId: p.pageId,
+      title: p.title,
+      type: "topic",
+      verdict: rows[i]?.[1] ?? "ingest",
+      reason: rows[i]?.[2] ?? "",
+      excluded: {},
+      replaces: i === 1,
+      state: p.state,
+    })),
+    skipped: r.skipped,
+    asked: 1,
+  };
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 void sleep;
 
@@ -868,6 +903,8 @@ export function handleV3(
   }
 
   if (method === "GET" && p === "/v1/agents") return { hosts };
+  if (method === "GET" && p === "/v1/agents/config")
+    return { mcpUrl: "https://secondary-mcp-dev.tony-walteur.workers.dev/mcp" };
   const rc = p.match(/^\/v1\/agents\/connections\/([^/]+)\/revoke$/);
   if (method === "POST" && rc) {
     const id = decodeURIComponent(rc[1] as string);
@@ -987,6 +1024,14 @@ export function handleV3(
         throw new ApiError(422, bd.everyReason ?? "That level is not allowed here.", {
           error: "policy_bound",
         });
+      // Opening a brain to everyone needs a second person: the first request only asks.
+      if (body.everyone && body.everyone !== "none" && body.everyone !== br.everyone) {
+        if (br.openAsked !== body.everyone) {
+          br.openAsked = body.everyone as Everyone;
+          return { ok: true, status: "pending", needs: "second_person" };
+        }
+        br.openAsked = undefined;
+      }
       if (body.publication) br.publication = body.publication as Publication;
       if (body.everyone) br.everyone = body.everyone as Everyone;
       return { ok: true, publication: br.publication, everyone: br.everyone };
@@ -1102,6 +1147,7 @@ export function handleV3(
       throw new ApiError(400, "Pick OKF, Obsidian or Outline.", { error: "invalid_format" });
     if (Number(body.size ?? 0) > 5 * 1024 * 1024)
       throw new ApiError(413, "The archive is larger than 5 MB.", { error: "too_large" });
+    if (search.get("dryRun") === "1") return mockPreview(br, fmt, body);
     return mockImport(br, fmt, body);
   }
 

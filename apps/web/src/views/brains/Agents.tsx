@@ -18,7 +18,10 @@ export const HOST_TABS: HostId[] = [
   "copilot_studio",
 ];
 
-/** Where the MCP door is. Set VITE_MCP_URL when it lives on another host than the API. */
+/**
+ * Where the MCP door is when the API does not say (`GET /v1/agents/config`): VITE_MCP_URL, else a guess
+ * from this page's host. The API's configured MCP_PUBLIC_URL always wins (AgentsPage).
+ */
 export function mcpUrl(): string {
   const env = (import.meta.env.VITE_MCP_URL as string | undefined) ?? "";
   if (env) return env;
@@ -165,14 +168,16 @@ export function HostPanel({
   host,
   handle,
   onChange,
+  url = mcpUrl(),
 }: {
   host: AgentHost;
   handle: string;
   onChange: () => void;
+  /** The MCP URL the API is configured with. */
+  url?: string;
 }) {
   const { t } = useI18n();
   const { say } = useApp();
-  const url = mcpUrl();
   const cmd = commandFor(host.id, handle, url);
   const steps = [1, 2, 3].map((n) => `b3.ag.steps.${host.id}.${n}` as Key);
   const revoke = async (id: string) => {
@@ -240,7 +245,15 @@ export function HostPanel({
 export function AgentsPage() {
   const { t } = useI18n();
   const { me } = useApp();
-  const list = useApi(() => v3.agents(), []);
+  // The API says where the MCP door is (its configured MCP_PUBLIC_URL). Only when it does not (null) does
+  // the page guess, so the command is never built from a wrong host first.
+  const list = useApi(async () => {
+    const [l, cfg] = await Promise.all([
+      v3.agents(),
+      v3.agentConfig().catch(() => ({ mcpUrl: null })),
+    ]);
+    return { ...l, mcpUrl: cfg.mcpUrl };
+  }, []);
   const [tab, setTab] = useState<HostId>("claude_code");
   const handle = handleOf(me?.principal.email);
   const onKey = (e: React.KeyboardEvent, i: number) => {
@@ -255,7 +268,7 @@ export function AgentsPage() {
     <div className="page brains agents">
       <PageHead eyebrow={t("nav.agents")} title={t("b3.ag.title")} lead={t("b3.ag.lead")} />
       <Await state={list} skeleton={3}>
-        {({ hosts }) => {
+        {({ hosts, mcpUrl: configured }) => {
           const byId = new Map(hosts.map((h) => [h.id, h]));
           const cur = byId.get(tab) ?? {
             id: tab,
@@ -293,7 +306,12 @@ export function AgentsPage() {
                   );
                 })}
               </div>
-              <HostPanel host={cur} handle={handle} onChange={list.reload} />
+              <HostPanel
+                host={cur}
+                handle={handle}
+                onChange={list.reload}
+                url={configured ?? mcpUrl()}
+              />
             </>
           );
         }}

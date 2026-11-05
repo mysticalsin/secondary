@@ -58,6 +58,12 @@ export interface Principal {
 export interface Ctx {
   /** Account ids for which the principal holds a named NDA grant. */
   ndaGrants?: string[];
+  /**
+   * Node ids whose brain is open to Everyone at Mantu (stored level reader or contributor). It only
+   * ever lifts read access (view_structure, view_content) on a team or Company Global brain; the
+   * engine ignores an id whose node is an account, NDA, restricted, contacts or Personal node.
+   */
+  openBrains?: string[];
   /** Epoch ms. Elevation is active while now < elevatedUntil (and within the role's hours). */
   elevatedUntil?: number;
   /** Epoch ms. The engine never reads a clock. */
@@ -242,6 +248,8 @@ export interface AdmittedView {
   ids: ReadonlySet<string>;
   roots: readonly string[];
   links: readonly ViewLink[];
+  /** Nodes Everyone at Mantu lifted to content for this principal (read only; see Ctx.openBrains). */
+  lifted: ReadonlySet<string>;
 }
 
 // ---- API shapes (docs/API-CONTRACT.md) ----

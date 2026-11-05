@@ -5,7 +5,6 @@ export const ux2En = {
   "nav.brain": "Brain",
   "nav.questions": "Questions",
   "nav.questions.short": "Inbox",
-  "nav.studio": "Studio",
   "nav.routines": "Routines",
   "nav.usage": "Usage",
   "nav.more": "More",
@@ -126,22 +125,6 @@ export const ux2En = {
   "q.note": "Note for the record",
   "q.done": "Done. The brain will use your answer.",
 
-  // studio
-  "studio.title": "Put the brain to work",
-  "studio.lead": "Capabilities that read the brain, respect your access and cite their sources.",
-  "digest.title": "Weekly Digest",
-  "digest.week": "Week of {date}",
-  "digest.stat.opps": "Opportunities traced",
-  "digest.stat.leads": "New leads",
-  "digest.stat.due": "Commitments due",
-  "digest.stat.wins": "Wins",
-  "digest.items": "What is in it",
-  "digest.draft": "Create email draft",
-  "digest.draft.note":
-    "This makes a draft only. Nothing is sent. You review it and send it yourself.",
-  "digest.drafted":
-    "Draft created. Nothing was sent. Open your drafts to review it and send it yourself.",
-
   // routines
   "rt.title": "Routines that feed your brain",
   "rt.lead":
@@ -216,7 +199,6 @@ export const ux2En = {
     "Saved is the share of tokens not read, compared with putting the whole workspace in the prompt.",
   "usage.by": "By capability",
   "usage.cap.ask": "Ask",
-  "usage.cap.digest": "Weekly Digest",
   "usage.cap.routines": "Routines",
   "usage.row": "{tokens} tokens, {runs} runs",
 } as const;
@@ -227,7 +209,6 @@ export const ux2Fr: Record<keyof typeof ux2En, string> = {
   "nav.brain": "Cerveau",
   "nav.questions": "Questions",
   "nav.questions.short": "Boîte",
-  "nav.studio": "Studio",
   "nav.routines": "Routines",
   "nav.usage": "Usage",
   "nav.more": "Plus",
@@ -346,22 +327,6 @@ export const ux2Fr: Record<keyof typeof ux2En, string> = {
   "q.note": "Note pour le registre",
   "q.done": "C'est fait. Le cerveau utilisera votre réponse.",
 
-  "studio.title": "Mettez le cerveau au travail",
-  "studio.lead":
-    "Des capacités qui lisent le cerveau, respectent vos accès et citent leurs sources.",
-  "digest.title": "Synthèse hebdomadaire",
-  "digest.week": "Semaine du {date}",
-  "digest.stat.opps": "Opportunités suivies",
-  "digest.stat.leads": "Nouveaux contacts",
-  "digest.stat.due": "Engagements à échéance",
-  "digest.stat.wins": "Succès",
-  "digest.items": "Ce qu'elle contient",
-  "digest.draft": "Créer un brouillon de courriel",
-  "digest.draft.note":
-    "Cela crée un brouillon seulement. Rien n'est envoyé. Vous le relisez et l'envoyez vous-même.",
-  "digest.drafted":
-    "Brouillon créé. Rien n'a été envoyé. Ouvrez vos brouillons pour le relire et l'envoyer vous-même.",
-
   "rt.title": "Des routines qui nourrissent votre cerveau",
   "rt.lead":
     "Chaque routine lit une source selon un calendrier. Un classeur décide : ingérer, ignorer ou vous demander.",
@@ -436,7 +401,6 @@ export const ux2Fr: Record<keyof typeof ux2En, string> = {
     "L'économie est la part de jetons non lus, par rapport à mettre tout l'espace dans la requête.",
   "usage.by": "Par capacité",
   "usage.cap.ask": "Demander",
-  "usage.cap.digest": "Synthèse hebdomadaire",
   "usage.cap.routines": "Routines",
   "usage.row": "{tokens} jetons, {runs} exécutions",
 };

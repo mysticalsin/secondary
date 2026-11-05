@@ -1,4 +1,4 @@
-/* UX v2: Ask, Brain, Questions, Studio, Routines, Usage. Quiet surfaces, one accent per screen.
+/* UX v2: Ask, Brain, Questions, Routines, Usage. Quiet surfaces, one accent per screen.
    Mantu yellow marks the primary action and what needs you, nothing else. */
 
 @keyframes assemble {
@@ -784,59 +784,19 @@ button.bt-row:hover {
   }
 }
 
-/* ---------- studio ---------- */
-.studio-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-  gap: var(--s5);
-  align-items: start;
-}
-.studio-card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: var(--s5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--s4);
-}
-.studio-card > header {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--s3);
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-.studio-card h3 {
-  font-size: 24px;
-  margin: 0;
-}
-.studio-card.soon {
-  background: transparent;
-  border-style: dashed;
-  border-color: var(--lilac-6);
-}
-.studio-card.soon p {
-  color: var(--ink-2);
-}
-.digest-stats,
+/* ---------- usage ---------- */
 .usage-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--s3);
-  margin: 0;
-}
-.usage-stats {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+  margin: 0;
 }
-.digest-stats > div,
 .usage-stats > div {
   display: flex;
   flex-direction: column-reverse;
   gap: 2px;
   min-width: 0;
 }
-.digest-stats dd,
 .usage-stats dd {
   margin: 0;
   font-size: clamp(30px, 4.4vw, 46px);
@@ -844,49 +804,11 @@ button.bt-row:hover {
   letter-spacing: -0.04em;
   line-height: 1;
 }
-.digest-stats dt,
 .usage-stats dt {
   font-size: 14px;
   color: var(--mute);
 }
-.digest-more summary {
-  cursor: pointer;
-  font-weight: 700;
-  margin-bottom: var(--s3);
-}
-.digest-sec h4 {
-  font-size: 15px;
-  color: var(--mute);
-  margin: var(--s3) 0 6px;
-}
-.digest-sec ul {
-  margin: 0;
-  padding-left: 18px;
-}
-.digest-sec li {
-  margin: 4px 0;
-}
-.digest-foot {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  align-items: flex-start;
-}
-.draft-ok {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  color: var(--st-done);
-}
-@media (max-width: 900px) {
-  .studio-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 @media (max-width: 640px) {
-  .digest-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .usage-stats {
     grid-template-columns: 1fr;
   }

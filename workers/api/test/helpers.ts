@@ -71,7 +71,6 @@ export const testEnv = (over: Record<string, unknown> = {}): Env =>
     ...env,
     TENANT_POLICY: recording(env.TENANT_POLICY as unknown as Ns),
     WORKSPACE: recording(env.WORKSPACE as unknown as Ns),
-    LP: recording(env.LP as unknown as Ns),
     DO_JURISDICTION: "eu",
     ACCESS_TEAM_DOMAIN: TEAM,
     ACCESS_AUD: AUD,

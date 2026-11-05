@@ -19,13 +19,7 @@ describe("kill switches: who may change them", () => {
     const res = await as("platform_admin", "/v1/admin/switches");
     expect(res.status).toBe(200);
     const body = await json(res);
-    expect(Object.keys(body.switches).sort()).toEqual([
-      "ai",
-      "connector",
-      "contribute",
-      "lp",
-      "mcp",
-    ]);
+    expect(Object.keys(body.switches).sort()).toEqual(["ai", "connector", "contribute", "mcp"]);
     for (const v of Object.values(body.switches) as Loose[]) expect(v.enabled).toBe(true);
     expect(body.twoPersonReenable).toBe(false);
   });
@@ -97,13 +91,12 @@ describe("kill switches: enforcement in the API", () => {
   });
 
   it("the admin switch route itself stays reachable while everything is off", async () => {
-    for (const n of ["mcp", "connector", "ai", "contribute", "lp"])
+    for (const n of ["mcp", "connector", "ai", "contribute"])
       await setSwitch("platform_admin", n, false);
     const s = await state();
     for (const v of Object.values(s) as Loose[]) expect(v.enabled).toBe(false);
     expect((await setSwitch("platform_admin", "mcp", true)).status).toBe(200);
-    for (const n of ["connector", "ai", "contribute", "lp"])
-      await setSwitch("platform_admin", n, true);
+    for (const n of ["connector", "ai", "contribute"]) await setSwitch("platform_admin", n, true);
   });
 
   it("every change leaves a receipt, and a switch change is audited with ids only", async () => {
@@ -121,6 +114,7 @@ describe("kill switches: enforcement in the API", () => {
     const principal: InternalPrincipal = {
       v: 1,
       iss: "secondary-mcp",
+      grant_id: "g_test",
       aud: "secondary-api",
       sub: "sub-1",
       email: "ceo@example.invalid",

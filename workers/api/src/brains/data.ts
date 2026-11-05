@@ -3,11 +3,12 @@
 import { roleAllows } from "@secondary/policy";
 import { Hono } from "hono";
 import { IMPORT_BODY_BYTES } from "../security.ts";
+import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, notFound, readObject, sess, text } from "../ux/util.ts";
 import { classify } from "../uxv2/classifier.ts";
 import { pageVisible, readableMany } from "../wiki/routes.ts";
-import { citationsOf, cleanText, GENERATED, PAGE_ID } from "../wiki/text.ts";
+import { citationsOf, cleanText, GENERATED, PAGE_ID, sha256Hex } from "../wiki/text.ts";
 import type { PageDraft, Proposal } from "../wiki/types.ts";
 import { checkWrite, fieldsFor } from "./fields.ts";
 import {
@@ -40,6 +41,13 @@ async function readablePage(c: C, b: Brain, pid: string) {
   return page;
 }
 
+/** How many people see a value: none (everyone) > confidential (editors) > personal (its writer). */
+const VISIBILITY: Record<string, number> & {
+  none: number;
+  confidential: number;
+  personal: number;
+} = { personal: 0, confidential: 1, none: 2 };
+
 export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
 
@@ -60,6 +68,40 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     const parsed = parseFields(body.fields);
     if (!parsed.ok) throw bad(parsed.code);
     const s = sess(c);
+    // M-4: making a field more visible (personal to confidential or none, confidential to none), or
+    // dropping a sensitive field whose stored values would then be exposed by a field of the same key,
+    // takes two people, bound to this exact schema.
+    const current = (await b.stub.brainConfig()).fields;
+    const exposed = current
+      .filter((old) => {
+        const now = parsed.fields.find((f) => f.key === old.key);
+        return !now
+          ? old.sensitivity !== "none"
+          : (VISIBILITY[now.sensitivity] ?? 0) > (VISIBILITY[old.sensitivity] ?? 0);
+      })
+      .map((f) => f.key);
+    if (exposed.length && !b.personal) {
+      const tenant = tenantStub(c.env, s.tenantId);
+      const key = `brainfields:${b.scope}:${await sha256Hex(JSON.stringify(parsed.fields))}`;
+      const step = await tenant.requestSecond(key, s.principal.id, s.ctx.now, s.principal.email);
+      if (step === "same")
+        return c.json(
+          { error: "same_person", reason: "A different person must confirm this change" },
+          409,
+        );
+      if (step === "first") {
+        await audit(c, {
+          action: "brain.fields_request",
+          nodeId: b.nodeId,
+          scopeId: b.scope,
+          revision: null,
+        });
+        return c.json(
+          { ok: true, status: "pending", needs: "second_person", fields: exposed },
+          202,
+        );
+      }
+    }
     if (
       !(await audit(c, {
         action: "brain.fields_schema",
@@ -182,7 +224,8 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     if (b instanceof Response) return b;
     const format = c.req.query("format");
     if (!isImportFormat(format)) throw bad("invalid_format");
-    const limited = await rateLimit(c, "brain_import", 5);
+    const dry = c.req.query("dryRun") === "1";
+    const limited = await rateLimit(c, dry ? "brain_import_dry" : "brain_import", dry ? 20 : 5);
     if (limited) return limited;
     const declared = Number(c.req.header("Content-Length") ?? "0");
     if (declared > IMPORT_BODY_BYTES)
@@ -213,6 +256,8 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
         return c.json({ error: e.code, reason: e.reason }, e.code === "too_large" ? 413 : 422);
       throw e;
     }
+    // A dry run writes nothing (no audit receipt, no proposal): it shows the classifier's verdicts.
+    if (dry) return runImport(c, b, format, parsed, true);
     if (
       !(await audit(c, {
         action: "brain.import",
@@ -263,6 +308,20 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
   return r;
 }
 
+/** One page of a dry run: what the classifier says and where the page would land. Nothing is stored. */
+type DryPage = {
+  path: string;
+  pageId: string;
+  title: string;
+  type: string;
+  verdict: "ingest" | "ask";
+  reason: string;
+  excluded: Record<string, number>;
+  /** The id exists: a real import would make an edit proposal, never an overwrite. */
+  replaces: boolean;
+  state: "published" | "draft";
+};
+
 type ImportOut = {
   pageId: string;
   title: string;
@@ -275,6 +334,7 @@ async function runImport(
   b: Brain,
   format: ImportFormat,
   parsed: { docs: ImportDoc[]; skipped: { path: string; reason: string }[] },
+  dry = false,
 ): Promise<Response> {
   const s = sess(c);
   const schema = await b.stub.wikiSchema();
@@ -283,6 +343,7 @@ async function runImport(
     : (Object.keys(schema.types).find((t) => !GENERATED[t] && t !== "journal") ?? "topic");
   const skipped = [...parsed.skipped];
   const imported: ImportOut[] = [];
+  const pages: DryPage[] = [];
   let asked = 0;
   for (const d of parsed.docs.slice(0, MAX_PAGES)) {
     // Every page goes through the same classifier the routines use: personal passages come out,
@@ -315,6 +376,20 @@ async function runImport(
     };
     // Direct only in the Personal Brain, for a page the classifier is sure about and that replaces nothing.
     const publishDirect = b.personal && verdict.verdict === "ingest" && !cur;
+    if (dry) {
+      pages.push({
+        path: d.path,
+        pageId: d.pageId,
+        title: draft.title,
+        type,
+        verdict: verdict.verdict,
+        reason: verdict.reason,
+        excluded: verdict.excluded,
+        replaces: !!cur,
+        state: publishDirect ? "published" : "draft",
+      });
+      continue;
+    }
     const res = await b.stub.wikiPropose(
       {
         kind: "wiki_ingest",
@@ -346,5 +421,6 @@ async function runImport(
     });
   }
   c.header("Cache-Control", "no-store");
+  if (dry) return c.json({ ok: true, dryRun: true, format, pages, skipped, asked });
   return c.json({ ok: true, format, imported, skipped, asked });
 }
