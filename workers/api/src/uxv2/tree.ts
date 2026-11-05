@@ -4,7 +4,7 @@
 // so an NDA account the caller has no grant for leaves no trace. Pages whose cited sources the caller
 // cannot read are left out, and a folder that lost pages says "partial".
 
-import { isPersonalKind } from "@secondary/policy";
+import { isPersonalKind, opensBrain } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
 import { scopeOfNode } from "../scope.ts";
@@ -72,7 +72,7 @@ export async function brainTree(
             (vn) =>
               WIKI_NODE_KINDS.has(vn.kind) &&
               !isPersonalKind(vn.kind) &&
-              vn.level !== "content" &&
+              !opensBrain(vn) &&
               scopeOfNode(vn) !== null,
           )
           .map((vn) => ({

@@ -8,9 +8,11 @@ import {
   everyoneBound,
   isShareable,
   minRoleFor,
+  opensBrain,
   publicationBound,
   roleAllows,
 } from "../src/index.ts";
+import { view } from "./helpers.ts";
 
 describe("brain rules", () => {
   it("maps node kinds to brain types", () => {
@@ -73,5 +75,22 @@ describe("brain rules", () => {
   it("a Personal Brain is not shareable", () => {
     expect(isShareable({ type: "personal" })).toBe(false);
     expect(isShareable({ type: "team" })).toBe(true);
+  });
+});
+
+describe("opensBrain", () => {
+  it("a department shown only because a circle inside it is admitted is not an openable brain", () => {
+    const v = view("head_bid");
+    const dept = v.nodes.get("d_amaris");
+    expect(dept).toMatchObject({ access: "partial", level: "content" });
+    expect(opensBrain(dept as NonNullable<typeof dept>)).toBe(false);
+    const circle = v.nodes.get("c_bid");
+    expect(opensBrain(circle as NonNullable<typeof circle>)).toBe(true);
+  });
+
+  it("structure and metadata levels never open", () => {
+    expect(opensBrain({ level: "structure", access: "full" })).toBe(false);
+    expect(opensBrain({ level: "metadata", access: "full" })).toBe(false);
+    expect(opensBrain({ level: "content", access: "locked" })).toBe(false);
   });
 });

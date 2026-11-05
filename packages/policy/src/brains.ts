@@ -2,7 +2,7 @@
 // from one angle, and these functions say what its type allows. The engine is unchanged; callers use
 // these to bound publication mode, Everyone at Mantu and member roles, and to narrow a caller's rights.
 
-import type { Action, NodeKind } from "./types.ts";
+import type { Access, Action, Level, NodeKind } from "./types.ts";
 
 export type BrainType = "personal" | "team" | "account" | "global";
 export type BrainRole = "reader" | "contributor" | "editor" | "steward" | "owner";
@@ -150,3 +150,12 @@ export function everyoneMayOpen(n: {
   if (type !== "team" && type !== "global") return false;
   return !n.restricted && !n.nda && !n.contacts && !n.account;
 }
+
+/**
+ * Can this node's own brain be opened (pages, search, proposals)? Only when the person is admitted to
+ * the node itself at content level. A container the view shows as `partial` (a department visible
+ * only because a circle inside it is admitted) reports the best level of its children, but its own
+ * pages are not theirs to read.
+ */
+export const opensBrain = (n: { level: Level; access: Access }): boolean =>
+  n.level === "content" && n.access === "full";

@@ -9,6 +9,7 @@
 import {
   type AdmittedView,
   canDoInView,
+  opensBrain,
   personalRootId,
   roleAllows,
   type ViewNode,
@@ -181,7 +182,7 @@ export function admittedWikis(
     },
   ];
   for (const vn of view.nodes.values()) {
-    if (!WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content") continue;
+    if (!WIKI_NODE_KINDS.has(vn.kind) || !opensBrain(vn)) continue;
     const scope = scopeOfNode(vn);
     if (scope) out.push({ param: vn.id, nodeId: vn.id, scope, label: vn.label });
   }
@@ -242,7 +243,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     } else {
       if (!NODE_ID.test(param)) throw notFound();
       const vn = view.nodes.get(param);
-      if (!vn || !WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content") throw notFound();
+      if (!vn || !WIKI_NODE_KINDS.has(vn.kind) || !opensBrain(vn)) throw notFound();
       const scope = scopeOfNode(vn);
       if (!scope) throw notFound();
       w = {

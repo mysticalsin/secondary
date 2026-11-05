@@ -2,6 +2,7 @@
 
 import {
   type BrainFacts,
+  type BrainRole,
   effectivePublication,
   isRestrictedBrain,
   type Publication,
@@ -51,6 +52,8 @@ export interface BrainCard {
   manages: boolean;
   restricted: boolean;
   publication: Publication;
+  /** The caller's effective role in this brain: what the policy and any stored role let them do. */
+  role: BrainRole;
   pages: number;
   health: { score: number };
   lastActivityAt: string | null;
@@ -136,6 +139,18 @@ export async function readersOf(
   return ids.size;
 }
 
+/** The highest brain role whose actions the caller holds here. A Personal Brain is always its owner's. */
+export const roleOfBrain = (b: Brain): BrainRole =>
+  b.personal || b.can.manage
+    ? "owner"
+    : b.can.decide
+      ? "steward"
+      : b.can.edit
+        ? "editor"
+        : b.can.contribute
+          ? "contributor"
+          : "reader";
+
 export async function cardOf(c: C, x: Seen): Promise<BrainCard> {
   const b = x.brain;
   const stored = await b.stub.brainMembers();
@@ -148,6 +163,7 @@ export async function cardOf(c: C, x: Seen): Promise<BrainCard> {
     manages: b.can.manage,
     restricted: isRestrictedBrain(b.facts as BrainFacts),
     publication: x.publication,
+    role: roleOfBrain(b),
     pages: x.visible.length,
     health: { score: x.health.score },
     lastActivityAt: x.visible.length

@@ -14,6 +14,7 @@ import {
   LENSES,
   type Lens,
   type MapNode,
+  opensBrain,
   toMapView,
   toNodeDetail,
   type ViewNode,
@@ -782,7 +783,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     const view = viewOf(s);
     const scopes = new Set<string>();
     for (const vn of view.nodes.values()) {
-      const sc = vn.level === "content" ? scopeOfNode(vn) : null;
+      const sc = opensBrain(vn) ? scopeOfNode(vn) : null;
       if (sc && !isPersonalKind(vn.kind)) scopes.add(sc);
     }
     const lists = await Promise.all(

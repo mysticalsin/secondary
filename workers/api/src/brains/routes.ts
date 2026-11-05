@@ -5,7 +5,10 @@ import {
   BRAIN_ROLE_LABEL,
   BRAIN_ROLES,
   type BrainRole,
+  type BrainType,
   brainRoleActions,
+  brainTypeOf,
+  canDoInView,
   type Everyone,
   effectiveEveryone,
   effectivePublication,
@@ -13,14 +16,16 @@ import {
   isBrainRole,
   isRestrictedBrain,
   isShareable,
+  opensBrain,
   type Publication,
   publicationBound,
 } from "@secondary/policy";
 import { Hono } from "hono";
 import { govClient } from "../admin/client.ts";
 import { manageAuthority, noticeLabel, scopeDescOf, scopeKey } from "../admin/validate.ts";
-import { requireOrg } from "../auth.ts";
+import { requireOrg, viewOf } from "../auth.ts";
 import { humanIdsOf } from "../human.ts";
+import { scopeOfNode } from "../scope.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, notFound, readObject, sess, text } from "../ux/util.ts";
@@ -33,13 +38,15 @@ import {
   TEMPLATES,
   type TemplateId,
 } from "./model.ts";
-import { admittedBrainParams, brainOf, needBrain, needFlag } from "./open.ts";
+import { buildNav, NAV_NODE_IDS } from "./nav.ts";
+import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag } from "./open.ts";
 import { cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
 
 const WEEK = 7 * DAY;
 const COACH_TTL = 60 * 60_000;
 const MAX_LIST_ITEMS = 8;
 const TYPES = new Set(["personal", "team", "account", "global"]);
+const WIKI_KINDS = new Set(["account", "circle", "department", "core"]);
 
 const CONVENTIONS = [
   "Cite every claim with its source token, for example {src:<source id>}.",
@@ -86,25 +93,83 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
 
   // ---- directory ----
 
+  /** The cards of these brains, for a caller the view admits to all of them. */
+  async function cardsOf(c: C, params: { param: string }[], keep: (b: Brain) => boolean) {
+    const humanIds = await humanIdsOf(c.env, sess(c));
+    const opened = (await Promise.all(params.map((p) => brainOf(c, p.param, humanIds)))).filter(
+      (b): b is Brain => b !== null && keep(b),
+    );
+    const seen = await seeBrains(c, opened);
+    return Promise.all(seen.map((x) => cardOf(c, x)));
+  }
+
   r.get("/brains", async (c) => {
     const type = c.req.query("type");
     if (type !== undefined && !TYPES.has(type)) throw bad("invalid_type");
+    const scope = c.req.query("scope");
+    if (scope !== undefined && scope !== "all") throw bad("invalid_scope");
     const q = (c.req.query("q") ?? "").trim().toLowerCase().slice(0, 80);
-    const s = sess(c);
-    const humanIds = await humanIdsOf(c.env, s);
-    const opened = (
-      await Promise.all(admittedBrainParams(c).map((p) => brainOf(c, p.param, humanIds)))
-    ).filter((b) => b !== null);
-    const wanted = opened.filter(
+    const cards = await cardsOf(
+      c,
+      admittedBrainParams(c),
       (b) => (!type || b.facts.type === type) && (!q || b.label.toLowerCase().includes(q)),
     );
-    const seen = await seeBrains(c, wanted);
-    const cards = await Promise.all(seen.map((x) => cardOf(c, x)));
     cards.sort(
       (a, b) => Number(b.id === "me") - Number(a.id === "me") || a.name.localeCompare(b.name),
     );
     c.header("Cache-Control", "no-store");
-    return c.json({ brains: cards });
+    if (scope !== "all") return c.json({ brains: cards });
+    // scope=all adds the brains the caller can see (their names are already on the map) but not open,
+    // so the UI can offer "request access". Only identity: no pages, readers or health.
+    const s = sess(c);
+    const view = viewOf(s);
+    const closed = [...view.nodes.values()]
+      .filter((vn) => {
+        const t = brainTypeOf(vn.kind);
+        return (
+          t !== null &&
+          t !== "personal" &&
+          WIKI_KINDS.has(vn.kind) &&
+          !opensBrain(vn) &&
+          scopeOfNode(vn) !== null &&
+          (!type || t === type) &&
+          (!q || vn.label.toLowerCase().includes(q))
+        );
+      })
+      .map((vn) => {
+        const t = brainTypeOf(vn.kind) as BrainType;
+        return {
+          id: vn.id,
+          type: t,
+          name: vn.label,
+          canOpen: false as const,
+          restricted: isRestrictedBrain({ type: t, restricted: vn.restricted, nda: vn.nda }),
+          canRequestAccess:
+            vn.kind !== "core" && canDoInView(view, s.principal, vn.id, "request_access").allowed,
+        };
+      })
+      .sort((a, z) => a.name.localeCompare(z.name));
+    return c.json({
+      brains: [...cards.map((x) => ({ ...x, canOpen: true as const })), ...closed],
+    });
+  });
+
+  // The v4 sidebar: Personal, governance brains in a fixed order (Accounts carries its account
+  // brains), Company Global. Only brains the caller may open; a governance without one is omitted.
+  r.get("/brains/nav", async (c) => {
+    const cards = await cardsOf(
+      c,
+      admittedBrainParams(c).filter(
+        (p) =>
+          p.param === "me" ||
+          p.param === "core" ||
+          p.vn?.kind === "account" ||
+          NAV_NODE_IDS.has(p.param),
+      ),
+      () => true,
+    );
+    c.header("Cache-Control", "no-store");
+    return c.json({ items: buildNav(cards) });
   });
 
   // ---- home ----

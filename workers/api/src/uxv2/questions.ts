@@ -6,7 +6,13 @@
 // an author, a two-person release counts distinct people, and approving names the revision that was
 // read (`revisionHash`). A question the caller cannot see answers 404, like a missing one.
 
-import { type BrainRole, canDoInView, personalRootId, roleAllows } from "@secondary/policy";
+import {
+  type BrainRole,
+  canDoInView,
+  opensBrain,
+  personalRootId,
+  roleAllows,
+} from "@secondary/policy";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
@@ -386,7 +392,7 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
     const parsed = parseCandidateId(id);
     const vn = parsed ? view.nodes.get(parsed.targetNodeId) : undefined;
     const sc = vn ? scopeOfNode(vn) : null;
-    if (!parsed || !vn || !sc || vn.level !== "content") throw notFound();
+    if (!parsed || !vn || !sc || !opensBrain(vn)) throw notFound();
     scope = sc;
     node = vn.id;
   }

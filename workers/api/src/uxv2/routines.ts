@@ -7,7 +7,7 @@
 // shared scope, a contribution candidate that waits for review like any other (never a direct write).
 // What "ask" writes: one question for the owner, with the text stored without personal passages.
 
-import { canDoInView, isPersonalKind } from "@secondary/policy";
+import { canDoInView, isPersonalKind, opensBrain } from "@secondary/policy";
 import { Hono } from "hono";
 import { contractGate, gate } from "../ai/brief.ts";
 import { doBudget, withUserCap } from "../ai/budget.ts";
@@ -244,7 +244,7 @@ async function collect(
       const scopes = [
         ...new Set(
           [...view.nodes.values()].flatMap((n) =>
-            n.level === "content" && !isPersonalKind(n.kind) ? [scopeOfNode(n)] : [],
+            opensBrain(n) && !isPersonalKind(n.kind) ? [scopeOfNode(n)] : [],
           ),
         ),
       ].filter((x): x is string => x !== null);

@@ -2,7 +2,13 @@
 // kind wiki_ingest, wiki_lint or wiki_dream. The decision is taken in the wiki review (approve, edit
 // or reject), which applies the diff, so the queue row only says who may decide.
 
-import { type AdmittedView, canDoInView, type Principal, personalRootId } from "@secondary/policy";
+import {
+  type AdmittedView,
+  canDoInView,
+  opensBrain,
+  type Principal,
+  personalRootId,
+} from "@secondary/policy";
 import type { ItemRecord } from "../workspace.ts";
 import type { Proposal } from "./types.ts";
 
@@ -42,7 +48,7 @@ export function wikiQueueRow(view: AdmittedView, p: Principal, r: ItemRecord, re
   const node = r.targetNode ?? "";
   const personal = node === personalRootId(p.id);
   const target = view.nodes.get(node);
-  if (!personal && target?.level !== "content") return null;
+  if (!personal && !(target && opensBrain(target))) return null;
   if (r.authorId === p.id && !personal) return null;
   const right = mayDecide(view, p, node);
   if (!right.allowed) return null;

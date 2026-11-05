@@ -1,7 +1,13 @@
 // Helpers shared by the UX v2 routes. Everything here works from the caller's admitted view; nothing
 // reads a workspace the view does not reach.
 
-import { type AdmittedView, canDoInView, isPersonalKind, personalRootId } from "@secondary/policy";
+import {
+  type AdmittedView,
+  canDoInView,
+  isPersonalKind,
+  opensBrain,
+  personalRootId,
+} from "@secondary/policy";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
 import { scopeOfNode } from "../scope.ts";
@@ -53,7 +59,7 @@ export function resolveTarget(c: C, param: string, need: "read" | "contribute"):
     };
   if (!NODE_ID.test(param)) return null;
   const vn = view.nodes.get(param);
-  if (!vn || isPersonalKind(vn.kind) || !WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content")
+  if (!vn || isPersonalKind(vn.kind) || !WIKI_NODE_KINDS.has(vn.kind) || !opensBrain(vn))
     return null;
   const scope = scopeOfNode(vn);
   if (!scope) return null;

@@ -11,6 +11,7 @@ import {
   canDoInView,
   effectivePublication,
   isPersonalKind,
+  opensBrain,
   personalRootId,
   roleAllows,
   type ViewNode,
@@ -49,8 +50,7 @@ export function admittedBrainParams(c: C): { param: string; vn: ViewNode | null 
   const view = viewOf(s);
   const out: { param: string; vn: ViewNode | null }[] = [{ param: "me", vn: null }];
   for (const vn of view.nodes.values()) {
-    if (!WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content" || isPersonalKind(vn.kind))
-      continue;
+    if (!WIKI_NODE_KINDS.has(vn.kind) || !opensBrain(vn) || isPersonalKind(vn.kind)) continue;
     if (scopeOfNode(vn)) out.push({ param: vn.id, vn });
   }
   return out;
@@ -96,7 +96,7 @@ export async function brainOf(c: C, param: string, humanIds?: string[]): Promise
   }
   if (!NODE_ID.test(param)) return null;
   const vn = view.nodes.get(param);
-  if (!vn || !WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content") return null;
+  if (!vn || !WIKI_NODE_KINDS.has(vn.kind) || !opensBrain(vn)) return null;
   const scope = scopeOfNode(vn);
   const type = brainTypeOf(vn.kind);
   if (!scope || !type) return null;
