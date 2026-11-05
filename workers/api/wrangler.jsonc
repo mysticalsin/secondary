@@ -31,7 +31,11 @@
   "r2_buckets": [
     { "binding": "BLOBS", "bucket_name": "secondary-blobs-dev", "jurisdiction": "eu" }
   ],
-  "services": [{ "binding": "AUDIT", "service": "secondary-audit-dev" }],
+  "services": [
+    { "binding": "AUDIT", "service": "secondary-audit-dev" },
+    // Read-time permission check for source-backed items (fail closed). See workers/connector.
+    { "binding": "CONNECTOR", "service": "secondary-connector-dev" }
+  ],
   "vars": {
     "ENVIRONMENT": "dev",
     // Cloudflare Access team domain, e.g. "<team>.cloudflareaccess.com". Empty until Access is configured.
@@ -132,6 +136,7 @@
   // Secrets and local-only values, intentionally not set here (see .dev.vars.example):
   //   AUDIT_KEY_API          secret (32+ chars). Appends receipts to workers/audit.
   //   AUDIT_KEY_READ         secret (32+ chars). Reads receipts from workers/audit (Auditor views).
+  //   CONNECTOR_HMAC_KEY     secret, at least 32 characters. Shared with workers/connector: signs calls in both directions.
   //   INTERNAL_HMAC_KEY      secret, at least 32 characters. Shared with workers/mcp: verifies its signed calls (X-Secondary-*).
   //   SEED_TOKEN             secret. Required by POST /v1/admin/seed (dev only).
   //   AUDIT_KEY_ERASE        secret (32+ chars). Lets the API pseudonymise receipts in workers/audit (right to erasure).

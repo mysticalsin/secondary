@@ -23,6 +23,7 @@ import { HTTPException } from "hono/http-exception";
 import { adminRoutes } from "./admin/routes.ts";
 import { appendReceipt, fetchReceipts, newReceiptId, type Receipt } from "./audit.ts";
 import { authenticate, requireOrg, viewOf } from "./auth.ts";
+import { checkSourceAccess, NOT_CONFIRMED, SOURCE_ITEM_ID } from "./connector.ts";
 import { MAX_PROMPT, planView } from "./genui.ts";
 import { readiness } from "./observe.ts";
 import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
@@ -480,7 +481,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       )
     ).flat();
     const seen = new Set<string>();
-    const results = hits
+    const results: { id: string; label: string; kind: string; plane: string }[] = hits
       .sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id))
       .flatMap((h) => {
         // A hit counts only if the node itself is in the caller's view; labels come from the view.
@@ -490,7 +491,65 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
         return [{ id: vn.id, label: vn.label, kind: vn.kind, plane: vn.plane }];
       })
       .slice(0, SEARCH_LIMIT);
-    return c.json({ results });
+
+    // Source-backed items (connector). Two gates, both fail closed: the caller needs content level on the
+    // item's gate node, and the connector must confirm in the last ACL_MAX_AGE_SECONDS that the source still
+    // lets this user read the file. Anything unconfirmed is left out without a trace.
+    const sourceHits = (
+      await Promise.all(
+        admittedScopes(view).map((scope) =>
+          workspaceStub(c.env, s.tenantId, scope).sourceSearch(match, SEARCH_LIMIT),
+        ),
+      )
+    )
+      .flat()
+      .filter((h) => view.nodes.get(h.gateNodeId)?.level === "content")
+      .sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id))
+      .slice(0, SEARCH_LIMIT);
+    if (sourceHits.length) {
+      const ok = await checkSourceAccess(
+        c.env,
+        s.tenantId,
+        { id: s.principal.id, email: s.principal.email },
+        sourceHits.map((h) => h.id),
+      );
+      for (const h of sourceHits)
+        if (ok.has(h.id) && !seen.has(h.id))
+          results.push({ id: h.id, label: h.title, kind: "source", plane: h.plane });
+    }
+    return c.json({ results: results.slice(0, SEARCH_LIMIT) });
+  });
+
+  // A source-backed file (SharePoint/OneDrive). Same two gates as search, then the connector must
+  // confirm the user can still read it at the source. Not confirmed: the item stays hidden.
+  v1.get("/sources/:id", async (c) => {
+    const s = sess(c);
+    const id = c.req.param("id");
+    if (!SOURCE_ITEM_ID.test(id)) throw notFound();
+    const view = viewOf(s);
+    const rows = await Promise.all(
+      admittedScopes(view).map((scope) => workspaceStub(c.env, s.tenantId, scope).sourceGet(id)),
+    );
+    const row = rows.find((r) => r && view.nodes.get(r.gateNodeId)?.level === "content");
+    if (!row) throw notFound();
+    const ok = await checkSourceAccess(
+      c.env,
+      s.tenantId,
+      { id: s.principal.id, email: s.principal.email },
+      [id],
+    );
+    if (!ok.has(id)) return forbidden(c, NOT_CONFIRMED);
+    return c.json({
+      id: row.id,
+      title: row.title,
+      kind: "source",
+      plane: row.plane,
+      webUrl: row.webUrl,
+      mime: row.mime,
+      size: row.size,
+      body: row.body,
+      syncedAt: row.syncedAt,
+    });
   });
 
   v1.get("/accounts", (c) => {

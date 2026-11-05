@@ -24,4 +24,6 @@ interface Env {
   SCIM_TOKEN?: string;
   /** Var. Tenant that owns the SCIM directory and pre-login state. Defaults to DEFAULT_TENANT_ID. */
   SCIM_TENANT_ID?: string;
+  /** Secret (at least 32 characters). Shared with workers/connector: signs calls in both directions. */
+  CONNECTOR_HMAC_KEY?: string;
 }

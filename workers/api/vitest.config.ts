@@ -16,6 +16,7 @@ export default defineConfig({
         bindings: {
           SEED_TOKEN: "test-seed-token",
           INTERNAL_HMAC_KEY: "test-internal-hmac-key-0123456789abcdef",
+          CONNECTOR_HMAC_KEY: "test-connector-hmac-key-0123456789abcdef",
           DO_JURISDICTION: "off",
           AUDIT_KEY_API: "test-audit-key-api-0123456789abcdef0123",
           AUDIT_KEY_READ: "test-audit-key-read-0123456789abcdef012",
@@ -23,6 +24,8 @@ export default defineConfig({
           PSEUDONYM_KEY: "test-pseudonym-key-0123456789abcdef0123",
         },
         serviceBindings: {
+          // The connector is a separate deployment. Tests that need it pass their own stand-in through call({ env }).
+          CONNECTOR: async () => Response.json({ error: "not_in_test" }, { status: 503 }),
           AUDIT: async (request: Request) => {
             const url = new URL(request.url);
             // The real audit worker refuses calls without its keys; so does this stand-in.

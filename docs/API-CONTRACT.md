@@ -165,3 +165,10 @@ Roles are data in TenantPolicy (seeded from `packages/policy` roles, versioned w
 - Access requests: `POST /access-requests {nodeId, reason}`, `GET /access-requests?view=mine|queue`, `POST /access-requests/:id/approve|deny`. Approval adds the membership, through the two-person path for restricted scopes.
 - Inbox: `GET /notifications`, `POST /notifications/read`. Audit viewer: `GET /audit?principal&action&from&to&limit` (auditor or configure holder).
 - `GET /v1/admin/audit` rows gain `reason` and `revision`.
+## Connector (B2 CONN)
+
+- `workers/connector` syncs SharePoint/OneDrive into Workspaces and confirms read access. Runbook: `docs/runbooks/GRAPH-SITES-SELECTED.md`.
+- `POST /internal/connector/{upsert,delete,purge}` on the api: signed with `CONNECTOR_HMAC_KEY`, principal `secondary-connector` only. Not under `/v1`.
+- The api calls `POST /internal/acl/check` on the connector (signed with the user's id and email). Only an explicit `allowed: true` shows an item.
+- `GET /v1/search` may return `kind: "source"` results. `GET /v1/sources/:id` returns the file record, or 403 `source permission could not be confirmed`. A caller without content access to the item's gate node gets 404. The web app does not render `source` results yet.
+

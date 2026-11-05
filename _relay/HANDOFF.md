@@ -67,3 +67,9 @@ Open items and notes:
 State: committed on `b2/id`, not merged, nothing deployed. New code is `workers/api/src/auth/*` and `workers/api/src/scim/*`; touched `auth.ts` (cookie-session branch, inactive check), `tenant-policy.ts` (identity store delegation, mapped roles, `active`), `index.ts` (two mount lines), `types.ts`, `env.d.ts`, wrangler comments. Tests: `test/entra.test.ts`, `test/scim.test.ts`, helpers in `test/entra-helpers.ts` (fake Entra IdP). Runbook: `docs/runbooks/ENTRA-SETUP.md` (portal steps marked to verify).
 
 Open items: no admin route for the group to role table yet (GOV exposes `groupMapSet/List/Delete`); no UI for `/auth/providers` and sign-in/out (UX); the new vars are not in `wrangler.jsonc` `vars` (the pinned vars test stays as is; OPS adds them per environment); one tenant id only (single Entra tenant); groups overage is logged, not resolved through Graph; SCIM PUT is not implemented; manual grants stay dormant, not deleted, on deprovision.
+## B2 CONN (branch b2/conn)
+
+- New `workers/connector`, `packages/contracts/src/source-record.ts`, api additions (`connector.ts`, Workspace `source_*` tables, `/v1/sources/:id`, search).
+- Api binding inventory test updated for the `CONNECTOR` service binding. Merge may conflict with ID and GOV on `routes.ts` and `wrangler.jsonc`.
+- Nothing deployed. Live Graph behaviour is unverified (see the runbook).
+
