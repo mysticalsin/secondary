@@ -1,0 +1,5 @@
+account_id,tenant_id,name,nda_hidden,steward_id,status
+acct-acme,tenant-alpha,Acme Synthetic SA,false,usr-001,active
+acct-borealis,tenant-alpha,Borealis Fictive Inc,false,usr-001,active
+acct-calypso,tenant-alpha,Calypso Demo GmbH,true,usr-001,active
+acct-delta,tenant-beta,Delta Placeholder Ltd,false,usr-010,active

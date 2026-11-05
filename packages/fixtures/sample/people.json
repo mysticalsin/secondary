@@ -1,0 +1,261 @@
+{
+  "people": [
+    {
+      "id": "usr-001",
+      "name": "Ines Marlowe",
+      "email": "ines.marlowe@example.invalid",
+      "title": "Procurement Lead",
+      "tenant_id": "tenant-alpha",
+      "archetype": "steward"
+    },
+    {
+      "id": "usr-002",
+      "name": "Jonas Verhoeven",
+      "email": "jonas.verhoeven@example.invalid",
+      "title": "IT Director",
+      "tenant_id": "tenant-alpha",
+      "archetype": "reviewer"
+    },
+    {
+      "id": "usr-003",
+      "name": "Kemi Oyelaran",
+      "email": "kemi.oyelaran@example.invalid",
+      "title": "Programme Manager",
+      "tenant_id": "tenant-alpha",
+      "archetype": "acme_only_member"
+    },
+    {
+      "id": "usr-004",
+      "name": "Luc Tremblay-Fictif",
+      "email": "luc.tremblay.fictif@example.invalid",
+      "title": "Finance Controller",
+      "tenant_id": "tenant-alpha",
+      "archetype": "contributor"
+    },
+    {
+      "id": "usr-005",
+      "name": "Marta Quint",
+      "email": "marta.quint@example.invalid",
+      "title": "Security Officer",
+      "tenant_id": "tenant-alpha",
+      "archetype": "calypso_member"
+    },
+    {
+      "id": "usr-006",
+      "name": "Nils Backstrom",
+      "email": "nils.backstrom@example.invalid",
+      "title": "Business Sponsor",
+      "tenant_id": "tenant-alpha",
+      "archetype": "contributor"
+    },
+    {
+      "id": "usr-007",
+      "name": "Orla Desmond",
+      "email": "orla.desmond@example.invalid",
+      "title": "Delivery Manager",
+      "tenant_id": "tenant-alpha",
+      "archetype": "denied"
+    },
+    {
+      "id": "usr-008",
+      "name": "Pavel Ruzicka",
+      "email": "pavel.ruzicka@example.invalid",
+      "title": "Head of Operations",
+      "tenant_id": "tenant-alpha",
+      "archetype": "tenant_admin_no_content"
+    },
+    {
+      "id": "usr-009",
+      "name": "Quinn Alder",
+      "email": "quinn.alder@example.invalid",
+      "title": "Procurement Lead",
+      "tenant_id": "tenant-alpha",
+      "archetype": "borealis_member"
+    },
+    {
+      "id": "usr-010",
+      "name": "Rosa Delmar",
+      "email": "rosa.delmar@example.invalid",
+      "title": "IT Director",
+      "tenant_id": "tenant-beta",
+      "archetype": "steward"
+    },
+    {
+      "id": "usr-011",
+      "name": "Soren Vale",
+      "email": "soren.vale@example.invalid",
+      "title": "Programme Manager",
+      "tenant_id": "tenant-beta",
+      "archetype": "contributor"
+    },
+    {
+      "id": "usr-012",
+      "name": "Tara Nwosu",
+      "email": "tara.nwosu@example.invalid",
+      "title": "Finance Controller",
+      "tenant_id": "tenant-beta",
+      "archetype": "reviewer"
+    }
+  ],
+  "memberships": [
+    {
+      "principal_id": "usr-001",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-acme",
+      "role": "steward",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-001",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-borealis",
+      "role": "steward",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-001",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-calypso",
+      "role": "steward",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-002",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-acme",
+      "role": "reviewer",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-002",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-borealis",
+      "role": "reviewer",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-003",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-acme",
+      "role": "member",
+      "subspaces": [
+        "general",
+        "contacts"
+      ]
+    },
+    {
+      "principal_id": "usr-004",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-borealis",
+      "role": "contributor",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-004",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-calypso",
+      "role": "contributor",
+      "subspaces": [
+        "general",
+        "contacts"
+      ]
+    },
+    {
+      "principal_id": "usr-005",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-calypso",
+      "role": "member",
+      "subspaces": [
+        "general",
+        "contacts"
+      ]
+    },
+    {
+      "principal_id": "usr-006",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-acme",
+      "role": "contributor",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-006",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-borealis",
+      "role": "contributor",
+      "subspaces": [
+        "general",
+        "contacts"
+      ]
+    },
+    {
+      "principal_id": "usr-009",
+      "tenant_id": "tenant-alpha",
+      "account_id": "acct-borealis",
+      "role": "member",
+      "subspaces": [
+        "general",
+        "contacts"
+      ]
+    },
+    {
+      "principal_id": "usr-010",
+      "tenant_id": "tenant-beta",
+      "account_id": "acct-delta",
+      "role": "steward",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    },
+    {
+      "principal_id": "usr-011",
+      "tenant_id": "tenant-beta",
+      "account_id": "acct-delta",
+      "role": "contributor",
+      "subspaces": [
+        "general",
+        "contacts"
+      ]
+    },
+    {
+      "principal_id": "usr-012",
+      "tenant_id": "tenant-beta",
+      "account_id": "acct-delta",
+      "role": "reviewer",
+      "subspaces": [
+        "general",
+        "contacts",
+        "restricted-commercial"
+      ]
+    }
+  ]
+}

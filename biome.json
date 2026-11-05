@@ -1,0 +1,4 @@
+{
+  "files": { "includes": ["**", "!**/out", "!**/sample", "!pnpm-lock.yaml"] },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 }
+}

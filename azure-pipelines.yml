@@ -1,0 +1,26 @@
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: NodeTool@0
+    displayName: Use Node from .nvmrc
+    inputs:
+      versionSource: fromFile
+      versionFilePath: .nvmrc
+  - script: corepack enable
+    displayName: Enable pnpm
+  - script: pnpm install --frozen-lockfile
+    displayName: Install
+  - script: pnpm lint
+    displayName: Lint
+  - script: pnpm typecheck
+    displayName: Typecheck
+  - script: pnpm test
+    displayName: Test

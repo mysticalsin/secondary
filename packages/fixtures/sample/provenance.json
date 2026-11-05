@@ -1,0 +1,8 @@
+{
+  "generator": "@secondary/fixtures",
+  "version": "0.1.0",
+  "seed": 20261104,
+  "generated_at": "2026-11-05T01:21:00.570Z",
+  "external_data_read": false,
+  "statement": "All content was produced from built-in word lists and a seeded PRNG. No network, no LLM, no personal vault, no knowledge-base export, and no external input file was read. Emails use the reserved .invalid domain."
+}

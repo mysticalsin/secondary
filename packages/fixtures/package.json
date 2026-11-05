@@ -1,0 +1,12 @@
+{
+  "name": "@secondary/fixtures",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node src/cli.ts",
+    "generate:sample": "node src/cli.ts --sample",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run"
+  }
+}

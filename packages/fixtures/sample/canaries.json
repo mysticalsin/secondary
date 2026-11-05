@@ -1,0 +1,82 @@
+{
+  "CANARY-ACME-ACCOUNT-afc3": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-acme",
+    "subspace_id": null
+  },
+  "CANARY-ACME-GENERAL-0684": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-acme",
+    "subspace_id": "general"
+  },
+  "CANARY-ACME-CONTACTS-a921": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-acme",
+    "subspace_id": "contacts"
+  },
+  "CANARY-ACME-RESTRICTED-dabe": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-acme",
+    "subspace_id": "restricted-commercial"
+  },
+  "CANARY-BOREALIS-ACCOUNT-7113": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-borealis",
+    "subspace_id": null
+  },
+  "CANARY-BOREALIS-GENERAL-30a0": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-borealis",
+    "subspace_id": "general"
+  },
+  "CANARY-BOREALIS-CONTACTS-11dd": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-borealis",
+    "subspace_id": "contacts"
+  },
+  "CANARY-BOREALIS-RESTRICTED-9d43": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-borealis",
+    "subspace_id": "restricted-commercial"
+  },
+  "CANARY-CALYPSO-ACCOUNT-39de": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-calypso",
+    "subspace_id": null
+  },
+  "CANARY-CALYPSO-GENERAL-3cf6": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-calypso",
+    "subspace_id": "general"
+  },
+  "CANARY-CALYPSO-CONTACTS-409e": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-calypso",
+    "subspace_id": "contacts"
+  },
+  "CANARY-CALYPSO-RESTRICTED-c146": {
+    "tenant_id": "tenant-alpha",
+    "account_id": "acct-calypso",
+    "subspace_id": "restricted-commercial"
+  },
+  "CANARY-DELTA-ACCOUNT-441c": {
+    "tenant_id": "tenant-beta",
+    "account_id": "acct-delta",
+    "subspace_id": null
+  },
+  "CANARY-DELTA-GENERAL-69ea": {
+    "tenant_id": "tenant-beta",
+    "account_id": "acct-delta",
+    "subspace_id": "general"
+  },
+  "CANARY-DELTA-CONTACTS-2cd7": {
+    "tenant_id": "tenant-beta",
+    "account_id": "acct-delta",
+    "subspace_id": "contacts"
+  },
+  "CANARY-DELTA-RESTRICTED-f383": {
+    "tenant_id": "tenant-beta",
+    "account_id": "acct-delta",
+    "subspace_id": "restricted-commercial"
+  }
+}
