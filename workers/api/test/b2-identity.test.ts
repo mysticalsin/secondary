@@ -55,14 +55,14 @@ describe("L-07: login states are capped per address", () => {
     await runInDurableObject(t, async (inst, state) => {
       state.storage.sql.exec("DELETE FROM login_state");
       const now = Date.now();
-      // 1005 rows from ten addresses, then one legitimate sign-in from an eleventh.
+      // A legitimate sign-in is the oldest row; then 1005 more arrive from 100 addresses.
+      inst.loginStatePut("legit", "n", "v", null, now, "ip-legit");
       for (let i = 0; i < 1005; i++)
-        inst.loginStatePut(`h${i}`, "n", "v", null, now + i, `ip${i % 100}`);
-      inst.loginStatePut("legit", "n", "v", null, now + 5000, "ip-legit");
+        inst.loginStatePut(`h${i}`, "n", "v", null, now + 1 + i, `ip${i % 100}`);
       const rows = state.storage.sql.exec("SELECT COUNT(*) AS c FROM login_state").one()
         .c as number;
       expect(rows).toBeLessThanOrEqual(1000);
-      expect(inst.loginStateTake("legit", now + 5001)).not.toBeNull();
+      expect(inst.loginStateTake("legit", now + 5000)).not.toBeNull();
     });
   });
 });
