@@ -278,3 +278,9 @@ All are policy-gated and use the caller's scope, with `no-store`.
 - `GET /v1/usage?period=7d|30d`, response `{me:{tokens, runs, answers, savedPct}, byCapability:[{capability, tokens, runs}], tenant?: {...}}`. `tenant` is present for admins only.
 - `GET /v1/digest/preview`, response `{weekOf, sections:[{title, items:[{label, pageId?, meta}]}], stats:{opportunities, newLeads, commitmentsDue, wins}}`. `POST /v1/digest/draft` returns `{draftId}`. It creates an email draft only and never sends.
 - `GET /v1/brain/export?workspaceId=` returns a zip of Markdown: one folder per page type, an `index.md` per folder, and frontmatter on each page. It contains readable content only.
+- Export format, decision D17 (proposed): follow **Open Knowledge Format v0.2** (https://github.com/GoogleCloudPlatform/open-knowledge-format, SPEC.md; licence still to be confirmed, but we adopt the format, not the code).
+  - Reserved files: `index.md` (grouped bullet links with one-line descriptions) and `log.md` at each level.
+  - Every other `.md` file is a concept page.
+  - Frontmatter: `type` is required. Also emitted: `title`, `description`, `tags`, `sources`, `generated`, `verified`, `status`, `stale_after`.
+  - Links are root-absolute Markdown links.
+  - The same format is accepted on import into Personal Brain (planned).
