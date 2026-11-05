@@ -14,6 +14,7 @@ import {
   verifyInternalRequest,
 } from "./internal-auth.ts";
 import { getOrg, isRoleId, makeCtx, personaId, personaPrincipal } from "./org.ts";
+import { seedTenant } from "./seed.ts";
 import { tenantStub } from "./stubs.ts";
 import type { ActAs } from "./tenant-policy.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
@@ -181,12 +182,14 @@ export const authenticate =
       actAs = { id: p.id, roleIds: p.roleIds, memberships: p.memberships };
     }
 
-    const s = await tenantStub(c.env, tenantId).session({
-      email,
-      actAs,
-      now,
-      limit: rateLimit(c.env),
-    });
+    const stub = tenantStub(c.env, tenantId);
+    const sessionInput = { email, actAs, now, limit: rateLimit(c.env) };
+    let s = await stub.session(sessionInput);
+    // Dev only, never anywhere else: load the synthetic org on the first authenticated request.
+    if (!s.config && c.env.ENVIRONMENT === "dev") {
+      await seedTenant(c.env, { tenantId, now }, false);
+      s = await stub.session(sessionInput);
+    }
     if (s.limited) {
       c.header("Retry-After", String(s.retryAfter));
       return c.json({ error: "rate_limited" }, 429);

@@ -82,7 +82,7 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   /** Replace the tenant's directory. Dev seed only. Resets grants, elevations and counters. */
-  seed(config: TenantConfig, principals: SeedPrincipal[]): number {
+  seed(config: TenantConfig, principals: SeedPrincipal[], now: number = Date.now()): number {
     this.ctx.storage.transactionSync(() => {
       for (const t of [
         "principals",
@@ -96,6 +96,10 @@ export class TenantPolicy extends DurableObject<Env> {
       this.sql.exec(
         "INSERT INTO config (k, v) VALUES ('tenant', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
         JSON.stringify(config),
+      );
+      this.sql.exec(
+        "INSERT INTO config (k, v) VALUES ('seeded_at', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+        String(now),
       );
       for (const p of principals) {
         this.sql.exec(
@@ -119,6 +123,15 @@ export class TenantPolicy extends DurableObject<Env> {
       }
     });
     return this.bump();
+  }
+
+  /**
+   * Dev auto-seed guard: seed only when no `seeded_at` row exists, so concurrent first requests seed once.
+   * Returns the new epoch, or null when the tenant was already seeded.
+   */
+  seedOnce(config: TenantConfig, principals: SeedPrincipal[], now: number): number | null {
+    const done = this.sql.exec("SELECT 1 FROM config WHERE k = 'seeded_at'").toArray().length > 0;
+    return done ? null : this.seed(config, principals, now);
   }
 
   /**

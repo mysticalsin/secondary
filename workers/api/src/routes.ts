@@ -23,13 +23,13 @@ import { HTTPException } from "hono/http-exception";
 import { appendReceipt, fetchReceipts, newReceiptId, type Receipt } from "./audit.ts";
 import { authenticate, requireOrg, viewOf } from "./auth.ts";
 import { MAX_PROMPT, planView } from "./genui.ts";
-import { getOrg, seedPrincipals } from "./org.ts";
 import { candidateId, parseCandidateId, scopeOfNode } from "./scope.ts";
 import { limitBody, mutationGuard, safeEqual } from "./security.ts";
+import { seedTenant } from "./seed.ts";
 import { detectSensitivity, type SensitivityFlag } from "./sensitivity.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
-import type { Fail, ItemRecord, SeedRow, UserValidated } from "./workspace.ts";
+import type { Fail, ItemRecord, UserValidated } from "./workspace.ts";
 
 export const VERSION = "0.1.0";
 
@@ -383,43 +383,12 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     const domain = typeof body.emailDomain === "string" ? body.emailDomain : "example.invalid";
     if (!/^[a-z0-9.-]{3,100}$/.test(domain)) throw bad("invalid_email_domain");
 
-    const principals = seedPrincipals(domain);
-    const config = { tenantId, seed, personalOwners: principals.map((p) => p.id) };
-    const org = getOrg(config);
-    const byScope = new Map<string, SeedRow[]>();
-    for (const n of org.nodes.values()) {
-      const scope = scopeOfNode(n);
-      if (!scope) continue;
-      const row: SeedRow = {
-        id: n.id,
-        label: n.label,
-        kind: n.kind,
-        plane: n.plane,
-        status: n.leaf?.status ?? "",
-        revision: n.leaf?.revision ?? 0,
-        authorId: n.leaf?.authorId ?? null,
-        tags: n.leaf?.tags ?? [],
-        reviewedBy2: n.leaf?.reviewedBy2 ?? false,
-      };
-      byScope.set(scope, [...(byScope.get(scope) ?? []), row]);
-    }
-    const now = deps.now?.() ?? Date.now();
-    await tenantStub(c.env, tenantId).seed(config, principals);
-    await Promise.all(
-      [...byScope].map(async ([scope, rows]) => {
-        const ws = workspaceStub(c.env, tenantId, scope);
-        for (let i = 0; i < rows.length; i += 250)
-          await ws.seed(rows.slice(i, i + 250), i === 0, now);
-      }),
+    const summary = await seedTenant(
+      c.env,
+      { tenantId, seed, emailDomain: domain, now: deps.now?.() ?? Date.now() },
+      true,
     );
-    return c.json({
-      ok: true,
-      tenantId,
-      seed,
-      nodes: org.nodes.size,
-      workspaces: byScope.size,
-      principals: principals.length,
-    });
+    return c.json({ ok: true, ...summary });
   });
 
   v1.get("/me", (c) => {

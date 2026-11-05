@@ -49,6 +49,28 @@ corepack pnpm e2e:mcp    # scripted MCP host: register, OAuth with PKCE, whoami,
 
 Web only: `corepack pnpm --filter @secondary/web dev:mock` (mock data, no API) or `dev` (Vite proxy to the api on :8787).
 
+## Deploy (dev)
+
+Dev only, synthetic data, nothing is deployed until you run these. Needs `wrangler login` (or `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`) and `openssl`.
+
+```sh
+scripts/deploy-dev.sh                                           # build, create missing resources and secrets, deploy
+scripts/set-access.sh <team>.cloudflareaccess.com <api-aud> <mcp-aud>   # after creating the two Access apps
+```
+
+`deploy-dev.sh` is idempotent. It builds everything, creates the EU R2 buckets `secondary-blobs-dev` and `secondary-audit-dev`
+and the mcp `OAUTH_KV` namespace when missing (the KV id is written into `workers/mcp/wrangler.jsonc`: commit it), deploys audit,
+api, then mcp, and sets these secrets only when absent: `INTERNAL_HMAC_KEY` (api and mcp, same value), `AUDIT_KEY_API`
+(audit and api), `AUDIT_KEY_MCP` (audit and mcp), `AUDIT_KEY_READ` (audit and api) and `SEED_TOKEN` (api). Values come from
+`openssl rand -base64 32`, go straight into `wrangler secret put` and are never printed. Secrets are set after the deploys
+because a secret needs an existing worker; until then the workers fail closed. It prints the api and mcp workers.dev URLs.
+To rotate a shared secret, delete it on every worker (`wrangler secret delete`) and re-run.
+
+`set-access.sh` writes `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` (public values) into the api and mcp `wrangler.jsonc` and redeploys both.
+
+In dev the first authenticated API request seeds the synthetic org once (guarded by a `seeded_at` row in the TenantPolicy
+Durable Object). Nothing seeds outside `ENVIRONMENT=dev`. `POST /v1/admin/seed` stays dev-only and needs Access plus `SEED_TOKEN`; it forces a reseed.
+
 ## Layout
 
 - `apps/web`: React 18 + Vite, Mantu look (`docs/DESIGN-WEB.md`). Talks only to `/v1/*`; mock mode behind `VITE_MOCK=1`.

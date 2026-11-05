@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { AUD, as, call, json, SEED_TOKEN, seed, sign, TEAM } from "./helpers.ts";
+import { AUD, as, call, json, SEED_TOKEN, seed, sign, TEAM, tenantDo } from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -240,11 +240,49 @@ describe("seed endpoint", () => {
     expect((await as("platform_admin", "/v1/admin/seed", { body: {} })).status).toBe(401);
   });
 
-  it("an unseeded tenant answers 503 for content routes and 200 for /v1/me", async () => {
-    const env = { TENANT_DOMAINS: JSON.stringify({ "fresh.example.invalid": "tenant_fresh" }) };
+  it("an unseeded tenant answers 503 for content routes and 200 for /v1/me (never auto-seeded outside dev)", async () => {
+    const env = {
+      ENVIRONMENT: "prod",
+      TENANT_DOMAINS: JSON.stringify({ "fresh.example.invalid": "tenant_fresh" }),
+    };
     expect((await call("/v1/map", { email: "a@fresh.example.invalid", env })).status).toBe(503);
     const me = await json(await call("/v1/me", { email: "a@fresh.example.invalid", env }));
     expect(me.seeded).toBe(false);
+    expect(await tenantDo("tenant_fresh").getConfig()).toBeNull();
+  });
+});
+
+describe("dev auto-seed", () => {
+  const domains = (d: string, t: string) => JSON.stringify({ [`${d}.example.invalid`]: t });
+
+  it("the first authenticated request in dev seeds the org once; the second does not reseed", async () => {
+    const env = { TENANT_DOMAINS: domains("auto1", "tenant_auto1") };
+    const first = await json(await call("/v1/me", { email: "a@auto1.example.invalid", env }));
+    expect(first.seeded).toBe(true);
+    const epoch = await tenantDo("tenant_auto1").epoch();
+    expect(epoch).toBeGreaterThan(0);
+    // Change the directory, then make another request: a reseed would wipe this grant.
+    await tenantDo("tenant_auto1").grantNda("u_x", "acct_x");
+    const afterGrant = await tenantDo("tenant_auto1").epoch();
+    const second = await json(await call("/v1/me", { email: "b@auto1.example.invalid", env }));
+    expect(second.seeded).toBe(true);
+    expect(await tenantDo("tenant_auto1").epoch()).toBe(afterGrant);
+    expect(await tenantDo("tenant_auto1").getConfig()).not.toBeNull();
+  });
+
+  it("concurrent first requests seed exactly once", async () => {
+    const env = { TENANT_DOMAINS: domains("auto2", "tenant_auto2") };
+    await Promise.all(
+      [1, 2, 3, 4, 5].map((i) => call("/v1/me", { email: `u${i}@auto2.example.invalid`, env })),
+    );
+    expect(await tenantDo("tenant_auto2").epoch()).toBe(1);
+  });
+
+  it("a non-dev environment never seeds", async () => {
+    const env = { ENVIRONMENT: "prod", TENANT_DOMAINS: domains("auto3", "tenant_auto3") };
+    const me = await json(await call("/v1/me", { email: "a@auto3.example.invalid", env }));
+    expect(me.seeded).toBe(false);
+    expect(await tenantDo("tenant_auto3").epoch()).toBe(0);
   });
 });
 
