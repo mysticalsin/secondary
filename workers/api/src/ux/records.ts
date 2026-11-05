@@ -56,7 +56,14 @@ interface Stored {
     lesson: string;
     external: string;
     /** `text` is the external text the customer agreed to; any other text is not covered (M-12). */
-    permission: null | { reference: string; by: string; at: string; text?: string };
+    permission: null | {
+      reference: string;
+      by: string;
+      at: string;
+      text?: string;
+      /** Channels the customer agreed to, for example "landing page". Absent on older records: covers none. */
+      channels?: string[];
+    };
   };
 }
 
@@ -110,7 +117,14 @@ export function recordView(r: ItemRecord, now: number) {
                 : "No customer permission on record",
             },
             permission:
-              granted && perm ? { reference: perm.reference, by: perm.by, at: perm.at } : null,
+              granted && perm
+                ? {
+                    reference: perm.reference,
+                    by: perm.by,
+                    at: perm.at,
+                    ...(perm.channels ? { channels: perm.channels } : {}),
+                  }
+                : null,
           },
         }
       : {}),
@@ -323,6 +337,16 @@ export function recordRoutes(): Hono<AppEnv> {
         ? text(b.text, 1, MAX_BODY_TEXT, "invalid_story")
         : st.story.external;
     if (b.granted && !external) throw bad("external_text_required");
+    let channels: string[] | undefined;
+    if (b.channels !== undefined) {
+      if (
+        !Array.isArray(b.channels) ||
+        b.channels.length > 10 ||
+        b.channels.some((x) => typeof x !== "string" || x.trim().length < 1 || x.length > 60)
+      )
+        throw bad("invalid_channels");
+      channels = [...new Set((b.channels as string[]).map((x) => x.trim().toLowerCase()))];
+    }
     if (
       !(await audit(c, {
         action: "record.permission",
@@ -338,6 +362,7 @@ export function recordRoutes(): Hono<AppEnv> {
           by: sess(c).principal.id,
           at: new Date(sess(c).ctx.now).toISOString(),
           text: external,
+          ...(channels ? { channels } : {}),
         }
       : null;
     const res = await w.stub.update(

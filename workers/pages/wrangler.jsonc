@@ -1,0 +1,62 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "secondary-pages-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // The public worker for Landing Page Studio pages (docs/DESIGN-LP-STUDIO.md). It is on the internet and
+  // holds NO access to the brain: its bindings are exactly the published-pages bucket and the per-page
+  // counter. No service binding, no secret, no Durable Object of the brain. A page is served only while its
+  // object exists and has not expired; unpublishing deletes the object. Preview URLs are off.
+  "workers_dev": true,
+  "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "PageCounter" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PageCounter"] }],
+  "r2_buckets": [
+    { "binding": "PAGES", "bucket_name": "secondary-pages-dev", "jurisdiction": "eu" }
+  ],
+  "vars": {
+    "ENVIRONMENT": "dev",
+    // The counter is created in the EU jurisdiction. Local workerd cannot do that: the tests set LOCAL_DEV and "off".
+    "DO_JURISDICTION": "eu",
+    // Events accepted per page and minute (all visitors together), and per visitor address and minute.
+    "EVENTS_PER_MIN": "120",
+    "EVENTS_PER_VISITOR_MIN": "20"
+  },
+  "env": {
+    "staging": {
+      "name": "secondary-pages-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "PageCounter" }] },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PageCounter"] }],
+      "r2_buckets": [
+        { "binding": "PAGES", "bucket_name": "secondary-pages-staging", "jurisdiction": "eu" }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "DO_JURISDICTION": "eu",
+        "EVENTS_PER_MIN": "120",
+        "EVENTS_PER_VISITOR_MIN": "20"
+      }
+    },
+    "prod": {
+      "name": "secondary-pages-prod",
+      // No workers.dev host in production. Placeholder route until the domain is chosen; a deploy fails on it on purpose.
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "pages.<your-domain>/*", "zone_name": "<your-domain>" }],
+      "durable_objects": { "bindings": [{ "name": "COUNTER", "class_name": "PageCounter" }] },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PageCounter"] }],
+      "r2_buckets": [
+        { "binding": "PAGES", "bucket_name": "secondary-pages-prod", "jurisdiction": "eu" }
+      ],
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "DO_JURISDICTION": "eu",
+        "EVENTS_PER_MIN": "120",
+        "EVENTS_PER_VISITOR_MIN": "20"
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 // Kill switches. Absence of a row means "on". Names are fixed here so no caller can invent one.
 
-export const SWITCHES = ["mcp", "connector", "ai", "contribute"] as const;
+export const SWITCHES = ["mcp", "connector", "ai", "contribute", "lp"] as const;
 export type SwitchName = (typeof SWITCHES)[number];
 export type SwitchState = Record<SwitchName, boolean>;
 
@@ -12,4 +12,5 @@ export const allOn = (): SwitchState => ({
   connector: true,
   ai: true,
   contribute: true,
+  lp: true,
 });

@@ -163,9 +163,13 @@ function route(method: string, path: string, query: URLSearchParams): Response {
         citations: {},
       });
     }
+    if (path === "/v1/lp")
+      return j([{ id: "lp_0123456789abcdef", status: "draft", stats: { views: 0 } }]);
     if (path === "/v1/review") return j({ candidates: [{ id: "cand1", title: "Pricing FAQ" }] });
   }
   if (method === "POST") {
+    if (path === "/v1/lp/compose")
+      return j({ id: "lp_0123456789abcdef", status: "draft", revision: 1 }, 201);
     if (path === "/v1/personal/items") return j({ ok: true, id: "pb:u1:n1" });
     if (/^\/v1\/wiki\/[^/]+\/propose$/.test(path))
       return j({ ok: true, proposalId: "cand:a_acme:00000001", status: "candidate" }, 201);
@@ -190,7 +194,7 @@ export async function apiStub(request: Request): Promise<Response> {
     if (!(await verifyOpsRequest(request, TEST_HMAC_KEY)))
       return Response.json({ error: "unauthorized" }, { status: 401 });
     return Response.json({
-      switches: { mcp: mcpSwitchOn, connector: true, ai: true, contribute: true },
+      switches: { mcp: mcpSwitchOn, connector: true, ai: true, contribute: true, lp: true },
     });
   }
   const bodyText = await request.clone().text();

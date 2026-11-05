@@ -295,3 +295,39 @@ All are policy-gated and use the caller's scope, with `no-store`.
   - Frontmatter: `type` is required. Also emitted: `title`, `description`, `tags`, `sources`, `generated`, `verified`, `status`, `stale_after`.
   - Links are root-absolute Markdown links.
   - The same format is accepted on import into Personal Brain (planned).
+
+## Landing Page Studio (docs/DESIGN-LP-STUDIO.md)
+
+Endpoints are as in the design, with these additions and decisions.
+
+- `LandingDraft` also carries `composedBy` (`deterministic` or `ai`), `expiresAt` (ISO), `url` (published only) and `note` (a reviewer's note after "request changes"). `references[].pageId` is `<workspace>/<page>`, as in the Brain tree. `permission` is decided by the server on every read, edit and check: the client names pages (`PUT` takes `references:[{pageId, image?}]`), never text or permission. `image` is a small inline `data:image/png|jpeg|webp` URL and is kept only on a `named` reference.
+- `POST /v1/lp/compose` body is as designed (`brand` defaults to `amaris`, `lang` to `en`) and returns 201. `GET /v1/lp/:id/references?q=` returns an array of references (at most 12). `POST /v1/lp/:id/submit` runs the checks itself: 422 `{error:"checks_failed", ok, issues}` when any issue stands, so a flag blocks submission. `POST /v1/lp/:id/approve {revisionHash}` is for a person who may release on Company Global and did not write or edit the page: 400 `revision_required`, 409 `revision_conflict` (stale hash), 403 `self_approval` or `forbidden`, 404 for anyone else. `POST /v1/lp/:id/publish {utm?, days?}` (`days` 1 to 180, default 90) answers 403 `not_approved` before an approval of exactly the current revision, 422 `checks_failed` when the checks no longer pass (for example a withdrawn permission). An edit takes the page back to `draft` and clears approval and checks; a published page must be unpublished before it is edited. `POST /v1/lp/:id/unpublish` deletes the public object first (404 on the next request). `GET /v1/lp` returns each draft plus `stats`.
+- A customer permission covers the channel landing page when the success story's permission (`POST /v1/ux/accounts/:id/records/:rid/permission`) carries `channels` with `"landing page"` and `text` equal to the story's current external text. `channels` is a new optional list of strings on that route (absent means no channel is covered).
+- Questions: a page in review is one `release` question for each person who may decide it. `detail` also carries `previewHtml` (the stored rendering, show it in a sandboxed frame), `diff:[{slot,before,after}]`, `references`, `prospect:{role,company}`. Ids are `lp:<16 hex>`. Actions `approve` (needs `revisionHash`) and `request_changes`.
+- Kill switch `lp` stops everything under `/v1/lp` except `POST /v1/lp/:id/unpublish`.
+- MCP: `lp_compose`, `lp_compose_batch` (`rows` up to 20), both `secondary.contribute`, drafts only; `lp_list`, `secondary.read`. The API refuses MCP on every other `/v1/lp` route.
+- Public worker (`secondary-pages-<env>`): `GET /p/:slug`, `GET /p/:slug/i/:n` (an image copied at publish time, `n` 0 to 5), `POST /p/:slug/e` with `{k:"view"|"cta"|"scroll", b?:25|50|75|100, c:true}`. Without `c === true` the event is dropped before anything is written (204). The slug is 128 random bits (32 hex). Page and images carry `expiresAt` in object metadata and a 404 follows expiry. Counts (`loads`, consented `views`, `ctaClicks`, scroll buckets, per day) are kept per page in a counter and written to `stats/<slug>.json` in the same bucket, which the API reads; `consentRate` is `views / loads`. No address, user agent or identifier is stored.
+
+### `LandingRenderData` and `renderLandingPage`
+
+The page template is a pure function: `renderLandingPage(data: LandingRenderData): string`. The default is `workers/api/src/lp/render.ts`; the premium template in `apps/web/src/lp-template/` has the same signature and replaces it at integration.
+
+```ts
+interface LandingRenderData {
+  brand: "amaris" | "mantu";
+  lang: "en" | "fr";
+  prospect: { firstName?: string; role: string; company: string };
+  slots: { hero: string; intro: string; whyUs: string; caseStudyIntro: string; cta: string }; // plain text, blank line = paragraph
+  references: { title: string; summary: string; image?: string }[]; // at most 6, already generalised or permitted
+  contact: { name: string; email: string };
+  mode: "preview" | "published";
+}
+```
+
+Rules every template keeps (tested against the default in `workers/api/test/lp-render.test.ts` and `workers/pages/test/pages.test.ts`; run the same checks against any other template):
+
+- One self-contained static HTML document. No external request: no absolute URL, font, stylesheet, script, iframe, form, `url()` or `@import`.
+- At most one script: the inline consent and beacon script, only when `mode` is `published`, with no attribute (the pages worker allows it by its SHA-256 hash; CSP is `default-src 'none'`, `script-src` and `style-src` by hash, `img-src 'self'`, `connect-src 'self'`). The `preview` has no script. Inline style is allowed by hash too, so no inline `style=""` attribute may be relied on.
+- Consent declines by default: the banner starts `hidden` and is shown by the script, "Decline" before "Accept", nothing is counted until "Accept", no cookie and no `localStorage` (the choice is kept in `sessionStorage`). The beacon posts to `location.pathname + "/e"` and every event carries `c:true`.
+- An image is only `/p/<slug>/i/<n>` in `published` mode (the publish step copies the approved image into the pages bucket first), or a small inline `data:image/(png|jpeg|webp)` in `preview` mode. Anything else, and any brain URL, is dropped.
+- All text is escaped. `noindex` robots meta; `lang` set; skip link; AA contrast.

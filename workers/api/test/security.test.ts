@@ -234,11 +234,14 @@ describe("binding inventory", () => {
       "AUDIT:service:secondary-audit-dev",
       "BLOBS:r2:eu",
       "CONNECTOR:service:secondary-connector-dev",
+      "LP:durable_object:LandingPages",
+      "PAGES:r2:eu",
       "TENANT_POLICY:durable_object:TenantPolicy",
       "WORKSPACE:durable_object:Workspace",
     ]);
     for (const k of BINDING_SECTIONS) expect(api[k], `unexpected section ${k}`).toBeUndefined();
     expect(api.migrations[0].new_sqlite_classes.sort()).toEqual(["TenantPolicy", "Workspace"]);
+    expect(api.migrations[1].new_sqlite_classes).toEqual(["LandingPages"]);
   });
 
   it("api worker vars are the documented ones, with no secret values committed", () => {
@@ -248,6 +251,7 @@ describe("binding inventory", () => {
       "DEFAULT_TENANT_ID",
       "DO_JURISDICTION",
       "ENVIRONMENT",
+      "PAGES_BASE_URL",
       "RATE_LIMIT_PER_MIN",
       "RESTORE_ENABLED",
       "RETENTION_BRIEF_DAYS",
