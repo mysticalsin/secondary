@@ -152,3 +152,16 @@ Code: `workers/api/src/auth/*` (Entra OIDC, sessions) and `workers/api/src/scim/
 - A principal deprovisioned in SCIM answers 401 on every identity source (session, Access JWT) until reactivated.
 - Roles of a request are the stored role assignments plus the roles mapped from the principal's Entra groups (`TenantPolicy.groupMapSet/List/Delete`, keyed by group object id). A SCIM-provisioned principal takes groups from SCIM only, others from the groups claim of their last login.
 - SCIM 2.0 at `/scim/v2` with `Authorization: Bearer <SCIM_TOKEN>`: `Users` and `Groups` (GET list with `filter=attr eq "value"` on `userName`, `externalId`, `id` / `displayName`, `externalId`; `startIndex`, `count`; GET/POST; PATCH add, remove, replace; DELETE), `ServiceProviderConfig`, `ResourceTypes`. A group is matched to the role table by its `externalId` (the Entra object id). PUT, Bulk, sort and complex filters are not supported.
+
+## B2 GOV: governance console (`/v1/admin/*`, `workers/api/src/admin`)
+
+Roles are data in TenantPolicy (seeded from `packages/policy` roles, versioned with history). MCP can never reach these routes. Refusals are `{error, reason}` and the console shows `reason`. Every mutation writes a content-free receipt (`gov.<kind>.<propose|approve|reject|withdraw|apply>`, `gov.elev.*`, `gov.access.*`, `gov.audit.read`); free text stays in the Durable Object.
+
+- Roles: `GET /roles`, `GET /roles/:id/history`, `POST /roles`, `PUT /roles/:id` (configure holders only). An edit to a role that grants account or restricted scopes, or `configure`, is a pending change that a different configure holder approves. Others apply at once. A change that would leave nobody able to configure the tenant is refused.
+- Changes: `GET /changes`, `POST /changes/:id/approve|reject|withdraw`. The proposer can never decide. Pending changes lapse after 72 h.
+- Memberships: `GET /scopes`, `GET /principals`, `GET /memberships`, `POST /memberships {op, principalId, scope_type, scope_id, subspace?}`. A steward manages only scopes where a role of theirs holds `manage_members` (Head of Bid: the Bid circle). Restricted circles, accounts and Contacts need a second approver.
+- NDA: `GET /nda`, `POST /nda {principalId, accountId, reason, expiresAt}` (always two-person, at most one year), `POST /nda/revoke` (one person).
+- Elevation: `GET /elevation`, `GET /elevations`, `POST /elevations {hours, reason}`, `POST /elevations/:id/approve|deny|end`. Hours are capped by the role (`elevation.hours`); `elevation.approval` requires a different configure holder. Expiry is automatic.
+- Access requests: `POST /access-requests {nodeId, reason}`, `GET /access-requests?view=mine|queue`, `POST /access-requests/:id/approve|deny`. Approval adds the membership, through the two-person path for restricted scopes.
+- Inbox: `GET /notifications`, `POST /notifications/read`. Audit viewer: `GET /audit?principal&action&from&to&limit` (auditor or configure holder).
+- `GET /v1/admin/audit` rows gain `reason` and `revision`.

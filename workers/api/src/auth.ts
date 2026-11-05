@@ -11,6 +11,7 @@ import { accessAllowed, entraEnabled } from "./auth/config.ts";
 import { emailFromSession } from "./auth/identity.ts";
 import { SESSION_COOKIE } from "./auth/limits.ts";
 import { isUnsafeMethod, sameOrigin } from "./auth/session.ts";
+import { tenantOrg } from "./admin/client.ts";
 import {
   HEADER_PRINCIPAL,
   HEADER_SIGNATURE,
@@ -221,8 +222,9 @@ export const authenticate =
       config: s.config,
       epoch: s.epoch,
       internal,
-      org: s.config ? getOrg(s.config) : null,
       switches: s.switches,
+      // Roles are data: the tenant's role table replaces the built-in roles (admin/client.ts).
+      org: s.config ? await tenantOrg(c.env, tenantId, getOrg(s.config), s.rolesVersion) : null,
     };
     c.set("session", session);
     await next();

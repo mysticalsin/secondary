@@ -3,7 +3,6 @@
 // revocation epoch and the per-principal request counter. It holds no organisation content.
 
 import { DurableObject } from "cloudflare:workers";
-import type { ScopeType } from "@secondary/policy";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { allOn, isSwitchName, SWITCHES, type SwitchName, type SwitchState } from "./switches.ts";
 import {
@@ -12,6 +11,8 @@ import {
   principalIdFor,
   type UserChange,
 } from "./auth/identity-store.ts";
+import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
+import { GOV_METHODS, GovStore } from "./admin/store.ts";
 
 export type Membership = { scope_type: ScopeType; scope_id: string };
 export type TenantConfig = { tenantId: string; seed: number; personalOwners: string[] };
@@ -35,6 +36,8 @@ export type Session = {
   switches: SwitchState;
   /** False once the directory (SCIM) has deprovisioned the principal: the API refuses every source of identity. */
   active: boolean;
+  /** Changes whenever a role is edited. The API refetches the role table only when it moves. */
+  rolesVersion: number;
 };
 
 const WINDOW_MS = 60_000;
@@ -57,11 +60,19 @@ const SNAPSHOT_TABLES = [
   "scim_users",
   "scim_groups",
   "scim_group_members",
+  "gov_meta",
+  "gov_roles",
+  "gov_role_history",
+  "gov_changes",
+  "gov_elevations",
+  "gov_access_requests",
+  "gov_notifications",
 ] as const;
 
 export class TenantPolicy extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private readonly identity: IdentityStore;
+  private govStore!: GovStore;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -91,7 +102,25 @@ export class TenantPolicy extends DurableObject<Env> {
           key TEXT PRIMARY KEY, requested_by TEXT NOT NULL, requested_at INTEGER NOT NULL);
       `);
       this.identity.init();
+      // Governance console state (roles as data, changes, elevations, requests, inbox).
+      this.govStore = new GovStore(
+        { sql: this.sql, tx: (fn) => ctx.storage.transactionSync(fn), bump: () => this.bump() },
+        ROLE_ORDER.map((r) => ROLES[r]),
+      );
     });
+  }
+
+  /** Single entry point for admin/store.ts, so this class stays small. Typed by admin/client.ts. */
+  gov(method: string, args: unknown[]): unknown {
+    if (!(GOV_METHODS as readonly string[]).includes(method))
+      return {
+        ok: false,
+        code: "unknown_gov_method",
+        message: "Not a governance method",
+        status: 400,
+      };
+    const fn = (this.govStore as unknown as Record<string, (...a: unknown[]) => unknown>)[method];
+    return (fn as (...a: unknown[]) => unknown).apply(this.govStore, args);
   }
 
   private bump(): number {
@@ -121,6 +150,7 @@ export class TenantPolicy extends DurableObject<Env> {
         "rate",
       ])
         this.sql.exec(`DELETE FROM ${t}`);
+      this.govStore.reset(now);
       this.sql.exec(
         "INSERT INTO config (k, v) VALUES ('tenant', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
         JSON.stringify(config),
@@ -189,6 +219,18 @@ export class TenantPolicy extends DurableObject<Env> {
     let memberships: Membership[] = [];
     if (input.actAs) {
       ({ id, roleIds, memberships } = input.actAs);
+      // Memberships granted through the console add to the persona's own (dev only).
+      const stored = this.sql
+        .exec("SELECT scope_type, scope_id FROM memberships WHERE principal_id = ?", id)
+        .toArray()
+        .map((r) => ({ scope_type: r.scope_type as ScopeType, scope_id: r.scope_id as string }));
+      memberships = [
+        ...memberships,
+        ...stored.filter(
+          (m) =>
+            !memberships.some((x) => x.scope_type === m.scope_type && x.scope_id === m.scope_id),
+        ),
+      ];
     } else if (row) {
       roleIds = this.sql
         .exec("SELECT role_id FROM role_assignments WHERE principal_id = ? ORDER BY role_id", id)
@@ -204,7 +246,11 @@ export class TenantPolicy extends DurableObject<Env> {
         .map((r) => ({ scope_type: r.scope_type as ScopeType, scope_id: r.scope_id as string }));
     }
     const ndaGrants = this.sql
-      .exec("SELECT account_id FROM nda_grants WHERE principal_id = ? ORDER BY 1", id)
+      .exec(
+        "SELECT account_id FROM nda_grants WHERE principal_id = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY 1",
+        id,
+        input.now,
+      )
       .toArray()
       .map((r) => r.account_id as string);
     const until = this.sql
@@ -225,6 +271,7 @@ export class TenantPolicy extends DurableObject<Env> {
       config: this.getConfig(),
       switches: this.switchState(),
       active: this.identity.isEmailActive(email),
+      rolesVersion: this.govStore.rolesVersion(),
     };
   }
 

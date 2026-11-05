@@ -3,7 +3,7 @@ import { Shell } from "./components/Shell";
 import { Empty } from "./components/ui";
 import { Accounts } from "./views/Accounts";
 import { AccountWorkspace } from "./views/AccountWorkspace";
-import { Admin } from "./views/Admin";
+import { Admin } from "./views/admin";
 import { GovernanceBoard } from "./views/GovernanceBoard";
 import { Governances } from "./views/Governances";
 import { MapPage } from "./views/MapPage";

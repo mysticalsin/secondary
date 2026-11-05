@@ -15,6 +15,7 @@ import { api, getPersona, MOCK } from "../api";
 import { PERSONAS } from "../personas";
 import { useApp } from "../state";
 import { useApi } from "../useApi";
+import { ElevationBanner, InboxBell, useAdminCaps } from "../views/admin";
 import { Drawer } from "./Drawer";
 import { Palette } from "./Palette";
 
@@ -25,7 +26,10 @@ export function Shell() {
   const queue = useApi(() => api.review(), []);
   const dev = me?.env === "dev";
   const pending = queue.data?.length ?? 0;
-  const canAdmin = !!me?.capabilities?.configure;
+  const adminCaps = useAdminCaps();
+  const canAdmin =
+    !!me?.capabilities?.configure ||
+    !!(adminCaps?.steward || adminCaps?.auditor || adminCaps?.elevation);
   const personaId = me?.persona ?? getPersona() ?? "";
   const roleLabel = me
     ? (PERSONAS.find((p) => p.id === me.principal.roleIds[0])?.label ??
@@ -88,6 +92,7 @@ export function Shell() {
             </span>
           </div>
         ) : null}
+        <ElevationBanner />
         <header className="header">
           <Link className="logo-tile" to="/" aria-label="mantu, Secondary home">
             mantu
@@ -119,6 +124,7 @@ export function Shell() {
               </select>
             </div>
           ) : null}
+          <InboxBell />
           <button type="button" className="btn primary" onClick={() => nav("/personal?new=1")}>
             <Plus size={16} aria-hidden /> Capture
           </button>
