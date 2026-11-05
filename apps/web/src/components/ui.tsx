@@ -1,13 +1,7 @@
 import type { ReactNode } from "react";
+import { getLang, useI18n, useT } from "../i18n";
 import type { Plane } from "../types";
 import type { Async } from "../useApi";
-
-const PLANE_LABEL: Record<Plane, string> = {
-  GLOBAL_NONPERSONAL: "Global",
-  TEAM_RESTRICTED: "Team restricted",
-  ACCOUNT_RESTRICTED: "Account restricted",
-  PERSONAL_HOSTED: "Personal",
-};
 
 /** Revisions are integers on the wire. People read them as r3. */
 export function fmtRev(v: string | number): string {
@@ -15,7 +9,14 @@ export function fmtRev(v: string | number): string {
 }
 
 export function PlaneBadge({ plane }: { plane: Plane }) {
-  return <span className={`chip plane-${plane}`}>{PLANE_LABEL[plane] ?? plane}</span>;
+  const { td } = useI18n();
+  return <span className={`chip plane-${plane}`}>{td("plane", plane, plane)}</span>;
+}
+
+/** A status the server sends as a word (open, in progress, approved), in the viewer's language. */
+export function useStatus(): (s: string) => string {
+  const { td } = useI18n();
+  return (s) => td("status", s.toLowerCase(), s);
 }
 
 export function Chip({
@@ -53,9 +54,10 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 const SKELETON_KEYS = ["a", "b", "c", "d", "e", "f"];
 
 export function Skeleton({ n = 3 }: { n?: number }) {
+  const t = useT();
   return (
     <div className="stack" aria-busy="true" role="status">
-      <span className="sr-only">Loading</span>
+      <span className="sr-only">{t("common.loading")}</span>
       {SKELETON_KEYS.slice(0, n).map((k) => (
         <div className="skeleton" key={k} />
       ))}
@@ -64,12 +66,13 @@ export function Skeleton({ n = 3 }: { n?: number }) {
 }
 
 export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const t = useT();
   return (
     <div className="errorbox" role="alert">
       <div>{message}</div>
       {onRetry ? (
         <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={onRetry}>
-          Try again
+          {t("common.retry")}
         </button>
       ) : null}
     </div>
@@ -113,7 +116,7 @@ export function PageHead({
 export function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-CA", {
+  return new Intl.DateTimeFormat(getLang() === "fr" ? "fr-CA" : "en-CA", {
     dateStyle: "medium",
     timeZone: "America/Toronto",
   }).format(d);

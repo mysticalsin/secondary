@@ -1,13 +1,19 @@
+import { getLang, type Key, translate } from "./i18n";
 import type {
   AccountCard,
   AccountDetail,
+  AccountRec,
+  AccountRecords,
   ActionResult,
   ActivityEntry,
   AdminRole,
+  AttentionItem,
   AuditReceipt,
   Candidate,
   ContributeResult,
   ContributeTarget,
+  ContributionStatus,
+  Draft,
   GovernanceCard,
   GovernanceDetail,
   Lens,
@@ -15,6 +21,10 @@ import type {
   Me,
   NodeDetail,
   PersonalItem,
+  Prefs,
+  RecordSection,
+  ReviewDetail,
+  RevisionRow,
   SearchResult,
   ViewPlan,
 } from "./types";
@@ -54,28 +64,33 @@ export class ApiError extends Error {
   }
 }
 
-// The API answers `{error, reason?}`. Errors without a reason get plain wording here.
-const ERROR_TEXT: Record<string, string> = {
-  not_found: "Not found, or outside your view.",
-  revision_conflict: "This changed since you opened it. Reload and review the new revision.",
-  sensitivity_flags_pending: "Some spans are flagged. Acknowledge each one to continue.",
-  user_validation_required: "Confirm what you are sharing, then send again.",
-  seed_disabled: "Seeding is disabled.",
-  audit_unavailable: "The audit service is not answering, so nothing was changed.",
-  rate_limited: "Too many requests. Wait a moment.",
-  not_supported: "Not available in this release.",
+// The API answers `{error, reason?}`. Errors without a reason get plain wording in the viewer's language.
+const ERROR_KEY: Record<string, Key> = {
+  not_found: "err.not_found",
+  revision_conflict: "err.revision_conflict",
+  sensitivity_flags_pending: "err.sensitivity_flags_pending",
+  user_validation_required: "err.user_validation_required",
+  seed_disabled: "err.seed_disabled",
+  audit_unavailable: "err.audit_unavailable",
+  rate_limited: "err.rate_limited",
+  not_supported: "err.not_supported",
+  customer_permission_required: "err.customer_permission_required",
+  permission_reference_required: "err.permission_reference_required",
 };
 
 function reasonOf(status: number, data: unknown): string {
   if (data && typeof data === "object") {
     const d = data as { reason?: unknown; error?: unknown };
     if (typeof d.reason === "string" && d.reason) return d.reason;
-    if (typeof d.error === "string") return ERROR_TEXT[d.error] ?? d.error.replace(/_/g, " ");
+    if (typeof d.error === "string") {
+      const k = ERROR_KEY[d.error];
+      return k ? translate(getLang(), k) : d.error.replace(/_/g, " ");
+    }
   }
-  return `Request failed (${status})`;
+  return translate(getLang(), "err.failed", { status });
 }
 
-type Method = "GET" | "POST";
+type Method = "GET" | "POST" | "PUT" | "DELETE";
 
 async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const persona = getPersona();
@@ -142,6 +157,82 @@ export const api = {
   contributeTargets: () => request<ContributeTarget[]>("GET", "/v1/personal/targets"),
   plan: (body: { prompt?: string; nodeId?: string }) =>
     request<ViewPlan>("POST", "/v1/genui/plan", body),
+  // Personal Brain, B2
+  personalUpdate: (
+    id: string,
+    body: { revision: number; title?: string; body?: string; kind?: string; tags?: string[] },
+  ) =>
+    request<{ ok: boolean; revision: number; updatedAt: string }>(
+      "PUT",
+      `/v1/personal/items/${q(id)}`,
+      body,
+    ),
+  personalDelete: (id: string) =>
+    request<{ ok: boolean; copiesLeftInReview: number }>("DELETE", `/v1/personal/items/${q(id)}`),
+  personalHistory: (id: string) =>
+    request<RevisionRow[]>("GET", `/v1/personal/items/${q(id)}/history`),
+  personalRestore: (id: string, revision: number, fromRevision: number) =>
+    request<{ ok: boolean; revision: number }>("POST", `/v1/personal/items/${q(id)}/restore`, {
+      revision,
+      fromRevision,
+    }),
+  personalContributions: (id: string) =>
+    request<ContributionStatus[]>("GET", `/v1/personal/items/${q(id)}/contributions`),
+  drafts: () => request<Draft[]>("GET", "/v1/ux/drafts"),
+  saveDraft: (
+    key: string,
+    body: { title: string; body: string; kind: string; baseRevision: number },
+  ) => request<{ ok: boolean; at: string }>("PUT", `/v1/ux/drafts/${q(key)}`, body),
+  dropDraft: (key: string) => request<{ ok: boolean }>("DELETE", `/v1/ux/drafts/${q(key)}`),
+  prefs: () => request<Prefs>("GET", "/v1/ux/prefs"),
+  savePrefs: (p: Partial<Prefs>) => request<Prefs>("PUT", "/v1/ux/prefs", p),
+  // Review, B2
+  reviewDetail: (id: string) => request<ReviewDetail>("GET", `/v1/ux/review/${q(id)}`),
+  reviewComment: (id: string, text: string) =>
+    request<{ ok: boolean }>("POST", `/v1/ux/review/${q(id)}/comments`, { text }),
+  reviewDecide: (
+    id: string,
+    body: { revision: number; verdict: "changes_requested" | "accept"; comment?: string },
+  ) => request<{ ok: boolean }>("POST", `/v1/ux/review/${q(id)}/decision`, body),
+  // Account records, B2
+  records: (accountId: string) =>
+    request<AccountRecords>("GET", `/v1/ux/accounts/${q(accountId)}/records`),
+  recordCreate: (
+    accountId: string,
+    body: {
+      section: RecordSection;
+      title: string;
+      note?: string;
+      ownerRole?: string;
+      due?: string | null;
+      status?: string;
+      story?: { internal: string; lesson: string; external: string };
+    },
+  ) => request<AccountRec>("POST", `/v1/ux/accounts/${q(accountId)}/records`, body),
+  recordUpdate: (
+    accountId: string,
+    id: string,
+    body: {
+      revision: number;
+      title?: string;
+      note?: string;
+      ownerRole?: string;
+      due?: string | null;
+      status?: string;
+      story?: { internal: string; lesson: string; external: string };
+    },
+  ) => request<AccountRec>("PUT", `/v1/ux/accounts/${q(accountId)}/records/${q(id)}`, body),
+  recordPermission: (
+    accountId: string,
+    id: string,
+    body: { revision: number; granted: boolean; reference?: string },
+  ) =>
+    request<AccountRec>(
+      "POST",
+      `/v1/ux/accounts/${q(accountId)}/records/${q(id)}/permission`,
+      body,
+    ),
+  attention: () => request<{ items: AttentionItem[] }>("GET", "/v1/ux/attention"),
   adminRoles: () => request<AdminRole[]>("GET", "/v1/admin/roles"),
   adminAudit: () => request<AuditReceipt[]>("GET", "/v1/admin/audit"),
 };

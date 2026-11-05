@@ -1,20 +1,22 @@
 import { ChevronRight, Lock, Star } from "lucide-react";
 import { useMemo, useState } from "react";
+import { type Key, useI18n } from "../i18n";
 import { flatten, sortedHubs } from "../map-layout";
 import type { Hub, MapNode, MapView } from "../types";
 import { Chip } from "./ui";
 
 const LIMIT = 60;
 
-function accessChip(a: MapNode["access"]) {
+function AccessChip({ a }: { a: MapNode["access"] }) {
+  const { t } = useI18n();
   if (a === "locked") {
     return (
       <span className="chip t-risk">
-        <Lock size={11} aria-hidden /> Locked
+        <Lock size={11} aria-hidden /> {t("common.locked")}
       </span>
     );
   }
-  if (a === "partial") return <Chip tone="progress">Structure</Chip>;
+  if (a === "partial") return <Chip tone="progress">{t("map.structure")}</Chip>;
   return null;
 }
 
@@ -27,21 +29,24 @@ function NodeLine({
   depth: 1 | 2;
   onOpen: (id: string) => void;
 }) {
+  const { t } = useI18n();
   return (
     <li className={depth === 2 ? "d2" : ""}>
       <button type="button" className="linkbtn" onClick={() => onOpen(n.id)}>
         {n.label}
       </button>
       {n.signals.star ? (
-        <span title="Approved success story" role="img" aria-label="Success story">
+        <span title={t("map.lg.star")} role="img" aria-label={t("map.star")}>
           <Star size={13} color="#f8f060" fill="#f8f060" aria-hidden />
         </span>
       ) : null}
-      {n.signals.open ? <Chip tone="attn">Open</Chip> : null}
-      {n.signals.gap ? <Chip tone="risk">Gap</Chip> : null}
-      {accessChip(n.access)}
+      {n.signals.open ? <Chip tone="attn">{t("dr.counts.open")}</Chip> : null}
+      {n.signals.gap ? <Chip tone="risk">{t("map.gap")}</Chip> : null}
+      <AccessChip a={n.access} />
       <span className="sp" />
-      <span className="muted num">{n.counts ? `${n.counts.items} items` : "hidden"}</span>
+      <span className="muted num">
+        {n.counts ? t("map.items", { n: n.counts.items }) : t("common.hidden")}
+      </span>
     </li>
   );
 }
@@ -55,6 +60,7 @@ export function MapList({
   query: string;
   onOpen: (id: string) => void;
 }) {
+  const { t, td } = useI18n();
   const q = query.trim().toLowerCase();
   const [openHubs, setOpenHubs] = useState<Record<string, boolean>>({});
   const [all, setAll] = useState<Record<string, boolean>>({});
@@ -93,12 +99,12 @@ export function MapList({
                 <span id={lid}>{h.label}</span>
                 {h.group ? (
                   <span className="muted" style={{ fontWeight: 400 }}>
-                    {h.group}
+                    {td("group", h.group, h.group)}
                   </span>
                 ) : null}
-                {accessChip(h.access)}
+                <AccessChip a={h.access} />
                 <span className="muted num" style={{ marginLeft: "auto", fontWeight: 400 }}>
-                  {h.counts ? `${h.counts.items} items` : "hidden"}
+                  {h.counts ? t("map.items", { n: h.counts.items }) : t("common.hidden")}
                 </span>
               </button>
               <button
@@ -107,13 +113,14 @@ export function MapList({
                 style={{ marginRight: 12 }}
                 onClick={() => onOpen(h.id)}
               >
-                Details
+                {t("common.details")}
+                <span className="sr-only"> {h.label}</span>
               </button>
             </div>
             {expanded ? (
               <ul id={`${lid}-list`}>
                 {shown.length === 0 ? (
-                  <li className="muted">Locked. Name only.</li>
+                  <li className="muted">{t("map.lockedname")}</li>
                 ) : (
                   shown.map(({ n, d }) => <NodeLine key={n.id} n={n} depth={d} onOpen={onOpen} />)
                 )}
@@ -124,7 +131,7 @@ export function MapList({
                       className="btn sm"
                       onClick={() => setAll((s) => ({ ...s, [h.id]: true }))}
                     >
-                      Show all {nodes.length}
+                      {t("map.showall", { n: nodes.length })}
                     </button>
                   </li>
                 ) : null}
@@ -138,6 +145,16 @@ export function MapList({
 }
 
 type SortKey = "label" | "hub" | "kind" | "items" | "open" | "gaps" | "fresh" | "access";
+const COLS: [SortKey, Key][] = [
+  ["label", "map.col.name"],
+  ["hub", "map.col.group"],
+  ["kind", "map.col.kind"],
+  ["items", "dr.counts.items"],
+  ["open", "dr.counts.open"],
+  ["gaps", "dr.counts.gaps"],
+  ["fresh", "map.col.fresh"],
+  ["access", "map.col.access"],
+];
 
 export function MapTable({
   view,
@@ -148,6 +165,7 @@ export function MapTable({
   query: string;
   onOpen: (id: string) => void;
 }) {
+  const { t, td } = useI18n();
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "label", dir: 1 });
   const [showAll, setShowAll] = useState(false);
   const q = query.trim().toLowerCase();
@@ -189,22 +207,13 @@ export function MapTable({
   }, [view, q, sort]);
 
   const shown = showAll ? data : data.slice(0, 120);
-  const cols: [SortKey, string][] = [
-    ["label", "Name"],
-    ["hub", "Group"],
-    ["kind", "Kind"],
-    ["items", "Items"],
-    ["open", "Open"],
-    ["gaps", "Gaps"],
-    ["fresh", "Days since update"],
-    ["access", "Access"],
-  ];
-  const num = (v: number) => (v < 0 ? "hidden" : String(v));
+  const cols = COLS;
+  const num = (v: number) => (v < 0 ? t("common.hidden") : String(v));
   return (
     <div>
       <div className="tablewrap">
         <table className="t">
-          <caption className="sr-only">Every node in your view, sortable</caption>
+          <caption className="sr-only">{t("map.table.caption")}</caption>
           <thead>
             <tr>
               {cols.map(([k, label]) => (
@@ -221,7 +230,7 @@ export function MapTable({
                       setSort((s) => ({ key: k, dir: s.key === k ? (s.dir === 1 ? -1 : 1) : 1 }))
                     }
                   >
-                    {label}
+                    {t(label)}
                     {sort.key === k ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
                   </button>
                 </th>
@@ -237,12 +246,12 @@ export function MapTable({
                   </button>
                 </td>
                 <td>{r.hub}</td>
-                <td>{r.kind}</td>
+                <td>{td("nodekind", r.kind, r.kind)}</td>
                 <td className="num">{num(r.items)}</td>
                 <td className="num">{num(r.open)}</td>
                 <td className="num">{num(r.gaps)}</td>
                 <td className="num">{num(r.fresh)}</td>
-                <td>{r.access}</td>
+                <td>{td("access", r.access, r.access)}</td>
               </tr>
             ))}
           </tbody>
@@ -251,7 +260,7 @@ export function MapTable({
       {data.length > shown.length ? (
         <p style={{ marginTop: 12 }}>
           <button type="button" className="btn sm" onClick={() => setShowAll(true)}>
-            Show all {data.length} rows
+            {t("map.showrows", { n: data.length })}
           </button>
         </p>
       ) : null}

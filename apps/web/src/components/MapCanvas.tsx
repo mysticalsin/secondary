@@ -1,5 +1,6 @@
 import { Maximize2, Minus, Plus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "../i18n";
 import { clusterLayout, type Layout, type PNode, ringLayout } from "../map-layout";
 import type { MapView } from "../types";
 
@@ -81,6 +82,7 @@ export function MapCanvas({
   onOpen,
   compact,
 }: Props) {
+  const { t } = useI18n();
   const layout: Layout = useMemo(
     () => (projection === "ring" ? ringLayout(view) : clusterLayout(view)),
     [view, projection],
@@ -175,8 +177,48 @@ export function MapCanvas({
     return new Set(layout.items.filter((p) => p.label.toLowerCase().includes(q)).map((p) => p.id));
   }, [q, layout]);
 
+  // Keyboard: one tab stop for the whole map. Arrow keys walk the nodes, Page keys jump hub to hub.
+  const order = layout.items;
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const active = activeId && layout.byId.has(activeId) ? activeId : (order[0]?.id ?? null);
+  const goTo = (id: string) => {
+    setActiveId(id);
+    // Nodes with tabindex -1 can take focus, so move it now: a later frame could steal it back.
+    const sel = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id;
+    boxRef.current?.querySelector<SVGGElement>(`[data-nid="${sel}"]`)?.focus();
+    const p = layout.byId.get(id);
+    // Keep the node on screen when the camera is zoomed in.
+    if (p && xfRef.current.k > 1.05) setXf((c) => ({ ...c, x: -p.x * c.k, y: -p.y * c.k }));
+  };
+  const onNodeKey = (e: React.KeyboardEvent, id: string) => {
+    const i = order.findIndex((n) => n.id === id);
+    const hubs = order.filter((n) => n.isHub).map((n) => n.id);
+    const hubI = hubs.indexOf(order[i]?.hubId ?? "");
+    let target: string | undefined;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown")
+      target = order[Math.min(order.length - 1, i + 1)]?.id;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") target = order[Math.max(0, i - 1)]?.id;
+    else if (e.key === "PageDown") target = hubs[Math.min(hubs.length - 1, hubI + 1)];
+    else if (e.key === "PageUp") target = hubs[Math.max(0, hubI - 1)];
+    else if (e.key === "Home") target = order[0]?.id;
+    else if (e.key === "End") target = order[order.length - 1]?.id;
+    else if (e.key === "Escape") {
+      boxRef.current?.focus();
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    } else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onOpen(id);
+      return;
+    } else return;
+    e.preventDefault();
+    if (target) goTo(target);
+  };
+
   const depth1Count = useMemo(() => layout.items.filter((p) => p.depth === 1).length, [layout]);
   const k = compact ? 1 : xf.k;
+  const lod = !compact && layout.items.length > 150 && k < 1.7;
   // Label size in SVG units for a target rendered size in CSS pixels (constant on screen at any zoom).
   const px = (cssPx: number) => cssPx / (fit.s * k);
 
@@ -218,6 +260,7 @@ export function MapCanvas({
     e.preventDefault();
   };
 
+  const labels: ReactNode[] = [];
   const link = view.links[0];
   const la = link ? layout.byId.get(link.from) : undefined;
   const lb = link ? layout.byId.get(link.to) : undefined;
@@ -228,7 +271,9 @@ export function MapCanvas({
       className={`mapbox${compact ? " compact" : ""}${drag ? " dragging" : ""}`}
       tabIndex={compact ? undefined : 0}
       role="group"
-      aria-label={`Map, ${projection} projection. Use the List or Table view for keyboard browsing of every node. Press plus, minus, 0 and arrows to move the camera.`}
+      aria-label={t("map.canvas.aria", {
+        projection: t(projection === "ring" ? "map.proj.ring" : "map.proj.clusters"),
+      })}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -238,9 +283,8 @@ export function MapCanvas({
       <svg
         viewBox={`${-fit.vw / 2} ${-fit.vh / 2} ${fit.vw} ${fit.vh}`}
         preserveAspectRatio="xMidYMid meet"
-        role="img"
-        aria-label="Company map"
       >
+        <title>{t("map.svg")}</title>
         <g className="zoomable" transform={`translate(${xf.x} ${xf.y}) scale(${xf.k})`}>
           {projection === "ring" ? (
             <>
@@ -294,7 +338,7 @@ export function MapCanvas({
                   fontSize={px(12)}
                   style={{ stroke: "none", fill: "#e2c8ff" }}
                 >
-                  {view.core.topicCount} topics
+                  {t("map.topics", { n: view.core.topicCount })}
                 </text>
               </g>
             </>
@@ -332,27 +376,62 @@ export function MapCanvas({
                 : p.r + px(12);
             const summary =
               p.node.counts && !locked
-                ? `${p.label}. ${p.node.counts.items} items, ${p.node.counts.open} open.`
-                : `${p.label}. ${locked ? "Locked." : "Counts hidden."}`;
+                ? t("map.node.counts", {
+                    name: p.label,
+                    items: p.node.counts.items,
+                    open: p.node.counts.open,
+                  })
+                : t(locked ? "map.node.locked" : "map.node.hidden", { name: p.label });
+            // Zoomed out on a big map, small leaves are plain dots: no title, no marks.
+            if (lod && p.depth === 2 && !hit && !sel)
+              return (
+                // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard users walk the nodes with the arrow keys
+                <circle
+                  key={p.id}
+                  cx={p.x}
+                  cy={p.y}
+                  r={p.r}
+                  fill={f.fill}
+                  fillOpacity={opacityOf(p) * (dim ? 0.15 : 1)}
+                  onClick={() => open(p.id)}
+                />
+              );
+            // Labels live beside the nodes, not inside them, so a node's accessible name is its summary.
+            if (showLabel)
+              labels.push(
+                <text
+                  key={`lb-${p.id}`}
+                  className="svg-label"
+                  textAnchor="middle"
+                  x={p.x + lx}
+                  y={p.y + ly}
+                  opacity={dim ? 0.14 : 1}
+                  fontSize={px(p.depth === 0 ? 14 : 12)}
+                  fontWeight={p.depth === 0 ? 700 : 400}
+                >
+                  {lines.map((ln, i) => (
+                    <tspan key={ln} x={p.x + lx} dy={i === 0 ? 0 : px(p.depth === 0 ? 16 : 14)}>
+                      {ln}
+                    </tspan>
+                  ))}
+                </text>,
+              );
             return (
               <g
                 key={p.id}
                 transform={`translate(${p.x} ${p.y})`}
                 className="node-hit"
                 opacity={dim ? 0.14 : 1}
-                {...(p.isHub
-                  ? {
+                {...(compact
+                  ? { role: "presentation" }
+                  : {
                       role: "button",
-                      tabIndex: 0,
+                      tabIndex: active === p.id ? 0 : -1,
+                      "data-nid": p.id,
                       "aria-label": summary,
-                      onKeyDown: (e: React.KeyboardEvent) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onOpen(p.id);
-                        }
-                      },
-                    }
-                  : { role: "presentation" })}
+                      onFocus: () => setActiveId(p.id),
+                      onKeyDown: (e: React.KeyboardEvent) => onNodeKey(e, p.id),
+                    })}
                 onClick={() => open(p.id)}
               >
                 <title>{summary}</title>
@@ -379,37 +458,25 @@ export function MapCanvas({
                   </g>
                 ) : null}
                 {locked && p.depth !== 2 ? <Padlock s={p.depth === 0 ? 1 : 0.7} /> : null}
-                {showLabel ? (
-                  <text
-                    className="svg-label"
-                    textAnchor="middle"
-                    x={lx}
-                    y={ly}
-                    fontSize={px(p.depth === 0 ? 14 : 12)}
-                    fontWeight={p.depth === 0 ? 700 : 400}
-                  >
-                    {lines.map((ln, i) => (
-                      <tspan key={ln} x={lx} dy={i === 0 ? 0 : px(p.depth === 0 ? 16 : 14)}>
-                        {ln}
-                      </tspan>
-                    ))}
-                  </text>
-                ) : null}
               </g>
             );
           })}
+          {/* biome-ignore lint/a11y/noAriaHiddenOnFocusable: plain text group, nothing in it takes focus */}
+          <g aria-hidden="true" style={{ pointerEvents: "none" }}>
+            {labels}
+          </g>
         </g>
       </svg>
       {compact ? null : (
         <>
           <div className="maphint" aria-hidden>
-            Drag to pan, scroll to zoom. Size: items. Fade: freshness.
+            {t("map.hint")}
           </div>
           <div className="mapctl">
             <button
               type="button"
               className="icon-btn"
-              aria-label="Zoom in"
+              aria-label={t("map.zoomin")}
               onClick={() => zoomBy(1.3)}
             >
               <Plus size={16} aria-hidden />
@@ -417,7 +484,7 @@ export function MapCanvas({
             <button
               type="button"
               className="icon-btn"
-              aria-label="Zoom out"
+              aria-label={t("map.zoomout")}
               onClick={() => zoomBy(0.77)}
             >
               <Minus size={16} aria-hidden />
@@ -425,7 +492,7 @@ export function MapCanvas({
             <button
               type="button"
               className="icon-btn"
-              aria-label="Fit to screen"
+              aria-label={t("map.fit")}
               onClick={() => setXf(FIT)}
             >
               <Maximize2 size={16} aria-hidden />

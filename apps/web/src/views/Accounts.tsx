@@ -2,10 +2,13 @@ import { Star } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { Await, Chip, Empty, PageHead, PlaneBadge, statusTone } from "../components/ui";
+import { Await, Chip, Empty, PageHead, PlaneBadge, statusTone, useStatus } from "../components/ui";
+import { useI18n } from "../i18n";
 import { useApi } from "../useApi";
 
 export function Accounts() {
+  const { t, tn } = useI18n();
+  const sl = useStatus();
   const state = useApi(() => api.accounts(), []);
   const [f, setF] = useState({ region: "", country: "", sector: "", status: "", q: "" });
   const all = state.data ?? [];
@@ -33,7 +36,7 @@ export function Accounts() {
         value={f[k]}
         onChange={(e) => setF({ ...f, [k]: e.target.value })}
       >
-        <option value="">{label}: all</option>
+        <option value="">{t("acc.filter.all", { label })}</option>
         {opts[k].map((o) => (
           <option key={o} value={o}>
             {o}
@@ -45,47 +48,45 @@ export function Accounts() {
   return (
     <div className="page">
       <PageHead
-        eyebrow="Accounts"
+        eyebrow={t("nav.accounts")}
         title={
           <>
-            Client workspaces, <em>by scope.</em>
+            {t("accs.title.a")} <em>{t("accs.title.b")}</em>
           </>
         }
-        lead="You see the accounts your role admits. Names under NDA stay hidden without a named grant."
+        lead={t("accs.lead")}
       />
       <div className="filters">
         <div className="field">
           <label htmlFor="f-q" className="sr-only">
-            Search accounts
+            {t("accs.search")}
           </label>
           <input
             id="f-q"
             className="input"
-            placeholder="Search accounts"
+            placeholder={t("accs.search")}
             value={f.q}
             onChange={(e) => setF({ ...f, q: e.target.value })}
           />
         </div>
-        {sel("region", "Region")}
-        {sel("country", "Country")}
-        {sel("sector", "Sector")}
-        {sel("status", "Status")}
+        {sel("region", t("accs.region"))}
+        {sel("country", t("accs.country"))}
+        {sel("sector", t("accs.sector"))}
+        {sel("status", t("accs.status"))}
         <button
           type="button"
           className="btn sm ghost"
           onClick={() => setF({ region: "", country: "", sector: "", status: "", q: "" })}
         >
-          Clear
+          {t("common.clear")}
         </button>
       </div>
       <Await state={state} skeleton={4}>
         {() =>
           all.length === 0 ? (
-            <Empty title="No accounts in your scope">
-              Your role does not admit any account workspace.
-            </Empty>
+            <Empty title={t("accs.empty.title")}>{t("accs.empty.body")}</Empty>
           ) : shown.length === 0 ? (
-            <Empty title="No match">Try a different filter.</Empty>
+            <Empty title={t("accs.nomatch.title")}>{t("accs.nomatch.body")}</Empty>
           ) : (
             <ul className="grid auto" style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {shown.map((a) => (
@@ -99,13 +100,15 @@ export function Accounts() {
                     </div>
                     <div className="meta">
                       <Chip tone={statusTone(a.status)}>{a.status}</Chip>
-                      <Chip tone={statusTone(a.aiProcessing)}>AI: {a.aiProcessing}</Chip>
+                      <Chip tone={statusTone(a.aiProcessing)}>
+                        {t("accs.ai", { state: sl(a.aiProcessing) })}
+                      </Chip>
                     </div>
                     <div className="foot">
-                      <span>{a.openItems} open</span>
+                      <span>{t("accs.open", { n: a.openItems })}</span>
                       <span>
                         <Star size={13} aria-hidden style={{ verticalAlign: -2 }} color="#f8f060" />{" "}
-                        {a.stars} {a.stars === 1 ? "story" : "stories"}
+                        {tn(a.stars, "accs.story.one", "accs.story.other", { n: a.stars })}
                       </span>
                     </div>
                   </Link>

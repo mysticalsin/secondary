@@ -809,7 +809,7 @@ function me(role: string): Me {
 const rid = (s: string) => `rcpt_${String(hash(s) % 10000).padStart(4, "0")}`;
 
 export async function handle(
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   body: unknown,
   persona: string | null,

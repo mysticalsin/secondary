@@ -2,16 +2,18 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { type Key, useT } from "../i18n";
+import { useFocusTrap } from "../lib/focus";
 import { useApp } from "../state";
 import type { SearchResult } from "../types";
 
-const VIEWS = [
-  { label: "Today", to: "/" },
-  { label: "Map", to: "/map" },
-  { label: "Accounts", to: "/accounts" },
-  { label: "Governances", to: "/governances" },
-  { label: "Review", to: "/review" },
-  { label: "My Secondary", to: "/personal" },
+const VIEWS: { label: Key; to: string }[] = [
+  { label: "nav.today", to: "/" },
+  { label: "nav.map", to: "/map" },
+  { label: "nav.accounts", to: "/accounts" },
+  { label: "nav.governances", to: "/governances" },
+  { label: "nav.review", to: "/review" },
+  { label: "nav.personal", to: "/personal" },
 ];
 
 interface Entry {
@@ -22,6 +24,8 @@ interface Entry {
 }
 
 export function Palette() {
+  const t = useT();
+  const box = useRef<HTMLDivElement>(null);
   const { paletteOpen, setPaletteOpen, openNode, epoch } = useApp();
   const nav = useNavigate();
   const [q, setQ] = useState("");
@@ -30,6 +34,7 @@ export function Palette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const returnTo = useRef<Element | null>(null);
 
+  useFocusTrap(box, paletteOpen);
   useEffect(() => {
     if (paletteOpen) {
       returnTo.current = document.activeElement;
@@ -37,8 +42,6 @@ export function Palette() {
       setResults([]);
       setSel(0);
       window.setTimeout(() => inputRef.current?.focus(), 0);
-    } else if (returnTo.current instanceof HTMLElement) {
-      returnTo.current.focus();
     }
   }, [paletteOpen]);
 
@@ -62,11 +65,11 @@ export function Palette() {
 
   const entries = useMemo<Entry[]>(() => {
     const term = q.trim().toLowerCase();
-    const views = VIEWS.filter((v) => !term || v.label.toLowerCase().includes(term)).map<Entry>(
+    const views = VIEWS.filter((v) => !term || t(v.label).toLowerCase().includes(term)).map<Entry>(
       (v) => ({
         key: `v:${v.to}`,
-        label: v.label,
-        hint: "View",
+        label: t(v.label),
+        hint: t("pal.view"),
         run: () => nav(v.to),
       }),
     );
@@ -77,7 +80,7 @@ export function Palette() {
       run: () => openNode(r.id),
     }));
     return [...views, ...found];
-  }, [q, results, nav, openNode]);
+  }, [q, results, nav, openNode, t]);
 
   if (!paletteOpen) return null;
   const close = () => setPaletteOpen(false);
@@ -89,10 +92,11 @@ export function Palette() {
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div
+        ref={box}
         className="sheet palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Search and jump"
+        aria-label={t("pal.aria")}
         onKeyDown={(e) => {
           if (e.key === "Escape") close();
           else if (e.key === "ArrowDown") {
@@ -114,8 +118,8 @@ export function Palette() {
             setQ(e.target.value);
             setSel(0);
           }}
-          placeholder="Search nodes, accounts, topics, or jump to a view"
-          aria-label="Search"
+          placeholder={t("pal.ph")}
+          aria-label={t("pal.search")}
           role="combobox"
           aria-expanded="true"
           aria-controls="palette-list"
@@ -123,20 +127,20 @@ export function Palette() {
         <ul id="palette-list" role="listbox">
           {entries.length === 0 ? (
             <li className="muted" style={{ padding: 12 }}>
-              <Search size={14} aria-hidden /> Nothing found in your scope.
+              <Search size={14} aria-hidden /> {t("pal.none")}
             </li>
           ) : null}
           {entries.map((e, i) => (
-            <li key={e.key} role="option" aria-selected={i === sel}>
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => choose(e)}
-                onMouseMove={() => setSel(i)}
-              >
-                <span>{e.label}</span>
-                <span className="eyebrow k">{e.hint}</span>
-              </button>
+            // biome-ignore lint/a11y/useKeyWithClickEvents: the dialog handles the arrow keys and Enter
+            <li
+              key={e.key}
+              role="option"
+              aria-selected={i === sel}
+              onClick={() => choose(e)}
+              onMouseMove={() => setSel(i)}
+            >
+              <span>{e.label}</span>
+              <span className="eyebrow k">{e.hint}</span>
             </li>
           ))}
         </ul>

@@ -14,3 +14,4 @@ packages/fixtures/out/
 worker-configuration.d.ts
 .worktrees/
 .dev/
+e2e/screens/

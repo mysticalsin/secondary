@@ -140,3 +140,14 @@ What `workers/api` must do:
 - **Release rules.** Whoever wrote or edited an item counts as its author, on every revision, for review and approve. Only the contributor edits a candidate (others comment or request changes). Knowledge reviewers hold `review` and `approve_release` on Company Global. A global release needs two distinct approvers, none of them the contributor or an editor. `own_drafts` means authored by the caller.
 - **MCP dev sign-in.** `X-Dev-Email` and `X-Dev-Persona` count only on a loopback host (localhost, 127.0.0.1) in dev with Access unset. Anywhere else `/authorize` answers 401 until the Access team domain and aud are configured.
 - **Web.** Planes in the UI use the policy names. `GET /v1/admin/roles` and `/v1/admin/audit` are bare arrays, so the web derives "structure only" from the viewer's roles (Platform admin, Auditor).
+
+## B2 UX additions (workers/api/src/ux)
+
+All owner-only or policy-checked, all audited when they write (identity and ids, never content).
+
+- `PUT /v1/personal/items/:id {revision, title?, body?, kind?, tags?}` is a new revision. Type and tags alone change no revision. `DELETE /v1/personal/items/:id` answers `{copiesLeftInReview}`. `GET .../history`, `POST .../restore {revision, fromRevision}` (copies an old revision forward), `GET .../contributions` (status and reviewer words per contribution). Personal items also carry `tags`.
+- `GET|PUT|DELETE /v1/ux/drafts[/:key]`: autosaved working copies (`new` or the item id). Not revisions. A saved revision drops the draft.
+- `GET|PUT /v1/ux/prefs {lang: "en"|"fr"|null, tourDone}`: per user.
+- `GET /v1/ux/review/:id`: previous and current text, discussion, decisions. `POST .../comments {text}` and `POST .../decision {revision, verdict, comment?}` need review or approve rights, never the contributor. Approve stays `approve_release` on `/v1/actions`.
+- `GET /v1/ux/accounts/:id/records`, `POST` (create), `PUT .../:rid`, `POST .../:rid/permission {revision, granted, reference}`, `GET .../:rid/history`: decisions, commitments, risks and success stories (sections `dec`, `com`, `risk`, `out`). Reads need content access, writes need `edit` on the account. The external story text is stored but returned only while customer permission is on record.
+- `GET /v1/ux/attention`: open decisions, commitments and risks across the accounts the caller can read, overdue first.

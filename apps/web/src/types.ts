@@ -241,6 +241,7 @@ export interface PersonalItem {
   title: string;
   body: string;
   kind: PersonalKind;
+  tags?: string[];
   updatedAt: string;
   contributedTo?: { scopeId: string; candidateId: string; at: string }[];
   revision: number;
@@ -336,4 +337,99 @@ export interface ViewPlan {
   version: 1;
   title: string;
   components: { type: string; props: Record<string, unknown> }[];
+}
+
+// ---- B2 UX endpoints (workers/api/src/ux) ----
+
+export interface Prefs {
+  lang: "en" | "fr" | null;
+  tourDone: boolean;
+}
+
+export interface RevisionRow {
+  revision: number;
+  title: string;
+  body: string;
+  at: string;
+  current: boolean;
+}
+
+export interface Draft {
+  key: string;
+  title: string;
+  body: string;
+  kind: PersonalKind;
+  baseRevision: number;
+  at: string;
+}
+
+export interface ContributionStatus {
+  candidateId: string;
+  scopeLabel: string;
+  at: string;
+  status: "in_review" | "changes_requested" | "released" | "withdrawn" | "unknown";
+  revision: number;
+  approvals?: number;
+  required?: number;
+  feedback: { id: number; text: string; at: string }[];
+}
+
+export interface ReviewText {
+  revision: number;
+  title: string;
+  body: string;
+  at: string;
+}
+
+export interface ReviewDetail {
+  id: string;
+  current: ReviewText;
+  previous: ReviewText | null;
+  revisions: { revision: number; at: string }[];
+  comments: { id: number; authorId: string; text: string; at: string; mine: boolean }[];
+  decisions: {
+    actorId: string;
+    kind: "approved" | "changes_requested" | "accept" | "reviewed";
+    at: string;
+    mine: boolean;
+  }[];
+  twoPerson: { required: boolean; approvals: number; needed: number };
+}
+
+export type RecordSection = "dec" | "com" | "risk" | "out";
+
+export interface AccountRec {
+  id: string;
+  section: RecordSection;
+  title: string;
+  status: string;
+  revision: number;
+  ownerRole: string;
+  due: string | null;
+  overdue: boolean;
+  note: string;
+  updatedAt: string;
+  story?: {
+    internal: string;
+    lesson: string;
+    external: { available: boolean; text: string | null; reason: string };
+    permission: { reference: string; by: string; at: string } | null;
+  };
+}
+
+export interface AccountRecords {
+  canEdit: boolean;
+  ownerRoles: string[];
+  records: AccountRec[];
+}
+
+export interface AttentionItem {
+  id: string;
+  kind: "decision" | "commitment" | "risk";
+  title: string;
+  accountId: string;
+  accountName: string;
+  due: string | null;
+  overdue: boolean;
+  ownerRole: string;
 }
