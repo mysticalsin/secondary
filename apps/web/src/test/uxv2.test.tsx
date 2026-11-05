@@ -230,12 +230,11 @@ describe("Studio: digest draft", () => {
     expect(screen.queryByRole("button", { name: /send/i })).not.toBeInTheDocument();
   });
 
-  it("shows Landing Page Studio as coming soon with nothing to click", async () => {
+  it("shows the Landing Page Studio list with a New page button", async () => {
     wrap(<Studio />);
-    const card = await screen.findByTestId("lp-soon");
-    expect(card).toHaveTextContent("Coming soon, decision pending");
-    expect(within(card).queryByRole("button")).not.toBeInTheDocument();
-    expect(within(card).queryByRole("link")).not.toBeInTheDocument();
+    const card = await screen.findByTestId("lp-card");
+    expect(within(card).getByRole("button", { name: "New page" })).toBeInTheDocument();
+    expect(card).not.toHaveTextContent("Coming soon");
   });
 });
 

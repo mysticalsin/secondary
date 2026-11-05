@@ -12,6 +12,7 @@ import type {
   Usage,
 } from "../uxv2/types";
 import type { WikiFact, WikiPage, WikiRevision, WikiSearchHit } from "../views/wiki/types";
+import { handleLp, NO as LP_NO, lpAnswer, lpQuestions } from "./lp";
 
 export const NOT_HANDLED = Symbol("not handled");
 
@@ -632,6 +633,8 @@ export function handleV2(
   body: Record<string, unknown>,
   role: string,
 ): unknown {
+  const lp = handleLp(method, p, search, body, role);
+  if (lp !== LP_NO) return lp;
   if (method === "GET" && p === "/v1/brain/tree") {
     const root = search.get("root");
     const ws = root === "personal" ? ["me"] : ["core", "a_acme"];
@@ -680,9 +683,12 @@ export function handleV2(
       return { results: self ? backlinks(role, ws, self.id) : [] };
     }
   }
-  if (method === "GET" && p === "/v1/questions") return questionsFor(role);
+  if (method === "GET" && p === "/v1/questions")
+    return [...questionsFor(role), ...lpQuestions(role)];
   const qa = p.match(/^\/v1\/questions\/([^/]+)$/);
   if (method === "POST" && qa) {
+    const lpDone = lpAnswer(decodeURIComponent(qa[1] as string), role, body);
+    if (lpDone !== LP_NO) return lpDone;
     const list = questionsFor(role);
     const i = list.findIndex((x) => x.id === decodeURIComponent(qa[1] as string));
     const item = list[i];

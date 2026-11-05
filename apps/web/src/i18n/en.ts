@@ -1,8 +1,10 @@
 // English. This file defines the keys; fr.ts must define every one of them.
+import { lpEn } from "./lp";
 import { ux2En } from "./ux2";
 
 export const en = {
   ...ux2En,
+  ...lpEn,
   // common
   "common.cancel": "Cancel",
   "common.clear": "Clear",

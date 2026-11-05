@@ -787,7 +787,7 @@ button.bt-row:hover {
 /* ---------- studio ---------- */
 .studio-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   gap: var(--s5);
   align-items: start;
 }
