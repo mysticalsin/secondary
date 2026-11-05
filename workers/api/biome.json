@@ -1,0 +1,7 @@
+{
+  "root": false,
+  "extends": "//",
+  "files": {
+    "includes": ["**", "!src/generated", "!worker-configuration.d.ts", "!dist", "!.wrangler"]
+  }
+}

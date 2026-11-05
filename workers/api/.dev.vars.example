@@ -1,0 +1,8 @@
+# Copy to .dev.vars (gitignored) for `wrangler dev`. Never commit real values.
+SEED_TOKEN=change-me-local-only
+# Local-only sign-in without Cloudflare Access. Honoured only for localhost, 127.0.0.1 and [::1] in ENVIRONMENT=dev.
+DEV_AUTH_BYPASS_EMAIL=dev@example.invalid
+# workerd does not implement Durable Object jurisdictions locally. Deployed environments must keep "eu" (the default).
+DO_JURISDICTION=off
+# Shared with workers/mcp (at least 32 characters). Local-only value.
+INTERNAL_HMAC_KEY=local-internal-hmac-key-0123456789abcdef
