@@ -81,7 +81,33 @@ const SNAPSHOT_TABLES = [
   "gov_access_requests",
   "gov_identity",
   "gov_notifications",
+  "pilot_cohorts",
 ] as const;
+
+/** Features a pilot cohort can switch on. A key no cohort mentions is on for everyone. */
+export const FLAG_KEYS = ["brains_v3", "imports", "coach", "batch_review", "journal"] as const;
+export type FlagKey = (typeof FLAG_KEYS)[number];
+export type Cohort = {
+  id: string;
+  name: string;
+  members: string[];
+  flags: Record<string, boolean>;
+  createdAt: number;
+};
+export type AgentRow = {
+  grantId: string;
+  clientId: string;
+  host: string;
+  scopes: string[];
+  firstAt: number;
+  lastAt: number;
+  lastTool: string;
+  calls: number;
+  revoked: boolean;
+};
+const MAX_COHORTS = 20;
+const MAX_COHORT_MEMBERS = 500;
+const MAX_GRANTS_PER_PERSON = 50;
 
 export class TenantPolicy extends DurableObject<Env> {
   private readonly sql: SqlStorage;
@@ -119,6 +145,16 @@ export class TenantPolicy extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS nonces (key TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
         -- Not in SNAPSHOT_TABLES on purpose: a restore replaces the listed tables only, so this list
         -- survives it and is applied again afterwards (M-03). It is never exported or backed up.
+        CREATE TABLE IF NOT EXISTS pilot_cohorts (
+          id TEXT PRIMARY KEY, name TEXT NOT NULL, members TEXT NOT NULL, flags TEXT NOT NULL,
+          created_at INTEGER NOT NULL);
+        -- Agent connections (one row per OAuth grant that called). Not in SNAPSHOT_TABLES on purpose:
+        -- a restore must never bring back a connection that was revoked. Content-free: ids, host, scopes.
+        CREATE TABLE IF NOT EXISTS agent_grants (
+          principal_id TEXT NOT NULL, grant_id TEXT NOT NULL, client_id TEXT NOT NULL, host TEXT NOT NULL,
+          scopes TEXT NOT NULL, first_at INTEGER NOT NULL, last_at INTEGER NOT NULL,
+          last_tool TEXT NOT NULL, calls INTEGER NOT NULL, revoked_at INTEGER,
+          PRIMARY KEY (principal_id, grant_id));
         CREATE TABLE IF NOT EXISTS erasure_tombstones (
           principal_id TEXT PRIMARY KEY, pseudonym TEXT NOT NULL, aliases TEXT NOT NULL,
           erased_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
@@ -353,6 +389,162 @@ export class TenantPolicy extends DurableObject<Env> {
       active: !hijack && this.identity.isEmailActive(email, input.managed === true),
       rolesVersion: this.govStore.rolesVersion(),
     };
+  }
+
+  // ---- agent connections (docs/API-CONTRACT.md "Agent connections") ----
+
+  /**
+   * Record one MCP call by grant, or learn that the grant was revoked. A revoked grant is never
+   * updated again and the caller must refuse the call. Ids, host, scopes and the tool name only.
+   */
+  agentSeen(a: {
+    principalId: string;
+    grantId: string;
+    clientId: string;
+    host: string;
+    scopes: string[];
+    tool: string;
+    now: number;
+  }): { revoked: boolean } {
+    const row = this.sql
+      .exec(
+        "SELECT revoked_at FROM agent_grants WHERE principal_id = ? AND grant_id = ?",
+        a.principalId,
+        a.grantId,
+      )
+      .toArray()[0];
+    if (row?.revoked_at != null) return { revoked: true };
+    this.sql.exec(
+      `INSERT INTO agent_grants (principal_id, grant_id, client_id, host, scopes, first_at, last_at, last_tool, calls)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON CONFLICT(principal_id, grant_id) DO UPDATE SET last_at = excluded.last_at,
+         last_tool = excluded.last_tool, scopes = excluded.scopes, host = excluded.host, calls = calls + 1`,
+      a.principalId,
+      a.grantId,
+      a.clientId,
+      a.host,
+      JSON.stringify(a.scopes.slice(0, 10)),
+      a.now,
+      a.now,
+      a.tool.slice(0, 60),
+    );
+    // Keep the newest rows only; a revoked one is kept as long as it is among them.
+    this.sql.exec(
+      `DELETE FROM agent_grants WHERE principal_id = ? AND grant_id NOT IN
+         (SELECT grant_id FROM agent_grants WHERE principal_id = ? ORDER BY last_at DESC LIMIT ?)`,
+      a.principalId,
+      a.principalId,
+      MAX_GRANTS_PER_PERSON,
+    );
+    return { revoked: false };
+  }
+
+  agentList(principalId: string): AgentRow[] {
+    return this.sql
+      .exec("SELECT * FROM agent_grants WHERE principal_id = ? ORDER BY last_at DESC", principalId)
+      .toArray()
+      .map((r) => ({
+        grantId: r.grant_id as string,
+        clientId: r.client_id as string,
+        host: r.host as string,
+        scopes: JSON.parse(r.scopes as string) as string[],
+        firstAt: r.first_at as number,
+        lastAt: r.last_at as number,
+        lastTool: r.last_tool as string,
+        calls: r.calls as number,
+        revoked: r.revoked_at != null,
+      }));
+  }
+
+  /** Revoke the caller's own grants, one by id or every grant of a host. Returns the grants revoked. */
+  agentRevoke(
+    principalId: string,
+    by: { grantId: string } | { host: string },
+    now: number,
+  ): { grantId: string; clientId: string }[] {
+    const hit =
+      "grantId" in by
+        ? this.sql
+            .exec(
+              "UPDATE agent_grants SET revoked_at = ? WHERE principal_id = ? AND grant_id = ? AND revoked_at IS NULL RETURNING grant_id, client_id",
+              now,
+              principalId,
+              by.grantId,
+            )
+            .toArray()
+        : this.sql
+            .exec(
+              "UPDATE agent_grants SET revoked_at = ? WHERE principal_id = ? AND host = ? AND revoked_at IS NULL RETURNING grant_id, client_id",
+              now,
+              principalId,
+              by.host,
+            )
+            .toArray();
+    return hit.map((r) => ({ grantId: r.grant_id as string, clientId: r.client_id as string }));
+  }
+
+  // ---- pilot cohorts ----
+
+  pilotList(): Cohort[] {
+    return this.sql
+      .exec("SELECT * FROM pilot_cohorts ORDER BY created_at, id")
+      .toArray()
+      .map((r) => ({
+        id: r.id as string,
+        name: r.name as string,
+        members: JSON.parse(r.members as string) as string[],
+        flags: JSON.parse(r.flags as string) as Record<string, boolean>,
+        createdAt: r.created_at as number,
+      }));
+  }
+
+  pilotSave(
+    c: { id: string; name: string; members: string[]; flags: Record<string, boolean> },
+    create: boolean,
+    now: number,
+  ): "ok" | "not_found" | "too_many" {
+    const exists = this.sql.exec("SELECT 1 FROM pilot_cohorts WHERE id = ?", c.id).toArray().length > 0;
+    if (create && this.sql.exec("SELECT COUNT(*) AS n FROM pilot_cohorts").one().n as number >= MAX_COHORTS)
+      return "too_many";
+    if (!create && !exists) return "not_found";
+    const members = [...new Set(c.members.map((m) => m.trim().toLowerCase()))].slice(0, MAX_COHORT_MEMBERS);
+    this.sql.exec(
+      `INSERT INTO pilot_cohorts (id, name, members, flags, created_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET name = excluded.name, members = excluded.members, flags = excluded.flags`,
+      c.id,
+      c.name,
+      JSON.stringify(members),
+      JSON.stringify(c.flags),
+      now,
+    );
+    return "ok";
+  }
+
+  pilotDelete(id: string): boolean {
+    return this.sql.exec("DELETE FROM pilot_cohorts WHERE id = ? RETURNING 1", id).toArray().length > 0;
+  }
+
+  /** A person's name leaves every invite list (erasure). */
+  private pilotForget(email: string): void {
+    for (const c of this.pilotList())
+      if (c.members.includes(email))
+        this.sql.exec(
+          "UPDATE pilot_cohorts SET members = ? WHERE id = ?",
+          JSON.stringify(c.members.filter((m) => m !== email)),
+          c.id,
+        );
+  }
+
+  /** Flags for one address: a key is managed once any cohort sets it, and is then on only for its members. */
+  flagsFor(email: string): Record<FlagKey, boolean> {
+    const e = email.trim().toLowerCase();
+    const cohorts = this.pilotList();
+    const out = {} as Record<FlagKey, boolean>;
+    for (const k of FLAG_KEYS) {
+      const setBy = cohorts.filter((c) => Object.hasOwn(c.flags, k));
+      out[k] = setBy.length === 0 || setBy.some((c) => c.flags[k] === true && c.members.includes(e));
+    }
+    return out;
   }
 
   /**
@@ -665,6 +857,12 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** Right to erasure for the directory: identity, roles, memberships, grants, elevations, counters. */
   erasePrincipal(principalId: string): number {
+    const erasedEmail =
+      (this.sql.exec("SELECT lower(email) AS e FROM principals WHERE id = ?", principalId).toArray()[0]
+        ?.e as string | undefined) ??
+      (this.sql
+        .exec("SELECT email AS e FROM gov_identity WHERE principal_id = ?", principalId)
+        .toArray()[0]?.e as string | undefined);
     this.ctx.storage.transactionSync(() => {
       // Before the principals row goes: the address is looked up through it.
       this.sql.exec(
@@ -692,6 +890,8 @@ export class TenantPolicy extends DurableObject<Env> {
           principalId,
         );
       this.sql.exec("DELETE FROM pending_ops WHERE requested_by = ?", principalId);
+      this.sql.exec("DELETE FROM agent_grants WHERE principal_id = ?", principalId);
+      if (erasedEmail) this.pilotForget(erasedEmail);
       this.journal.forget(principalId);
     });
     return this.bump();

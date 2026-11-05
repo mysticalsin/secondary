@@ -82,6 +82,9 @@ export const WIKI_TABLES = [
   "wiki_jobs",
   "wiki_findings",
   "wiki_promotions",
+  "brain_members",
+  "brain_fields",
+  "brain_coach",
 ] as const;
 
 /** A record tagged "contacts" in an account is gated by the account's Contacts subspace, not the account. */
@@ -108,6 +111,11 @@ export type ProposeOpts = {
   readable?: string[];
   /** Dev seed only: apply at once, marked "Synthetic seed". Refused unless ENVIRONMENT is dev. */
   seed?: boolean;
+  /**
+   * The route decided this proposal publishes at once: the brain's publication mode is direct, the
+   * policy bounds allow it and the caller may edit. Only a plain page proposal ever takes this path.
+   */
+  publishDirect?: boolean;
 };
 export type ProposeResult =
   | { ok: true; created: false; reason: string }
@@ -217,11 +225,11 @@ export abstract class WikiBase extends DurableObject<Env> {
 
   // ---- meta ----
 
-  private metaGet(key: string): string | null {
+  protected metaGet(key: string): string | null {
     const r = this.sql.exec("SELECT value FROM wiki_meta WHERE key = ?", key).toArray()[0];
     return r ? (r.value as string) : null;
   }
-  private metaSet(key: string, value: string): void {
+  protected metaSet(key: string, value: string): void {
     this.sql.exec(
       "INSERT INTO wiki_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       key,
@@ -692,7 +700,7 @@ export abstract class WikiBase extends DurableObject<Env> {
 
   // ---- pages ----
 
-  private pageById(id: string): PageRow | null {
+  protected pageById(id: string): PageRow | null {
     const r = this.sql.exec("SELECT * FROM wiki_pages WHERE id = ?", id).toArray()[0];
     return r ? rowPage(r) : null;
   }
@@ -721,7 +729,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       .map(rowPage);
   }
 
-  wikiPage(id: string, revision?: number): (PageRow & { current: number }) | null {
+  wikiPage(id: string, revision?: number): (PageRow & { current: number; hidden?: boolean }) | null {
     this.wikiSyncPromotions(Date.now());
     const p = this.pageById(id);
     if (!p) return null;
@@ -736,6 +744,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       markdown: r.markdown as string,
       revision,
       current: p.revision,
+      hidden: r.hidden_at != null,
     };
   }
 
@@ -754,6 +763,9 @@ export abstract class WikiBase extends DurableObject<Env> {
       actor: string | null;
       at: number;
       proposalId: string | null;
+      hidden: boolean;
+      /** The revision this one was diffed against is hidden: its removed lines are hidden text. */
+      prevHidden: boolean;
       diff: ReturnType<typeof lineDiff>;
     }[];
     next: number | null;
@@ -776,6 +788,8 @@ export abstract class WikiBase extends DurableObject<Env> {
         actor: (r.actor as string | null) ?? null,
         at: r.at as number,
         proposalId: (r.proposal_id as string | null) ?? null,
+        hidden: r.hidden_at != null,
+        prevHidden: prev ? prev.hidden_at != null : false,
         diff: lineDiff(prev ? (prev.markdown as string) : null, r.markdown as string),
       };
     });
@@ -799,7 +813,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       .map((r) => ({ id: r.id as string, rank: r.rank as number }));
   }
 
-  private savePage(
+  protected savePage(
     p: { id: string; type: string; title: string; markdown: string },
     actor: string | null,
     proposalId: string | null,
@@ -1097,7 +1111,10 @@ export abstract class WikiBase extends DurableObject<Env> {
       this.wikiLogAppend(authorId, "seed.accepted", { id }, now);
       return { ok: true, created: true, id, autoAccepted: true };
     }
-    if (opts.autoAccept && m.autoAccept && isPersonalScope(m.scopeId) && p.kind === "wiki_ingest") {
+    if (
+      p.kind === "wiki_ingest" &&
+      ((opts.autoAccept && m.autoAccept && isPersonalScope(m.scopeId)) || opts.publishDirect)
+    ) {
       this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
       this.applyProposal(p, authorId, null, now, id);
       this.wikiLogAppend(authorId, "auto_accepted", { id }, now);
@@ -1646,7 +1663,9 @@ export abstract class WikiBase extends DurableObject<Env> {
     const facts = this.wikiFacts({ limit: 2_000 });
     const ids = [...new Set(facts.filter((f) => f.invalidAt === null).flatMap((f) => f.sourceIds))];
     return {
-      pages: this.wikiPages().map(({ id, type, title, markdown, revision }) => ({
+      pages: this.wikiPages()
+        .filter((p) => p.type !== "journal")
+        .map(({ id, type, title, markdown, revision }) => ({
         id,
         type,
         title,

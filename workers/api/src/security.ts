@@ -47,10 +47,20 @@ export const securityHeaders: MiddlewareHandler<AppEnv> = async (c, next) => {
     c.res.headers.set("Cache-Control", "no-store");
 };
 
-export const limitBody = bodyLimit({
+const jsonLimit = bodyLimit({
   maxSize: MAX_BODY_BYTES,
   onError: (c) => c.json({ error: "payload_too_large" }, 413),
 });
+/** Brain imports carry an archive: the one route with a larger body, and a binary content type. */
+export const IMPORT_BODY_BYTES = 5 * 1024 * 1024;
+const importLimit = bodyLimit({
+  maxSize: IMPORT_BODY_BYTES,
+  onError: (c) => c.json({ error: "too_large", reason: "The archive is larger than 5 MB" }, 413),
+});
+const isImport = (c: Context<AppEnv>): boolean =>
+  c.req.method === "POST" && /^\/v1\/brains\/[^/]+\/import$/.test(new URL(c.req.url).pathname);
+export const limitBody: MiddlewareHandler<AppEnv> = (c, next) =>
+  isImport(c) ? importLimit(c, next) : jsonLimit(c, next);
 
 /**
  * Mutations need a JSON content type (which a cross-site form cannot send without a CORS
@@ -68,11 +78,13 @@ export const mutationGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
     const origin = c.req.header("Origin");
     if (origin && origin !== new URL(c.req.url).origin) return c.json({ error: "forbidden" }, 403);
     const hasBody = c.req.header("Content-Length") !== "0" && c.req.raw.body !== null;
-    if (
-      hasBody &&
-      !(c.req.header("Content-Type") ?? "").toLowerCase().startsWith("application/json")
-    )
-      return c.json({ error: "unsupported_media_type" }, 415);
+    const type = (c.req.header("Content-Type") ?? "").toLowerCase();
+    // An import is an archive. It still has to come from this origin (checked above); the route
+    // validates the bytes. A form post cannot send these types without a CORS preflight either.
+    const okType = isImport(c)
+      ? /^application\/(?:zip|json|octet-stream|x-zip-compressed)/.test(type)
+      : type.startsWith("application/json");
+    if (hasBody && !okType) return c.json({ error: "unsupported_media_type" }, 415);
   }
   await next();
 };

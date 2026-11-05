@@ -6,6 +6,9 @@ export interface Caller {
   persona?: string;
   clientId: string;
   scopes: string[];
+  /** The OAuth grant behind the token, and the host app it belongs to (labels for the connections list). */
+  grantId?: string;
+  host?: string;
 }
 
 export type ApiResult<T = unknown> =
@@ -45,6 +48,8 @@ export class ApiClient {
       client_id: this.caller.clientId,
       scope: this.caller.scopes,
       tool: this.tool,
+      ...(this.caller.grantId ? { grant_id: this.caller.grantId } : {}),
+      ...(this.caller.host ? { host: this.caller.host } : {}),
     };
     let headers: Record<string, string>;
     try {
@@ -78,8 +83,14 @@ export class ApiClient {
       if (res.status === 401) return { ok: false, status: 502, error: "service_auth_failed" };
       let reason = `api_${res.status}`;
       try {
-        const j = (await res.json()) as { reason?: unknown };
+        const j = (await res.json()) as { reason?: unknown; error?: unknown };
         if (typeof j.reason === "string") reason = j.reason.slice(0, 200);
+        // The person revoked this connection in Secondary: delete the grant here too, so the token
+        // is dead at both ends and the host has to ask for consent again.
+        if (res.status === 403 && j.error === "connection_revoked") {
+          reason = "connection_revoked";
+          await this.killGrant();
+        }
       } catch {}
       return { ok: false, status: res.status, error: reason };
     }
@@ -87,6 +98,15 @@ export class ApiClient {
       return { ok: true, status: res.status, data: (await res.json()) as T };
     } catch {
       return { ok: false, status: 502, error: "api_bad_response" };
+    }
+  }
+
+  private async killGrant(): Promise<void> {
+    if (!this.caller.grantId) return;
+    try {
+      await this.env.OAUTH_PROVIDER.revokeGrant(this.caller.grantId, this.caller.sub);
+    } catch {
+      // The API already refuses the token; a failed delete only leaves the grant to expire.
     }
   }
 

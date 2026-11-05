@@ -20,6 +20,8 @@ export const TEST_AUDIT_KEY = "test-audit-key-mcp-0123456789abcdef0123";
 const audit: Record<string, unknown>[] = [];
 let auditDown = false;
 let mcpSwitchOn = true;
+/** The API says every connection was revoked (what workers/api answers after a revoke). */
+let connectionsRevoked = false;
 
 const hub = (id: string, label: string, access: "full" | "partial" | "locked") => ({
   id,
@@ -163,11 +165,32 @@ function route(method: string, path: string, query: URLSearchParams): Response {
         citations: {},
       });
     }
+    if (/^\/v1\/brains\/[^/]+\/guide$/.test(path))
+      return j({
+        brain: { id: "c_bid", type: "team", name: "Bid & Pre-sales", template: "team" },
+        publication: "review",
+        collections: [{ type: "topic", label: "Topics", required: ["Summary"], count: 2 }],
+        tone: "Factual",
+        fields: [],
+        conventions: ["Cite every claim"],
+        howToPropose: "wiki_propose",
+      });
     if (path === "/v1/lp")
       return j([{ id: "lp_0123456789abcdef", status: "draft", stats: { views: 0 } }]);
     if (path === "/v1/review") return j({ candidates: [{ id: "cand1", title: "Pricing FAQ" }] });
   }
   if (method === "POST") {
+    if (/^\/v1\/brains\/[^/]+\/coach\/propose$/.test(path)) {
+      if (path.includes("denied")) return j({ reason: "You cannot manage this brain" }, 403);
+      return j({
+        proposalId: "coach-0123456789ab",
+        hash: "h",
+        template: "team",
+        collections: [{ type: "topic", label: "Topics", required: ["Summary"], action: "keep" }],
+        rationale: "r",
+        expiresAt: "2026-11-05T12:00:00.000Z",
+      });
+    }
     if (path === "/v1/lp/compose")
       return j({ id: "lp_0123456789abcdef", status: "draft", revision: 1 }, 201);
     if (path === "/v1/personal/items") return j({ ok: true, id: "pb:u1:n1" });
@@ -189,6 +212,10 @@ export async function apiStub(request: Request): Promise<Response> {
   if (url.pathname === "/__switch") {
     mcpSwitchOn = request.method !== "PUT";
     return Response.json({ mcpSwitchOn });
+  }
+  if (url.pathname === "/__revoked") {
+    connectionsRevoked = request.method === "PUT";
+    return Response.json({ connectionsRevoked });
   }
   if (url.pathname === "/v1/internal/mcp/switches") {
     if (!(await verifyOpsRequest(request, TEST_HMAC_KEY)))
@@ -216,6 +243,7 @@ export async function apiStub(request: Request): Promise<Response> {
     body: bodyText ? JSON.parse(bodyText) : null,
     hasAuthorization: request.headers.has("authorization"),
   });
+  if (connectionsRevoked) return Response.json({ error: "connection_revoked" }, { status: 403 });
   return route(request.method, url.pathname, url.searchParams);
 }
 

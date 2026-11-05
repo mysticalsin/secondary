@@ -1,3 +1,4 @@
+export * from "./brains.ts";
 export { admittedView, canDo, canDoInView, describe, type LiveItem } from "./engine.ts";
 export type { GovernanceStages } from "./map.ts";
 export { governanceStages, toMapView, toNodeDetail } from "./map.ts";

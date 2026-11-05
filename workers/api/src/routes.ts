@@ -27,6 +27,7 @@ import { authenticate, requireOrg, viewOf } from "./auth.ts";
 import { checkSourceAccess, NOT_CONFIRMED, SOURCE_ITEM_ID } from "./connector.ts";
 import { MAX_PROMPT, planView } from "./genui.ts";
 import { humanIdsOf } from "./human.ts";
+import { brainsRoutes } from "./brains/index.ts";
 import { lpRoutes } from "./lp/routes.ts";
 import { readiness } from "./observe.ts";
 import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
@@ -1161,6 +1162,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.route("/", uxRoutes(deps)); // B2 UX: edit, history, drafts, prefs, review detail, records
   v1.route("/", uxv2Routes(deps)); // UX v2: ask, brain tree and export, questions, routines, usage, digest
   v1.route("/", lpRoutes(deps)); // Landing Page Studio
+  v1.route("/", brainsRoutes(deps)); // v3 brains: directory, access, fields, imports, agents, pilot
 
   v1.all("*", (c) => c.json({ error: "not_found" }, 404));
   return v1;

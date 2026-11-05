@@ -8,7 +8,8 @@
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { personalKindOf } from "./personal-kind.ts";
 import type { SensitivityFlag } from "./sensitivity.ts";
-import { WIKI_TABLES, WikiBase } from "./wiki/store.ts";
+import { BrainBase } from "./brains/store.ts";
+import { WIKI_TABLES, type WikiBase } from "./wiki/store.ts";
 import { isWikiKind } from "./wiki/types.ts";
 
 export type Origin = "seed" | "personal" | "candidate" | "record";
@@ -137,7 +138,7 @@ const SNAPSHOT_TABLES = [
 const requiredFor = (releaseTarget: string, plane: string): number =>
   releaseTarget === "global" || plane === "GLOBAL_NONPERSONAL" ? 2 : 1;
 
-export class Workspace extends WikiBase {
+export class Workspace extends BrainBase {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {

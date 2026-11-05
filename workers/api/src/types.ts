@@ -13,7 +13,13 @@ export interface Session {
   config: TenantConfig | null;
   epoch: number;
   /** Set when the request came from workers/mcp over the service binding. */
-  internal: { clientId: string; tool: string; scope: string[] } | null;
+  internal: {
+    clientId: string;
+    tool: string;
+    scope: string[];
+    grantId?: string;
+    host?: string;
+  } | null;
   /** null until the tenant is seeded. */
   org: Org | null;
   /** Kill switches of the tenant (true = on). */

@@ -8,7 +8,9 @@
 
 import { canDoInView, personalRootId } from "@secondary/policy";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
+import { needFlag } from "../brains/open.ts";
 import { humanIdsOf } from "../human.ts";
 import { LP_QID, lpQuestions, resolveLpQuestion } from "../lp/questions.ts";
 import { parseCandidateId, personalScope, scopeOfNode } from "../scope.ts";
@@ -39,6 +41,8 @@ export type Question = {
 };
 
 const MAX_LIST = 200;
+const BATCH_MAX = 50;
+const KINDS = new Set(["ingest", "contradiction", "lint", "review", "release"]);
 const NOTE_MAX = 2_000;
 const QID = /^(?:cand:[a-z0-9][A-Za-z0-9_.:@-]*:[0-9a-f]{8}|ask:[0-9a-f]{16}|lp:[0-9a-f]{16})$/;
 
@@ -277,200 +281,174 @@ const deny = async (c: C, action: string, id: string, scope: string | null, reas
   return forbidden(c, reason);
 };
 
-export function questionRoutes(): Hono<AppEnv> {
-  const r = new Hono<AppEnv>();
+/** Resolve one question: the single-item rules, shared by POST /questions/:id and the batch. */
+async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Promise<Response> {
+  const s = sess(c);
+  if (!QID.test(id)) throw notFound();
+  if (typeof b.action !== "string" || b.action.length > 40) throw bad("invalid_action");
+  const action = b.action;
+  if (
+    b.revisionHash !== undefined &&
+    (typeof b.revisionHash !== "string" || b.revisionHash.length > 128)
+  )
+    throw bad("invalid_revision_hash");
+  if (b.note !== undefined && (typeof b.note !== "string" || b.note.length > NOTE_MAX))
+    throw bad("invalid_note");
+  const revisionHash = b.revisionHash as string | undefined;
+  const note = typeof b.note === "string" ? b.note.trim() : "";
+  const view = viewOf(s);
 
-  r.get("/questions", async (c) => c.json(await questionsOf(c)));
+  // ---- a landing page: the same rules as POST /v1/lp/:id/approve ----
+  if (LP_QID.test(id)) {
+    const res = await resolveLpQuestion(c, id, action, revisionHash, note);
+    return c.json(res.body, res.status as 200 | 400 | 403 | 404 | 409 | 503);
+  }
 
-  r.post("/questions/:id", async (c) => {
-    const s = sess(c);
-    const id = c.req.param("id") ?? "";
-    if (!QID.test(id)) throw notFound();
-    const b = await readObject(c);
-    if (typeof b.action !== "string" || b.action.length > 40) throw bad("invalid_action");
-    const action = b.action;
-    if (
-      b.revisionHash !== undefined &&
-      (typeof b.revisionHash !== "string" || b.revisionHash.length > 128)
-    )
-      throw bad("invalid_revision_hash");
-    if (b.note !== undefined && (typeof b.note !== "string" || b.note.length > NOTE_MAX))
-      throw bad("invalid_note");
-    const revisionHash = b.revisionHash as string | undefined;
-    const note = typeof b.note === "string" ? b.note.trim() : "";
-    const view = viewOf(s);
-
-    // ---- a landing page: the same rules as POST /v1/lp/:id/approve ----
-    if (LP_QID.test(id)) {
-      const res = await resolveLpQuestion(c, id, action, revisionHash, note);
-      return c.json(res.body, res.status as 200 | 400 | 403 | 404 | 409 | 503);
-    }
-
-    // ---- an ingest question: the owner's own, answered with the owner's rights today ----
-    if (id.startsWith("ask:")) {
-      const ws = stubOf(c, personalScope(s.principal.id));
-      const rec = await ws.get(id);
-      if (!rec || rec.kind !== ASK_KIND || safeJson(rec.body).closed === true) throw notFound();
-      if (action !== "ingest" && action !== "skip")
-        return deny(c, "question.ingest", id, null, "Action not available");
-      const ask = safeJson(rec.body);
-      // A closed question keeps no text: what it held is either ingested or dropped.
-      const closed = { ...ask, text: "", closed: true, outcome: action };
-      if (action === "ingest") {
-        const res = await writeIngest(
-          c,
-          String(ask.routineId ?? ""),
-          String(ask.targetScopeId ?? ""),
-          rec.label,
-          String(ask.text ?? ""),
-        );
-        if (!res.ok) return deny(c, "question.ingest", id, null, res.reason);
-      }
-      await ws.scratch(
-        {
-          id,
-          label: rec.label,
-          kind: ASK_KIND,
-          plane: "PERSONAL_HOSTED",
-          origin: "personal",
-          status: "open",
-          authorId: s.principal.id,
-          body: JSON.stringify(closed),
-        },
-        s.ctx.now,
+  // ---- an ingest question: the owner's own, answered with the owner's rights today ----
+  if (id.startsWith("ask:")) {
+    const ws = stubOf(c, personalScope(s.principal.id));
+    const rec = await ws.get(id);
+    if (!rec || rec.kind !== ASK_KIND || safeJson(rec.body).closed === true) throw notFound();
+    if (action !== "ingest" && action !== "skip")
+      return deny(c, "question.ingest", id, null, "Action not available");
+    const ask = safeJson(rec.body);
+    // A closed question keeps no text: what it held is either ingested or dropped.
+    const closed = { ...ask, text: "", closed: true, outcome: action };
+    if (action === "ingest") {
+      const res = await writeIngest(
+        c,
+        String(ask.routineId ?? ""),
+        String(ask.targetScopeId ?? ""),
+        rec.label,
+        String(ask.text ?? ""),
       );
-      return c.json({ ok: true });
+      if (!res.ok) return deny(c, "question.ingest", id, null, res.reason);
     }
+    await ws.scratch(
+      {
+        id,
+        label: rec.label,
+        kind: ASK_KIND,
+        plane: "PERSONAL_HOSTED",
+        origin: "personal",
+        status: "open",
+        authorId: s.principal.id,
+        body: JSON.stringify(closed),
+      },
+      s.ctx.now,
+    );
+    return c.json({ ok: true });
+  }
 
-    // ---- a wiki proposal or a candidate: find its workspace through the caller's own view ----
-    const mineRoot = personalRootId(s.principal.id);
-    let scope: string;
-    let node: string;
-    if (id.startsWith(`cand:${mineRoot}:`)) {
-      scope = personalScope(s.principal.id);
-      node = mineRoot;
-    } else {
-      const parsed = parseCandidateId(id);
-      const vn = parsed ? view.nodes.get(parsed.targetNodeId) : undefined;
-      const sc = vn ? scopeOfNode(vn) : null;
-      if (!parsed || !vn || !sc || vn.level !== "content") throw notFound();
-      scope = sc;
-      node = vn.id;
-    }
-    const stub = stubOf(c, scope);
-    const item = await stub.get(id);
-    if (!item) throw notFound();
-    const sameHuman = await humanIdsOf(c.env, s);
+  // ---- a wiki proposal or a candidate: find its workspace through the caller's own view ----
+  const mineRoot = personalRootId(s.principal.id);
+  let scope: string;
+  let node: string;
+  if (id.startsWith(`cand:${mineRoot}:`)) {
+    scope = personalScope(s.principal.id);
+    node = mineRoot;
+  } else {
+    const parsed = parseCandidateId(id);
+    const vn = parsed ? view.nodes.get(parsed.targetNodeId) : undefined;
+    const sc = vn ? scopeOfNode(vn) : null;
+    if (!parsed || !vn || !sc || vn.level !== "content") throw notFound();
+    scope = sc;
+    node = vn.id;
+  }
+  const stub = stubOf(c, scope);
+  const item = await stub.get(id);
+  if (!item) throw notFound();
+  const sameHuman = await humanIdsOf(c.env, s);
 
-    if (isWikiKind(item.kind)) {
-      const personal = node === mineRoot;
-      if (!personal && !WIKI_NODE_KINDS.has(view.nodes.get(node)?.kind ?? "")) throw notFound();
-      const right = mayDecide(view, s.principal, node);
-      if (!right.allowed) return deny(c, `wiki.${action}`, id, scope, right.reason);
-      const kind = wikiKind(item);
-      const allowed =
-        kind === "contradiction" ? ["prefer_incoming", "keep_current"] : ["approve", "reject"];
-      if (!allowed.includes(action))
-        return deny(c, `wiki.${action}`, id, scope, "Action not available");
-      const approving =
-        action === "approve" || action === "prefer_incoming" || action === "keep_current";
-      if (approving && !revisionHash)
+  if (isWikiKind(item.kind)) {
+    const personal = node === mineRoot;
+    if (!personal && !WIKI_NODE_KINDS.has(view.nodes.get(node)?.kind ?? "")) throw notFound();
+    const right = mayDecide(view, s.principal, node);
+    if (!right.allowed) return deny(c, `wiki.${action}`, id, scope, right.reason);
+    const kind = wikiKind(item);
+    const allowed =
+      kind === "contradiction" ? ["prefer_incoming", "keep_current"] : ["approve", "reject"];
+    if (!allowed.includes(action))
+      return deny(c, `wiki.${action}`, id, scope, "Action not available");
+    const approving =
+      action === "approve" || action === "prefer_incoming" || action === "keep_current";
+    if (approving && !revisionHash)
+      return c.json(
+        { error: "revision_required", reason: "Name the revision you read: send revisionHash" },
+        400,
+      );
+    const decideOpts = {
+      ...(revisionHash ? { revisionHash } : {}),
+      sameHuman,
+    };
+
+    if (action === "keep_current") {
+      // Keeping the current statement means ending the incoming one, as a proposal of its own that
+      // follows the same rules (two people where the wiki needs two). The original finding is dismissed.
+      const pv = await stub.wikiProposalView(id);
+      if (!pv) throw notFound();
+      if (pv.revisionHash !== revisionHash)
+        return mapFail(c, {
+          code: "conflict",
+          message: "The proposal changed since you read it. Reload and read it again",
+          currentRevision: pv.revision,
+        });
+      const m = /^contra:(\d+):(\d+)$/.exec(String(safeJson(item.body).findingKey ?? ""));
+      const a = pv.invalidate[0];
+      if (!m || !a) throw notFound();
+      const facts = await stub.wikiFacts({ subject: a.subject, validOnly: false, limit: 200 });
+      const cur = facts.find((f) => f.id === a.factId);
+      const inc = facts.find((f) => f.id === Number(m[2]));
+      if (!cur || !inc || cur.invalidAt !== null || inc.invalidAt !== null)
         return c.json(
-          { error: "revision_required", reason: "Name the revision you read: send revisionHash" },
-          400,
+          { error: "not_pending", reason: "The contradiction was already settled" },
+          409,
         );
-      const decideOpts = {
-        ...(revisionHash ? { revisionHash } : {}),
-        sameHuman,
-      };
-
-      if (action === "keep_current") {
-        // Keeping the current statement means ending the incoming one, as a proposal of its own that
-        // follows the same rules (two people where the wiki needs two). The original finding is dismissed.
-        const pv = await stub.wikiProposalView(id);
-        if (!pv) throw notFound();
-        if (pv.revisionHash !== revisionHash)
-          return mapFail(c, {
-            code: "conflict",
-            message: "The proposal changed since you read it. Reload and read it again",
-            currentRevision: pv.revision,
-          });
-        const m = /^contra:(\d+):(\d+)$/.exec(String(safeJson(item.body).findingKey ?? ""));
-        const a = pv.invalidate[0];
-        if (!m || !a) throw notFound();
-        const facts = await stub.wikiFacts({ subject: a.subject, validOnly: false, limit: 200 });
-        const cur = facts.find((f) => f.id === a.factId);
-        const inc = facts.find((f) => f.id === Number(m[2]));
-        if (!cur || !inc || cur.invalidAt !== null || inc.invalidAt !== null)
-          return c.json(
-            { error: "not_pending", reason: "The contradiction was already settled" },
-            409,
-          );
-        if (
-          !(await audit(c, {
-            action: "wiki.keep_current",
-            nodeId: id,
-            scopeId: scope,
-            revision: null,
-          }))
-        )
-          return c.json({ error: "audit_unavailable" }, 503);
-        const made = await stub.wikiPropose(
-          {
-            kind: "wiki_lint",
-            title: `Keep: ${titleOfSubject(cur.subject)} (${cur.predicate})`,
-            rationale: "The current statement was confirmed over the incoming one",
-            origin: "human",
-            pages: [],
-            facts: [],
-            invalidate: [{ factId: inc.id, at: inc.validAt }],
-            confirm: [cur.id],
-            archive: [],
-            reingest: [],
-            sources: [],
-            findingKey: `keep:${cur.id}:${inc.id}`,
-            detail: `Keeps "${cur.object}" and ends "${inc.object}". Both stay in the history.`,
-            titleSources: [...new Set([...cur.sourceIds, ...inc.sourceIds])],
-          },
-          "system:questions",
-          s.ctx.now,
-          { plane: item.plane },
-        );
-        if (!made.ok) return mapFail(c, made);
-        if (!made.created)
-          return c.json(
-            { error: "not_pending", reason: "The contradiction was already settled" },
-            409,
-          );
-        const rejected = await stub.wikiDecide(id, "reject", s.principal.id, s.ctx.now, {
-          sameHuman,
-        });
-        if (!rejected.ok) return mapFail(c, rejected);
-        const nv = await stub.wikiProposalView(made.id);
-        const res = await stub.wikiDecide(made.id, "approve", s.principal.id, s.ctx.now, {
-          ...(nv ? { revisionHash: nv.revisionHash } : {}),
-          sameHuman,
-        });
-        if (!res.ok) return mapFail(c, res);
-        return c.json({
-          ok: true,
-          status: res.status,
-          approvals: res.approvals,
-          required: res.required,
-        });
-      }
-
-      const decision = approving ? "approve" : "reject";
       if (
         !(await audit(c, {
-          action: `wiki.${decision}`,
+          action: "wiki.keep_current",
           nodeId: id,
           scopeId: scope,
           revision: null,
         }))
       )
         return c.json({ error: "audit_unavailable" }, 503);
-      const res = await stub.wikiDecide(id, decision, s.principal.id, s.ctx.now, decideOpts);
+      const made = await stub.wikiPropose(
+        {
+          kind: "wiki_lint",
+          title: `Keep: ${titleOfSubject(cur.subject)} (${cur.predicate})`,
+          rationale: "The current statement was confirmed over the incoming one",
+          origin: "human",
+          pages: [],
+          facts: [],
+          invalidate: [{ factId: inc.id, at: inc.validAt }],
+          confirm: [cur.id],
+          archive: [],
+          reingest: [],
+          sources: [],
+          findingKey: `keep:${cur.id}:${inc.id}`,
+          detail: `Keeps "${cur.object}" and ends "${inc.object}". Both stay in the history.`,
+          titleSources: [...new Set([...cur.sourceIds, ...inc.sourceIds])],
+        },
+        "system:questions",
+        s.ctx.now,
+        { plane: item.plane },
+      );
+      if (!made.ok) return mapFail(c, made);
+      if (!made.created)
+        return c.json(
+          { error: "not_pending", reason: "The contradiction was already settled" },
+          409,
+        );
+      const rejected = await stub.wikiDecide(id, "reject", s.principal.id, s.ctx.now, {
+        sameHuman,
+      });
+      if (!rejected.ok) return mapFail(c, rejected);
+      const nv = await stub.wikiProposalView(made.id);
+      const res = await stub.wikiDecide(made.id, "approve", s.principal.id, s.ctx.now, {
+        ...(nv ? { revisionHash: nv.revisionHash } : {}),
+        sameHuman,
+      });
       if (!res.ok) return mapFail(c, res);
       return c.json({
         ok: true,
@@ -480,62 +458,151 @@ export function questionRoutes(): Hono<AppEnv> {
       });
     }
 
-    // ---- a contribution candidate ----
-    if (item.kind !== "candidate" || node === mineRoot) throw notFound();
-    const rec = { authorId: item.authorId, status: item.status, revision: item.revision };
-    const wantsRelease = action === "approve";
-    if (!["accept", "request_changes", "approve"].includes(action))
-      return deny(c, action, id, scope, "Action not available");
-    const d = canDoInView(
-      view,
-      s.principal,
-      node,
-      wantsRelease ? "approve_release" : "review",
-      view.ctx,
-      rec,
-    );
-    if (!d.allowed)
-      return deny(c, wantsRelease ? "approve_release" : "review", id, scope, d.reason);
-    if (!revisionHash)
-      return c.json(
-        { error: "revision_required", reason: "Name the revision you read: send revisionHash" },
-        400,
-      );
-    if (revisionHash !== (await candidateHash(item)))
-      return mapFail(c, {
-        code: "conflict",
-        message: "The item changed since you read it. Reload and read it again",
-        currentRevision: item.revision,
-      });
+    const decision = approving ? "approve" : "reject";
     if (
       !(await audit(c, {
-        action: wantsRelease ? "approve_release" : "review",
+        action: `wiki.${decision}`,
         nodeId: id,
         scopeId: scope,
-        revision: item.revision,
-        reason: d.reason,
+        revision: null,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
-    if (wantsRelease) {
-      const res = await stub.approve(id, item.revision, s.principal.id, s.ctx.now, sameHuman);
-      if (!res.ok) return mapFail(c, res);
-      await notifyApproved(c, node, id, item.authorId, res.released);
-      if (note) await stub.comment(id, s.principal.id, note, s.ctx.now);
-      return c.json({
-        ok: true,
-        released: res.released,
-        approvals: res.approvals,
-        required: res.required,
-      });
-    }
-    const verdict = action === "accept" ? "accept" : "changes_requested";
-    const res = await stub.review(id, item.revision, s.principal.id, verdict, s.ctx.now, sameHuman);
+    const res = await stub.wikiDecide(id, decision, s.principal.id, s.ctx.now, decideOpts);
     if (!res.ok) return mapFail(c, res);
+    return c.json({
+      ok: true,
+      status: res.status,
+      approvals: res.approvals,
+      required: res.required,
+    });
+  }
+
+  // ---- a contribution candidate ----
+  if (item.kind !== "candidate" || node === mineRoot) throw notFound();
+  const rec = { authorId: item.authorId, status: item.status, revision: item.revision };
+  const wantsRelease = action === "approve";
+  if (!["accept", "request_changes", "approve"].includes(action))
+    return deny(c, action, id, scope, "Action not available");
+  const d = canDoInView(
+    view,
+    s.principal,
+    node,
+    wantsRelease ? "approve_release" : "review",
+    view.ctx,
+    rec,
+  );
+  if (!d.allowed)
+    return deny(c, wantsRelease ? "approve_release" : "review", id, scope, d.reason);
+  if (!revisionHash)
+    return c.json(
+      { error: "revision_required", reason: "Name the revision you read: send revisionHash" },
+      400,
+    );
+  if (revisionHash !== (await candidateHash(item)))
+    return mapFail(c, {
+      code: "conflict",
+      message: "The item changed since you read it. Reload and read it again",
+      currentRevision: item.revision,
+    });
+  if (
+    !(await audit(c, {
+      action: wantsRelease ? "approve_release" : "review",
+      nodeId: id,
+      scopeId: scope,
+      revision: item.revision,
+      reason: d.reason,
+    }))
+  )
+    return c.json({ error: "audit_unavailable" }, 503);
+  if (wantsRelease) {
+    const res = await stub.approve(id, item.revision, s.principal.id, s.ctx.now, sameHuman);
+    if (!res.ok) return mapFail(c, res);
+    await notifyApproved(c, node, id, item.authorId, res.released);
     if (note) await stub.comment(id, s.principal.id, note, s.ctx.now);
-    if (verdict === "changes_requested") await notifyChangesRequested(c, node, id, item.authorId);
-    return c.json({ ok: true });
+    return c.json({
+      ok: true,
+      released: res.released,
+      approvals: res.approvals,
+      required: res.required,
+    });
+  }
+  const verdict = action === "accept" ? "accept" : "changes_requested";
+  const res = await stub.review(id, item.revision, s.principal.id, verdict, s.ctx.now, sameHuman);
+  if (!res.ok) return mapFail(c, res);
+  if (note) await stub.comment(id, s.principal.id, note, s.ctx.now);
+  if (verdict === "changes_requested") await notifyChangesRequested(c, node, id, item.authorId);
+  return c.json({ ok: true });
+}
+
+export function questionRoutes(): Hono<AppEnv> {
+  const r = new Hono<AppEnv>();
+
+  r.get("/questions", async (c) => {
+    const all = await questionsOf(c);
+    const q = (c.req.query("q") ?? "").trim().toLowerCase().slice(0, 100);
+    const brain = c.req.query("brain");
+    const kind = c.req.query("kind");
+    const age = c.req.query("age");
+    if (kind !== undefined && !KINDS.has(kind)) throw bad("invalid_kind");
+    if (age !== undefined && !["1d", "7d", "30d", "older"].includes(age)) throw bad("invalid_age");
+    if (brain !== undefined && brain.length > 128) throw bad("invalid_brain");
+    const now = sess(c).ctx.now;
+    const days = age === undefined ? null : age === "older" ? 30 : Number.parseInt(age, 10);
+    return c.json(
+      all.filter((x) => {
+        if (q && !`${x.title} ${x.summary}`.toLowerCase().includes(q)) return false;
+        if (brain !== undefined && x.workspaceId !== brain) return false;
+        if (kind !== undefined && x.kind !== kind) return false;
+        if (days !== null) {
+          const old = now - Date.parse(x.createdAt) > days * 86_400_000;
+          if (age === "older" ? !old : old) return false;
+        }
+        return true;
+      }),
+    );
   });
+
+  // Batch triage: every item runs the single-item rules (rights on the live record, never your own,
+  // revisionHash for an approval, two-person counted per item). One refusal never stops the rest.
+  r.post("/questions/batch", async (c) => {
+    const f = await needFlag(c, "batch_review");
+    if (f) return f;
+    const body = await readObject(c);
+    const items = body.items;
+    if (!Array.isArray(items) || items.length < 1 || items.length > BATCH_MAX) throw bad("invalid_items");
+    const ids = new Set<string>();
+    const results: { id: string; ok: boolean; status: number; error?: string; reason?: string }[] = [];
+    for (const raw of items) {
+      const it = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+      const id = typeof it?.id === "string" ? it.id : "";
+      if (!it || !QID.test(id) || ids.has(id)) throw bad("invalid_items");
+      ids.add(id);
+      try {
+        const res = await resolveQuestion(c, id, {
+          action: it.action,
+          ...(it.revisionHash !== undefined ? { revisionHash: it.revisionHash } : {}),
+          ...(it.note !== undefined ? { note: it.note } : {}),
+        });
+        const out = (await res.json().catch(() => ({}))) as { error?: string; reason?: string };
+        results.push({
+          id,
+          ok: res.status < 300,
+          status: res.status,
+          ...(res.status >= 300
+            ? { error: out.error ?? "refused", ...(out.reason ? { reason: out.reason } : {}) }
+            : {}),
+        });
+      } catch (e) {
+        if (!(e instanceof HTTPException)) throw e;
+        results.push({ id, ok: false, status: e.status, error: e.message || "refused" });
+      }
+    }
+    const ok = results.filter((x) => x.ok).length;
+    return c.json({ results, ok, failed: results.length - ok });
+  });
+
+  r.post("/questions/:id", async (c) => resolveQuestion(c, c.req.param("id") ?? "", await readObject(c)));
 
   return r;
 }
