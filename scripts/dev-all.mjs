@@ -21,6 +21,13 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const args = new Set(process.argv.slice(2));
+// Ports are 8787/8788/8789 unless DEV_API_PORT, DEV_MCP_PORT, DEV_AUDIT_PORT and DEV_INSPECTOR_BASE say
+// otherwise. With DEV_REGISTRY_PATH the workers register in their own dev registry, so a second stack on
+// the same machine never takes over another stack's service bindings (the worker names are the same).
+const API_PORT = Number(process.env.DEV_API_PORT ?? 8787);
+const MCP_PORT = Number(process.env.DEV_MCP_PORT ?? 8788);
+const AUDIT_PORT = Number(process.env.DEV_AUDIT_PORT ?? 8789);
+const INSPECTOR = Number(process.env.DEV_INSPECTOR_BASE ?? 9229);
 
 // ---- secrets (local only) ----
 mkdirSync(join(root, ".dev"), { recursive: true });
@@ -28,6 +35,7 @@ const secretsPath = join(root, ".dev", "secrets.json");
 const names = [
   "SEED_TOKEN",
   "INTERNAL_HMAC_KEY",
+  "OPS_HMAC_KEY",
   "AUDIT_KEY_API",
   "AUDIT_KEY_MCP",
   "AUDIT_KEY_READ",
@@ -47,6 +55,7 @@ writeFileSync(
   vars({
     SEED_TOKEN: secrets.SEED_TOKEN,
     INTERNAL_HMAC_KEY: secrets.INTERNAL_HMAC_KEY,
+    OPS_HMAC_KEY: secrets.OPS_HMAC_KEY,
     AUDIT_KEY_API: secrets.AUDIT_KEY_API,
     AUDIT_KEY_READ: secrets.AUDIT_KEY_READ,
     AUDIT_KEY_ERASE: secrets.AUDIT_KEY_ERASE,
@@ -99,9 +108,9 @@ if (!args.has("--no-build")) {
 // ---- workers ----
 const children = [];
 const workers = [
-  { name: "audit", dir: "workers/audit", port: 8789, inspector: 9231 },
-  { name: "api", dir: "workers/api", port: 8787, inspector: 9229 },
-  { name: "mcp", dir: "workers/mcp", port: 8788, inspector: 9230 },
+  { name: "audit", dir: "workers/audit", port: AUDIT_PORT, inspector: INSPECTOR + 2 },
+  { name: "api", dir: "workers/api", port: API_PORT, inspector: INSPECTOR },
+  { name: "mcp", dir: "workers/mcp", port: MCP_PORT, inspector: INSPECTOR + 1 },
 ];
 
 function start(w) {
@@ -118,7 +127,14 @@ function start(w) {
     ],
     {
       cwd: join(root, w.dir),
-      env: { ...process.env, NO_COLOR: "1", WRANGLER_SEND_METRICS: "false" },
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        WRANGLER_SEND_METRICS: "false",
+        ...(process.env.DEV_REGISTRY_PATH
+          ? { WRANGLER_REGISTRY_PATH: process.env.DEV_REGISTRY_PATH }
+          : {}),
+      },
     },
   );
   children.push(child);
@@ -164,12 +180,12 @@ async function waitFor(url, label, ms = 90_000) {
   start(workers[0]); // audit first, so the registry knows it when api and mcp bind to it
   await new Promise((r) => setTimeout(r, 3000));
   start(workers[1]);
-  await waitFor("http://localhost:8787/v1/health", "api");
+  await waitFor(`http://localhost:${API_PORT}/v1/health`, "api");
   start(workers[2]);
-  await waitFor("http://localhost:8788/health", "mcp");
+  await waitFor(`http://localhost:${MCP_PORT}/health`, "mcp");
 
   if (args.has("--seed")) {
-    const res = await fetch("http://localhost:8787/v1/admin/seed", {
+    const res = await fetch(`http://localhost:${API_PORT}/v1/admin/seed`, {
       method: "POST",
       headers: { "X-Seed-Token": secrets.SEED_TOKEN, "Content-Type": "application/json" },
       body: "{}",
@@ -177,8 +193,10 @@ async function waitFor(url, label, ms = 90_000) {
     console.log(`[dev:all] seed: ${res.status} ${await res.text()}`);
   }
   console.log("\n[dev:all] ready");
-  console.log("  web + api  http://localhost:8787   (persona switch in the header, dev only)");
-  console.log("  mcp        http://localhost:8788/mcp");
+  console.log(
+    `  web + api  http://localhost:${API_PORT}   (persona switch in the header, dev only)`,
+  );
+  console.log(`  mcp        http://localhost:${MCP_PORT}/mcp`);
   console.log(
     '  seed       curl -X POST localhost:8787/v1/admin/seed -H "X-Seed-Token: $(jq -r .SEED_TOKEN .dev/secrets.json)"',
   );

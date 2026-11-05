@@ -6,6 +6,8 @@ DEV_AUTH_BYPASS_EMAIL=dev@example.invalid
 DO_JURISDICTION=off
 # Shared with workers/mcp (at least 32 characters). Local-only value.
 INTERNAL_HMAC_KEY=local-internal-hmac-key-0123456789abcdef
+# Shared with workers/ops only (never workers/mcp). Needed only to run the ops worker locally.
+# OPS_HMAC_KEY=local-ops-hmac-key-0123456789abcdef0123
 # Optional: Entra ID sign-in and SCIM (see docs/runbooks/ENTRA-SETUP.md). Leave unset to keep Access only.
 # AUTH_MODE=both
 # ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000
@@ -13,7 +15,10 @@ INTERNAL_HMAC_KEY=local-internal-hmac-key-0123456789abcdef
 # ENTRA_CLIENT_SECRET=local-only-value
 # SCIM_TOKEN=local-scim-token-at-least-32-characters
 # AI processor (B2). Leave ANTHROPIC_API_KEY unset to keep the feature off. Real keys go through `wrangler secret put`.
-# AI_ENABLED=false switches it off. AI_MODEL defaults to claude-sonnet-5-5.
+# AI is off until all three are set: the key, AI_ENABLED=true and AI_PROCESSOR_CONTRACT=approved (a key alone never turns it on).
+# AI_MODEL defaults to claude-sonnet-5-5.
 # ANTHROPIC_API_KEY=
+# AI_ENABLED=true
+# AI_PROCESSOR_CONTRACT=approved
 # AI_MODEL=claude-sonnet-5-5
 # AI_DAILY_TOKEN_BUDGET=200000

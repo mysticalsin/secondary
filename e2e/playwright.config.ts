@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { API_URL } from "./ports.ts";
 
 // Runs against the local multi-worker stack (`pnpm dev:all`). When nothing answers on :8787 the
 // webServer entry starts it. Tests share one seeded tenant and run in order, in one worker.
@@ -14,7 +15,7 @@ export default defineConfig({
   reporter: [["list"]],
   outputDir: "../.dev/e2e-results",
   use: {
-    baseURL: "http://localhost:8787",
+    baseURL: API_URL,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     viewport: { width: 1360, height: 860 },
@@ -22,7 +23,7 @@ export default defineConfig({
   webServer: {
     command: "node scripts/dev-all.mjs --no-build",
     cwd: "..",
-    url: "http://localhost:8787/v1/health",
+    url: `${API_URL}/v1/health`,
     reuseExistingServer: true,
     timeout: 180_000,
   },

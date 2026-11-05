@@ -2,6 +2,7 @@
 // loopback host), then MCP over Streamable HTTP. Used by `pnpm e2e:mcp` and by mcp.spec.ts.
 
 import { createHash, randomBytes } from "node:crypto";
+import { MCP_URL } from "./ports.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: loosely typed JSON-RPC payloads
 type Loose = any;
@@ -111,10 +112,7 @@ export async function getToken(
   return tj.access_token;
 }
 
-export async function runMcpFlow(
-  base = "http://localhost:8788",
-  persona = "ceo",
-): Promise<McpResult> {
+export async function runMcpFlow(base = MCP_URL, persona = "ceo"): Promise<McpResult> {
   const token = await getToken(base, persona);
   await rpc(base, token, "initialize", {
     protocolVersion: "2025-06-18",

@@ -1,8 +1,9 @@
 // `pnpm e2e:mcp [persona]` runs the scripted MCP host against http://localhost:8788 (pnpm dev:all).
 import { runMcpFlow } from "./mcp-flow.ts";
+import { MCP_URL } from "./ports.ts";
 
 const persona = process.argv[2] ?? "ceo";
-runMcpFlow("http://localhost:8788", persona).then(
+runMcpFlow(MCP_URL, persona).then(
   (r) => {
     console.log(JSON.stringify(r, null, 2));
   },

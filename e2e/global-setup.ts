@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { runMcpFlow } from "./mcp-flow.ts";
+import { API_URL, MCP_URL } from "./ports.ts";
 
 async function until(label: string, probe: () => Promise<boolean>, ms = 90_000): Promise<void> {
   const end = Date.now() + ms;
@@ -16,7 +17,7 @@ export default async function globalSetup() {
   const secrets = JSON.parse(
     readFileSync(fileURLToPath(new URL("../.dev/secrets.json", import.meta.url)), "utf8"),
   ) as { SEED_TOKEN: string };
-  const res = await fetch("http://localhost:8787/v1/admin/seed", {
+  const res = await fetch(`${API_URL}/v1/admin/seed`, {
     method: "POST",
     headers: { "X-Seed-Token": secrets.SEED_TOKEN, "Content-Type": "application/json" },
     body: "{}",
@@ -28,13 +29,13 @@ export default async function globalSetup() {
   // closed). Deployed bindings do not behave like this. Wait until both bindings that carry audit
   // receipts answer, so a test never races the stack's own start.
   await until("api -> audit binding", async () => {
-    const r = await fetch("http://localhost:8787/v1/audit/receipts?principal=u_warm", {
+    const r = await fetch(`${API_URL}/v1/audit/receipts?principal=u_warm`, {
       headers: { "X-Demo-Persona": "auditor" },
     });
     return r.status === 200;
   });
   await until("mcp -> api and audit bindings", async () => {
-    await runMcpFlow("http://localhost:8788", "ceo");
+    await runMcpFlow(MCP_URL, "ceo");
     return true;
   });
 }
