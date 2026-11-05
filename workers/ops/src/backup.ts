@@ -179,7 +179,16 @@ export async function listBackups(
 }
 
 export type RestoreResult =
-  | { ok: true; tenant: string; kind: string; scope: string; rows: number; dryRun: boolean }
+  | {
+      ok: true;
+      tenant: string;
+      kind: string;
+      scope: string;
+      rows: number;
+      dryRun: boolean;
+      /** Outside dev the first request only records; a different person must confirm (M-02). */
+      pending?: true;
+    }
   | {
       ok: false;
       error:
@@ -188,6 +197,8 @@ export type RestoreResult =
         | "cannot_decrypt"
         | "invalid_snapshot"
         | "api_refused"
+        | "same_person"
+        | "actor_required"
         | "wrong_environment";
     };
 
@@ -226,9 +237,16 @@ export async function restoreBackup(
   const res = await callApi(
     d,
     "POST",
-    `/v1/internal/ops/restore?${query({ tenant, kind, scope })}&actor=${encodeURIComponent(actor)}`,
+    `/v1/internal/ops/restore?${query({ tenant, kind, scope })}&actor=${encodeURIComponent(actor)}&snapshot=${encodeURIComponent(key)}`,
     JSON.stringify({ tables: snap.tables }),
   );
+  if (res.status === 202)
+    return { ok: true, tenant, kind, scope, rows, dryRun: false, pending: true };
+  if (res.status === 409) return { ok: false, error: "same_person" };
+  if (res.status === 403) {
+    const err = ((await res.json().catch(() => null)) as { error?: string } | null)?.error;
+    if (err === "actor_required") return { ok: false, error: "actor_required" };
+  }
   if (!res.ok) return { ok: false, error: res.status === 422 ? "invalid_snapshot" : "api_refused" };
   return { ok: true, tenant, kind, scope, rows, dryRun: false };
 }

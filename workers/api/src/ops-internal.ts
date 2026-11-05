@@ -19,6 +19,7 @@ import type { AppDeps } from "./types.ts";
 
 const TENANT_ID = /^[a-z0-9_]{3,64}$/;
 const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
+const SNAPSHOT_KEY = /^\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_.:/@-]{1,200}\.jsonl\.enc$/;
 const MAX_RESTORE_BYTES = 16 * 1024 * 1024;
 const DAY_MS = 86_400_000;
 
@@ -105,7 +106,8 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     return c.json({ tenant: t.tenant, kind: t.kind, scope: t.scope, tables });
   });
 
-  // Dev and staging only by default. Production needs RESTORE_ENABLED=yes set for the duration of the restore.
+  // Off by default everywhere except dev: RESTORE_ENABLED=yes is set for the duration of a restore.
+  // Outside dev it also needs two people (see below).
   r.post(
     "/restore",
     bodyLimit({
@@ -125,12 +127,13 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
       const tables = (body as { tables?: unknown } | null)?.tables;
       // M-02: a restore is on the record before it happens, and does not happen without the record.
       const actor = c.req.query("actor") ?? "";
+      const handle = /^[a-f0-9]{16}$/.test(actor) ? actor : null;
       const receipt = (action: string, reason: string) =>
         appendReceipt(c.env, {
           receiptId: newReceiptId(),
           at: new Date(deps.now?.() ?? Date.now()).toISOString(),
           tenantId: t.tenant,
-          principalId: `ops:${/^[a-f0-9]{16}$|^key$/.test(actor) ? actor : "unknown"}`,
+          principalId: `ops:${handle ?? (actor === "key" ? "key" : "unknown")}`,
           action,
           nodeId: null,
           scopeId: t.kind === "tenant" ? null : t.scope.slice(0, 128),
@@ -141,10 +144,35 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
           clientId: null,
           tool: null,
         });
+      // M-02: outside dev a restore needs two people. One asks, a different one confirms the same
+      // snapshot within 24 hours. Both steps are on the record, and the first changes nothing.
+      let approval = "";
+      if (c.env.ENVIRONMENT !== "dev") {
+        const snapshot = c.req.query("snapshot") ?? "";
+        if (!handle) return c.json({ error: "actor_required" }, 403);
+        if (!SNAPSHOT_KEY.test(snapshot)) return c.json({ error: "invalid_snapshot_key" }, 400);
+        const tenant = tenantStub(c.env, t.tenant);
+        const key = `restore:${t.tenant}:${t.kind}:${t.scope}:${snapshot}`;
+        const at = deps.now?.() ?? Date.now();
+        const requester = await tenant.pendingRequester(key, at);
+        const step = await tenant.requestSecond(key, `ops:${handle}`, at);
+        if (step === "same") return c.json({ error: "same_person" }, 409);
+        if (step === "first") {
+          if (
+            !(await receipt(
+              "ops_restore_request",
+              `restore of ${t.kind === "tenant" ? "the directory" : "a workspace"} requested, a second person must confirm`,
+            ))
+          )
+            return c.json({ error: "audit_unavailable" }, 503);
+          return c.json({ ok: true, status: "pending", needs: "second_person" }, 202);
+        }
+        approval = requester?.startsWith("ops:") ? ` (requested by ${requester})` : "";
+      }
       if (
         !(await receipt(
           "ops_restore",
-          `restore of ${t.kind === "tenant" ? "the directory" : "a workspace"} requested`,
+          `restore of ${t.kind === "tenant" ? "the directory" : "a workspace"} ${approval ? `confirmed${approval}` : "requested"}`,
         ))
       )
         return c.json({ error: "audit_unavailable" }, 503);

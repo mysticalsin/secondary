@@ -539,6 +539,16 @@ export class TenantPolicy extends DurableObject<Env> {
     return "second";
   }
 
+  /** Who asked first for a pending two-person step, or null when none is waiting. */
+  pendingRequester(key: string, now: number): string | null {
+    const row = this.sql
+      .exec("SELECT requested_by, requested_at FROM pending_ops WHERE key = ?", key)
+      .toArray()[0];
+    return row && (row.requested_at as number) > now - SECOND_PERSON_TTL_MS
+      ? (row.requested_by as string)
+      : null;
+  }
+
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */
   private rememberAddress(principalId: string, email: string): void {
     const e = email.trim().toLowerCase();

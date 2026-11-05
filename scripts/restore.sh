@@ -9,6 +9,8 @@
 # CF_ACCESS_CLIENT_SECRET (an Access service token).
 # Restore works only where the ops and api workers have RESTORE_ENABLED=yes (dev by default; staging and
 # prod are "no" and are switched on for the duration of a restore, see docs/runbooks/RESTORE.md).
+# Outside dev a restore needs two people: the first call answers 202 pending, a different Access identity
+# then runs the same command for the same snapshot within 24 hours (M-02).
 set -euo pipefail
 set +x
 die() { echo "error: $*" >&2; exit 1; }

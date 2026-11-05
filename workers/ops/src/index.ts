@@ -110,8 +110,16 @@ function mountRoutes(app: Hono<{ Bindings: Env }>): void {
       ok: r.ok,
       reason: r.ok ? "" : r.error,
     });
-    if (r.ok) return c.json(r);
-    return c.json(r, r.error === "restore_disabled" ? 403 : r.error === "not_found" ? 404 : 422);
+    if (r.ok) return c.json(r, r.pending ? 202 : 200);
+    const status =
+      r.error === "restore_disabled" || r.error === "actor_required"
+        ? 403
+        : r.error === "not_found"
+          ? 404
+          : r.error === "same_person"
+            ? 409
+            : 422;
+    return c.json(r, status);
   });
 
   app.all("*", (c) => c.json({ error: "not_found" }, 404));
