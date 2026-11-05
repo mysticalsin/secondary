@@ -30,7 +30,7 @@ const WIDTHS: [string, number, number][] = [
 
 test.describe("every view: axe, no horizontal overflow, screenshots", () => {
   const views: [string, string, string][] = [
-    ["today", "/", "acme_lead"],
+    ["today", "/today", "acme_lead"],
     ["map-ring", "/map", "ceo"],
     ["map-clusters", "/map?view=clusters", "ceo"],
     ["map-list", "/map?view=list", "ceo"],
@@ -247,7 +247,7 @@ test.describe("Account workspace", () => {
     // Overview and Today reflect it.
     await page.getByRole("tab", { name: "Overview" }).click();
     await expect(page.getByText("Send the pilot plan").first()).toBeVisible();
-    await page.goto("/");
+    await page.goto("/today");
     await expect(page.getByText("Send the pilot plan").first()).toBeVisible();
 
     // Others without edit see no add button.
@@ -264,7 +264,7 @@ test.describe("Account workspace", () => {
 test.describe("language, tour, keyboard", () => {
   test("French by browser default, switch back and forth, remembered", async ({ browser }) => {
     const page = await asPersona(browser, "consultant", { locale: "fr-CA" });
-    await page.goto("/");
+    await page.goto("/today");
     await expect(page.getByRole("link", { name: "Carte" })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Ce que vous pouvez voir et faire" }),
@@ -282,14 +282,14 @@ test.describe("language, tour, keyboard", () => {
     await expect(page.getByRole("link", { name: "Map" })).toBeVisible();
     expect((await api(page, "consultant", "/v1/ux/prefs")).json.lang).toBe("en");
     await page.getByRole("button", { name: /Français/ }).click();
-    await page.goto("/");
+    await page.goto("/today");
     await page.screenshot({ path: `${SCREENS}today-fr-1280.png`, fullPage: true });
   });
 
   test("the tour appears once, can be dismissed, and stays dismissed", async ({ browser }) => {
     const page = await asPersona(browser, "auditor", { tour: true });
     await page.goto("/");
-    const tour = page.getByRole("dialog", { name: "This is Today" });
+    const tour = page.getByRole("dialog", { name: "Start with a question" });
     await expect(tour).toBeVisible();
     await axe(page, "tour");
     await tour.getByRole("button", { name: "Next" }).click();
@@ -297,11 +297,11 @@ test.describe("language, tour, keyboard", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("dialog", { name: /./ })).toHaveCount(0);
     await page.reload();
-    await expect(page.getByRole("heading", { name: "What you can see and do" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "What do you need to know?" })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect((await api(page, "auditor", "/v1/ux/prefs")).json.tourDone).toBe(true);
     await page.getByRole("button", { name: "Take the tour" }).click();
-    await expect(page.getByRole("dialog", { name: "This is Today" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Start with a question" })).toBeVisible();
   });
 
   test("keyboard only: skip link, map nodes with arrows, open details, escape returns focus", async ({

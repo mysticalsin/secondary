@@ -4,7 +4,7 @@ import { api, asPersona, shot } from "./helpers.ts";
 test.describe("web app against the real API", () => {
   test("Today renders for the CEO", async ({ browser }) => {
     const page = await asPersona(browser, "ceo");
-    await page.goto("/");
+    await page.goto("/today");
     await expect(page.getByRole("region", { name: "Today" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "What you can see and do" })).toBeVisible();
     await expect(page.getByText("Full: Company Global")).toBeVisible();

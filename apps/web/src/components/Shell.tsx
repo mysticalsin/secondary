@@ -1,23 +1,32 @@
 import {
+  BookOpen,
   Building2,
   CircleHelp,
   ClipboardCheck,
+  Ellipsis,
+  Gauge,
+  Inbox,
   Layers,
   LayoutDashboard,
   Map as MapIcon,
+  PenTool,
   Plus,
+  Repeat,
   Search,
   Shield,
+  Sparkles,
   UserRound,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { api, getPersona, MOCK } from "../api";
 import { useI18n } from "../i18n";
 import { PERSONAS } from "../personas";
 import { useApp } from "../state";
 import { useApi } from "../useApi";
+import { ux2 } from "../uxv2/api";
 import { ElevationBanner, InboxBell, useAdminCaps } from "../views/admin";
+import { QUESTIONS_CHANGED } from "../views/questions/Questions";
 import { Drawer } from "./Drawer";
 import { Palette } from "./Palette";
 import { Tour } from "./Tour";
@@ -29,6 +38,13 @@ export function Shell() {
   const nav = useNavigate();
   const loc = useLocation();
   const queue = useApi(() => api.review(), []);
+  const questions = useApi(() => ux2.questions(), []);
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => {
+    const again = () => questions.reload();
+    window.addEventListener(QUESTIONS_CHANGED, again);
+    return () => window.removeEventListener(QUESTIONS_CHANGED, again);
+  }, [questions.reload]);
   const dev = me?.env === "dev";
   const pending = queue.data?.length ?? 0;
   const adminCaps = useAdminCaps();
@@ -60,45 +76,170 @@ export function Shell() {
 
   useEffect(() => {
     closeDrawer();
+    setMoreOpen(false);
     document.getElementById("main")?.scrollTo({ top: 0 });
   }, [loc.pathname]);
 
-  const items = [
-    {
+  const isSteward = !!me?.capabilities?.review || !!adminCaps?.steward;
+  const isExec = roleId === "ceo";
+
+  interface Item {
+    id: string;
+    to: string;
+    icon: typeof Search;
+    label: string;
+    short: string;
+    n: number;
+    end?: boolean;
+    /** Stays in the bottom bar at phone width. Everything else moves behind "More". */
+    bar?: boolean;
+  }
+  const catalog: Record<string, Item> = {
+    ask: {
+      id: "ask",
       to: "/",
       end: true,
-      icon: LayoutDashboard,
-      long: t("nav.today"),
-      short: t("nav.today"),
+      icon: Sparkles,
+      label: t("nav.ask"),
+      short: t("nav.ask"),
       n: 0,
+      bar: true,
     },
-    { to: "/map", icon: MapIcon, long: t("nav.map"), short: t("nav.map"), n: 0 },
-    { to: "/accounts", icon: Building2, long: t("nav.accounts"), short: t("nav.accounts"), n: 0 },
-    {
-      to: "/governances",
-      icon: Layers,
-      long: t("nav.governances"),
-      short: t("nav.governances.short"),
+    brain: {
+      id: "brain",
+      to: "/brain",
+      icon: BookOpen,
+      label: t("nav.brain"),
+      short: t("nav.brain"),
       n: 0,
+      bar: true,
     },
-    {
-      to: "/review",
-      icon: ClipboardCheck,
-      long: t("nav.review"),
-      short: t("nav.review"),
-      n: pending,
+    questions: {
+      id: "questions",
+      to: "/questions",
+      icon: Inbox,
+      label: t("nav.questions"),
+      short: t("nav.questions.short"),
+      n: questions.data?.length ?? 0,
+      bar: true,
     },
-    {
+    studio: {
+      id: "studio",
+      to: "/studio",
+      icon: PenTool,
+      label: t("nav.studio"),
+      short: t("nav.studio"),
+      n: 0,
+      bar: true,
+    },
+    personal: {
+      id: "personal",
       to: "/personal",
       icon: UserRound,
-      long: t("nav.personal"),
+      label: t("nav.personal"),
       short: t("nav.personal.short"),
       n: 0,
     },
-    ...(canAdmin
-      ? [{ to: "/admin", icon: Shield, long: t("nav.admin"), short: t("nav.admin"), n: 0 }]
-      : []),
+    map: { id: "map", to: "/map", icon: MapIcon, label: t("nav.map"), short: t("nav.map"), n: 0 },
+    routines: {
+      id: "routines",
+      to: "/routines",
+      icon: Repeat,
+      label: t("nav.routines"),
+      short: t("nav.routines"),
+      n: 0,
+    },
+    usage: {
+      id: "usage",
+      to: "/usage",
+      icon: Gauge,
+      label: t("nav.usage"),
+      short: t("nav.usage"),
+      n: 0,
+    },
+    admin: {
+      id: "admin",
+      to: "/admin",
+      icon: Shield,
+      label: t("nav.admin"),
+      short: t("nav.admin"),
+      n: 0,
+    },
+    today: {
+      id: "today",
+      to: "/today",
+      icon: LayoutDashboard,
+      label: t("nav.today"),
+      short: t("nav.today"),
+      n: 0,
+    },
+    accounts: {
+      id: "accounts",
+      to: "/accounts",
+      icon: Building2,
+      label: t("nav.accounts"),
+      short: t("nav.accounts"),
+      n: 0,
+    },
+    governances: {
+      id: "governances",
+      to: "/governances",
+      icon: Layers,
+      label: t("nav.governances"),
+      short: t("nav.governances.short"),
+      n: 0,
+    },
+    review: {
+      id: "review",
+      to: "/review",
+      icon: ClipboardCheck,
+      label: t("nav.review"),
+      short: t("nav.review"),
+      n: pending,
+    },
+  };
+  // Role defaults only change the order. Every person can reach everything they are allowed to see.
+  const first = [
+    "ask",
+    "brain",
+    "questions",
+    "studio",
+    "personal",
+    ...(isSteward || isExec ? ["map", "routines"] : []),
+    ...(canAdmin ? ["admin", "usage"] : []),
   ];
+  const rest = [
+    "today",
+    "map",
+    "accounts",
+    "governances",
+    "review",
+    "routines",
+    "usage",
+    ...(canAdmin ? ["admin"] : []),
+  ].filter((id) => !first.includes(id));
+  const primary = first.map((id) => catalog[id] as Item);
+  const more = rest.map((id) => catalog[id] as Item);
+  const link = (it: Item, extra = "") => (
+    <NavLink
+      key={it.id}
+      to={it.to}
+      end={it.end}
+      className={extra}
+      onClick={() => setMoreOpen(false)}
+    >
+      <it.icon size={18} aria-hidden />
+      <span className="lbl-long">{it.label}</span>
+      <span className="lbl-short">{it.short}</span>
+      {it.n > 0 ? (
+        <span className="badge-n">
+          {it.n}
+          <span className="sr-only"> {t("nav.waiting")}</span>
+        </span>
+      ) : null}
+    </NavLink>
+  );
+  const sheet = [...primary.filter((i) => !i.bar), ...more];
 
   return (
     <div className="app">
@@ -184,20 +325,25 @@ export function Shell() {
       </div>
       <div className={`body${drawerId ? " has-drawer" : ""}`}>
         <nav className="rail" aria-label={t("shell.main")}>
-          {items.map((it) => (
-            <NavLink key={it.to} to={it.to} end={it.end}>
-              <it.icon size={18} aria-hidden />
-              <span className="lbl-long">{it.long}</span>
-              <span className="lbl-short">{it.short}</span>
-              {it.n > 0 ? (
-                <span className="badge-n">
-                  {it.n}
-                  <span className="sr-only"> {t("nav.waiting")}</span>
-                </span>
-              ) : null}
-            </NavLink>
-          ))}
+          {primary.map((it) => link(it, it.bar ? "" : "m-more"))}
+          <div className="rail-sep" aria-hidden />
+          {more.map((it) => link(it, "m-more rail-rest"))}
+          <button
+            type="button"
+            className="rail-more-btn"
+            aria-expanded={moreOpen}
+            aria-controls="more-sheet"
+            onClick={() => setMoreOpen((v) => !v)}
+          >
+            <Ellipsis size={18} aria-hidden />
+            <span className="lbl-short">{t("nav.more")}</span>
+          </button>
         </nav>
+        {moreOpen ? (
+          <div id="more-sheet" className="more-sheet" role="group" aria-label={t("nav.more")}>
+            {sheet.map((it) => link(it, "sheet-link"))}
+          </div>
+        ) : null}
         <main className="main" id="main" tabIndex={-1}>
           <Outlet />
         </main>

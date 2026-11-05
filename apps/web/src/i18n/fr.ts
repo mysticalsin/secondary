@@ -1,7 +1,9 @@
 // Français. Doit définir chaque clé de en.ts (le compilateur le vérifie).
 import type { en } from "./en";
+import { ux2Fr } from "./ux2";
 
 export const fr: Record<keyof typeof en, string> = {
+  ...ux2Fr,
   "common.cancel": "Annuler",
   "common.clear": "Effacer",
   "common.close": "Fermer",
@@ -64,9 +66,9 @@ export const fr: Record<keyof typeof en, string> = {
   "tour.back": "Retour",
   "tour.next": "Suivant",
   "tour.done": "Terminé",
-  "tour.1.title": "Voici Aujourd'hui",
+  "tour.1.title": "Commencez par une question",
   "tour.1.body":
-    "Aujourd'hui montre ce qui vous attend : revues en attente, décisions encore ouvertes et engagements en retard. Seul ce que votre rôle peut voir est affiché.",
+    "Demander est l'accueil. Posez une question et obtenez une réponse citée du cerveau. Questions garde ce qui vous attend. Aujourd'hui reste sous Plus.",
   "tour.2.title": "Trouver sur la Carte",
   "tour.2.body":
     "La Carte montre où se trouve le savoir. Utilisez les boutons de lentille et de vue, ou appuyez sur Commande ou Ctrl K pour chercher de n'importe où.",
