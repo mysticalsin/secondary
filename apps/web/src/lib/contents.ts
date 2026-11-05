@@ -73,9 +73,14 @@ function sessionCollection(pages: WikiPageRow[], labels: { sources: string; repo
   } satisfies ContentNode;
 }
 
+/**
+ * `keepEmpty` names the collections shown with no page in them (the ones the brain's template expects).
+ * Without it, only collections that hold a page appear, so a long schema does not bury the real content.
+ */
 export function buildContents(
   idx: WikiIndex,
   labels: { sources: string; reports: string },
+  keepEmpty: ReadonlySet<string> = new Set(),
 ): Contents {
   const loose: WikiPageRow[] = [];
   const byType = new Map<string, WikiPageRow[]>();
@@ -95,6 +100,7 @@ export function buildContents(
     const def = idx.schema.types[type];
     if (def?.generated && !byType.has(type)) continue;
     const pages = byType.get(type) ?? [];
+    if (!pages.length && !keepEmpty.has(type)) continue;
     collections.push({
       id: `collection:${type}`,
       kind: "collection",

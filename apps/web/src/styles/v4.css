@@ -1567,7 +1567,12 @@ code {
     padding: 0 12px;
   }
   .wname {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
   .v4app .main > .v4page {
     padding: 20px 16px 48px;

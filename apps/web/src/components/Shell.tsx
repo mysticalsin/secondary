@@ -114,7 +114,7 @@ export function Shell() {
           </button>
           <SearchBar />
           <span className="sp" />
-          <Link to="/settings" className="whoami" aria-label={t("v4.settings.profile")}>
+          <Link to="/settings" className="whoami">
             <span className="wname">{name || (meError ? t("shell.unknown") : "")}</span>
             <span className="avatar" aria-hidden>
               {initialsOf(name)}

@@ -4,7 +4,7 @@ import type { Me } from "../types";
 /** "ada.lovelace@mantu.example" gives "Ada Lovelace". */
 export function nameOfEmail(email: string | undefined | null): string {
   const local = (email ?? "").split("@")[0] ?? "";
-  const words = local.split(/[._-]+/).filter(Boolean);
+  const words = local.split(/[._+-]+/).filter(Boolean);
   if (!words.length) return email ?? "";
   return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }

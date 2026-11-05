@@ -9,8 +9,7 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run --passWithNoTests",
-    "e2e:mock": "node ../../node_modules/@playwright/test/cli.js test -c ../../e2e/playwright.uxv2.config.ts",
-    "e2e:v3": "node ../../node_modules/@playwright/test/cli.js test -c ../../e2e/playwright.v3.config.ts"
+    "e2e:mock": "node ../../node_modules/@playwright/test/cli.js test -c ../../e2e/playwright.mock.config.ts"
   },
   "dependencies": {
     "@fontsource/carlito": "^5.3.0",

@@ -162,9 +162,13 @@ export function BrainPage() {
   const tree = useMemo(
     () =>
       idx.data
-        ? buildContents(idx.data, { sources: t("v4.sources"), reports: t("v4.session.reports") })
+        ? buildContents(
+            idx.data,
+            { sources: t("v4.sources"), reports: t("v4.session.reports") },
+            new Set(home.data?.collections.filter((c) => c.expected).map((c) => c.type) ?? []),
+          )
         : null,
-    [idx.data, t],
+    [idx.data, home.data, t],
   );
   const waiting = useMemo(
     () =>
