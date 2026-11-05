@@ -6,3 +6,9 @@ DEV_AUTH_BYPASS_EMAIL=dev@example.invalid
 DO_JURISDICTION=off
 # Shared with workers/mcp (at least 32 characters). Local-only value.
 INTERNAL_HMAC_KEY=local-internal-hmac-key-0123456789abcdef
+# Optional: Entra ID sign-in and SCIM (see docs/runbooks/ENTRA-SETUP.md). Leave unset to keep Access only.
+# AUTH_MODE=both
+# ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000
+# ENTRA_CLIENT_ID=00000000-0000-0000-0000-000000000000
+# ENTRA_CLIENT_SECRET=local-only-value
+# SCIM_TOKEN=local-scim-token-at-least-32-characters

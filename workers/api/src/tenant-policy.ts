@@ -6,6 +6,12 @@ import { DurableObject } from "cloudflare:workers";
 import type { ScopeType } from "@secondary/policy";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { allOn, isSwitchName, SWITCHES, type SwitchName, type SwitchState } from "./switches.ts";
+import {
+  type GroupOp,
+  IdentityStore,
+  principalIdFor,
+  type UserChange,
+} from "./auth/identity-store.ts";
 
 export type Membership = { scope_type: ScopeType; scope_id: string };
 export type TenantConfig = { tenantId: string; seed: number; personalOwners: string[] };
@@ -27,6 +33,8 @@ export type Session = {
   epoch: number;
   config: TenantConfig | null;
   switches: SwitchState;
+  /** False once the directory (SCIM) has deprovisioned the principal: the API refuses every source of identity. */
+  active: boolean;
 };
 
 const WINDOW_MS = 60_000;
@@ -44,23 +52,21 @@ const SNAPSHOT_TABLES = [
   "revocation",
   "switches",
   "pending_ops",
+  "principal_status",
+  "group_role_map",
+  "scim_users",
+  "scim_groups",
+  "scim_group_members",
 ] as const;
-
-const toHex = (buf: ArrayBuffer): string =>
-  [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-
-/** Stable id for an email that is not in the principal table. Not stored: unknown means no roles. */
-async function anonymousId(email: string): Promise<string> {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email));
-  return `u_${toHex(d).slice(0, 16)}`;
-}
 
 export class TenantPolicy extends DurableObject<Env> {
   private readonly sql: SqlStorage;
+  private readonly identity: IdentityStore;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
+    this.identity = new IdentityStore(this.sql, ctx.storage, () => this.bump());
     ctx.blockConcurrencyWhile(async () => {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS config (k TEXT PRIMARY KEY, v TEXT NOT NULL);
@@ -84,6 +90,7 @@ export class TenantPolicy extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS pending_ops (
           key TEXT PRIMARY KEY, requested_by TEXT NOT NULL, requested_at INTEGER NOT NULL);
       `);
+      this.identity.init();
     });
   }
 
@@ -162,7 +169,7 @@ export class TenantPolicy extends DurableObject<Env> {
   async session(input: SessionInput): Promise<Session> {
     const email = input.email.trim().toLowerCase();
     const row = this.sql.exec("SELECT id FROM principals WHERE email = ?", email).toArray()[0];
-    const identityId = (row?.id as string | undefined) ?? (await anonymousId(email));
+    const identityId = (row?.id as string | undefined) ?? (await principalIdFor(email));
 
     const window = Math.floor(input.now / WINDOW_MS);
     const count = this.sql
@@ -187,6 +194,7 @@ export class TenantPolicy extends DurableObject<Env> {
         .exec("SELECT role_id FROM role_assignments WHERE principal_id = ? ORDER BY role_id", id)
         .toArray()
         .map((r) => r.role_id as string);
+      roleIds = [...new Set([...roleIds, ...this.identity.mappedRoles(id)])].sort();
       memberships = this.sql
         .exec(
           "SELECT scope_type, scope_id FROM memberships WHERE principal_id = ? ORDER BY 1, 2",
@@ -216,6 +224,7 @@ export class TenantPolicy extends DurableObject<Env> {
       epoch: this.epoch(),
       config: this.getConfig(),
       switches: this.switchState(),
+      active: this.identity.isEmailActive(email),
     };
   }
 
@@ -414,7 +423,7 @@ export class TenantPolicy extends DurableObject<Env> {
   async resolvePrincipalId(email: string): Promise<string> {
     const e = email.trim().toLowerCase();
     const row = this.sql.exec("SELECT id FROM principals WHERE email = ?", e).toArray()[0];
-    return (row?.id as string | undefined) ?? (await anonymousId(e));
+    return (row?.id as string | undefined) ?? (await principalIdFor(e));
   }
 
   listPrincipalIds(): string[] {
@@ -431,7 +440,15 @@ export class TenantPolicy extends DurableObject<Env> {
   /** Right to erasure for the directory: identity, roles, memberships, grants, elevations, counters. */
   erasePrincipal(principalId: string): number {
     this.ctx.storage.transactionSync(() => {
+      this.sql.exec(
+        "DELETE FROM scim_group_members WHERE user_id IN (SELECT id FROM scim_users WHERE principal_id = ?)",
+        principalId,
+      );
       for (const t of [
+        "principal_status",
+        "oidc_groups",
+        "scim_users",
+        "auth_sessions",
         "principals",
         "role_assignments",
         "memberships",
@@ -458,5 +475,63 @@ export class TenantPolicy extends DurableObject<Env> {
     this.sql.exec("INSERT OR IGNORE INTO revocation (id, epoch) VALUES (1, 0)");
     this.bump();
     return rows;
+  // ---- identity: sessions, Entra group map, SCIM (see auth/identity-store.ts) ----
+
+  loginStatePut(h: string, nonce: string, verifier: string, returnTo: string | null, now: number) {
+    this.identity.loginStatePut(h, nonce, verifier, returnTo, now);
+  }
+  loginStateTake(h: string, now: number) {
+    return this.identity.loginStateTake(h, now);
+  }
+  sessionCreate(idHash: string, email: string, groups: string[], now: number) {
+    return this.identity.sessionCreate(idHash, email.trim().toLowerCase(), groups, now);
+  }
+  sessionValidate(idHash: string, now: number) {
+    return this.identity.sessionValidate(idHash, now);
+  }
+  sessionDelete(idHash: string) {
+    this.identity.sessionDelete(idHash);
+  }
+  sessionCount(principalId: string) {
+    return this.identity.sessionCount(principalId);
+  }
+  groupMapList() {
+    return this.identity.groupMapList();
+  }
+  groupMapSet(groupId: string, roleId: string) {
+    return this.identity.groupMapSet(groupId, roleId);
+  }
+  groupMapDelete(groupId: string) {
+    return this.identity.groupMapDelete(groupId);
+  }
+  scimUserGet(id: string) {
+    return this.identity.scimUserGet(id);
+  }
+  scimUserList(f: { userName?: string; externalId?: string; id?: string }, s: number, c: number) {
+    return this.identity.scimUserList(f, s, c);
+  }
+  scimUserCreate(input: Parameters<IdentityStore["scimUserCreate"]>[0], now: number) {
+    return this.identity.scimUserCreate(input, now);
+  }
+  scimUserPatch(id: string, change: UserChange, now: number) {
+    return this.identity.scimUserPatch(id, change, now);
+  }
+  scimUserDelete(id: string, now: number) {
+    return this.identity.scimUserDelete(id, now);
+  }
+  scimGroupGet(id: string) {
+    return this.identity.scimGroupGet(id);
+  }
+  scimGroupList(f: { displayName?: string; externalId?: string }, s: number, c: number) {
+    return this.identity.scimGroupList(f, s, c);
+  }
+  scimGroupCreate(input: Parameters<IdentityStore["scimGroupCreate"]>[0], now: number) {
+    return this.identity.scimGroupCreate(input, now);
+  }
+  scimGroupApply(id: string, ops: GroupOp[], now: number) {
+    return this.identity.scimGroupApply(id, ops, now);
+  }
+  scimGroupDelete(id: string) {
+    return this.identity.scimGroupDelete(id);
   }
 }

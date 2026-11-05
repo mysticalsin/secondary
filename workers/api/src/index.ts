@@ -1,7 +1,9 @@
 import { Hono } from "hono";
 import { accessLog } from "./observe.ts";
 import { opsInternalRoutes } from "./ops-internal.ts";
+import { authRoutes } from "./auth/routes.ts";
 import { v1Routes } from "./routes.ts";
+import { scimRoutes } from "./scim/routes.ts";
 import { onError, requestId, securityHeaders } from "./security.ts";
 import type { AppDeps, AppEnv } from "./types.ts";
 
@@ -17,6 +19,8 @@ export function createApp(deps: AppDeps = {}): Hono<AppEnv> {
   // Signed machine calls (workers/ops, workers/mcp). Before v1 so they skip Access auth and the 32 KB body limit.
   app.route("/v1/internal/ops", opsInternalRoutes(deps));
   app.route("/v1", v1Routes(deps));
+  app.route("/auth", authRoutes(deps));
+  app.route("/scim/v2", scimRoutes(deps));
   // Everything that is not the API is the static SPA. Only GET and HEAD reach it.
   app.on(["GET", "HEAD"], "*", (c) => c.env.ASSETS.fetch(c.req.raw));
   app.all("*", (c) => c.json({ error: "method_not_allowed" }, 405));

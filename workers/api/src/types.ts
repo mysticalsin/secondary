@@ -1,6 +1,7 @@
 import type { Ctx, Org, Principal, RoleId } from "@secondary/policy";
 import type { JWTVerifyGetKey } from "jose";
 import type { SwitchState } from "./switches.ts";
+import type { EntraDeps } from "./auth/oidc.ts";
 import type { TenantConfig } from "./tenant-policy.ts";
 
 export interface Session {
@@ -29,4 +30,6 @@ export interface AppDeps {
   /** Key resolver for the Access JWT. Default: remote JWKS from the team domain's certs URL. */
   jwks?: (teamDomain: string) => JWTVerifyGetKey;
   now?: () => number;
+  /** Fetch and key resolver for the Entra ID flow. Default: global fetch and the remote JWKS. */
+  entra?: EntraDeps;
 }
