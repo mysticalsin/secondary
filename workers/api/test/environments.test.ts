@@ -45,6 +45,7 @@ const SECRET_NAMES = [
   "AUDIT_KEY_READ",
   "AUDIT_KEY_ERASE",
   "PSEUDONYM_KEY",
+  "BRIEF_PROOF_KEY",
   "BACKUP_KEY",
   "OPS_ADMIN_KEY",
   "DEV_AUTH_BYPASS_EMAIL",
@@ -223,6 +224,13 @@ describe("environments: audit, mcp, ops", () => {
     expect(deployRaw).toMatch(/^shared_secret OPS_HMAC_KEY api ops$/m);
     expect(deployRaw).toMatch(/^shared_secret INTERNAL_HMAC_KEY api mcp$/m);
     expect(deployRaw).not.toMatch(/OPS_HMAC_KEY[^\n]*\bmcp\b/);
+  });
+
+  it("N-04: the brief proof key is generated for the api alone", () => {
+    expect(deployRaw).toMatch(/^single_secret api BRIEF_PROOF_KEY$/m);
+    expect(deployRaw).not.toMatch(/BRIEF_PROOF_KEY[^\n]*\b(mcp|ops|connector)\b/);
+    for (const c of [mcp, ops, connector])
+      expect(JSON.stringify(c)).not.toContain("BRIEF_PROOF_KEY");
   });
 
   it("no bucket, KV id, worker name or service is shared between environments", () => {

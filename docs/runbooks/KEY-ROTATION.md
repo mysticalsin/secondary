@@ -8,6 +8,7 @@ Secrets are set with `wrangler secret put <NAME> --env <staging|prod>` (no `--en
 | `OPS_HMAC_KEY` | api, ops (same value) | Signs ops -> api calls (full export, restore, retention). Never set on mcp (M-01). Rotate with an overlap. |
 | `CONNECTOR_HMAC_KEY` | api, connector (same value) | Signs api <-> connector calls in both directions. Rotate with an overlap. |
 | `AUDIT_KEY_API`, `AUDIT_KEY_MCP`, `AUDIT_KEY_READ`, `AUDIT_KEY_ERASE` | audit plus its one or two callers | The caller gets 401 from audit until updated; the API refuses mutations while audit is unavailable. Put the new value on the caller first only if the audit worker accepts both; it does not, so update audit then the caller back to back. |
+| `BRIEF_PROOF_KEY` | api | Signs the proof of a generated brief (N-04). Held by the api alone: the MCP worker cannot mint one. Briefs generated before a rotation can no longer be saved (a proof lasts 24 hours at most); generate them again. |
 | `PSEUDONYM_KEY` | api | Existing pseudonyms stay as they are, but the same person would map to a new pseudonym later. Rotate only after a decision; erasures are refused while it is unset. |
 | `BACKUP_KEY` | ops | See below. |
 | `OPS_ADMIN_KEY` | ops | Guards list, backup and restore. Rotate freely; update the key vault. |

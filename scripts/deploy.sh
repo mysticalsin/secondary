@@ -163,6 +163,8 @@ shared_secret AUDIT_KEY_MCP audit mcp
 shared_secret AUDIT_KEY_READ audit api
 shared_secret AUDIT_KEY_ERASE audit api
 single_secret api PSEUDONYM_KEY
+# Signs the proof of a generated brief. Held by the api alone, never by mcp (N-04).
+single_secret api BRIEF_PROOF_KEY
 single_secret ops OPS_ADMIN_KEY
 if [ "$TARGET" = "dev" ]; then single_secret api SEED_TOKEN; fi
 

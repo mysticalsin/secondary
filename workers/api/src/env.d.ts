@@ -8,6 +8,8 @@ interface Env {
   INTERNAL_HMAC_KID?: string;
   INTERNAL_HMAC_KEY_PREVIOUS?: string;
   INTERNAL_HMAC_KID_PREVIOUS?: string;
+  /** Secret (at least 32 characters). Held by this worker only: signs the proof of a generated brief (N-04). Without it no proof is minted and no brief can be saved. */
+  BRIEF_PROOF_KEY?: string;
   /** Secret (at least 32 characters). Shared with workers/ops only, never with the MCP worker. Signs the full export, restore and retention calls. */
   OPS_HMAC_KEY?: string;
   OPS_HMAC_KID?: string;

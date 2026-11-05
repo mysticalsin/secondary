@@ -4,8 +4,9 @@ import hostile2 from "../../../packages/fixtures/sample/docs/acct-borealis/conta
 import hostile3 from "../../../packages/fixtures/sample/docs/acct-delta/general/doc-0374.md?raw";
 import segmentsRaw from "../../../packages/fixtures/sample/personal-segments.json?raw";
 import transcript1 from "../../../packages/fixtures/sample/transcripts/acct-acme/trn-0001.md?raw";
+import { briefProof } from "../src/ai/proof.ts";
 import { aiCall, KEY, type ModelCall, stubModel } from "./ai-helpers.ts";
-import { ALPHA, as, BETA, json, type Loose, seed, withBeta, wsOf } from "./helpers.ts";
+import { ALPHA, as, BETA, json, type Loose, rawEnv, seed, withBeta, wsOf } from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -318,6 +319,47 @@ describe("meeting brief", () => {
     expect(again.saved).toEqual({ id: saved.id, revision: 2 });
     const items2 = await json<Loose[]>(await aiCall("acme_lead", "/v1/personal/items"));
     expect(items2.filter((i) => i.kind === "brief" && i.id === saved.id)).toHaveLength(1);
+  });
+
+  it("N-04: a proof signed with a key the MCP worker holds is refused, and no proof key means no proof", async () => {
+    const r = await json(
+      await aiCall("acme_lead", "/v1/briefs", {
+        body: { accountId: "a_acme", save: false },
+        env: KEY,
+        fetch: stubModel(good).fetch,
+      }),
+    );
+    const { proof: real, ...bare } = r.brief;
+    expect(real).toMatch(/^[0-9a-f]{64}$/);
+    // The MCP worker holds INTERNAL_HMAC_KEY and OPS-free keys only: whatever it signs with them cannot pass.
+    const held = [
+      (rawEnv as unknown as Env).INTERNAL_HMAC_KEY as string,
+      (rawEnv as unknown as Env).CONNECTOR_HMAC_KEY as string,
+    ];
+    for (const k of held) {
+      const forged = await briefProof(
+        { INTERNAL_HMAC_KEY: k, BRIEF_PROOF_KEY: k } as never,
+        ALPHA,
+        "u_acme_lead",
+        bare,
+      );
+      expect(forged).toMatch(/^[0-9a-f]{64}$/);
+      const res = await aiCall("acme_lead", "/v1/briefs/save", {
+        body: { brief: { ...bare, proof: forged } },
+        env: KEY,
+      });
+      expect(res.status).toBe(400);
+      expect((await json(res)).error).toBe("brief_not_generated_here");
+    }
+    // Without its own key the server mints nothing, so nothing can be saved.
+    const none = await json(
+      await aiCall("acme_lead", "/v1/briefs", {
+        body: { accountId: "a_acme", save: false },
+        env: { ...KEY, BRIEF_PROOF_KEY: "" },
+        fetch: stubModel(good).fetch,
+      }),
+    );
+    expect(none.brief.proof).toBeUndefined();
   });
 
   it("L-04: save:false returns the brief unsaved; only that brief, unchanged and for the same person, can be saved", async () => {

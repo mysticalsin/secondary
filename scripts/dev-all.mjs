@@ -41,6 +41,7 @@ const names = [
   "AUDIT_KEY_READ",
   "AUDIT_KEY_ERASE",
   "PSEUDONYM_KEY",
+  "BRIEF_PROOF_KEY",
 ];
 const secrets = existsSync(secretsPath) ? JSON.parse(readFileSync(secretsPath, "utf8")) : {};
 for (const n of names) secrets[n] ??= randomBytes(24).toString("hex");
@@ -60,6 +61,7 @@ writeFileSync(
     AUDIT_KEY_READ: secrets.AUDIT_KEY_READ,
     AUDIT_KEY_ERASE: secrets.AUDIT_KEY_ERASE,
     PSEUDONYM_KEY: secrets.PSEUDONYM_KEY,
+    BRIEF_PROOF_KEY: secrets.BRIEF_PROOF_KEY,
     DEV_AUTH_BYPASS_EMAIL: "dev@example.invalid",
     DO_JURISDICTION: "off",
     // wrangler.jsonc carries the deployed dev Access team and AUD tag. Locally there is no Access:

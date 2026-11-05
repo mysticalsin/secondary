@@ -144,6 +144,7 @@
   //   AUDIT_KEY_READ         secret (32+ chars). Reads receipts from workers/audit (Auditor views).
   //   CONNECTOR_HMAC_KEY     secret, at least 32 characters. Shared with workers/connector: signs calls in both directions.
   //   INTERNAL_HMAC_KEY      secret, at least 32 characters. Shared with workers/mcp: verifies its signed calls (X-Secondary-*).
+  //   BRIEF_PROOF_KEY        secret, at least 32 characters. The api alone holds it: signs the proof of a generated brief (N-04).
   //   OPS_HMAC_KEY           secret, at least 32 characters. Shared with workers/ops ONLY: verifies the export, restore and retention calls.
   //                          The MCP worker never receives it (M-01).
   //   *_HMAC_KID, *_HMAC_KEY_PREVIOUS, *_HMAC_KID_PREVIOUS  optional vars/secrets for key rotation with an overlap (INTERNAL, CONNECTOR, OPS).

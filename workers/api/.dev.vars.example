@@ -6,6 +6,8 @@ DEV_AUTH_BYPASS_EMAIL=dev@example.invalid
 DO_JURISDICTION=off
 # Shared with workers/mcp (at least 32 characters). Local-only value.
 INTERNAL_HMAC_KEY=local-internal-hmac-key-0123456789abcdef
+# The api alone (never workers/mcp): signs the proof of a generated brief (N-04). Local-only value.
+# BRIEF_PROOF_KEY=local-brief-proof-key-0123456789abcdef
 # Shared with workers/ops only (never workers/mcp). Needed only to run the ops worker locally.
 # OPS_HMAC_KEY=local-ops-hmac-key-0123456789abcdef0123
 # Optional: Entra ID sign-in and SCIM (see docs/runbooks/ENTRA-SETUP.md). Leave unset to keep Access only.
