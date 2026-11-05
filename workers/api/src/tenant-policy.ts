@@ -78,6 +78,7 @@ const SNAPSHOT_TABLES = [
   "gov_changes",
   "gov_elevations",
   "gov_access_requests",
+  "gov_identity",
   "gov_notifications",
 ] as const;
 
@@ -539,6 +540,11 @@ export class TenantPolicy extends DurableObject<Env> {
   /** Right to erasure for the directory: identity, roles, memberships, grants, elevations, counters. */
   erasePrincipal(principalId: string): number {
     this.ctx.storage.transactionSync(() => {
+      // Before the principals row goes: the address is looked up through it.
+      this.sql.exec(
+        "DELETE FROM gov_identity WHERE principal_id = ?1 OR email = (SELECT lower(email) FROM principals WHERE id = ?1)",
+        principalId,
+      );
       this.sql.exec(
         "DELETE FROM scim_group_members WHERE user_id IN (SELECT id FROM scim_users WHERE principal_id = ?)",
         principalId,

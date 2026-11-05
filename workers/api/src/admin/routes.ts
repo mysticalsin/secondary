@@ -27,6 +27,7 @@ import {
   isSensitiveEdit,
   isSteward,
   manageAuthority,
+  noticeLabel,
   type RoleInput,
   type ScopeDesc,
   scopeDescOf,
@@ -114,6 +115,10 @@ async function mutate<T>(
   run: () => Promise<({ ok: true } & T) | Fail>,
 ): Promise<Response> {
   const ok = await audit(c, receipt(m.action, "allow", m.reason, m.scopeId, m.revision ?? null));
+  // Remember which address this principal id acted with, so one human holding two ids still counts once (M-08).
+  const actor = sess(c);
+  if (ok)
+    await govClient(c.env, actor.tenantId).remember(actor.principal.id, actor.principal.email);
   if (!ok)
     return refuse(
       c,
@@ -485,7 +490,7 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
             scope: d,
             needsSecond: d.restricted,
             proposedBy: w.s.principal.id,
-            label: `${op === "add" ? "Adding" : "Removing"} a member of ${d.label}`,
+            label: `${op === "add" ? "Adding" : "Removing"} a member of ${noticeLabel(d)}`,
           },
           w.now,
         ),
@@ -566,7 +571,7 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
             scope: d,
             needsSecond: true,
             proposedBy: w.s.principal.id,
-            label: `A named NDA grant on ${d.label}`,
+            label: `A named NDA grant on ${noticeLabel(d)}`,
           },
           w.now,
         ),
@@ -855,7 +860,7 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
             needsSecond: d.restricted,
             proposedBy: w.s.principal.id,
             requestId: id,
-            label: `Access for a requester to ${d.label}`,
+            label: `Access for a requester to ${noticeLabel(d)}`,
           },
           w.now,
         );

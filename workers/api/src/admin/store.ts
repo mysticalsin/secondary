@@ -6,7 +6,7 @@
 // never be the one who approves it, whatever the route above decided.
 
 import type { Role } from "@secondary/policy";
-import { manageAuthority, type ScopeDesc } from "./validate.ts";
+import { manageAuthority, noticeLabel, type ScopeDesc } from "./validate.ts";
 
 export type ChangeKind =
   | "role_upsert"
@@ -201,6 +201,7 @@ export class GovStore {
         id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, node_id TEXT NOT NULL, scope_key TEXT NOT NULL,
         scope TEXT NOT NULL, scope_label TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL,
         created_at INTEGER NOT NULL, decided_by TEXT, decided_at INTEGER, note TEXT, change_id TEXT);
+      CREATE TABLE IF NOT EXISTS gov_identity (principal_id TEXT PRIMARY KEY, email TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS gov_notifications (
         id INTEGER PRIMARY KEY AUTOINCREMENT, principal_id TEXT NOT NULL, kind TEXT NOT NULL,
         title TEXT NOT NULL, ref TEXT, at INTEGER NOT NULL, read_at INTEGER);
@@ -254,9 +255,41 @@ export class GovStore {
       "gov_elevations",
       "gov_access_requests",
       "gov_notifications",
+      "gov_identity",
     ])
       this.sql.exec(`DELETE FROM ${t}`);
     this.seedRoles(now);
+  }
+
+  // ---- one human, several principal ids (M-08) ----
+
+  /** Records the address a principal id acted with. A dev persona has an id per persona, so ids alone cannot tell two roles of one tester apart. */
+  remember(principalId: string, email: string): void {
+    const e = email.trim().toLowerCase();
+    if (!e) return;
+    this.sql.exec(
+      "INSERT INTO gov_identity (principal_id, email) VALUES (?, ?) ON CONFLICT(principal_id) DO UPDATE SET email = excluded.email",
+      principalId,
+      e,
+    );
+  }
+
+  private emailOf(principalId: string): string | null {
+    const r = this.sql
+      .exec(
+        `SELECT email FROM gov_identity WHERE principal_id = ?1
+         UNION SELECT lower(email) FROM principals WHERE id = ?1 LIMIT 1`,
+        principalId,
+      )
+      .toArray()[0];
+    return r ? s(r.email) : null;
+  }
+
+  /** The same principal id, or two ids that acted with one address. */
+  private sameHuman(a: string, b: string): boolean {
+    if (a === b) return true;
+    const ea = this.emailOf(a);
+    return ea !== null && ea === this.emailOf(b);
   }
 
   // ---- roles ----
@@ -638,7 +671,7 @@ export class GovStore {
       return fail(409, "expired", "This change lapsed after 72 hours. Propose it again");
     if (c.status !== "pending")
       return fail(409, "not_pending", `This change is already ${c.status}`);
-    if (c.proposedBy === deciderId)
+    if (this.sameHuman(c.proposedBy, deciderId))
       return fail(
         403,
         "self_approval",
@@ -672,7 +705,11 @@ export class GovStore {
 
   /** True when `who` is the subject of the change (payload.principalId) or requested it. */
   isBeneficiary(c: Change, who: string): boolean {
-    return c.payload.principalId === who || c.requestedBy === who;
+    const subject = typeof c.payload.principalId === "string" ? c.payload.principalId : null;
+    return (
+      (subject !== null && this.sameHuman(subject, who)) ||
+      (!!c.requestedBy && this.sameHuman(c.requestedBy, who))
+    );
   }
 
   withdraw(id: string, by: string, now: number): { ok: true; change: Change } | Fail {
@@ -724,7 +761,10 @@ export class GovStore {
           ? n(
               this.sql
                 .exec(
-                  `SELECT COUNT(*) AS c FROM role_assignments WHERE role_id IN (${admins.map(() => "?").join(",")})`,
+                  // Only holders who can still sign in count: a deprovisioned admin is no admin (L-06).
+                  // Group-mapped roles cannot be admin roles (identity-store PRIVILEGED_ROLES), so they add nothing.
+                  `SELECT COUNT(*) AS c FROM role_assignments ra WHERE ra.role_id IN (${admins.map(() => "?").join(",")})
+                     AND COALESCE((SELECT active FROM principal_status ps WHERE ps.principal_id = ra.principal_id), 1) = 1`,
                   ...admins,
                 )
                 .one().c,
@@ -963,7 +1003,7 @@ export class GovStore {
     if (e.status === "expired") return fail(409, "expired", "This request lapsed. Ask again");
     if (e.status !== "pending")
       return fail(409, "not_pending", `This request is already ${e.status}`);
-    if (e.principalId === deciderId)
+    if (this.sameHuman(e.principalId, deciderId))
       return fail(
         403,
         "self_approval",
@@ -1065,7 +1105,7 @@ export class GovStore {
       this.notifyAll(
         this.approvers(a.scope, a.principalId),
         "access_request",
-        `Access request for ${a.scope.label} is in your queue`,
+        `Access request for ${noticeLabel(a.scope)} is in your queue`,
         id,
         now,
       );
@@ -1109,7 +1149,7 @@ export class GovStore {
     if (!r) return fail(404, "not_found", "No such request");
     if (r.status !== "pending")
       return fail(409, "not_pending", `This request is already ${r.status}`);
-    if (r.principalId === deciderId)
+    if (this.sameHuman(r.principalId, deciderId))
       return fail(403, "self_approval", "You cannot decide your own request");
     if (!note.trim())
       return fail(422, "reason_required", "Give the requester a reason for the denial");
@@ -1136,7 +1176,7 @@ export class GovStore {
     if (!r) return fail(404, "not_found", "No such request");
     if (r.status !== "pending")
       return fail(409, "not_pending", `This request is already ${r.status}`);
-    if (r.principalId === deciderId)
+    if (this.sameHuman(r.principalId, deciderId))
       return fail(403, "self_approval", "You cannot decide your own request");
     this.sql.exec(
       "UPDATE gov_access_requests SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?",
@@ -1184,6 +1224,7 @@ export const GOV_METHODS = [
   "endElevation",
   "listElevations",
   "activeElevation",
+  "remember",
   "createRequest",
   "request",
   "listRequests",

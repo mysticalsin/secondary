@@ -62,6 +62,10 @@ export function scopeDescOf(
   };
 }
 
+/** What a notice may call a scope: an NDA account is never named in an inbox title (I-05). */
+export const noticeLabel = (d: Pick<ScopeDesc, "nda" | "label">): string =>
+  d.nda ? "a restricted account" : d.label;
+
 export const isConfigure = (roles: readonly Role[]): boolean =>
   roles.some((r) => r.grants.some((g) => g.actions.includes("configure")));
 
@@ -249,9 +253,18 @@ export function buildRole(input: RoleInput, org: Org, base: Role | null): Good<R
   return { ok: true, value: role };
 }
 
+/** Actions that let the holder decide who else gets access or what is released (M-07). */
+const AUTHORITY_ACTIONS: readonly Action[] = ["manage_members", "approve_release", "review"];
+
 /** A grant that reaches restricted or account scopes, or administers the tenant. */
 export function isSensitiveGrant(g: Grant, org: Org): boolean {
   if (g.actions.includes("configure")) return true;
+  // Authority over every circle or department, or over a restricted node, is sensitive even when
+  // it is conditioned on a membership: one admin must not mint stewards alone (M-07).
+  if (g.actions.some((a) => AUTHORITY_ACTIONS.includes(a))) {
+    if (g.scope_id === "*" && g.scope_type !== "personal") return true;
+    if (org.nodes.get(g.scope_id)?.restricted) return true;
+  }
   // Reaches only where a steward admitted the person; restricted memberships have their own two-person rule.
   if (g.conditions.membership) return false;
   if (g.scope_type === "account") return true;
@@ -265,9 +278,23 @@ export function isSensitiveGrant(g: Grant, org: Org): boolean {
   return false;
 }
 
-/** An edit is sensitive when the role grants restricted or account scopes before or after it. */
+/** True when the elevation of `after` is new or reaches further than the one in `before` (M-07). */
+export function elevationLoosened(before: Role | null, after: Role): boolean {
+  const e = after.elevation;
+  if (!e) return false;
+  const b = before?.elevation;
+  if (!b) return true;
+  return (
+    e.hours > b.hours ||
+    (!!b.approval && !e.approval) ||
+    e.actions.some((a) => !b.actions.includes(a))
+  );
+}
+
+/** An edit is sensitive when the role grants restricted or account scopes before or after it, or loosens its elevation. */
 export const isSensitiveEdit = (before: Role | null, after: Role, org: Org): boolean =>
-  [before, after].some((r) => r?.grants.some((g) => isSensitiveGrant(g, org)));
+  [before, after].some((r) => r?.grants.some((g) => isSensitiveGrant(g, org))) ||
+  elevationLoosened(before, after);
 
 export const rolesWithConfigure = (roles: readonly Role[]): string[] =>
   roles.filter((r) => r.grants.some((g) => g.actions.includes("configure"))).map((r) => r.id);
