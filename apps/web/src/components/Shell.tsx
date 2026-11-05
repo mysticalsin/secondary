@@ -1,13 +1,16 @@
 import {
   BookOpen,
+  Bot,
   Building2,
   CircleHelp,
   ClipboardCheck,
   Ellipsis,
+  FlaskConical,
   Gauge,
   Inbox,
   Layers,
   LayoutDashboard,
+  Library,
   Map as MapIcon,
   PenTool,
   Plus,
@@ -114,6 +117,30 @@ export function Shell() {
       n: 0,
       bar: true,
     },
+    brains: {
+      id: "brains",
+      to: "/brains",
+      icon: Library,
+      label: t("nav.brains"),
+      short: t("nav.brains"),
+      n: 0,
+    },
+    agents: {
+      id: "agents",
+      to: "/settings/agents",
+      icon: Bot,
+      label: t("nav.agents"),
+      short: t("nav.agents"),
+      n: 0,
+    },
+    pilot: {
+      id: "pilot",
+      to: "/settings/pilot",
+      icon: FlaskConical,
+      label: t("nav.pilot"),
+      short: t("nav.pilot"),
+      n: 0,
+    },
     questions: {
       id: "questions",
       to: "/questions",
@@ -209,6 +236,7 @@ export function Shell() {
     ...(canAdmin ? ["admin", "usage"] : []),
   ];
   const rest = [
+    "brains",
     "today",
     "map",
     "accounts",
@@ -216,7 +244,8 @@ export function Shell() {
     "review",
     "routines",
     "usage",
-    ...(canAdmin ? ["admin"] : []),
+    "agents",
+    ...(canAdmin ? ["admin", "pilot"] : []),
   ].filter((id) => !first.includes(id));
   const primary = first.map((id) => catalog[id] as Item);
   const more = rest.map((id) => catalog[id] as Item);

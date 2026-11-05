@@ -22,7 +22,13 @@ export const ux2 = {
       "GET",
       "/v1/ask/suggestions",
     ),
-  questions: () => request<Question[]>("GET", "/v1/questions"),
+  /** Filters are applied by the server, as the caller sees each item (docs/API-CONTRACT.md, questions upgrades). */
+  questions: (f?: { q?: string; brain?: string; kind?: string; age?: string }) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(f ?? {})) if (v) p.set(k, v);
+    const s = p.toString();
+    return request<Question[]>("GET", `/v1/questions${s ? `?${s}` : ""}`);
+  },
   answer: (id: string, body: { action: string; revisionHash?: string; note?: string }) =>
     request<{ ok: boolean }>("POST", `/v1/questions/${q(id)}`, body),
   routines: () => request<Routine[]>("GET", "/v1/routines"),

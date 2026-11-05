@@ -324,7 +324,7 @@ function backlinks(role: string, ws: string, id: string): WikiSearchHit[] {
 // ---------- questions, routines, usage (in memory, per role) ----------
 
 const questionsByRole = new Map<string, Question[]>();
-function questionsFor(role: string): Question[] {
+export function questionsFor(role: string): Question[] {
   let list = questionsByRole.get(role);
   if (list) return list;
   list = [
@@ -404,6 +404,16 @@ function questionsFor(role: string): Question[] {
           { action: "request_changes", label: "Ask for changes" },
         ],
         detail: { approvals: 1, required: 2, revisionHash: "b".repeat(64) },
+      },
+      {
+        id: "q_rel_2",
+        kind: "release",
+        title: "Release to Bid circle: Pricing guide",
+        workspaceId: "c_bid",
+        createdAt: "2026-11-05T10:20:00.000Z",
+        summary: "No one has approved this yet. It needs two different people.",
+        options: [{ action: "approve", label: "Approve release" }],
+        detail: { approvals: 0, required: 2, revisionHash: "d".repeat(64) },
       },
     );
   questionsByRole.set(role, list);

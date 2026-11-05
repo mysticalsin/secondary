@@ -31,7 +31,8 @@ import { STAGES } from "../types";
 import { ACCOUNTS, DEPARTMENTS, GOVERNANCES, hash, type Leaf, ORG, REGIONS, THEMES } from "./org";
 import { canDo, ROLES, roleOf, vis } from "./policy";
 import { detectSensitivity } from "./sensitive";
-import { handleV2, NOT_HANDLED } from "./uxv2";
+import { handleV2, NOT_HANDLED, questionsFor } from "./uxv2";
+import { handleV3 } from "./v3";
 
 const notInMock = (method: string, p: string) =>
   new ApiError(501, `Not part of the dev mock (${method} ${p}). Run the live stack for this.`);
@@ -846,6 +847,17 @@ export async function handle(
   const p = url.pathname;
   const b = (body ?? {}) as Record<string, unknown>;
 
+  const v3 = handleV3(
+    method,
+    p,
+    url.searchParams,
+    b,
+    role,
+    () => questionsFor(role),
+    (id, bb) =>
+      handleV2("POST", `/v1/questions/${encodeURIComponent(id)}`, new URLSearchParams(), bb, role),
+  );
+  if (v3 !== NOT_HANDLED) return v3;
   const v2 = handleV2(method, p, url.searchParams, b, role);
   if (v2 !== NOT_HANDLED) return v2;
 
