@@ -62,6 +62,17 @@ export const citationsOf = (s: string): string[] => [
 export const linksOf = (s: string): string[] => [
   ...new Set([...s.matchAll(LINK)].map((m) => m[1] as string)),
 ];
+/**
+ * A claim line as a snippet (search hits, Ask answers): no citation tokens and no `[[links]]`. A link
+ * names a page by its id, and a page this caller may not read (every source out of reach, H-02) must
+ * not be named by an id that is its title; a snippet is text, not navigation.
+ */
+export const snippetOf = (s: string): string =>
+  s
+    .replace(/\{src:[^}]+\}/g, "")
+    .replace(/\[\[[^\]]+\]\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 export const withoutCitations = (s: string): string => s.replace(CITE, "").replace(/ +$/gm, "");
 
 /** A claim is a bullet that says something. A bullet made only of page links is navigation. */

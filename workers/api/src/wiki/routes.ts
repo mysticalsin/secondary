@@ -55,6 +55,7 @@ import {
   PAGE_ID,
   residualIdentifiers,
   slug,
+  snippetOf,
   summaryOf,
   tokensOf,
 } from "./text.ts";
@@ -211,6 +212,33 @@ export function filterMarkdown(
 export const canGlobal = (view: AdmittedView): boolean =>
   view.nodes.get("core")?.level === "content";
 
+type Reach = { view: AdmittedView; personal: boolean; stub: Stub };
+
+/** Pages whose every source is out of this caller's reach are not shown at all (H-02). */
+export async function hiddenPageIds(c: C, w: Reach, ids?: string[]): Promise<Set<string>> {
+  const rows = await w.stub.wikiPageCitations(ids);
+  const [ok] = await readableMany(c, [{ w, ids: rows.flatMap((r) => r.cites) }]);
+  return new Set(rows.filter((r) => !pageVisible(r.cites, ok as Readable)).map((r) => r.id));
+}
+
+/**
+ * A function that removes `[[links]]` to pages this caller may not see from text a route returns
+ * (page history, proposal diffs, review questions). A link names a page by its id, which is its
+ * title, so a hidden page must not be named by one. Links toward Company Global stay.
+ */
+export async function hiddenLinkFilter(
+  c: C,
+  w: Reach,
+  texts: readonly string[],
+): Promise<(t: string) => string> {
+  const ids = [...new Set(texts.flatMap(linksOf))].filter((l) => !l.startsWith("global:"));
+  if (!ids.length) return (t) => t;
+  const hidden = await hiddenPageIds(c, w, ids);
+  if (!hidden.size) return (t) => t;
+  return (t) =>
+    t.replace(/\[\[([A-Za-z0-9:_-]{1,70})\]\]/g, (m, id: string) => (hidden.has(id) ? "" : m));
+}
+
 const idOf = (v: string | undefined): string => {
   if (!v || !PAGE_ID.test(v)) throw notFound();
   return v;
@@ -303,19 +331,8 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       .join("\n");
 
   /** Pages whose every source is out of this caller's reach are not shown at all (H-02). */
-  async function hiddenPages(
-    c: C,
-    w: { view: AdmittedView; personal: boolean; stub: Stub },
-    ids?: string[],
-  ): Promise<Set<string>> {
-    const rows = await w.stub.wikiPageCitations(ids);
-    const ok = await readableSources(
-      c,
-      w,
-      rows.flatMap((r) => r.cites),
-    );
-    return new Set(rows.filter((r) => !pageVisible(r.cites, ok)).map((r) => r.id));
-  }
+  const hiddenPages = (c: C, w: Reach, ids?: string[]): Promise<Set<string>> =>
+    hiddenPageIds(c, w, ids);
 
   /** The wiki's own per-person limits (M-05). A Response is the refusal. */
   async function limited(c: C, kind: "search" | "write"): Promise<Response | null> {
@@ -484,6 +501,11 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     // Hidden versions are for editors only. For anyone else a hidden revision shows no text, and the
     // revision after it shows no removed line (those lines are the hidden text).
     const editor = w.can.edit;
+    const unlink = await hiddenLinkFilter(
+      c,
+      w,
+      revisions.flatMap((x) => x.diff.map((d) => d.text)),
+    );
     return c.json(
       revisions.map((x, i) =>
         x.hidden && !editor
@@ -499,7 +521,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
               diff: x.diff.flatMap((d) =>
                 x.prevHidden && !editor && d.type === "del"
                   ? []
-                  : [{ type: d.type, text: maskLine(d.text, ok) }],
+                  : [{ type: d.type, text: unlink(maskLine(d.text, ok)) }],
               ),
             },
       ),
@@ -660,7 +682,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
         summary: summaryOf(f.text),
         rank: h.rank,
         lines: lines.slice(0, 5).map((l) => ({
-          text: l.text.replace(/\{src:[^}]+\}/g, "").trim(),
+          text: snippetOf(l.text),
           citations: citationsOf(l.text).map((i) => ({ id: i, title: ok.get(i)?.title ?? i })),
         })),
         restricted: f.dropped,
@@ -708,6 +730,15 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const hide = (text: string): string => (whole ? text : RESTRICTED);
     const { titleSources: _t, ...rest } = v;
     const numbered = numberChanges(v.pages.map((p) => p.diff));
+    const unlink = await hiddenLinkFilter(
+      c,
+      w,
+      v.pages.flatMap((p) => [
+        p.after,
+        ...(p.before ? [p.before] : []),
+        ...p.diff.map((d) => d.text),
+      ]),
+    );
     return {
       ...rest,
       changeCount: numbered.count,
@@ -718,13 +749,13 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       pages: v.pages.map((p, pi) => ({
         ...p,
         title: pageVisible(citationsOf(p.after), ok) ? p.title : RESTRICTED,
-        before: p.before === null ? null : maskText(p.before, ok),
-        after: maskText(p.after, ok),
+        before: p.before === null ? null : unlink(maskText(p.before, ok)),
+        after: unlink(maskText(p.after, ok)),
         diff: p.diff.map((d, li) => {
           const change = numbered.index[pi]?.[li] ?? null;
           return {
             type: d.type,
-            text: maskLine(d.text, ok),
+            text: unlink(maskLine(d.text, ok)),
             ...(change === null ? {} : { change }),
           };
         }),

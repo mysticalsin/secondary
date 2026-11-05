@@ -26,7 +26,7 @@ import {
   type Readable,
   readableMany,
 } from "../wiki/routes.ts";
-import { citationsOf, claimLines, matchOfTokens, summaryOf } from "../wiki/text.ts";
+import { citationsOf, claimLines, matchOfTokens, snippetOf, summaryOf } from "../wiki/text.ts";
 import { recordUsage, savedFraction } from "./ledger.ts";
 import { resolveTarget, stubOf, type Target } from "./shared.ts";
 
@@ -77,11 +77,6 @@ type Line = {
 
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const plain = (s: string): string =>
-  s
-    .replace(/\{src:[^}]+\}/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
 
 interface PageHit {
   ws: Target;
@@ -189,7 +184,7 @@ async function retrieve(c: C, targets: Target[], tokens: string[]): Promise<Retr
       const src = citationsOf(l.text).filter((x) => cand.ok.has(x));
       if (!src.length) continue;
       lines.push({
-        text: plain(l.text),
+        text: snippetOf(l.text),
         sourceIds: src,
         pageId: cand.pageId,
         page: cand.title,

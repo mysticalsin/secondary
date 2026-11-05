@@ -26,6 +26,7 @@ import { audit, bad, type C, forbidden, notFound, readObject, sess } from "../ux
 import { numberChanges, parseSeen, seenProblem } from "../wiki/changes.ts";
 import { mayDecide, proposalSources, wikiQueueRow } from "../wiki/review.ts";
 import {
+  hiddenLinkFilter,
   lineReadable,
   pageVisible,
   RESTRICTED,
@@ -216,6 +217,11 @@ export async function questionsOf(c: C): Promise<Question[]> {
         });
         continue;
       }
+      const unlink = await hiddenLinkFilter(
+        c,
+        { view, personal: g.personal, stub },
+        pv.pages.flatMap((p) => p.diff.map((d) => d.text)),
+      );
       out.push({
         ...base,
         kind,
@@ -234,7 +240,7 @@ export async function questionsOf(c: C): Promise<Question[]> {
               const change = numbered.index[pi]?.[li] ?? null;
               return {
                 type: d.type,
-                text: lineReadable(d.text, ok) ? d.text : `- ${RESTRICTED}`,
+                text: unlink(lineReadable(d.text, ok) ? d.text : `- ${RESTRICTED}`),
                 ...(change === null ? {} : { change }),
               };
             }),
