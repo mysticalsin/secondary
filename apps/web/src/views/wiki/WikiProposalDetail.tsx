@@ -219,8 +219,11 @@ export function WikiProposalDetail({
               disabled={busy || stale}
               onClick={() =>
                 run(async () => {
-                  await wikiApi.decide(ws, id, "approve");
-                  return t("wiki.prop.approved");
+                  const r = await wikiApi.decide(ws, id, "approve", d.revisionHash);
+                  state.reload();
+                  return r.status === "pending"
+                    ? t("wiki.prop.pending", { n: r.approvals ?? 1, of: r.required ?? 2 })
+                    : t("wiki.prop.approved");
                 })
               }
             >

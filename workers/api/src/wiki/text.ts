@@ -92,32 +92,65 @@ export function summaryOf(md: string): string {
 
 export type DiffLine = { type: "add" | "del" | "same"; text: string };
 
+/** Lines a diff will compare. Above this a page change is shown as a whole replacement (M-03). */
+export const MAX_DIFF_LINES = 1_000;
+/** Lines a page may hold. */
+export const MAX_PAGE_LINES = 1_000;
+
+export const capLines = (md: string, max = MAX_PAGE_LINES): string => {
+  const lines = md.split("\n");
+  return lines.length > max ? lines.slice(0, max).join("\n") : md;
+};
+
+/**
+ * Line diff. Common head and tail are trimmed first; the middle is compared with a table of 16-bit
+ * counters only while both sides stay under MAX_DIFF_LINES. A bigger change is a plain replacement,
+ * so memory and time are bounded by the cap, not by what a page holds.
+ */
 export function lineDiff(before: string | null, after: string): DiffLine[] {
   const a = before === null ? [] : before.split("\n");
   const b = after.split("\n");
-  const n = a.length;
-  const m = b.length;
-  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--)
-    for (let j = m - 1; j >= 0; j--)
-      (dp[i] as number[])[j] =
-        a[i] === b[j]
-          ? ((dp[i + 1] as number[])[j + 1] as number) + 1
-          : Math.max((dp[i + 1] as number[])[j] as number, (dp[i] as number[])[j + 1] as number);
-  const out: DiffLine[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) {
-      out.push({ type: "same", text: a[i] as string });
-      i++;
-      j++;
-    } else if (((dp[i + 1] as number[])[j] as number) >= ((dp[i] as number[])[j + 1] as number)) {
-      out.push({ type: "del", text: a[i++] as string });
-    } else out.push({ type: "add", text: b[j++] as string });
+  let head = 0;
+  while (head < a.length && head < b.length && a[head] === b[head]) head++;
+  let tail = 0;
+  while (
+    tail < a.length - head &&
+    tail < b.length - head &&
+    a[a.length - 1 - tail] === b[b.length - 1 - tail]
+  )
+    tail++;
+  const ma = a.slice(head, a.length - tail);
+  const mb = b.slice(head, b.length - tail);
+  const out: DiffLine[] = a.slice(0, head).map((text) => ({ type: "same" as const, text }));
+  if (ma.length > MAX_DIFF_LINES || mb.length > MAX_DIFF_LINES) {
+    for (const text of ma) out.push({ type: "del", text });
+    for (const text of mb) out.push({ type: "add", text });
+  } else {
+    const n = ma.length;
+    const m = mb.length;
+    const w = m + 1;
+    const dp = new Uint16Array((n + 1) * w);
+    for (let i = n - 1; i >= 0; i--)
+      for (let j = m - 1; j >= 0; j--)
+        dp[i * w + j] =
+          ma[i] === mb[j]
+            ? (dp[(i + 1) * w + j + 1] as number) + 1
+            : Math.max(dp[(i + 1) * w + j] as number, dp[i * w + j + 1] as number);
+    let i = 0;
+    let j = 0;
+    while (i < n && j < m) {
+      if (ma[i] === mb[j]) {
+        out.push({ type: "same", text: ma[i] as string });
+        i++;
+        j++;
+      } else if ((dp[(i + 1) * w + j] as number) >= (dp[i * w + j + 1] as number)) {
+        out.push({ type: "del", text: ma[i++] as string });
+      } else out.push({ type: "add", text: mb[j++] as string });
+    }
+    while (i < n) out.push({ type: "del", text: ma[i++] as string });
+    while (j < m) out.push({ type: "add", text: mb[j++] as string });
   }
-  while (i < n) out.push({ type: "del", text: a[i++] as string });
-  while (j < m) out.push({ type: "add", text: b[j++] as string });
+  for (const text of a.slice(a.length - tail)) out.push({ type: "same", text });
   return out;
 }
 
@@ -398,7 +431,12 @@ export function lintFindings(i: LintInput): Finding[] {
             kind: "contradiction",
             title: `Contradiction: ${titleOfSubject(a.subject)} (${a.predicate})`,
             detail: `"${a.object}" (from ${a.validAt.slice(0, 10)}) and "${b.object}" (from ${b.validAt.slice(0, 10)}) are both valid. Approving ends the older one at ${b.validAt.slice(0, 10)}; both stay in the history.`,
-            proposal: { ...empty, title: "", invalidate: [{ factId: a.id, at: b.validAt }] },
+            proposal: {
+              ...empty,
+              title: "",
+              invalidate: [{ factId: a.id, at: b.validAt }],
+              titleSources: [...new Set([...a.sourceIds, ...b.sourceIds])],
+            },
           },
           count,
         );
@@ -426,7 +464,12 @@ export function lintFindings(i: LintInput): Finding[] {
         kind: "source_changed",
         title: cur === "gone" ? `Source removed: ${id}` : `Source changed: ${id}`,
         detail: `${fs.length} claim${fs.length === 1 ? "" : "s"} cite ${id}, which ${cur === "gone" ? "no longer exists" : "has changed since they were recorded"}. Approving re-reads the source and proposes the update.`,
-        proposal: { ...empty, title: "", reingest: cur === "gone" ? [] : [id] },
+        proposal: {
+          ...empty,
+          title: "",
+          reingest: cur === "gone" ? [] : [id],
+          titleSources: [id],
+        },
       },
       count,
     );
@@ -443,7 +486,7 @@ export function lintFindings(i: LintInput): Finding[] {
           kind: "stale",
           title: `Stale: ${titleOfSubject(f.subject)} (${f.predicate})`,
           detail: `Last confirmed ${new Date(last).toISOString().slice(0, 10)}, more than ${i.freshnessDays} days ago. Approving confirms it still holds.`,
-          proposal: { ...empty, title: "", confirm: [f.id] },
+          proposal: { ...empty, title: "", confirm: [f.id], titleSources: f.sourceIds },
         },
         count,
       );
@@ -454,7 +497,7 @@ export function lintFindings(i: LintInput): Finding[] {
           kind: "uncited",
           title: `Uncited claim: ${titleOfSubject(f.subject)} (${f.predicate})`,
           detail: "This fact has no source. Add a source or retire it.",
-          proposal: { ...empty, title: "" },
+          proposal: { ...empty, title: "", titleSources: f.sourceIds },
         },
         count,
       );
@@ -475,7 +518,7 @@ export function lintFindings(i: LintInput): Finding[] {
           kind: "orphan",
           title: `Orphan page: ${p.title}`,
           detail: "No other page links here. Link it from a related page, or acknowledge.",
-          proposal: { ...empty, title: "" },
+          proposal: { ...empty, title: "", subjectPages: [p.id] },
         },
         count,
       );
@@ -491,6 +534,7 @@ export function lintFindings(i: LintInput): Finding[] {
           proposal: {
             ...empty,
             title: "",
+            subjectPages: [p.id],
             pages: [
               {
                 pageId: p.id,
@@ -516,7 +560,7 @@ export function lintFindings(i: LintInput): Finding[] {
           kind: "uncited",
           title: `Uncited claims in ${p.title}`,
           detail: `${bad.length} line${bad.length === 1 ? "" : "s"} without a source, for example: ${bad[0]?.text.slice(0, 80)}`,
-          proposal: { ...empty, title: "" },
+          proposal: { ...empty, title: "", subjectPages: [p.id] },
         },
         count,
       );
@@ -529,7 +573,7 @@ export function lintFindings(i: LintInput): Finding[] {
             kind: "schema",
             title: `Missing section "${need}" in ${p.title}`,
             detail: `The schema for ${p.type} requires a "${need}" section.`,
-            proposal: { ...empty, title: "" },
+            proposal: { ...empty, title: "", subjectPages: [p.id] },
           },
           count,
         );
@@ -651,23 +695,75 @@ export function dreamDrafts(
 
 const esc = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Words of a company name that say nothing about who it is. */
+const GENERIC_NAME = new Set([
+  "group",
+  "groupe",
+  "company",
+  "corp",
+  "corporation",
+  "holding",
+  "holdings",
+  "limited",
+  "ltd",
+  "inc",
+  "llc",
+  "gmbh",
+  "synthetic",
+  "the",
+  "and",
+]);
+
+/** What identifies the account in free text: its ids, its label, and each distinctive word of the label. */
+export function accountIdentifiers(ids: string[]): string[] {
+  const out = new Set<string>();
+  for (const id of ids) {
+    const t = id.trim();
+    if (t.length < 3) continue;
+    out.add(t);
+    for (const w of t.split(/[^\p{L}\p{N}]+/u))
+      if (w.length >= 4 && !GENERIC_NAME.has(w.toLowerCase())) out.add(w);
+  }
+  return [...out].sort((a, b) => b.length - a.length);
+}
+
+const URL_RE = /\b(?:https?:\/\/|ftp:\/\/|www\.)[^\s)<>\]]+/gi;
+const DOMAIN_RE = /\b(?:[a-z0-9-]+\.)+(?:[a-z]{2,24})(?:\/[^\s)<>\]]*)?/gi;
+const REF_RE = /\b(?:rec|src|cand|pi|pb|mtg|ud|a|c|d|u|g)[:_][A-Za-z0-9:_.-]{2,}/g;
+
 /**
- * Generalises an account page: no citations, no page links, no ids, no account name, no contact
- * details. The caller must still run the pre-share sensitivity scan on the result.
+ * Generalises an account page: no citations, no page links, no ids, no account name, no URLs, no
+ * contact details. The caller must still run `residualIdentifiers` and the sensitivity scan on it.
  */
 export function generalise(md: string, identifiers: string[]): string {
   let t = md.replace(CITE, "").replace(LINK, "");
-  for (const id of identifiers.filter((x) => x.length >= 3))
+  t = t.replace(URL_RE, "").replace(REF_RE, "");
+  t = maskContacts(t);
+  t = t.replace(DOMAIN_RE, (m) => (/^\d+(?:\.\d+)+$/.test(m) ? m : ""));
+  for (const id of accountIdentifiers(identifiers))
     t = t.replace(new RegExp(esc(id), "gi"), "the client");
   t = t
     .replace(/\b(?:rec|src|cand|pi|pb):[A-Za-z0-9:_.-]+/g, "")
     .replace(/\b[a-z]_[a-z0-9_]{2,}\b/g, "")
     .replace(/\b(?:acct|a)_[A-Za-z0-9_-]+\b/g, "");
-  t = maskContacts(t);
   return t
     .split("\n")
     .map((l) => l.replace(/[ \t]+$/g, "").replace(/ {2,}/g, " "))
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** What is still in a generalised text that must not reach Company Global. Empty means clean. */
+export function residualIdentifiers(text: string, identifiers: string[]): string[] {
+  const left: string[] = [];
+  const low = text.toLowerCase();
+  for (const id of accountIdentifiers(identifiers))
+    if (low.includes(id.toLowerCase())) left.push("account name or id");
+  if (/\{src:|\[\[/.test(text)) left.push("citation or link");
+  if (/\b(?:https?:\/\/|www\.)/i.test(text)) left.push("url");
+  if (/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}/.test(text)) left.push("email");
+  if (REF_RE.test(text)) left.push("record or source id");
+  REF_RE.lastIndex = 0;
+  return [...new Set(left)];
 }

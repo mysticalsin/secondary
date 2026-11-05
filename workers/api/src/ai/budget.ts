@@ -13,8 +13,9 @@ export interface BudgetStore {
 const SCOPE = "ai:usage";
 const day = (now: number) => new Date(now).toISOString().slice(0, 10);
 
-export function doBudget(env: Env, tenantId: string, now: number): BudgetStore {
-  const id = `usage:${day(now)}`;
+/** `bucket` names a separate counter (the wiki has its own slice of the day's budget). */
+export function doBudget(env: Env, tenantId: string, now: number, bucket = "usage"): BudgetStore {
+  const id = `${bucket}:${day(now)}`;
   const ws = workspaceStub(env, tenantId, SCOPE);
   return {
     async add(tokens, cap) {

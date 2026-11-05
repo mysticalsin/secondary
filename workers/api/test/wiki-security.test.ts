@@ -197,13 +197,15 @@ describe("Promote to Global: the requester never counts as an approver", () => {
         markdown: "# Gate playbook\n\n- Review every change twice.\n",
       }),
     );
+    const other = { email: "other.lead@example.invalid" };
+    const read = await json(await get("acme_lead", `${ACC}/proposals/${prop.proposalId}`, other));
     expect(
       (
         await post(
           "acme_lead",
           `${ACC}/proposals/${prop.proposalId}/decide`,
-          { decision: "approve" },
-          { email: "other.lead@example.invalid" },
+          { decision: "approve", revisionHash: read.revisionHash },
+          other,
         )
       ).status,
     ).toBe(200);

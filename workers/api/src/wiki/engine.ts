@@ -102,6 +102,9 @@ type Scope = {
   freshnessDays: number;
 };
 
+/** Share of a tenant's daily AI budget the wiki may use. */
+const WIKI_BUDGET_SHARE = 0.4;
+
 export const serviceActor = (scopeId: string): string => `svc:wiki:${scopeId}`;
 
 /** Plane and AI contract of the workspace's own node. Fail closed: a node the org does not know gets no proposal. */
@@ -194,8 +197,18 @@ async function aiDraft(
     `<evidence id="E1" title="${esc(info.title).replace(/"/g, "&quot;")}">\n${esc(text)}\n</evidence>`,
   ].join("\n");
   const estimate = estimateTokens(SYSTEM_PROMPT) + estimateTokens(user) + LIMITS.maxOutputTokens;
+  // The wiki may spend only its own slice of the tenant's day, and what it spends counts there too (M-05).
+  const wikiHold = await reserve(
+    doBudget(ctx.env, m.tenantId, ctx.now, "wiki"),
+    estimate,
+    Math.floor(g.dailyBudget * WIKI_BUDGET_SHARE),
+  );
+  if (!wikiHold) return { ok: false, reason: "ai_budget_exhausted" };
   const hold = await reserve(doBudget(ctx.env, m.tenantId, ctx.now), estimate, g.dailyBudget);
-  if (!hold) return { ok: false, reason: "ai_budget_exhausted" };
+  if (!hold) {
+    await wikiHold.settle(0);
+    return { ok: false, reason: "ai_budget_exhausted" };
+  }
   const reply = await callModel({
     apiKey: g.apiKey,
     model: g.model,
@@ -207,7 +220,9 @@ async function aiDraft(
     ...(ctx.fetch ? { fetch: ctx.fetch } : {}),
     ...(ctx.sleep ? { sleep: ctx.sleep } : {}),
   });
-  await hold.settle(reply.ok ? reply.usage.inputTokens + reply.usage.outputTokens : estimate);
+  const spent = reply.ok ? reply.usage.inputTokens + reply.usage.outputTokens : estimate;
+  await hold.settle(spent);
+  await wikiHold.settle(spent);
   if (!reply.ok) return { ok: false, reason: "ai_unavailable" };
   const raw = extractJson(reply.text) as {
     new_information?: unknown;
@@ -268,12 +283,14 @@ async function aiDraft(
     }
     if (!claims) continue;
     const cur = pages.find((x) => x.id === id);
+    // A draft with the name of an existing page adds to it; it never replaces what people wrote (L-04).
+    const added = lines.slice(2).join("\n");
     drafts.push({
       pageId: id,
       type: cur?.type ?? String(p.type),
-      title,
+      title: cur?.title ?? title,
       baseRevision: cur?.revision ?? null,
-      markdown: lines.join("\n"),
+      markdown: cur ? `${cur.markdown.trimEnd()}\n\n${added}` : lines.join("\n"),
     });
   }
   return {
@@ -449,6 +466,8 @@ async function lint(api: WikiApi, ctx: JobContext, m: Scope): Promise<Record<str
         reingest: f.proposal.reingest,
         sources: [],
         findingKey: f.key,
+        ...(f.proposal.titleSources ? { titleSources: f.proposal.titleSources } : {}),
+        ...(f.proposal.subjectPages ? { subjectPages: f.proposal.subjectPages } : {}),
       },
       actor,
       ctx.now,

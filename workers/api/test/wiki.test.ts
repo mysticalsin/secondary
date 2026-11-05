@@ -27,8 +27,29 @@ const run = async (persona: string, ws: string, jobs?: string[], o: Loose = {}) 
 };
 const pending = async (persona: string, ws: string) =>
   json<Loose[]>(await get(persona, `${ws}/proposals`));
-const decide = (persona: string, ws: string, id: string, decision = "approve", o: Loose = {}) =>
-  post(persona, `${ws}/proposals/${id}/decide`, { decision }, o);
+/** Decides as a second person (the source's author never decides what is drawn from it), naming the revision read. */
+/** Store-level approval, naming the revision hash the way a reviewer's client does. */
+const approveDirect = async (ws: Loose, id: string, actor: string) =>
+  ws.wikiDecide(id, "approve", actor, Date.now(), {
+    revisionHash: (await ws.wikiProposalView(id))?.revisionHash,
+  });
+const decide = async (
+  persona: string,
+  ws: string,
+  id: string,
+  decision = "approve",
+  o: Loose = {},
+) => {
+  // A Personal Brain wiki belongs to its owner: no second person there.
+  const opts = ws === "me" ? o : { email: `second.${persona}@example.invalid`, ...o };
+  const v = await json(await get(persona, `${ws}/proposals/${id}`, opts));
+  return post(
+    persona,
+    `${ws}/proposals/${id}/decide`,
+    { decision, revisionHash: v.revisionHash },
+    opts,
+  );
+};
 
 const PRICING = {
   title: "Pricing review",
@@ -92,7 +113,7 @@ describe("ingest: a source becomes a reviewable, cited diff in that workspace on
     expect(page.citations[mtg]).toMatchObject({ title: "Pricing review", kind: "item" });
     expect(page.uncited).toBe(0);
     const facts = await json<Loose[]>(await get("acme_lead", `${ACC}/facts`));
-    expect(facts.every((f) => f.verifiedBy === "u_acme_lead" && !f.unverified)).toBe(true);
+    expect(facts.every((f) => f.verifiedBy?.startsWith("u_") && !f.unverified)).toBe(true);
     const log = await json<Loose[]>(await get("acme_lead", `${ACC}/log`));
     expect(log.map((e) => e.kind)).toEqual(
       expect.arrayContaining(["wiki_ingest.proposed", "wiki_ingest.applied"]),
@@ -465,7 +486,10 @@ describe("a person proposes, someone else decides", () => {
     );
     expect(r.status).toBe(201);
     const { proposalId } = await json(r);
-    expect((await decide("head_bid", C, proposalId)).status).toBe(403);
+    expect(
+      (await decide("head_bid", C, proposalId, "approve", { email: "head_bid@example.invalid" }))
+        .status,
+    ).toBe(403);
     expect((await decide("reviewer", C, proposalId)).status).toBe(200);
     const p = await json(await get("reviewer", `${C}/pages/fixed-fee-pricing-playbook`));
     expect(p.markdown).toContain("Quote a fixed fee");
@@ -529,16 +553,17 @@ describe("lint and dreaming", () => {
         { plane: "TEAM_RESTRICTED" },
       );
       expect(r.ok && r.created).toBe(true);
-      if (r.ok && r.created)
-        expect((await ws.wikiDecide(r.id, "approve", "u_checker", Date.now())).ok).toBe(true);
+      if (r.ok && r.created) expect((await approveDirect(ws, r.id, "u_checker")).ok).toBe(true);
     };
-    await prop("medium", "2026-09-01T00:00:00.000Z", "ghost-1");
-    await prop("high", "2026-10-01T00:00:00.000Z", "ghost-2");
+    // The facts rest on a source this workspace's readers may read (a record of their own).
+    const src = await meeting("head_bid", C, { title: "Lint source", decisions: [] });
+    await prop("medium", "2026-09-01T00:00:00.000Z", src);
+    await prop("high", "2026-10-01T00:00:00.000Z", src);
     expect(
       (await json<Loose[]>(await get("head_bid", `${C}/facts`))).filter(
         (f) => f.subject === "risk: Vendor delay",
       ),
-    ).toHaveLength(0);
+    ).toHaveLength(2);
     await post("head_bid", `${C}/propose`, {
       title: "Orphan page",
       markdown: "# Orphan\n\n## Summary\n- Says something without a source [[no-such-page]]\n",
@@ -546,7 +571,7 @@ describe("lint and dreaming", () => {
     const prop2 = (await pending("reviewer", C)).find((p) => p.title.includes("Orphan"));
     await decide("reviewer", C, prop2?.id);
     const res = await run("head_bid", C, ["lint"]);
-    expect(res[0]?.filed).toBeGreaterThan(0);
+    expect(res.find((x) => x.kind === "lint")?.filed).toBeGreaterThan(0);
     const titles = (await pending("head_bid", C))
       .filter((p) => p.kind === "wiki_lint")
       .map((p) => p.title);
@@ -593,7 +618,7 @@ describe("lint and dreaming", () => {
         Date.now(),
         { plane: "TEAM_RESTRICTED" },
       );
-      if (r.ok && r.created) await ws.wikiDecide(r.id, "approve", "u_checker", Date.now());
+      if (r.ok && r.created) await approveDirect(ws, r.id, "u_checker");
     }
     await run("head_bid", C, ["lint"]);
     const contra = (await pending("head_bid", C)).find((p) =>

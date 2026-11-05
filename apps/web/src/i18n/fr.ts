@@ -915,6 +915,7 @@ export const fr: Record<keyof typeof en, string> = {
   "wiki.prop.edit.save": "Enregistrer ma formulation",
   "wiki.prop.edit.label": "Texte de la page {title}",
   "wiki.prop.approved": "Approuvé. Le wiki est à jour.",
+  "wiki.prop.pending": "Approbation {n} sur {of} enregistrée. Une autre personne approuve ensuite.",
   "wiki.prop.rejected": "Rejeté. Rien n'a été modifié.",
   "wiki.prop.saved": "Votre formulation est enregistrée. Relisez-la, puis approuvez.",
   "wiki.prop.nodiff": "Aucun changement de texte",

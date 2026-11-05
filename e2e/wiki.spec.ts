@@ -17,13 +17,24 @@ const settle = async (page: Page) => {
 
 test.describe.configure({ mode: "serial" });
 
+/** Approve a wiki proposal as `persona`: read it, then name the revision that was read. */
+async function approveVia(page: Page, persona: string, ws: string, id: string) {
+  const path = `/v1/wiki/${ws}/proposals/${encodeURIComponent(id)}`;
+  const read = await api(page, persona, path);
+  expect(read.status).toBe(200);
+  return api(page, persona, `${path}/decide`, {
+    body: { decision: "approve", revisionHash: read.json.revisionHash },
+  });
+}
+
 test.describe("Living Wiki: ingest, review, page", () => {
   test("a recorded meeting becomes a cited diff, a person approves it, and the page appears", async ({
     browser,
   }) => {
-    const page = await asPersona(browser, "acme_lead");
-    await page.goto("/accounts/a_acme");
-    await page.getByRole("tab", { name: "Wiki" }).click();
+    // The person who records the meeting never approves what is drawn from it: a reviewer does.
+    const page = await asPersona(browser, "head_bid");
+    await page.goto("/wiki/c_bid");
+    await settle(page);
     await expect(page.getByText("No wiki pages yet")).toBeVisible();
     await page.getByRole("button", { name: "Record a meeting" }).click();
     await page.getByLabel("Meeting title").fill("Steering committee");
@@ -41,51 +52,53 @@ test.describe("Living Wiki: ingest, review, page", () => {
     // Nothing is published yet.
     await expect(page.getByText("No wiki pages yet")).toBeVisible();
 
-    // The diff is in the Review queue, with its kind, and every added line names its source.
-    await page.goto("/review");
-    await settle(page);
-    const item = page.getByRole("button", { name: /Ingest: Steering committee/ });
+    // The diff is in the reviewer's queue, with its kind, and every added line names its source.
+    await page.context().close();
+    const rev = await asPersona(browser, "reviewer");
+    await rev.goto("/review");
+    await settle(rev);
+    const item = rev.getByRole("button", { name: /Ingest: Steering committee/ });
     await expect(item).toBeVisible();
     await item.click();
-    await expect(page.getByRole("group", { name: "Changes to Decision log" })).toContainText(
+    await expect(rev.getByRole("group", { name: "Changes to Decision log" })).toContainText(
       "Adopt fixed fee for phase 2",
     );
-    await expect(page.getByText(/Proposed by Wiki agent/)).toBeVisible();
-    await page.screenshot({ path: shot("wiki-review"), fullPage: true });
-    await axe(page, "wiki review");
-    await page.getByRole("button", { name: "Approve", exact: true }).click();
-    await expect(page.getByText("Approved. The wiki is updated.")).toBeVisible();
+    await expect(rev.getByText(/Proposed by Wiki agent/)).toBeVisible();
+    await rev.screenshot({ path: shot("wiki-review"), fullPage: true });
+    await axe(rev, "wiki review");
+    await rev.getByRole("button", { name: "Approve", exact: true }).click();
+    await expect(rev.getByText("Approved. The wiki is updated.")).toBeVisible();
 
     // The page is visible, with its citation resolving to the meeting.
-    await page.goto("/accounts/a_acme");
-    await page.getByRole("tab", { name: "Wiki" }).click();
-    await page
+    await rev.goto("/wiki/c_bid");
+    await settle(rev);
+    await rev
       .getByRole("button", { name: /Decision log/ })
       .first()
       .click();
-    const art = page.getByRole("article");
+    const art = rev.getByRole("article");
     await expect(art).toContainText("Adopt fixed fee for phase 2");
     await expect(art.getByRole("link", { name: /Source 1: Steering committee/ })).toBeVisible();
     await expect(art.getByRole("list", { name: "Sources" })).toContainText("Steering committee");
-    await page.screenshot({ path: shot("wiki-page"), fullPage: true });
-    await axe(page, "wiki page");
+    await rev.screenshot({ path: shot("wiki-page"), fullPage: true });
+    await axe(rev, "wiki page");
 
     // History, facts over time and the log.
     await art.getByRole("button", { name: "Page history" }).click();
     await expect(art.getByRole("group", { name: /Changes to r1/ })).toBeVisible();
-    await page.getByRole("tab", { name: "Facts over time" }).click();
+    await rev.getByRole("tab", { name: "Facts over time" }).click();
     await expect(
-      page.getByRole("cell", { name: /Adopt fixed fee for phase 2/ }).first(),
+      rev.getByRole("cell", { name: /Adopt fixed fee for phase 2/ }).first(),
     ).toBeVisible();
-    await axe(page, "wiki facts");
-    await page.getByRole("tab", { name: "Log" }).click();
-    await expect(page.getByText("wiki_ingest.applied")).toBeVisible();
-    await page.context().close();
+    await axe(rev, "wiki facts");
+    await rev.getByRole("tab", { name: "Log" }).click();
+    await expect(rev.getByText("wiki_ingest.applied")).toBeVisible();
+    await rev.context().close();
   });
 
   test("a changed decision ends the old fact and the timeline keeps both", async ({ browser }) => {
-    const page = await asPersona(browser, "acme_lead");
-    const mtg = await api(page, "acme_lead", "/v1/wiki/a_acme/meetings", {
+    const page = await asPersona(browser, "head_bid");
+    const mtg = await api(page, "head_bid", "/v1/wiki/c_bid/meetings", {
       body: {
         title: "Follow-up",
         date: "2026-11-10",
@@ -93,17 +106,12 @@ test.describe("Living Wiki: ingest, review, page", () => {
       },
     });
     expect(mtg.status).toBe(201);
-    const run = await api(page, "acme_lead", "/v1/wiki/a_acme/run", { body: {} });
+    const run = await api(page, "head_bid", "/v1/wiki/c_bid/run", { body: {} });
     const id = run.json.results.find((r: { triage: string }) => r.triage === "proposed").id;
-    expect(
-      (
-        await api(page, "acme_lead", `/v1/wiki/a_acme/proposals/${encodeURIComponent(id)}/decide`, {
-          body: { decision: "approve" },
-        })
-      ).status,
-    ).toBe(200);
-    await page.goto("/accounts/a_acme");
-    await page.getByRole("tab", { name: "Wiki" }).click();
+    // A reviewer approves: the author of the meeting never decides what is drawn from it.
+    expect((await approveVia(page, "reviewer", "c_bid", id)).status).toBe(200);
+    await page.goto("/wiki/c_bid");
+    await settle(page);
     await page.getByRole("tab", { name: "Facts over time" }).click();
     const rows = page.getByRole("row", { name: /Adopt fixed fee for phase 2/ });
     await expect(rows).toHaveCount(2);
@@ -130,12 +138,7 @@ test.describe("Living Wiki: ingest, review, page", () => {
       });
       expect(p.status).toBe(201);
       const rev = await asPersona(browser, "reviewer");
-      await api(
-        rev,
-        "reviewer",
-        `/v1/wiki/c_bid/proposals/${encodeURIComponent(p.json.proposalId)}/decide`,
-        { body: { decision: "approve" } },
-      );
+      expect((await approveVia(rev, "reviewer", "c_bid", p.json.proposalId)).status).toBe(200);
       await rev.context().close();
     }
     const run = await api(page, "head_bid", "/v1/wiki/c_bid/run", {

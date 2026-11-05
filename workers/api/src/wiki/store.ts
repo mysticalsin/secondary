@@ -8,6 +8,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import {
+  capLines,
   citationsOf,
   claimLines,
   emptyGenerated,
@@ -37,9 +38,21 @@ import {
 
 const DAY = 86_400_000;
 const GENERATED_ORDER = ["decision_log", "commitments", "risk_register"] as const;
-/** Item kinds that count as raw sources. Review items and counters never do. */
+/** Item kinds that count as raw sources. Review items and counters never do. A candidate counts only once released. */
 const SOURCE_KINDS = new Set(["record", "meeting_record", "personalitem", "candidate"]);
 const MAX_PAGE_CHARS = 20_000;
+/** Pages one request loads into memory, and revisions one history answer returns (M-03). */
+export const MAX_PAGES_LOADED = 500;
+export const HISTORY_DEFAULT = 20;
+export const HISTORY_MAX = 50;
+const MAX_REFS = 1_000;
+/** A source read again within this window waits for it before the next ingest (M-05). */
+export const INGEST_DEBOUNCE_MS = 10 * 60_000;
+/** A claimed job that never finishes is retried this many times, then given up (L-05). */
+const MAX_ATTEMPTS = 3;
+const DONE_JOB_KEEP_MS = 14 * DAY;
+/** The service identity that signs what the wiki publishes on its own account (L-06). */
+export const serviceId = (scopeId: string): string => `svc:wiki:${scopeId}`;
 
 export const WIKI_TABLES = [
   "wiki_meta",
@@ -68,14 +81,25 @@ export const nextNight = (now: number): number => {
 };
 
 export type JobRow = { id: number; kind: string; payload: Record<string, unknown>; runAt: number };
-export type ProposeOpts = { plane: string; autoAccept?: boolean };
+export type ProposeOpts = {
+  plane: string;
+  autoAccept?: boolean;
+  /** A person's proposal may cite only sources they can read (L-01). Agents omit it. */
+  readable?: string[];
+};
 export type ProposeResult =
   | { ok: true; created: false; reason: string }
   | { ok: true; created: true; id: string; autoAccepted: boolean }
   | Fail;
 export type ApplyResult = { pages: string[]; facts: number; invalidated: number; archived: number };
 export type DecideResult =
-  | { ok: true; status: "approved" | "rejected"; applied: ApplyResult | null }
+  | {
+      ok: true;
+      status: "approved" | "rejected" | "pending";
+      applied: ApplyResult | null;
+      approvals: number;
+      required: number;
+    }
   | Fail;
 
 const rowFact = (r: Record<string, SqlStorageValue>): Fact => ({
@@ -106,6 +130,11 @@ const rowPage = (r: Record<string, SqlStorageValue>): PageRow => ({
   createdAt: r.created_at as number,
   updatedAt: r.updated_at as number,
 });
+
+/** Proposals written before `titleSources` existed: what they cite is what they derive from. */
+const sourcesOfLegacy = (p: Proposal): string[] => [
+  ...new Set([...p.sources.map((x) => x.id), ...p.facts.flatMap((f) => f.sourceIds)]),
+];
 
 export abstract class WikiBase extends DurableObject<Env> {
   protected readonly sql: SqlStorage;
@@ -148,6 +177,10 @@ export abstract class WikiBase extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS wiki_promotions (
           candidate_id TEXT PRIMARY KEY, title TEXT NOT NULL, at INTEGER NOT NULL, page_id TEXT);
       `);
+      // Objects created before the attempt counter keep their rows.
+      const cols = this.sql.exec("PRAGMA table_info(wiki_jobs)").toArray();
+      if (!cols.some((c) => c.name === "attempts"))
+        this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
     });
   }
 
@@ -268,6 +301,8 @@ export abstract class WikiBase extends DurableObject<Env> {
     if (it) {
       if (!SOURCE_KINDS.has(it.kind)) return null;
       if (it.kind === "personalitem" && !it.tags.includes("note")) return null;
+      // Only a released candidate is a source, and its own target node gates it (L-02).
+      if (it.kind === "candidate" && it.status !== "approved") return null;
       const body = it.body ?? "";
       return {
         id,
@@ -280,7 +315,8 @@ export abstract class WikiBase extends DurableObject<Env> {
         authorId: it.authorId,
         itemKind: it.kind,
         updatedAt: it.updatedAt,
-        gateNodeId: nodeOfScope(scope),
+        gateNodeId:
+          it.kind === "candidate" ? (it.targetNode ?? nodeOfScope(scope)) : nodeOfScope(scope),
       };
     }
     const s = this.sql.exec("SELECT * FROM source_items WHERE id = ?", id).toArray()[0];
@@ -306,11 +342,26 @@ export abstract class WikiBase extends DurableObject<Env> {
     ids: string[],
   ): { id: string; kind: "item" | "source"; title: string; gateNodeId: string }[] {
     const scope = this.metaGet("scope_id") ?? "";
+    const own = nodeOfScope(scope);
     const out: { id: string; kind: "item" | "source"; title: string; gateNodeId: string }[] = [];
-    for (const id of ids.slice(0, 200)) {
-      const it = this.get(id);
-      if (it && SOURCE_KINDS.has(it.kind))
-        out.push({ id, kind: "item", title: it.label, gateNodeId: nodeOfScope(scope) });
+    for (const id of ids.slice(0, MAX_REFS)) {
+      const it = this.sql
+        .exec("SELECT kind, label, status, target_node FROM items WHERE id = ?", id)
+        .toArray()[0];
+      const kind = it?.kind as string | undefined;
+      // Only a released candidate is a source, and its own target node gates it (L-02).
+      if (
+        it &&
+        kind &&
+        SOURCE_KINDS.has(kind) &&
+        (kind !== "candidate" || it.status === "approved")
+      )
+        out.push({
+          id,
+          kind: "item",
+          title: it.label as string,
+          gateNodeId: kind === "candidate" ? ((it.target_node as string | null) ?? own) : own,
+        });
       else {
         const s = this.sql
           .exec("SELECT title, gate_node_id FROM source_items WHERE id = ?", id)
@@ -325,6 +376,32 @@ export abstract class WikiBase extends DurableObject<Env> {
       }
     }
     return out;
+  }
+
+  /** Citations of published pages (all, or the named ones), for the per-viewer visibility check. */
+  wikiPageCitations(ids?: string[]): { id: string; type: string; cites: string[] }[] {
+    const rows = ids
+      ? ids
+          .slice(0, MAX_PAGES_LOADED)
+          .flatMap((id) =>
+            this.sql
+              .exec(
+                "SELECT id, type, markdown FROM wiki_pages WHERE id = ? AND status = 'published'",
+                id,
+              )
+              .toArray(),
+          )
+      : this.sql
+          .exec(
+            "SELECT id, type, markdown FROM wiki_pages WHERE status = 'published' ORDER BY id LIMIT ?",
+            MAX_PAGES_LOADED,
+          )
+          .toArray();
+    return rows.map((r) => ({
+      id: r.id as string,
+      type: r.type as string,
+      cites: citationsOf(r.markdown as string),
+    }));
   }
 
   /** Current hashes of cited sources. Gone sources are absent. */
@@ -408,6 +485,17 @@ export abstract class WikiBase extends DurableObject<Env> {
     runAt?: number,
   ): Promise<void> {
     const body = JSON.stringify(payload);
+    // A source read again soon after its last ingest waits for the debounce window: saving a record
+    // in a loop makes one job per window, not one per save (M-05).
+    if (kind === "ingest" && runAt === undefined && payload.force !== true) {
+      const last = this.sql
+        .exec(
+          "SELECT ingested_at FROM wiki_sources WHERE source_id = ?",
+          String(payload.sourceId ?? ""),
+        )
+        .toArray()[0]?.ingested_at as number | null | undefined;
+      if (last) runAt = Math.max(now + 1_000, last + INGEST_DEBOUNCE_MS);
+    }
     const dup = this.sql
       .exec(
         "SELECT 1 FROM wiki_jobs WHERE state = 'pending' AND kind = ? AND payload = ?",
@@ -431,13 +519,19 @@ export abstract class WikiBase extends DurableObject<Env> {
    */
   wikiJobsDue(now: number, limit: number): JobRow[] {
     const real = Date.now();
+    // A claim older than five minutes is given up and retried, up to MAX_ATTEMPTS claims in all.
     this.sql.exec(
-      "UPDATE wiki_jobs SET state = 'pending' WHERE state = 'running' AND CAST(result AS INTEGER) < ?",
+      "UPDATE wiki_jobs SET state = CASE WHEN attempts >= ? THEN 'failed' ELSE 'pending' END WHERE state = 'running' AND CAST(result AS INTEGER) < ?",
+      MAX_ATTEMPTS,
       real - 300_000,
+    );
+    this.sql.exec(
+      "DELETE FROM wiki_jobs WHERE state IN ('done', 'failed') AND run_at < ?",
+      real - DONE_JOB_KEEP_MS,
     );
     return this.sql
       .exec(
-        `UPDATE wiki_jobs SET state = 'running', result = ?
+        `UPDATE wiki_jobs SET state = 'running', result = ?, attempts = attempts + 1
          WHERE id IN (SELECT id FROM wiki_jobs WHERE state = 'pending' AND run_at <= ? ORDER BY id LIMIT ?)
          RETURNING id, kind, payload, run_at`,
         String(real),
@@ -517,7 +611,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     this.wikiSyncPromotions(Date.now());
     return this.sql
       .exec(
-        `SELECT * FROM wiki_pages ${includeArchived ? "" : "WHERE status = 'published'"} ORDER BY type = 'overview' DESC, title`,
+        `SELECT * FROM wiki_pages ${includeArchived ? "" : "WHERE status = 'published'"} ORDER BY type = 'overview' DESC, title LIMIT ${MAX_PAGES_LOADED}`,
       )
       .toArray()
       .map((r) => {
@@ -526,9 +620,13 @@ export abstract class WikiBase extends DurableObject<Env> {
       });
   }
 
+  /** Published pages with their text. At most MAX_PAGES_LOADED are read into memory in one call (M-03). */
   wikiPages(): PageRow[] {
     return this.sql
-      .exec("SELECT * FROM wiki_pages WHERE status = 'published' ORDER BY id")
+      .exec(
+        "SELECT * FROM wiki_pages WHERE status = 'published' ORDER BY id LIMIT ?",
+        MAX_PAGES_LOADED,
+      )
       .toArray()
       .map(rowPage);
   }
@@ -551,30 +649,50 @@ export abstract class WikiBase extends DurableObject<Env> {
     };
   }
 
-  wikiPageHistory(id: string): {
-    revision: number;
-    title: string;
-    actor: string | null;
-    at: number;
-    proposalId: string | null;
-    diff: ReturnType<typeof lineDiff>;
-  }[] {
+  /**
+   * Revisions of a page, newest first, at most `limit` per answer (default 20, cap 50). `before` is the
+   * revision to start under; `next` is the cursor for the following answer, or null at the end.
+   * Each diff is against the revision before it, read one row at a time, never the whole history.
+   */
+  wikiPageHistory(
+    id: string,
+    o: { limit?: number; before?: number } = {},
+  ): {
+    revisions: {
+      revision: number;
+      title: string;
+      actor: string | null;
+      at: number;
+      proposalId: string | null;
+      diff: ReturnType<typeof lineDiff>;
+    }[];
+    next: number | null;
+  } {
+    const limit = Math.min(Math.max(Math.trunc(o.limit ?? HISTORY_DEFAULT), 1), HISTORY_MAX);
     const rows = this.sql
-      .exec("SELECT * FROM wiki_page_revisions WHERE page_id = ? ORDER BY revision", id)
+      .exec(
+        "SELECT * FROM wiki_page_revisions WHERE page_id = ? AND revision < ? ORDER BY revision DESC LIMIT ?",
+        id,
+        o.before ?? Number.MAX_SAFE_INTEGER,
+        limit + 1,
+      )
       .toArray();
-    return rows
-      .map((r, i) => ({
+    const page = rows.slice(0, limit);
+    const out = page.map((r, i) => {
+      const prev = (rows[i + 1] as Record<string, SqlStorageValue> | undefined) ?? null;
+      return {
         revision: r.revision as number,
         title: r.title as string,
         actor: (r.actor as string | null) ?? null,
         at: r.at as number,
         proposalId: (r.proposal_id as string | null) ?? null,
-        diff: lineDiff(
-          i === 0 ? null : ((rows[i - 1] as Record<string, SqlStorageValue>).markdown as string),
-          r.markdown as string,
-        ),
-      }))
-      .reverse();
+        diff: lineDiff(prev ? (prev.markdown as string) : null, r.markdown as string),
+      };
+    });
+    return {
+      revisions: out,
+      next: rows.length > limit ? (page[page.length - 1]?.revision as number) : null,
+    };
   }
 
   wikiSearch(match: string, limit: number): { id: string; rank: number }[] {
@@ -598,7 +716,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     now: number,
   ): boolean {
     const cur = this.pageById(p.id);
-    const md = p.markdown.slice(0, MAX_PAGE_CHARS);
+    const md = capLines(p.markdown.slice(0, MAX_PAGE_CHARS));
     if (cur && cur.status === "published" && cur.markdown === md && cur.title === p.title)
       return false;
     const revision = cur ? cur.revision + 1 : 1;
@@ -666,17 +784,25 @@ export abstract class WikiBase extends DurableObject<Env> {
       .map(rowFact);
   }
 
-  wikiVerifyFact(id: number, actor: string, now: number): boolean {
-    const r = this.sql
-      .exec(
-        "UPDATE wiki_facts SET verified_by = ?, checked_at = ? WHERE id = ? RETURNING id",
-        actor,
-        new Date(now).toISOString(),
-        id,
-      )
-      .toArray();
-    if (r.length) this.wikiLogAppend(actor, "fact.verified", { factId: id }, now);
-    return r.length > 0;
+  /** Confirm a fact. Not by the person who wrote a source it rests on (L-03). */
+  wikiVerifyFact(id: number, actor: string, now: number): Fail | { ok: true } {
+    const f = this.sql.exec("SELECT source_ids FROM wiki_facts WHERE id = ?", id).toArray()[0];
+    if (!f) return { ok: false, code: "not_found", message: "No such fact" };
+    const personal = isPersonalScope(this.metaGet("scope_id") ?? "");
+    if (!personal && this.wroteSourceOf(JSON.parse(f.source_ids as string) as string[], actor))
+      return {
+        ok: false,
+        code: "self_approval",
+        message: "You wrote a source of this fact, so a different person must verify it",
+      };
+    this.sql.exec(
+      "UPDATE wiki_facts SET verified_by = ?, checked_at = ? WHERE id = ?",
+      actor,
+      new Date(now).toISOString(),
+      id,
+    );
+    this.wikiLogAppend(actor, "fact.verified", { factId: id }, now);
+    return { ok: true };
   }
 
   // ---- proposals ----
@@ -736,19 +862,50 @@ export abstract class WikiBase extends DurableObject<Env> {
     return out;
   }
 
+  /** Page text as stored: no NULs, links leave the workspace only toward Company Global, citations name known sources. */
+  private cleanMarkdown(md: string, known: Set<string>): string {
+    return capLines(
+      md
+        .replaceAll("\u0000", "")
+        .replace(/\[\[([A-Za-z0-9:_-]{1,70})\]\]/g, (m, x: string) =>
+          x.includes(":") && !x.startsWith("global:") ? "" : m,
+        )
+        .replace(/\{src:([^}]*)\}/g, (m, x: string) => (known.has(x) ? m : ""))
+        .slice(0, MAX_PAGE_CHARS),
+    );
+  }
+
   private cleanDraft(d: PageDraft, known: Set<string>): PageDraft | null {
     const schema = this.wikiSchema();
     if (!PAGE_ID.test(d.pageId) || !schema.types[d.type] || GENERATED[d.type]) return null;
-    // Links leave the workspace only toward Company Global. Citations must name sources of this wiki.
-    const markdown = d.markdown
-      .replaceAll("\u0000", "")
-      .replace(/\[\[([A-Za-z0-9:_-]{1,70})\]\]/g, (m, x: string) =>
-        x.includes(":") && !x.startsWith("global:") ? "" : m,
-      )
-      .replace(/\{src:([^}]*)\}/g, (m, x: string) => (known.has(x) ? m : ""))
-      .slice(0, MAX_PAGE_CHARS);
+    const markdown = this.cleanMarkdown(d.markdown, known);
     if (!markdown.trim()) return null;
     return { ...d, title: d.title.replace(/\s+/g, " ").trim().slice(0, 120) || d.pageId, markdown };
+  }
+
+  /** The sources a viewer must be able to read before the proposal's own text is shown to them (H-02). */
+  private titleSourcesOf(input: Omit<Proposal, "v" | "pages"> & { pages: PageDraft[] }): string[] {
+    const ids = new Set<string>(input.titleSources ?? []);
+    for (const s of input.sources) ids.add(s.id);
+    for (const f of input.facts) for (const i of f.sourceIds) ids.add(i);
+    for (const i of input.reingest) ids.add(i);
+    for (const fid of [...input.invalidate.map((x) => x.factId), ...input.confirm]) {
+      const r = this.sql.exec("SELECT source_ids FROM wiki_facts WHERE id = ?", fid).toArray()[0];
+      if (r) for (const i of JSON.parse(r.source_ids as string) as string[]) ids.add(i);
+    }
+    // A check or a merge names pages: a page title is a claim of the sources the page cites.
+    if (input.kind !== "wiki_ingest") {
+      const pageIds = [
+        ...(input.subjectPages ?? []),
+        ...input.pages.map((p) => p.pageId),
+        ...input.archive,
+      ];
+      for (const id of pageIds) {
+        const cur = this.pageById(id);
+        if (cur && !GENERATED[cur.type]) for (const i of citationsOf(cur.markdown)) ids.add(i);
+      }
+    }
+    return [...ids].slice(0, 200);
   }
 
   async wikiPropose(
@@ -769,10 +926,11 @@ export abstract class WikiBase extends DurableObject<Env> {
 
     const known = new Set<string>(input.sources.map((s) => s.id));
     for (const f of input.facts) for (const id of f.sourceIds) known.add(id);
+    const mayCite = opts.readable ? new Set(opts.readable) : null;
     for (const r of this.wikiSourceRefs([
       ...new Set(input.pages.flatMap((p) => citationsOf(p.markdown))),
     ]))
-      known.add(r.id);
+      if (!mayCite || mayCite.has(r.id)) known.add(r.id);
 
     const authored = input.pages.flatMap((d) => {
       const c = this.cleanDraft(d, known);
@@ -799,7 +957,14 @@ export abstract class WikiBase extends DurableObject<Env> {
       !input.reingest.length;
     if (empty) return { ok: true, created: false, reason: "no new information" };
 
-    const p: Proposal = { ...input, v: 1, pages, title: input.title.slice(0, 200) };
+    const titleSources = this.titleSourcesOf({ ...input, pages });
+    const p: Proposal = {
+      ...input,
+      v: 1,
+      pages,
+      title: input.title.slice(0, 200),
+      titleSources,
+    };
     const id = `cand:${nodeOfScope(m.scopeId)}:${hex8()}`;
     const made = this.create(
       {
@@ -825,7 +990,13 @@ export abstract class WikiBase extends DurableObject<Env> {
         id,
         now,
       );
-    this.wikiLogAppend(authorId, `${p.kind}.proposed`, { id, title: p.title }, now);
+    // The log keeps ids; the title is resolved for each viewer (it can carry a source's title).
+    this.wikiLogAppend(
+      authorId,
+      `${p.kind}.proposed`,
+      { id, sourceIds: titleSources.slice(0, 50) },
+      now,
+    );
     if (opts.autoAccept && m.autoAccept && isPersonalScope(m.scopeId) && p.kind === "wiki_ingest") {
       this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
       this.applyProposal(p, authorId, null, now, id);
@@ -1000,12 +1171,42 @@ export abstract class WikiBase extends DurableObject<Env> {
     return (r?.gate_node_id as string | null) ?? nodeOfScope(this.metaGet("scope_id") ?? "");
   }
 
-  /** The decision on one review item. The API has already checked that the actor may decide. */
+  /** Exact content of a proposal's revision. An approval names it, and an edit changes it. */
+  private async proposalHash(item: ItemRecord): Promise<string> {
+    return sha256Hex(`${item.id}\n${item.revision}\n${item.body ?? ""}`);
+  }
+
+  /** The contributor and anyone who edited the proposal count as its authors (H-01). */
+  private wikiAuthored(item: ItemRecord, actorId: string): boolean {
+    if (item.authorId === actorId) return true;
+    return (
+      this.sql
+        .exec("SELECT 1 FROM edits WHERE item_id = ? AND actor_id = ? LIMIT 1", item.id, actorId)
+        .toArray().length > 0
+    );
+  }
+
+  /** The actor wrote one of the sources the proposal is drawn from (L-03). */
+  private wroteSourceOf(sourceIds: string[], actorId: string): boolean {
+    for (const sid of sourceIds.slice(0, 200)) {
+      const it = this.get(sid);
+      if (it && SOURCE_KINDS.has(it.kind) && it.authorId === actorId) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The decision on one review item. The API has already checked that the actor may decide.
+   * Approving names the exact revision (`revisionHash`); a proposal edited since gives a conflict.
+   * Authors and editors never decide; where the item needs two approvers (Company Global) the first
+   * approval is recorded and the diff is applied by the second, different person.
+   */
   async wikiDecide(
     id: string,
     decision: "approve" | "reject",
     actorId: string,
     now: number,
+    opts: { revisionHash?: string } = {},
   ): Promise<DecideResult> {
     const item = this.get(id);
     const m = this.wikiMeta();
@@ -1013,14 +1214,27 @@ export abstract class WikiBase extends DurableObject<Env> {
       return { ok: false, code: "not_found", message: "No such proposal" };
     if (item.status !== "candidate")
       return { ok: false, code: "not_pending", message: "The proposal was already decided" };
-    if (item.authorId === actorId && !isPersonalScope(m.scopeId))
+    const personal = isPersonalScope(m.scopeId);
+    if (!personal && this.wikiAuthored(item, actorId))
       return {
         ok: false,
         code: "self_approval",
-        message: "You wrote this proposal, so a different person must decide it",
+        message: "You wrote or edited this proposal, so a different person must decide it",
       };
     const p = this.parse(item);
     if (!p) return { ok: false, code: "not_found", message: "The proposal is unreadable" };
+    if (
+      !personal &&
+      this.wroteSourceOf(
+        p.sources.map((x) => x.id),
+        actorId,
+      )
+    )
+      return {
+        ok: false,
+        code: "self_approval",
+        message: "You wrote a source of this proposal, so a different person must decide it",
+      };
     if (decision === "reject") {
       this.ctx.storage.transactionSync(() => {
         this.sql.exec("UPDATE items SET status = 'rejected', updated_at = ? WHERE id = ?", now, id);
@@ -1038,8 +1252,21 @@ export abstract class WikiBase extends DurableObject<Env> {
           );
         this.wikiLogAppend(actorId, `${p.kind}.rejected`, { id }, now);
       });
-      return { ok: true, status: "rejected", applied: null };
+      return { ok: true, status: "rejected", applied: null, approvals: 0, required: 0 };
     }
+    if (!opts.revisionHash)
+      return {
+        ok: false,
+        code: "revision_required",
+        message: "Approve names the revision you read: send revisionHash",
+      };
+    if (opts.revisionHash !== (await this.proposalHash(item)))
+      return {
+        ok: false,
+        code: "conflict",
+        message: "The proposal changed since you read it. Reload and read it again",
+        currentRevision: item.revision,
+      };
     // An authored page that moved since the draft was written needs a new draft, not a blind overwrite.
     for (const d of p.pages) {
       if (GENERATED[d.type]) continue;
@@ -1052,33 +1279,50 @@ export abstract class WikiBase extends DurableObject<Env> {
           ...(cur ? { currentRevision: cur.revision } : {}),
         };
     }
-    let applied: ApplyResult | null = null;
-    this.ctx.storage.transactionSync(() => {
-      applied = this.applyProposal(p, actorId, actorId, now, id);
-      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
-      this.sql.exec(
-        "INSERT OR REPLACE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)",
+    const required = personal ? 1 : item.required;
+    const mine = this.sql
+      .exec(
+        `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
+         RETURNING actor_id`,
         id,
         item.revision,
         actorId,
         now,
-      );
+      )
+      .toArray();
+    if (!mine.length)
+      return { ok: false, code: "already_done", message: "You already approved this revision" };
+    const approvals = item.approvals + 1;
+    if (approvals < required) {
+      this.wikiLogAppend(actorId, `${p.kind}.approval`, { id, approvals, required }, now);
+      return { ok: true, status: "pending", applied: null, approvals, required };
+    }
+    let applied: ApplyResult | null = null;
+    this.ctx.storage.transactionSync(() => {
+      applied = this.applyProposal(p, actorId, actorId, now, id);
+      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
       if (p.findingKey)
         this.sql.exec("UPDATE wiki_findings SET status = 'resolved' WHERE key = ?", p.findingKey);
     });
     for (const src of p.reingest)
       await this.wikiEnqueue("ingest", { sourceId: src, force: true }, now);
-    return { ok: true, status: "approved", applied };
+    return { ok: true, status: "approved", applied, approvals, required };
   }
 
-  /** A reviewer's own wording for one page of a proposal. It is applied as written. */
+  /**
+   * A reviewer's own wording for one page of a proposal. It is applied as written, so the editor
+   * becomes an author (cannot approve), the revision moves on and earlier approvals no longer count.
+   * Generated pages are rendered from facts and cannot be edited by hand. `readable` lists the sources
+   * the editor may read: a citation to any other source is removed.
+   */
   wikiEditProposal(
     id: string,
     actorId: string,
     pageId: string,
     markdown: string,
     now: number,
-  ): Fail | { ok: true } {
+    readable: string[] = [],
+  ): Fail | { ok: true; revision: number } {
     const item = this.get(id);
     if (!item || !isWikiKind(item.kind))
       return { ok: false, code: "not_found", message: "No such proposal" };
@@ -1087,34 +1331,55 @@ export abstract class WikiBase extends DurableObject<Env> {
     const p = this.parse(item);
     const d = p?.pages.find((x) => x.pageId === pageId);
     if (!p || !d) return { ok: false, code: "not_found", message: "No such page in this proposal" };
-    const known = new Set<string>(p.sources.map((s) => s.id));
-    for (const f of p.facts) for (const sid of f.sourceIds) known.add(sid);
-    for (const r of this.wikiSourceRefs(citationsOf(markdown))) known.add(r.id);
-    const clean = markdown
-      .replaceAll("\u0000", "")
-      .replace(/\{src:([^}]*)\}/g, (m, x: string) => (known.has(x) ? m : ""))
-      .slice(0, MAX_PAGE_CHARS);
+    if (GENERATED[d.type])
+      return {
+        ok: false,
+        code: "generated_page",
+        message: "This page is rendered from facts. Change the facts, not the page",
+      };
+    const mayCite = new Set(readable);
+    const known = new Set<string>();
+    for (const r of this.wikiSourceRefs(citationsOf(markdown)))
+      if (mayCite.has(r.id)) known.add(r.id);
+    const clean = this.cleanMarkdown(markdown, known);
+    if (!clean.trim()) return { ok: false, code: "not_found", message: "The edited page is empty" };
     d.markdown = clean;
     d.edited = true;
-    this.sql.exec(
-      "UPDATE items SET body = ?, updated_at = ? WHERE id = ?",
-      JSON.stringify(p),
-      now,
-      id,
-    );
-    this.sql.exec(
-      "INSERT INTO edits (item_id, revision, actor_id, at) VALUES (?, ?, ?, ?)",
-      id,
-      item.revision,
-      actorId,
-      now,
-    );
-    this.wikiLogAppend(actorId, "proposal.edited", { id, pageId }, now);
-    return { ok: true };
+    const revision = item.revision + 1;
+    this.ctx.storage.transactionSync(() => {
+      this.sql.exec(
+        "UPDATE items SET body = ?, revision = ?, updated_at = ? WHERE id = ?",
+        JSON.stringify(p),
+        revision,
+        now,
+        id,
+      );
+      this.sql.exec(
+        "INSERT INTO edits (item_id, revision, actor_id, at) VALUES (?, ?, ?, ?)",
+        id,
+        revision,
+        actorId,
+        now,
+      );
+      this.wikiLogAppend(actorId, "proposal.edited", { id, pageId, revision }, now);
+    });
+    return { ok: true, revision };
+  }
+
+  /** Proposal titles for the log, resolved per viewer by the API. */
+  wikiProposalTitles(ids: string[]): { id: string; title: string; titleSources: string[] }[] {
+    const out: { id: string; title: string; titleSources: string[] }[] = [];
+    for (const id of ids.slice(0, 200)) {
+      const it = this.get(id);
+      const p = it ? this.parse(it) : null;
+      if (it && p)
+        out.push({ id, title: it.label, titleSources: p.titleSources ?? sourcesOfLegacy(p) });
+    }
+    return out;
   }
 
   /** Everything the reviewer needs to decide: before and after for each page, the facts and what they replace. */
-  wikiProposalView(id: string): {
+  async wikiProposalView(id: string): Promise<{
     id: string;
     kind: string;
     status: string;
@@ -1123,6 +1388,11 @@ export abstract class WikiBase extends DurableObject<Env> {
     detail: string;
     authorId: string | null;
     createdAt: number;
+    revision: number;
+    revisionHash: string;
+    approvals: number;
+    required: number;
+    titleSources: string[];
     pages: {
       pageId: string;
       type: string;
@@ -1140,12 +1410,13 @@ export abstract class WikiBase extends DurableObject<Env> {
       subject: string;
       predicate: string;
       object: string;
+      sourceIds: string[];
     }[];
     confirm: number[];
     archive: string[];
     reingest: string[];
     sources: Proposal["sources"];
-  } | null {
+  } | null> {
     const item = this.get(id);
     const p = item ? this.parse(item) : null;
     if (!item || !p) return null;
@@ -1158,6 +1429,11 @@ export abstract class WikiBase extends DurableObject<Env> {
       detail: p.detail ?? "",
       authorId: item.authorId,
       createdAt: item.createdAt,
+      revision: item.revision,
+      revisionHash: await this.proposalHash(item),
+      approvals: item.approvals,
+      required: item.required,
+      titleSources: p.titleSources ?? sourcesOfLegacy(p),
       pages: p.pages.map((d) => {
         const cur = this.pageById(d.pageId);
         return {
@@ -1174,13 +1450,17 @@ export abstract class WikiBase extends DurableObject<Env> {
       facts: p.facts,
       invalidate: p.invalidate.map((i) => {
         const r = this.sql
-          .exec("SELECT subject, predicate, object FROM wiki_facts WHERE id = ?", i.factId)
+          .exec(
+            "SELECT subject, predicate, object, source_ids FROM wiki_facts WHERE id = ?",
+            i.factId,
+          )
           .toArray()[0];
         return {
           ...i,
           subject: (r?.subject as string) ?? "",
           predicate: (r?.predicate as string) ?? "",
           object: (r?.object as string) ?? "",
+          sourceIds: r ? (JSON.parse(r.source_ids as string) as string[]) : [],
         };
       }),
       confirm: p.confirm,
@@ -1198,6 +1478,8 @@ export abstract class WikiBase extends DurableObject<Env> {
     authorId: string | null;
     createdAt: number;
     detail: string;
+    revision: number;
+    titleSources: string[];
   }[] {
     return this.sql
       .exec(
@@ -1218,6 +1500,8 @@ export abstract class WikiBase extends DurableObject<Env> {
                 authorId: it.authorId,
                 createdAt: it.createdAt,
                 detail: p.detail ?? p.rationale,
+                revision: it.revision,
+                titleSources: p.titleSources ?? sourcesOfLegacy(p),
               },
             ]
           : [];
@@ -1311,7 +1595,13 @@ export abstract class WikiBase extends DurableObject<Env> {
         .join("\n");
       const md = /^#\s/m.test(body) ? body : `# ${it.label}\n\n${body}`;
       this.ctx.storage.transactionSync(() => {
-        this.savePage({ id, type: "topic", title: it.label, markdown: md }, it.authorId, cid, now);
+        // The revision names the service, not the promoter: a Global reader must not learn the account team (L-06).
+        this.savePage(
+          { id, type: "topic", title: it.label, markdown: md },
+          serviceId("global"),
+          cid,
+          now,
+        );
         this.sql.exec("UPDATE wiki_promotions SET page_id = ? WHERE candidate_id = ?", id, cid);
         this.wikiLogAppend("system", "promotion.published", { pageId: id }, now);
       });

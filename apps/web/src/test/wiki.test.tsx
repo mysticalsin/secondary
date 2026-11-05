@@ -31,6 +31,10 @@ const proposal: WikiProposal = {
   detail: "",
   authorId: "svc:wiki:a_acme",
   createdAt: "2026-11-05T12:00:00.000Z",
+  revision: 1,
+  revisionHash: "a".repeat(64),
+  approvals: 0,
+  required: 1,
   pages: [
     {
       pageId: "decision-log",
@@ -129,7 +133,9 @@ describe("a wiki proposal", () => {
     expect(screen.getByText("New page")).toBeInTheDocument();
     expect(screen.getByText(/Ends these facts/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await waitFor(() => expect(decide).toHaveBeenCalledWith("a_acme", proposal.id, "approve"));
+    await waitFor(() =>
+      expect(decide).toHaveBeenCalledWith("a_acme", proposal.id, "approve", proposal.revisionHash),
+    );
     expect(done).toHaveBeenCalledWith("Approved. The wiki is updated.");
   });
 

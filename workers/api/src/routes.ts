@@ -38,8 +38,8 @@ import type { AppDeps, AppEnv, Session } from "./types.ts";
 import { uxRoutes } from "./ux/index.ts";
 import { notifyApproved, notifyChangesRequested, notifyContributed } from "./ux/notify.ts";
 import { wikiNotify } from "./wiki/hooks.ts";
-import { wikiQueueRow } from "./wiki/review.ts";
-import { wikiRoutes } from "./wiki/routes.ts";
+import { proposalSources, wikiQueueRow } from "./wiki/review.ts";
+import { readableMany, sourcesReadable, wikiRoutes } from "./wiki/routes.ts";
 import { isWikiKind } from "./wiki/types.ts";
 import type { Fail, ItemRecord, UserValidated } from "./workspace.ts";
 
@@ -663,12 +663,39 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.get("/review", async (c) => {
     const s = sess(c);
     const view = viewOf(s);
+    const scopes = admittedScopes(view);
     const lists = await Promise.all(
-      admittedScopes(view).map((scope) => workspaceStub(c.env, s.tenantId, scope).pending(100)),
+      scopes.map((scope) => workspaceStub(c.env, s.tenantId, scope).pending(100)),
     );
+    // A wiki proposal's text rests on sources; this viewer sees it only when they can read them all (H-02).
+    const wikiReadable = new Map<string, boolean>();
+    const wikiGroups = lists.flatMap((list, i) => {
+      const items = list.filter((r) => isWikiKind(r.kind));
+      return items.length
+        ? [
+            {
+              items,
+              w: {
+                view,
+                personal: (scopes[i] as string).startsWith("personal:"),
+                stub: workspaceStub(c.env, s.tenantId, scopes[i] as string),
+              },
+            },
+          ]
+        : [];
+    });
+    const oks = await readableMany(
+      c,
+      wikiGroups.map((g) => ({ w: g.w, ids: g.items.flatMap(proposalSources) })),
+    );
+    wikiGroups.forEach((g, i) => {
+      for (const r of g.items)
+        wikiReadable.set(r.id, sourcesReadable(proposalSources(r), oks[i] as Map<string, never>));
+    });
     const items = lists.flat().flatMap((r) => {
       // Wiki proposals (ingest, lint, dreaming) are decided in the wiki review (apps/web views/wiki).
-      if (isWikiKind(r.kind)) return wikiQueueRow(view, s.principal, r) ?? [];
+      if (isWikiKind(r.kind))
+        return wikiQueueRow(view, s.principal, r, wikiReadable.get(r.id) === true) ?? [];
       const policyNode = r.targetNode ?? r.id;
       const target = view.nodes.get(policyNode);
       if (!target) return [];

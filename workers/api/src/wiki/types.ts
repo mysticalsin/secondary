@@ -65,6 +65,13 @@ export interface Proposal {
   findingKey: string | null;
   /** Free text shown to the reviewer (what the finding is). */
   detail?: string;
+  /**
+   * Every source whose content can appear in the title, rationale, detail or fact text of this
+   * proposal. A viewer who cannot read all of them sees "restricted source" instead (H-02).
+   */
+  titleSources?: string[];
+  /** Pages a lint finding is about; their sources are added to `titleSources`. */
+  subjectPages?: string[];
 }
 
 export interface PageRow {

@@ -46,10 +46,13 @@ export const wikiApi = {
   proposals: (ws: string) => request<WikiProposalRow[]>("GET", `${base(ws)}/proposals`),
   proposal: (ws: string, id: string) =>
     request<WikiProposal>("GET", `${base(ws)}/proposals/${q(id)}`),
-  decide: (ws: string, id: string, decision: "approve" | "reject") =>
-    request<{ ok: boolean; status: string }>("POST", `${base(ws)}/proposals/${q(id)}/decide`, {
-      decision,
-    }),
+  /** Approving names the revision that was read (`revisionHash` from the proposal). */
+  decide: (ws: string, id: string, decision: "approve" | "reject", revisionHash?: string) =>
+    request<{ ok: boolean; status: string; approvals?: number; required?: number }>(
+      "POST",
+      `${base(ws)}/proposals/${q(id)}/decide`,
+      { decision, ...(revisionHash ? { revisionHash } : {}) },
+    ),
   editProposal: (ws: string, id: string, pageId: string, markdown: string) =>
     request<{ ok: boolean }>("POST", `${base(ws)}/proposals/${q(id)}/edit`, { pageId, markdown }),
   propose: (ws: string, body: { title: string; markdown: string; pageId?: string }) =>

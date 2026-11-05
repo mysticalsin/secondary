@@ -110,6 +110,8 @@ export type Fail = {
     | "not_author"
     | "not_pending"
     | "already_done"
+    | "revision_required"
+    | "generated_page"
     | "exists";
   message: string;
   currentRevision?: number;

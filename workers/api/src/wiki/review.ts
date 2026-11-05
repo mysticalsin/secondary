@@ -18,7 +18,27 @@ export function mayDecide(view: AdmittedView, p: Principal, nodeId: string): Rig
   return canDoInView(view, p, nodeId, "review");
 }
 
-export function wikiQueueRow(view: AdmittedView, p: Principal, r: ItemRecord) {
+/** The sources a proposal's own text rests on (what the queue row would show). */
+export function proposalSources(r: ItemRecord): string[] {
+  try {
+    const prop = JSON.parse(r.body ?? "") as Proposal;
+    return [
+      ...new Set([
+        ...(prop.titleSources ?? []),
+        ...prop.sources.map((x) => x.id),
+        ...prop.facts.flatMap((f) => f.sourceIds),
+      ]),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `readable` says whether this viewer may read every source the proposal's text rests on. When not,
+ * the row says "restricted source" instead of titles, fact text and details (H-02).
+ */
+export function wikiQueueRow(view: AdmittedView, p: Principal, r: ItemRecord, readable: boolean) {
   const node = r.targetNode ?? "";
   const personal = node === personalRootId(p.id);
   const target = view.nodes.get(node);
@@ -29,18 +49,20 @@ export function wikiQueueRow(view: AdmittedView, p: Principal, r: ItemRecord) {
   let diff: { type: "add"; text: string }[] = [];
   try {
     const prop = JSON.parse(r.body ?? "") as Proposal;
-    diff = [
-      ...prop.pages.map((d) => `Page: ${d.title}`),
-      ...prop.facts.map((f) => `Fact: ${f.subject} / ${f.predicate} = ${f.object}`),
-      ...(prop.detail ? [prop.detail] : []),
-    ].map((text) => ({ type: "add" as const, text }));
+    diff = readable
+      ? [
+          ...prop.pages.map((d) => `Page: ${d.title}`),
+          ...prop.facts.map((f) => `Fact: ${f.subject} / ${f.predicate} = ${f.object}`),
+          ...(prop.detail ? [prop.detail] : []),
+        ].map((text) => ({ type: "add" as const, text }))
+      : [{ type: "add" as const, text: "restricted source" }];
   } catch {
     diff = [];
   }
   return {
     id: r.id,
     nodeId: r.id,
-    title: r.label,
+    title: readable ? r.label : "restricted source",
     scopeLabel: personal ? "My Secondary" : (target?.label ?? node),
     plane: r.plane,
     author: r.authorId ?? "",
@@ -49,7 +71,7 @@ export function wikiQueueRow(view: AdmittedView, p: Principal, r: ItemRecord) {
     submittedAt: new Date(r.createdAt).toISOString(),
     diff,
     flags: [],
-    twoPerson: { required: false, approvals: 0, needed: 1 },
+    twoPerson: { required: r.required > 1, approvals: r.approvals, needed: r.required },
     approve: right,
     requestChanges: { allowed: false, reason: "Wiki proposals are approved, edited or rejected" },
     origin: r.origin,

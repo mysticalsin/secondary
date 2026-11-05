@@ -13,7 +13,8 @@ import { viewOf } from "../auth.ts";
 import { checkSourceAccess } from "../connector.ts";
 import type { CandidateInput } from "../routes.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
-import { workspaceStub } from "../stubs.ts";
+import { detectSensitivity } from "../sensitivity.ts";
+import { tenantStub, workspaceStub } from "../stubs.ts";
 import type { AppDeps, AppEnv, Session } from "../types.ts";
 import {
   audit,
@@ -31,6 +32,7 @@ import type { UserValidated } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import { wikiNotify } from "./hooks.ts";
 import { mayDecide } from "./review.ts";
+import { HISTORY_MAX } from "./store.ts";
 import {
   citationsOf,
   claimLines,
@@ -40,6 +42,7 @@ import {
   linksOf,
   matchOfTokens,
   PAGE_ID,
+  residualIdentifiers,
   slug,
   summaryOf,
   tokensOf,
@@ -49,7 +52,9 @@ import { isPersonalScope, nodeOfScope, type PageDraft, type Proposal } from "./t
 const WIKI_NODE_KINDS = new Set(["account", "circle", "department", "core"]);
 const MAX_MD = 20_000;
 const MAX_FANOUT = 40;
-const RESTRICTED = "[restricted source]";
+export const RESTRICTED = "restricted source";
+/** Hit pages one query reads (M-05): the connector is asked once for all of their sources. */
+const MAX_HIT_PAGES = 20;
 
 export interface PromoteHelpers {
   submitCandidate: (c: C, view: AdmittedView, i: CandidateInput) => Promise<Response>;
@@ -76,9 +81,77 @@ function failResponse(
   c: C,
   f: { code: string; message: string; currentRevision?: number },
 ): Response {
-  if (f.code === "self_approval" || f.code === "not_author") return forbidden(c, f.message);
+  if (f.code === "self_approval" || f.code === "not_author")
+    return c.json({ error: f.code, reason: f.message }, 403);
+  if (f.code === "revision_required") return c.json({ error: f.code, reason: f.message }, 400);
+  if (f.code === "generated_page") return c.json({ error: f.code, reason: f.message }, 422);
   return plainFail(c, f);
 }
+
+export type Readable = Map<string, { title: string; kind: "item" | "source" }>;
+
+/** Connector answers for one request, so a file cited by many pages is asked about once. */
+const accessCache = new WeakMap<object, Map<string, boolean>>();
+
+/**
+ * Which of the cited sources this caller may read right now: the gate node must be at content level
+ * in their view, and a connector file needs the connector's explicit yes (fail closed). Several groups
+ * (workspaces) share one connector call. Ids beyond what a workspace answers for count as unreadable.
+ */
+export async function readableMany(
+  c: C,
+  groups: { w: { view: AdmittedView; personal: boolean; stub: Stub }; ids: string[] }[],
+): Promise<Readable[]> {
+  const s = sess(c);
+  const cache = accessCache.get(c.req.raw) ?? new Map<string, boolean>();
+  accessCache.set(c.req.raw, cache);
+  const perGroup = await Promise.all(
+    groups.map(async (g) => {
+      const unique = [...new Set(g.ids)];
+      if (!unique.length) return [];
+      const refs = await g.w.stub.wikiSourceRefs(unique);
+      return refs.filter(
+        (x) => g.w.personal || g.w.view.nodes.get(x.gateNodeId)?.level === "content",
+      );
+    }),
+  );
+  const need = [
+    ...new Set(
+      perGroup
+        .flat()
+        .filter((x) => x.kind === "source" && !cache.has(x.id))
+        .map((x) => x.id),
+    ),
+  ];
+  if (need.length) {
+    const yes = await checkSourceAccess(
+      c.env,
+      s.tenantId,
+      { id: s.principal.id, email: s.principal.email },
+      need,
+    );
+    for (const id of need) cache.set(id, yes.has(id));
+  }
+  return perGroup.map((passed) => {
+    const out: Readable = new Map();
+    for (const x of passed)
+      if (x.kind === "item" || cache.get(x.id) === true)
+        out.set(x.id, { title: x.title, kind: x.kind });
+    return out;
+  });
+}
+
+/** A line stands only on sources the caller can read: every citation must be readable (M-01). */
+export const lineReadable = (line: string, ok: Readable): boolean =>
+  citationsOf(line).every((x) => ok.has(x));
+
+/** A page shows when it cites nothing, or when at least one cited source is readable (H-02). */
+export const pageVisible = (cites: string[], ok: Readable): boolean =>
+  cites.length === 0 || cites.some((x) => ok.has(x));
+
+/** Text derived from these sources shows only to someone who can read all of them (H-02). */
+export const sourcesReadable = (ids: readonly string[] | undefined, ok: Readable): boolean =>
+  (ids ?? []).every((x) => ok.has(x));
 
 const idOf = (v: string | undefined): string => {
   if (!v || !PAGE_ID.test(v)) throw notFound();
@@ -166,36 +239,13 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
 
   // ---- citations, re-checked for this caller ----
 
-  type Readable = Map<string, { title: string; kind: "item" | "source" }>;
-
-  async function readableSources(
+  const readableSources = async (
     c: C,
     w: { view: AdmittedView; personal: boolean; stub: Stub },
     ids: string[],
-  ): Promise<Readable> {
-    const s = sess(c);
-    const out: Readable = new Map();
-    const unique = [...new Set(ids)];
-    if (!unique.length) return out;
-    const refs = await w.stub.wikiSourceRefs(unique);
-    const passed = refs.filter(
-      (x) => w.personal || w.view.nodes.get(x.gateNodeId)?.level === "content",
-    );
-    const files = passed.filter((x) => x.kind === "source");
-    const confirmed = files.length
-      ? await checkSourceAccess(
-          c.env,
-          s.tenantId,
-          { id: s.principal.id, email: s.principal.email },
-          files.map((x) => x.id),
-        )
-      : new Set<string>();
-    for (const x of passed)
-      if (x.kind === "item" || confirmed.has(x.id)) out.set(x.id, { title: x.title, kind: x.kind });
-    return out;
-  }
+  ): Promise<Readable> => (await readableMany(c, [{ w, ids }]))[0] as Readable;
 
-  /** The page text for this caller: unreadable citations are dropped, and so is a claim left with none. */
+  /** The page text for this caller: a line is kept only when every source it cites is readable (M-01). */
   function filterMarkdown(
     md: string,
     ok: Readable,
@@ -204,13 +254,11 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     let dropped = 0;
     const out: string[] = [];
     for (const line of md.split("\n")) {
-      const cites = citationsOf(line);
-      if (cites.length && !cites.some((x) => ok.has(x))) {
+      if (!lineReadable(line, ok)) {
         dropped++;
         continue;
       }
-      let t = line.replace(/\{src:([^}]+)\}/g, (m, id: string) => (ok.has(id) ? m : ""));
-      if (!canGlobal) t = t.replace(/\[\[global:[A-Za-z0-9_-]+\]\]/g, "");
+      const t = canGlobal ? line : line.replace(/\[\[global:[A-Za-z0-9_-]+\]\]/g, "");
       out.push(t.replace(/[ \t]+$/g, ""));
     }
     return { text: out.join("\n"), dropped };
@@ -221,12 +269,46 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     Object.fromEntries(ids.filter((i) => ok.has(i)).map((i) => [i, ok.get(i)]));
 
   /** One line for a reviewer or a diff: the same rule, but the line stays so the diff keeps its shape. */
-  const maskLine = (line: string, ok: Readable): string => {
-    const cites = citationsOf(line);
-    return cites.length && !cites.some((x) => ok.has(x))
-      ? `- ${RESTRICTED}`
-      : line.replace(/\{src:([^}]+)\}/g, (m, id: string) => (ok.has(id) ? m : ""));
-  };
+  const maskLine = (line: string, ok: Readable): string =>
+    lineReadable(line, ok) ? line : `- ${RESTRICTED}`;
+  const maskText = (text: string, ok: Readable): string =>
+    text
+      .split("\n")
+      .map((l) => maskLine(l, ok))
+      .join("\n");
+
+  /** Pages whose every source is out of this caller's reach are not shown at all (H-02). */
+  async function hiddenPages(
+    c: C,
+    w: { view: AdmittedView; personal: boolean; stub: Stub },
+    ids?: string[],
+  ): Promise<Set<string>> {
+    const rows = await w.stub.wikiPageCitations(ids);
+    const ok = await readableSources(
+      c,
+      w,
+      rows.flatMap((r) => r.cites),
+    );
+    return new Set(rows.filter((r) => !pageVisible(r.cites, ok)).map((r) => r.id));
+  }
+
+  /** The wiki's own per-person limits (M-05). A Response is the refusal. */
+  async function limited(c: C, kind: "search" | "write"): Promise<Response | null> {
+    const s = sess(c);
+    const raw = Number.parseInt(
+      (kind === "search" ? c.env.WIKI_SEARCH_PER_MIN : c.env.WIKI_WRITE_PER_MIN) ?? "",
+      10,
+    );
+    const limit = Number.isFinite(raw) && raw > 0 ? raw : 30;
+    const res = await tenantStub(c.env, s.tenantId).hit(
+      `wiki_${kind}:${s.principal.id}`,
+      s.ctx.now,
+      limit,
+    );
+    if (!res.limited) return null;
+    c.header("Retry-After", String(res.retryAfter));
+    return c.json({ error: "rate_limited" }, 429);
+  }
 
   // ---- reads ----
 
@@ -250,18 +332,20 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const ids = pages.flatMap((p) => citationsOf(p.markdown));
     const ok = await readableSources(c, w, ids);
     const g = canGlobal(w.view);
-    const shown = pages.map((p) => {
-      const f = filterMarkdown(p.markdown, ok, g);
-      return {
-        id: p.id,
-        title: p.title,
-        type: p.type,
-        summary: summaryOf(f.text),
-        revision: p.revision,
-        updatedAt: new Date(p.updatedAt).toISOString(),
-        restricted: f.dropped,
-      };
-    });
+    const shown = pages
+      .filter((p) => pageVisible(citationsOf(p.markdown), ok))
+      .map((p) => {
+        const f = filterMarkdown(p.markdown, ok, g);
+        return {
+          id: p.id,
+          title: p.title,
+          type: p.type,
+          summary: summaryOf(f.text),
+          revision: p.revision,
+          updatedAt: new Date(p.updatedAt).toISOString(),
+          restricted: f.dropped,
+        };
+      });
     const order = new Map(index.map((p, i) => [p.id, i]));
     shown.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
     const meta = await w.stub.wikiMeta();
@@ -298,10 +382,16 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     if (!page || (page.status !== "published" && revision === undefined)) throw notFound();
     const ids = citationsOf(page.markdown);
     const ok = await readableSources(c, w, ids);
+    // A page with no readable source is not here for this caller.
+    if (!pageVisible(ids, ok)) throw notFound();
     const f = filterMarkdown(page.markdown, ok, canGlobal(w.view));
     const all = await w.stub.wikiIndex();
-    const known = new Map(all.map((p) => [p.id, p.title]));
-    const links = linksOf(f.text).flatMap((l) =>
+    const hidden = await hiddenPages(c, w, linksOf(f.text));
+    const known = new Map(all.filter((p) => !hidden.has(p.id)).map((p) => [p.id, p.title]));
+    const linkText = f.text.replace(/\[\[([A-Za-z0-9:_-]{1,70})\]\]/g, (m, id: string) =>
+      hidden.has(id) ? "" : m,
+    );
+    const links = linksOf(linkText).flatMap((l) =>
       l.startsWith("global:")
         ? [{ id: l, title: l.slice(7), local: false }]
         : known.has(l)
@@ -314,12 +404,12 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       title: page.title,
       revision: page.revision,
       current: page.current,
-      markdown: f.text,
-      summary: summaryOf(f.text),
+      markdown: linkText,
+      summary: summaryOf(linkText),
       citations: citeMap(ok, ids),
       restricted: f.dropped,
       links,
-      uncited: claimLines(f.text).filter((x) => citationsOf(x.text).length === 0).length,
+      uncited: claimLines(linkText).filter((x) => citationsOf(x.text).length === 0).length,
       updatedAt: new Date(page.updatedAt).toISOString(),
     });
   });
@@ -327,14 +417,39 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
   r.get("/wiki/:ws/pages/:pid/history", async (c) => {
     const w = await open(c, c.req.param("ws"), "read");
     if (w instanceof Response) return w;
-    const rows = await w.stub.wikiPageHistory(idOf(c.req.param("pid")));
-    if (!rows.length) throw notFound();
-    const ids = rows.flatMap((x) => x.diff.flatMap((d) => citationsOf(d.text)));
+    const pid = idOf(c.req.param("pid"));
+    const lim = c.req.query("limit");
+    const before = c.req.query("before");
+    const limit = lim === undefined ? undefined : Number(lim);
+    const cursor = before === undefined ? undefined : Number(before);
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > HISTORY_MAX))
+      throw bad("invalid_limit");
+    if (cursor !== undefined && (!Number.isInteger(cursor) || cursor < 1))
+      throw bad("invalid_before");
+    const cur = await w.stub.wikiPage(pid);
+    const { revisions, next } = await w.stub.wikiPageHistory(pid, {
+      ...(limit !== undefined ? { limit } : {}),
+      ...(cursor !== undefined ? { before: cursor } : {}),
+    });
+    if (!cur || !revisions.length) throw notFound();
+    const texts = revisions.map((x) =>
+      x.diff
+        .filter((d) => d.type !== "del")
+        .map((d) => d.text)
+        .join("\n"),
+    );
+    const ids = [
+      ...revisions.flatMap((x) => x.diff.flatMap((d) => citationsOf(d.text))),
+      ...citationsOf(cur.markdown),
+    ];
     const ok = await readableSources(c, w, ids);
+    if (!pageVisible(citationsOf(cur.markdown), ok)) throw notFound();
+    if (next !== null) c.header("X-Next-Before", String(next));
     return c.json(
-      rows.map((x) => ({
+      revisions.map((x, i) => ({
         revision: x.revision,
-        title: x.title,
+        // A title is a claim of what the revision cites.
+        title: pageVisible(citationsOf(texts[i] as string), ok) ? x.title : RESTRICTED,
         actor: x.actor,
         at: new Date(x.at).toISOString(),
         proposalId: x.proposalId,
@@ -358,8 +473,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       facts.flatMap((f) => f.sourceIds),
     );
     const shown = facts.flatMap((f) => {
-      const keep = f.sourceIds.filter((i) => ok.has(i));
-      if (f.sourceIds.length && !keep.length) return [];
+      if (f.sourceIds.length && !sourcesReadable(f.sourceIds, ok)) return [];
       return [
         {
           id: f.id,
@@ -369,7 +483,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
           validAt: f.validAt,
           invalidAt: f.invalidAt,
           recordedAt: f.recordedAt,
-          sources: keep.map((i) => ({ id: i, title: ok.get(i)?.title ?? i })),
+          sources: f.sourceIds.map((i) => ({ id: i, title: ok.get(i)?.title ?? i })),
           confidence: f.confidence,
           origin: f.origin,
           verifiedBy: f.verifiedBy,
@@ -380,38 +494,104 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     return c.json(shown);
   });
 
+  // The log stores ids. A proposal's title is looked up here, for this caller, and shown only when
+  // every source it was drawn from is readable; page ids of hidden pages are left out.
   r.get("/wiki/:ws/log", async (c) => {
     const w = await open(c, c.req.param("ws"), "read");
     if (w instanceof Response) return w;
+    const entries = (await w.stub.wikiLog(100)).map((e) => ({
+      ...e,
+      detail: JSON.parse(e.detail) as Record<string, unknown>,
+    }));
+    const proposalIds = [
+      ...new Set(
+        entries.flatMap((e) => (typeof e.detail.id === "string" ? [e.detail.id as string] : [])),
+      ),
+    ];
+    const titles = new Map(
+      (await w.stub.wikiProposalTitles(proposalIds)).map((t) => [t.id, t] as const),
+    );
+    const pageIds = [
+      ...new Set(
+        entries.flatMap((e) =>
+          Array.isArray(e.detail.pages)
+            ? (e.detail.pages as unknown[]).filter((x): x is string => typeof x === "string")
+            : typeof e.detail.pageId === "string"
+              ? [e.detail.pageId as string]
+              : [],
+        ),
+      ),
+    ];
+    const hidden = await hiddenPages(c, w, pageIds);
+    const ok = await readableSources(c, w, [
+      ...[...titles.values()].flatMap((t) => t.titleSources),
+      ...entries.flatMap((e) =>
+        Array.isArray(e.detail.sourceIds) ? (e.detail.sourceIds as string[]) : [],
+      ),
+    ]);
     return c.json(
-      (await w.stub.wikiLog(100)).map((e) => ({
-        ...e,
-        detail: JSON.parse(e.detail) as unknown,
-        at: new Date(e.at).toISOString(),
-      })),
+      entries.map((e) => {
+        const d: Record<string, unknown> = { ...e.detail };
+        // Older entries stored the title itself: it is never trusted, it is looked up again.
+        delete d.title;
+        const t = typeof d.id === "string" ? titles.get(d.id) : undefined;
+        if (t && e.kind.endsWith(".proposed"))
+          d.title = sourcesReadable(t.titleSources, ok) ? t.title : RESTRICTED;
+        if (Array.isArray(d.sourceIds))
+          d.sourceIds = (d.sourceIds as string[]).filter((i) => ok.has(i));
+        if (Array.isArray(d.pages)) d.pages = (d.pages as string[]).filter((x) => !hidden.has(x));
+        if (typeof d.pageId === "string" && hidden.has(d.pageId)) d.pageId = RESTRICTED;
+        return { ...e, detail: d, at: new Date(e.at).toISOString() };
+      }),
     );
   });
 
-  // Search and ask: index first (page titles and summaries), then the pages, then the citations, all for this caller.
-  async function searchIn(
-    c: C,
-    ws: { param: string; nodeId: string; scope: string; label: string },
-    view: AdmittedView,
-    tokens: string[],
-    limit: number,
-  ) {
+  // Search and ask: index first (page titles and summaries), then the pages, then the citations, all for
+  // this caller. One query reads at most MAX_HIT_PAGES pages and asks the connector once (M-05).
+  type Target = { param: string; nodeId: string; scope: string; label: string };
+  async function query(c: C, mode: "search" | "ask") {
+    const q = c.req.query("q") ?? "";
+    const tokens = tokensOf(q);
+    if (!tokens.length || q.length > 300) throw bad("invalid_query");
+    const param = c.req.param("ws") ?? "";
+    const view = viewOf(sess(c));
+    let targets: Target[];
+    if (param === "all") targets = admittedWikis(c);
+    else {
+      const w = await open(c, param, "read");
+      if (w instanceof Response) return w;
+      targets = [{ param: w.param, nodeId: w.nodeId, scope: w.scope, label: w.label }];
+    }
+    const refused = await limited(c, "search");
+    if (refused) return refused;
     const s = sess(c);
-    const personal = isPersonalScope(ws.scope);
-    const stub = workspaceStub(c.env, s.tenantId, ws.scope);
-    const hits = await stub.wikiSearch(matchOfTokens(tokens), limit);
-    if (!hits.length) return [];
+    const match = matchOfTokens(tokens);
+    const found = (
+      await Promise.all(
+        targets.map(async (ws) => {
+          const stub = workspaceStub(c.env, s.tenantId, ws.scope);
+          const hits = await stub.wikiSearch(match, 10);
+          return hits.map((h) => ({ ws, stub, personal: isPersonalScope(ws.scope), ...h }));
+        }),
+      )
+    )
+      .flat()
+      .sort((a, b) => a.rank - b.rank || a.id.localeCompare(b.id))
+      .slice(0, MAX_HIT_PAGES);
+    const pages = await Promise.all(found.map((h) => h.stub.wikiPage(h.id)));
+    const oks = await readableMany(
+      c,
+      found.map((h, i) => ({
+        w: { view, personal: h.personal, stub: h.stub },
+        ids: citationsOf(pages[i]?.markdown ?? ""),
+      })),
+    );
     const g = canGlobal(view);
-    const w = { view, personal, stub };
     const out = [];
-    for (const h of hits) {
-      const page = await stub.wikiPage(h.id);
-      if (!page) continue;
-      const ok = await readableSources(c, w, citationsOf(page.markdown));
+    for (const [i, h] of found.entries()) {
+      const page = pages[i];
+      const ok = oks[i] as Readable;
+      if (!page || !pageVisible(citationsOf(page.markdown), ok)) continue;
       const f = filterMarkdown(page.markdown, ok, g);
       const hay = `${page.title}\n${f.text}`.toLowerCase();
       // A hit must stand on text this caller can read, not on a claim that was dropped.
@@ -424,8 +604,8 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
         .filter((l) => l.score > 0)
         .sort((a, b) => b.score - a.score || a.line - b.line);
       out.push({
-        ws: ws.param,
-        label: ws.label,
+        ws: h.ws.param,
+        label: h.ws.label,
         pageId: page.id,
         title: page.title,
         type: page.type,
@@ -438,25 +618,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
         restricted: f.dropped,
       });
     }
-    return out;
-  }
-
-  async function query(c: C, mode: "search" | "ask") {
-    const q = c.req.query("q") ?? "";
-    const tokens = tokensOf(q);
-    if (!tokens.length || q.length > 300) throw bad("invalid_query");
-    const param = c.req.param("ws") ?? "";
-    const view = viewOf(sess(c));
-    let targets: { param: string; nodeId: string; scope: string; label: string }[];
-    if (param === "all") targets = admittedWikis(c);
-    else {
-      const w = await open(c, param, "read");
-      if (w instanceof Response) return w;
-      targets = [{ param: w.param, nodeId: w.nodeId, scope: w.scope, label: w.label }];
-    }
-    const lists = await Promise.all(targets.map((t) => searchIn(c, t, view, tokens, 10)));
-    const results = lists
-      .flat()
+    const results = out
       .sort((a, b) => a.rank - b.rank || a.pageId.localeCompare(b.pageId))
       .slice(0, 15);
     if (mode === "search") return c.json({ results: results.map(({ rank: _r, ...x }) => x) });
@@ -479,43 +641,53 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
 
   // ---- proposals (the wiki review) ----
 
+  /** Everything derived from a source this caller cannot read is replaced by "restricted source". */
   const proposalView = async (c: C, w: Ws, id: string) => {
     const v = await w.stub.wikiProposalView(id);
     if (!v) throw notFound();
     const ids = [
+      ...v.titleSources,
       ...v.pages.flatMap((p) => [
         ...citationsOf(p.after),
         ...(p.before ? citationsOf(p.before) : []),
       ]),
       ...v.facts.flatMap((f) => f.sourceIds),
+      ...v.invalidate.flatMap((i) => i.sourceIds),
       ...v.sources.map((x) => x.id),
     ];
     const ok = await readableSources(c, w, ids);
+    const whole = sourcesReadable(v.titleSources, ok);
+    const hide = (text: string): string => (whole ? text : RESTRICTED);
+    const { titleSources: _t, ...rest } = v;
     return {
-      ...v,
+      ...rest,
+      title: hide(v.title),
+      rationale: hide(v.rationale),
+      detail: v.detail ? hide(v.detail) : "",
       createdAt: new Date(v.createdAt).toISOString(),
       pages: v.pages.map((p) => ({
         ...p,
-        before:
-          p.before === null
-            ? null
-            : p.before
-                .split("\n")
-                .map((l) => maskLine(l, ok))
-                .join("\n"),
-        after: p.after
-          .split("\n")
-          .map((l) => maskLine(l, ok))
-          .join("\n"),
+        title: pageVisible(citationsOf(p.after), ok) ? p.title : RESTRICTED,
+        before: p.before === null ? null : maskText(p.before, ok),
+        after: maskText(p.after, ok),
         diff: p.diff.map((d) => ({ type: d.type, text: maskLine(d.text, ok) })),
       })),
-      facts: v.facts.map((f) => ({
-        ...f,
-        object: f.sourceIds.length && !f.sourceIds.some((i) => ok.has(i)) ? RESTRICTED : f.object,
-        sources: f.sourceIds
-          .filter((i) => ok.has(i))
-          .map((i) => ({ id: i, title: ok.get(i)?.title ?? i })),
-      })),
+      facts: v.facts.map((f) => {
+        const readable = !f.sourceIds.length || sourcesReadable(f.sourceIds, ok);
+        return {
+          ...f,
+          subject: readable ? f.subject : RESTRICTED,
+          object: readable ? f.object : RESTRICTED,
+          sources: f.sourceIds
+            .filter((i) => ok.has(i))
+            .map((i) => ({ id: i, title: ok.get(i)?.title ?? i })),
+        };
+      }),
+      invalidate: v.invalidate.map(({ sourceIds, ...i }) =>
+        !sourceIds.length || sourcesReadable(sourceIds, ok)
+          ? i
+          : { ...i, subject: RESTRICTED, object: RESTRICTED },
+      ),
       sources: v.sources
         .filter((x) => ok.has(x.id))
         .map((x) => ({ ...x, title: ok.get(x.id)?.title ?? x.id })),
@@ -527,11 +699,22 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     if (w instanceof Response) return w;
     const status = c.req.query("status") ?? "candidate";
     if (!["candidate", "approved", "rejected"].includes(status)) throw bad("invalid_status");
+    const list = await w.stub.wikiProposals(status);
+    const ok = await readableSources(
+      c,
+      w,
+      list.flatMap((p) => p.titleSources),
+    );
     return c.json(
-      (await w.stub.wikiProposals(status)).map((p) => ({
-        ...p,
-        createdAt: new Date(p.createdAt).toISOString(),
-      })),
+      list.map(({ titleSources, ...p }) => {
+        const whole = sourcesReadable(titleSources, ok);
+        return {
+          ...p,
+          title: whole ? p.title : RESTRICTED,
+          detail: whole ? p.detail : RESTRICTED,
+          createdAt: new Date(p.createdAt).toISOString(),
+        };
+      }),
     );
   });
 
@@ -552,6 +735,11 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const b = await readObject(c);
     if (b.decision !== "approve" && b.decision !== "reject") throw bad("invalid_decision");
     if (
+      b.revisionHash !== undefined &&
+      (typeof b.revisionHash !== "string" || b.revisionHash.length > 128)
+    )
+      throw bad("invalid_revision_hash");
+    if (
       !(await audit(c, {
         action: `wiki.${b.decision}`,
         nodeId: id,
@@ -560,9 +748,17 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
-    const res = await w.stub.wikiDecide(id, b.decision, s.principal.id, s.ctx.now);
+    const res = await w.stub.wikiDecide(id, b.decision, s.principal.id, s.ctx.now, {
+      ...(typeof b.revisionHash === "string" ? { revisionHash: b.revisionHash } : {}),
+    });
     if (!res.ok) return failResponse(c, res);
-    return c.json({ ok: true, status: res.status, applied: res.applied });
+    return c.json({
+      ok: true,
+      status: res.status,
+      applied: res.applied,
+      approvals: res.approvals,
+      required: res.required,
+    });
   });
 
   r.post("/wiki/:ws/proposals/:id/edit", async (c) => {
@@ -574,11 +770,17 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const b = await readObject(c);
     const pageId = idOf(typeof b.pageId === "string" ? b.pageId : undefined);
     const md = text(b.markdown, 1, MAX_MD, "invalid_markdown");
+    const refused = await limited(c, "write");
+    if (refused) return refused;
     if (!(await audit(c, { action: "wiki.edit", nodeId: id, scopeId: w.scope, revision: null })))
       return c.json({ error: "audit_unavailable" }, 503);
-    const res = await w.stub.wikiEditProposal(id, s.principal.id, pageId, md, s.ctx.now);
+    // The editor may cite only what they can read themselves.
+    const mine = await readableSources(c, w, citationsOf(md));
+    const res = await w.stub.wikiEditProposal(id, s.principal.id, pageId, md, s.ctx.now, [
+      ...mine.keys(),
+    ]);
     if (!res.ok) return failResponse(c, res);
-    return c.json({ ok: true });
+    return c.json({ ok: true, revision: res.revision });
   });
 
   // A person (or an assistant through MCP) proposes a page. It waits in the review queue like any other.
@@ -602,6 +804,10 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       baseRevision: cur?.revision ?? null,
       markdown: md,
     };
+    const refused = await limited(c, "write");
+    if (refused) return refused;
+    // A person cites only what they can read themselves (L-01).
+    const mine = await readableSources(c, w, citationsOf(md));
     if (
       !(await audit(c, {
         action: "wiki.propose",
@@ -628,7 +834,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       } satisfies Omit<Proposal, "v" | "pages"> & { pages: PageDraft[] },
       s.principal.id,
       s.ctx.now,
-      { plane: w.plane },
+      { plane: w.plane, readable: [...mine.keys()] },
     );
     if (!res.ok) return failResponse(c, res);
     if (!res.created) return c.json({ error: "nothing_to_propose", reason: res.reason }, 422);
@@ -640,6 +846,8 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const w = await open(c, c.req.param("ws"), "edit");
     if (w instanceof Response) return w;
     const s = sess(c);
+    const refused = await limited(c, "write");
+    if (refused) return refused;
     const b = await readObject(c);
     const title = text(b.title, 1, 200, "invalid_title");
     const date =
@@ -712,6 +920,8 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
         throw bad("invalid_json");
       }
     }
+    const refused = await limited(c, "write");
+    if (refused) return refused;
     const asked = Array.isArray(b.jobs)
       ? b.jobs.filter((j): j is "lint" | "dream" => j === "lint" || j === "dream")
       : [];
@@ -745,7 +955,8 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
-    if (!(await w.stub.wikiVerifyFact(fid, s.principal.id, s.ctx.now))) throw notFound();
+    const res = await w.stub.wikiVerifyFact(fid, s.principal.id, s.ctx.now);
+    if (!res.ok) return failResponse(c, res);
     return c.json({ ok: true });
   });
 
@@ -808,16 +1019,18 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       0,
       8_000,
     );
-    const hay = `${title}\n${body}`.toLowerCase();
-    if (
-      title.length < 3 ||
-      !body.trim() ||
-      ids.some((x) => x.length >= 3 && hay.includes(x.toLowerCase()))
-    )
+    // Nothing that names the client may survive, and the server's own scan must find no contact
+    // detail. A promoter cannot acknowledge a contact flag away: the copy is refused instead (M-04).
+    const residual = residualIdentifiers(`${title}\n${body}`, ids);
+    const contact = detectSensitivity({ title, body }).some(
+      (f) => f.type === "email" || f.type === "phone",
+    );
+    if (title.length < 3 || !body.trim() || residual.length || contact)
       return c.json(
         {
           error: "deidentification_failed",
           reason: "The text could not be made free of account identifiers",
+          residual: [...residual, ...(contact ? ["contact detail"] : [])],
         },
         422,
       );

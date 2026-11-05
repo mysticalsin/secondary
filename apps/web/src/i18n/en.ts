@@ -906,6 +906,7 @@ export const en = {
   "wiki.prop.edit.save": "Save my wording",
   "wiki.prop.edit.label": "Page text for {title}",
   "wiki.prop.approved": "Approved. The wiki is updated.",
+  "wiki.prop.pending": "Approval {n} of {of} recorded. A different person approves next.",
   "wiki.prop.rejected": "Rejected. Nothing was changed.",
   "wiki.prop.saved": "Your wording is saved. Review it, then approve.",
   "wiki.prop.nodiff": "No text change",

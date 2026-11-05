@@ -109,6 +109,11 @@ export interface WikiProposal {
   detail: string;
   authorId: string | null;
   createdAt: string;
+  /** Moves on with every edit; `revisionHash` is what an approval binds. */
+  revision: number;
+  revisionHash: string;
+  approvals: number;
+  required: number;
   pages: {
     pageId: string;
     type: string;
