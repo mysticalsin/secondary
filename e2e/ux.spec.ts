@@ -234,13 +234,12 @@ test.describe("Account workspace", () => {
     await page.getByRole("button", { name: "Save", exact: true }).click();
     const card = page.getByRole("listitem").filter({ hasText: "Faster close e2e" });
     await expect(card.getByText("External, locked")).toBeVisible();
+    await card.getByLabel("External version").fill("Public version");
     await card
       .getByLabel("Where is the customer's permission on file")
       .fill("Email from sponsor 30 Oct");
     await card.getByRole("button", { name: "Record customer permission" }).click();
     await expect(card.getByText(/Permission on file: Email from sponsor/)).toBeVisible();
-    await card.getByLabel("External version").fill("Public version");
-    await card.getByRole("button", { name: "Save external version" }).click();
     await expect(card.getByText("Public version").first()).toBeVisible();
     await page.screenshot({ path: `${SCREENS}account-story-1280.png`, fullPage: true });
     await axe(page, "account story");

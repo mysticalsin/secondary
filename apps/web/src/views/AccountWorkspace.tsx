@@ -73,7 +73,8 @@ function Story({
   const { t } = useI18n();
   const story = rec.story;
   const [ext, setExt] = useState(story?.external.text ?? "");
-  const [ref, setRef] = useState("");
+  const currentRef = story?.permission?.reference ?? "";
+  const [ref, setRef] = useState(currentRef);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   if (!story) return null;
@@ -130,85 +131,70 @@ function Story({
       ) : null}
       {canEdit ? (
         <div className="stack">
-          {granted ? (
-            <>
-              <div className="field">
-                <label htmlFor={`ext-${rec.id}`}>{t("acc.story.external.edit")}</label>
-                <textarea
-                  id={`ext-${rec.id}`}
-                  className="textarea"
-                  style={{ minHeight: 90 }}
-                  maxLength={8000}
-                  value={ext}
-                  onChange={(e) => setExt(e.target.value)}
-                />
-              </div>
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn sm"
-                  disabled={busy || ext === (story.external.text ?? "")}
-                  onClick={() =>
-                    run(() =>
-                      api.recordUpdate(accountId, rec.id, {
-                        revision: rec.revision,
-                        story: { internal: story.internal, lesson: story.lesson, external: ext },
-                      }),
-                    )
-                  }
-                >
-                  {t("acc.story.external.save")}
-                </button>
-                <button
-                  type="button"
-                  className="btn sm ghost"
-                  disabled={busy}
-                  onClick={() =>
-                    run(() =>
-                      api.recordPermission(accountId, rec.id, {
-                        revision: rec.revision,
-                        granted: false,
-                      }),
-                    )
-                  }
-                >
-                  {t("acc.perm.withdraw")}
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="stack">
-              <div className="field">
-                <label htmlFor={`ref-${rec.id}`}>{t("acc.perm.ref")}</label>
-                <input
-                  id={`ref-${rec.id}`}
-                  className="input"
-                  value={ref}
-                  maxLength={200}
-                  onChange={(e) => setRef(e.target.value)}
-                  placeholder={t("acc.perm.ref.ph")}
-                />
-              </div>
-              <div>
-                <button
-                  type="button"
-                  className="btn sm"
-                  disabled={busy || ref.trim().length < 3}
-                  onClick={() =>
-                    run(() =>
-                      api.recordPermission(accountId, rec.id, {
-                        revision: rec.revision,
-                        granted: true,
-                        reference: ref.trim(),
-                      }),
-                    )
-                  }
-                >
-                  {t("acc.perm.record")}
-                </button>
-              </div>
-            </div>
-          )}
+          {/* The customer's permission covers exactly these words, so they are recorded together (M-12). */}
+          <div className="field">
+            <label htmlFor={`ext-${rec.id}`}>{t("acc.story.external.edit")}</label>
+            <textarea
+              id={`ext-${rec.id}`}
+              className="textarea"
+              style={{ minHeight: 90 }}
+              maxLength={8000}
+              value={ext}
+              onChange={(e) => setExt(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`ref-${rec.id}`}>{t("acc.perm.ref")}</label>
+            <input
+              id={`ref-${rec.id}`}
+              className="input"
+              value={ref}
+              maxLength={200}
+              onChange={(e) => setRef(e.target.value)}
+              placeholder={t("acc.perm.ref.ph")}
+            />
+          </div>
+          <div className="row">
+            <button
+              type="button"
+              className="btn sm"
+              disabled={
+                busy ||
+                ref.trim().length < 3 ||
+                !ext.trim() ||
+                (granted && ext === (story.external.text ?? "") && ref.trim() === currentRef)
+              }
+              onClick={() =>
+                run(() =>
+                  api.recordPermission(accountId, rec.id, {
+                    revision: rec.revision,
+                    granted: true,
+                    reference: ref.trim(),
+                    text: ext,
+                  }),
+                )
+              }
+            >
+              {granted ? t("acc.story.external.save") : t("acc.perm.record")}
+            </button>
+            {granted ? (
+              <button
+                type="button"
+                className="btn sm ghost"
+                disabled={busy}
+                onClick={() =>
+                  run(() =>
+                    api.recordPermission(accountId, rec.id, {
+                      revision: rec.revision,
+                      granted: false,
+                    }),
+                  )
+                }
+              >
+                {t("acc.perm.withdraw")}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {err ? <ErrorBox message={err} /> : null}

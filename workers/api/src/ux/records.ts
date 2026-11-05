@@ -55,7 +55,8 @@ interface Stored {
     internal: string;
     lesson: string;
     external: string;
-    permission: null | { reference: string; by: string; at: string };
+    /** `text` is the external text the customer agreed to; any other text is not covered (M-12). */
+    permission: null | { reference: string; by: string; at: string; text?: string };
   };
 }
 
@@ -81,7 +82,9 @@ const today = (now: number): string => new Date(now).toISOString().slice(0, 10);
 export function recordView(r: ItemRecord, now: number) {
   const st = parse(r.body);
   const section = sectionOf(r);
-  const granted = !!st.story?.permission;
+  // Permission counts only for the exact external text it was recorded against (M-12).
+  const perm = st.story?.permission;
+  const granted = !!perm && perm.text !== undefined && perm.text === st.story?.external;
   return {
     id: r.id,
     section,
@@ -106,7 +109,8 @@ export function recordView(r: ItemRecord, now: number) {
                 ? "Customer permission on record"
                 : "No customer permission on record",
             },
-            permission: st.story.permission,
+            permission:
+              granted && perm ? { reference: perm.reference, by: perm.by, at: perm.at } : null,
           },
         }
       : {}),
@@ -266,6 +270,8 @@ export function recordRoutes(): Hono<AppEnv> {
     const f = readFields(b, section);
     const story = section === "out" ? readStory(b.story) : undefined;
     const st = parse(cur.body);
+    // External text enters through the permission route (text and permission recorded together). A rewrite
+    // while a permission stands is stored but locked: permission covers only the text it was given for (M-12).
     if (story?.external && !st.story?.permission) throw bad("customer_permission_required", 422);
     const next: Stored = {
       note: f.note ?? st.note,
@@ -311,6 +317,12 @@ export function recordRoutes(): Hono<AppEnv> {
     if (!st.story) throw notFound();
     if (typeof b.granted !== "boolean") throw bad("invalid_permission");
     const reference = b.granted ? text(b.reference, 3, 200, "permission_reference_required") : "";
+    // The permission is for these exact words: they are given with it, or are the ones already stored.
+    const external =
+      b.granted && b.text !== undefined
+        ? text(b.text, 1, MAX_BODY_TEXT, "invalid_story")
+        : st.story.external;
+    if (b.granted && !external) throw bad("external_text_required");
     if (
       !(await audit(c, {
         action: "record.permission",
@@ -321,12 +333,22 @@ export function recordRoutes(): Hono<AppEnv> {
     )
       return c.json({ error: "audit_unavailable" }, 503);
     const permission = b.granted
-      ? { reference, by: sess(c).principal.id, at: new Date(sess(c).ctx.now).toISOString() }
+      ? {
+          reference,
+          by: sess(c).principal.id,
+          at: new Date(sess(c).ctx.now).toISOString(),
+          text: external,
+        }
       : null;
     const res = await w.stub.update(
       rid,
       expected,
-      { body: JSON.stringify({ ...st, story: { ...st.story, permission } }) },
+      {
+        body: JSON.stringify({
+          ...st,
+          story: { ...st.story, ...(b.granted ? { external } : {}), permission },
+        }),
+      },
       sess(c).ctx.now,
       sess(c).principal.id,
     );

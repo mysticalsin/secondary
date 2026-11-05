@@ -198,33 +198,50 @@ describe("account records", () => {
       story: { internal: "a", lesson: "b", external: "Public words" },
     });
     expect(early.status).toBe(422);
-    // A permission needs a reference.
-    expect(
-      (
-        await send("acme_lead", "POST", `${path}/${made.id}/permission`, {
-          revision: 1,
-          granted: true,
-        })
-      ).status,
-    ).toBe(400);
+    // A permission needs a reference, and words to cover.
+    const perm = (over: Record<string, unknown>) =>
+      send("acme_lead", "POST", `${path}/${made.id}/permission`, { granted: true, ...over });
+    expect((await perm({ revision: 1, text: "Public words" })).status).toBe(400);
+    expect((await perm({ revision: 1, reference: "Email from the sponsor" })).status).toBe(400);
     const granted = await json(
-      await send("acme_lead", "POST", `${path}/${made.id}/permission`, {
+      await perm({
         revision: 1,
-        granted: true,
         reference: "Email from the client sponsor, 2026-10-30",
+        text: "Public words",
       }),
     );
-    expect(granted.story.external.available).toBe(true);
-    const ok = await send("acme_lead", "PUT", `${path}/${made.id}`, {
-      revision: granted.revision,
-      story: { internal: "a", lesson: "b", external: "Public words" },
+    expect(granted.story.external).toMatchObject({ available: true, text: "Public words" });
+    // M-12: rewriting the text withdraws the permission, because the customer approved other words.
+    const rewritten = await json(
+      await send("acme_lead", "PUT", `${path}/${made.id}`, {
+        revision: granted.revision,
+        story: { internal: "a", lesson: "b", external: "Different public words" },
+      }),
+    );
+    expect(rewritten.story.external).toMatchObject({ available: false, text: null });
+    expect(rewritten.story.permission).toBeNull();
+    const reGranted = await json(
+      await perm({
+        revision: rewritten.revision,
+        reference: "Email from the client sponsor, 2026-11-02",
+      }),
+    );
+    expect(reGranted.story.external).toMatchObject({
+      available: true,
+      text: "Different public words",
     });
-    expect(ok.status).toBe(200);
-    expect((await json(ok)).story.external.text).toBe("Public words");
+    // Saving the same text again keeps the permission.
+    const same = await json(
+      await send("acme_lead", "PUT", `${path}/${made.id}`, {
+        revision: reGranted.revision,
+        story: { internal: "a2", lesson: "b", external: "Different public words" },
+      }),
+    );
+    expect(same.story.external.available).toBe(true);
     // Taking the permission back hides the text again, for every reader.
     const revoked = await json(
       await send("acme_lead", "POST", `${path}/${made.id}/permission`, {
-        revision: granted.revision + 1,
+        revision: same.revision,
         granted: false,
       }),
     );

@@ -203,7 +203,7 @@ All owner-only or policy-checked, all audited when they write (identity and ids,
 - `GET|PUT|DELETE /v1/ux/drafts[/:key]`: autosaved working copies (`new` or the item id). Not revisions. A saved revision drops the draft.
 - `GET|PUT /v1/ux/prefs {lang: "en"|"fr"|null, tourDone}`: per user.
 - `GET /v1/ux/review/:id`: previous and current text, discussion, decisions. `POST .../comments {text}` and `POST .../decision {revision, verdict, comment?}` need review or approve rights, never the contributor. Approve stays `approve_release` on `/v1/actions`.
-- `GET /v1/ux/accounts/:id/records`, `POST` (create), `PUT .../:rid`, `POST .../:rid/permission {revision, granted, reference}`, `GET .../:rid/history`: decisions, commitments, risks and success stories (sections `dec`, `com`, `risk`, `out`). Reads need content access, writes need `edit` on the account. The external story text is stored but returned only while customer permission is on record.
+- `GET /v1/ux/accounts/:id/records`, `POST` (create), `PUT .../:rid`, `POST .../:rid/permission {revision, granted, reference, text?}`, `GET .../:rid/history`: decisions, commitments, risks and success stories (sections `dec`, `com`, `risk`, `out`). Reads need content access, writes need `edit` on the account. The external story text is stored but returned only while customer permission is on record, and the permission covers exactly the text it was recorded with (`text`, or the stored text when omitted; it must not be empty). Rewriting the external text later leaves it locked until permission is recorded again (M-12).
 - `GET /v1/ux/attention`: open decisions, commitments and risks across the accounts the caller can read, overdue first.
 
 ## Memberships reach the policy, and review notices (B2 integration)

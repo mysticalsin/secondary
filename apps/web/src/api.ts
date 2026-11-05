@@ -236,7 +236,7 @@ export const api = {
   recordPermission: (
     accountId: string,
     id: string,
-    body: { revision: number; granted: boolean; reference?: string },
+    body: { revision: number; granted: boolean; reference?: string; text?: string },
   ) =>
     request<AccountRec>(
       "POST",
