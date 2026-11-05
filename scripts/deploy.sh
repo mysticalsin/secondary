@@ -76,7 +76,7 @@ else
     });')"
   if [ -z "$KV_ID" ]; then
     echo "==> create KV namespace $KV_TITLE"
-    KV_ID="$(in_worker mcp kv namespace create OAUTH_KV "${ENV_ARGS[@]}" 2>&1 | grep -Eo '[0-9a-f]{32}' | head -n1)"
+    KV_ID="$(in_worker mcp kv namespace create OAUTH_KV ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} 2>&1 | grep -Eo '[0-9a-f]{32}' | head -n1)"
   fi
   [ -n "$KV_ID" ] || die "could not determine the OAUTH_KV namespace id"
   KV_ID="$KV_ID" KV_TOKEN="$KV_TOKEN" TARGET="$TARGET" node -e '
@@ -105,7 +105,7 @@ fi
 deploy() {
   local w="$1" out
   echo "==> deploy $w ($TARGET)"
-  out="$(in_worker "$w" deploy "${ENV_ARGS[@]}" 2>&1 | tee /dev/stderr)"
+  out="$(in_worker "$w" deploy ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} 2>&1 | tee /dev/stderr)"
   DEPLOY_OUT="$out"
 }
 worker_exists() { in_worker api deployments list --name "$1" >/dev/null 2>&1; }
@@ -125,14 +125,14 @@ deploy ops
 
 # ---- secrets (only when missing) ----
 has_secret() { # worker name
-  in_worker "$1" secret list "${ENV_ARGS[@]}" --format json 2>/dev/null | grep -Eq "\"name\":[[:space:]]*\"$2\""
+  in_worker "$1" secret list ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} --format json 2>/dev/null | grep -Eq "\"name\":[[:space:]]*\"$2\""
 }
 new_value() { openssl rand -base64 32; }
 
 single_secret() { # worker name
   if has_secret "$1" "$2"; then echo "==> $1: $2 already set"; return; fi
   echo "==> $1: set $2"
-  new_value | in_worker "$1" secret put "$2" "${ENV_ARGS[@]}" >/dev/null
+  new_value | in_worker "$1" secret put "$2" ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} >/dev/null
 }
 
 shared_secret() { # name worker...
@@ -148,7 +148,7 @@ shared_secret() { # name worker...
   echo "==> set $name on: $*"
   local value
   value="$(new_value)"
-  for w in "$@"; do printf '%s' "$value" | in_worker "$w" secret put "$name" "${ENV_ARGS[@]}" >/dev/null; done
+  for w in "$@"; do printf '%s' "$value" | in_worker "$w" secret put "$name" ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} >/dev/null; done
   unset value
 }
 
@@ -171,7 +171,7 @@ if has_secret ops BACKUP_KEY; then
   echo "==> ops: BACKUP_KEY already set"
 elif [ "$TARGET" = "prod" ]; then
   echo "==> ops: set BACKUP_KEY from the environment"
-  printf '%s' "$BACKUP_KEY" | in_worker ops secret put BACKUP_KEY "${ENV_ARGS[@]}" >/dev/null
+  printf '%s' "$BACKUP_KEY" | in_worker ops secret put BACKUP_KEY ${ENV_ARGS[@]+"${ENV_ARGS[@]}"} >/dev/null
 else
   single_secret ops BACKUP_KEY
 fi
