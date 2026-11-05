@@ -331,3 +331,97 @@ Rules every template keeps (tested against the default in `workers/api/test/lp-r
 - Consent declines by default: the banner starts `hidden` and is shown by the script, "Decline" before "Accept", nothing is counted until "Accept", no cookie and no `localStorage` (the choice is kept in `sessionStorage`). The beacon posts to `location.pathname + "/e"` and every event carries `c:true`.
 - An image is only `/p/<slug>/i/<n>` in `published` mode (the publish step copies the approved image into the pages bucket first), or a small inline `data:image/(png|jpeg|webp)` in `preview` mode. Anything else, and any brain URL, is dropped.
 - All text is escaped. `noindex` robots meta; `lang` set; skip link; AA contrast.
+
+## v3 brains (docs/DESIGN-BRAINS-V3.md), normative shapes
+
+Written first so the web agent can build against it. All routes are policy-gated, answer from the caller's admitted view only (a brain the view does not reach at content level is 404, so absence and denial look the same), and send `no-store`. `:id` is a brain id: `me` (the caller's Personal Brain) or a policy node id (account, circle, department, `core`). Refusals are `{error, reason}`; a policy bound is 422 `{error:"policy_bound", reason}`; a feature outside the caller's pilot cohort is 403 `{error:"not_in_pilot", flag}`.
+
+**Vocabulary.**
+- `BrainType`: `personal | team | account | global`. A circle or department is `team`, an account is `account`, `core` is `global`.
+- `BrainRole`: `reader | contributor | editor | steward | owner`. Policy mapping (also `brainRoleActions` in `packages/policy`): reader = view_structure, view_content; contributor = reader + comment, contribute; editor = contributor + edit; steward = editor + review, approve_release; owner = steward + manage_members. A stored role only ever narrows what the policy already allows (the wiki write routes apply it); a person with no stored role is decided by the policy alone.
+- `Publication`: `review | direct`. `Everyone` (Everyone at Mantu): `none | reader | contributor`.
+- `Sensitivity`: `none | confidential | personal`. `FieldType`: `text | number | date | select | email | phone | url`.
+- `Template`: `personal | team | account | bid | practice | global | blank`.
+- `Health`: `{score: 0..100, components: {lint: C|null, freshness: C, orphans: C, backlog: C|null, coverage: C & {have, want, missing: string[]}}}` with `C = {value: number, score: 0..100}`. `lint` and `backlog` are `null` (and left out of the score) for a caller who cannot decide proposals. Every count and the score are computed from the pages the caller can read (a page whose cited sources are all unreadable is left out), so two callers can see two scores.
+- `BrainCard`: `{id, type, name, template, readers, manages, restricted, publication, pages, health: {score}, lastActivityAt: ISO|null}`. `readers` counts members (stored members plus memberships; 1 for personal, the directory size for global). `manages` is true for the Personal Brain owner and for a caller who holds `manage_members` or `approve_release` on the node.
+
+**Policy bounds (`packages/policy` `brainRules`).**
+
+| Brain | Publication allowed | Everyone at Mantu allowed | Members and roles |
+|---|---|---|---|
+| personal | review, direct (default direct) | none | none: a Personal Brain is never shared (422 `personal_not_shareable`) |
+| team, not restricted | review, direct (default review) | none, reader, contributor | yes |
+| team, restricted | review only | none only | yes, two-person |
+| account (any, NDA included) | review only | none only | yes, two-person |
+| global | review only | reader only | role changes only |
+
+`restricted` is the policy node's `restricted` flag, or an account. Direct publishing takes effect only for a caller with `edit` right and is re-checked on every propose, so a later change to restricted turns it off.
+
+### Directory and home
+
+- `GET /v1/brains?type=&q=` returns `{brains: BrainCard[]}`: admitted brains only, the Personal Brain first, then by name. `type` filters by `BrainType`, `q` by name.
+- `GET /v1/brains/:id` returns a `BrainCard` plus `{health: Health, collections: [{type, label, count, expected}], changedThisWeek: {since: ISO, total, items: [{pageId, title, type, change: "new"|"updated", revision, at: ISO, actor: string|null, added, removed}]}, coach: {available: boolean, suggestions: [{kind: "missing_collection", collection, message}]}}`. `collections` are the wiki page types of the brain with their counts (`expected` is true when the template asks for it). `changedThisWeek` lists at most 50 pages changed in the last 7 days, visible pages only, with line counts of the diff. `coach.available` is `manages`.
+- `POST /v1/brains/:id/template {template}` (needs `manages`) sets the brain's template and adds its collections to the brain's page types (never removes one). Returns `{ok, template, added: string[]}`. A brain with no stored template uses the default of its type.
+
+### Access
+
+- `GET /v1/brains/:id/access` returns `{brainId, type, canManage, publication: {mode, allowed: Publication[], forced: boolean, reason: string|null}, everyone: {level, allowed: Everyone[], reason: string|null}, roles: [{id, label, summary, actions: string[]}], members: [{principalId, email, role, state: "active"|"pending"}] | null}`. `members` is `null` unless `canManage`.
+- `PUT /v1/brains/:id/access {publication?, everyone?}` (needs `manages`) returns `{ok: true, publication, everyone}`. A value outside the bounds table is 422 `policy_bound` and nothing changes. Everyone at Mantu is recorded and bounded here; widening the admitted view for it is not wired yet (see handoff).
+- `PUT /v1/brains/:id/access/members/:principalId {role}` adds a member or changes their role (needs `manages`; `owner` only by an owner or admin). Returns `{ok: true, status: "applied"|"pending", changeId?: string, member: {principalId, role}}`. Admission goes through the governance membership change, so on a restricted brain it is `pending` until a second person approves it in the console. A role change for an existing member on a restricted brain, and any grant of `steward` or `owner` there, uses the two-person rule: the first request answers 202 `{ok: true, status: "pending"}` and a different human repeating it applies it (409 `same_person` for the same human).
+- `DELETE /v1/brains/:id/access/members/:principalId` removes the member (same rules, same answer shape).
+
+### Business fields (typed schema per brain)
+
+- `GET /v1/brains/:id/fields` returns `{fields: FieldDef[], types: FieldType[], sensitivities: Sensitivity[]}`; `FieldDef = {key, label, type, options?: string[], sensitivity, retentionDays: number|null, appliesTo: string[]}` (`appliesTo` are page types; empty means every page). Any reader may read the definitions.
+- `PUT /v1/brains/:id/fields {fields}` (needs `manages`) replaces the schema: at most 30 fields, `key` matches `^[a-z][a-z0-9_]{0,31}$`, unique; `select` needs `options` (at most 20); `retentionDays` 1 to 3650 or null.
+- `GET /v1/brains/:id/pages/:pid/fields` returns `{pageId, fields: [{key, label, type, sensitivity, value: string|null, masked: boolean}]}`. The same list rides on `GET /v1/wiki/:ws/pages/:pid` as `fields`.
+- `PUT /v1/brains/:id/pages/:pid/fields {values: {key: string|null}, acknowledgedFlags?: string[]}` (needs `edit`; the page must be readable) stores values and returns `{ok: true, fields}`.
+- What sensitivity does:
+  - **Masking.** `none` shows to every reader. `confidential` shows to a caller with `edit` right (else `value: null, masked: true`). `personal` is never shown to anyone but the person who wrote it, and is refused in a shared brain: 422 `personal_field_shared_brain`.
+  - **Detectors.** Every value goes through the R-110 and R-111 detector. A `none` field with a flag is 422 `sensitive_value {flags}`; a `confidential` field needs the flag ids in `acknowledgedFlags`, else the same 422.
+  - **Export filter.** `/v1/brain/export` writes only `none` fields (frontmatter `properties`); the other two never leave.
+  - **AI gate.** Any caller on an MCP (agent) session, and any model path, sees only `none` fields.
+  - **Retention.** A value older than its field's `retentionDays` is deleted by the daily job.
+
+### Hidden versions
+
+- `GET /v1/brains/:id/pages/:pid/versions` returns `{versions: [{revision, at: ISO, actor, hidden: boolean, hiddenAt?, hiddenBy?, reason?}]}`, newest first, at most 50. A caller without `edit` right gets `{revision, at, hidden: true}` only for a hidden one (no actor, no reason).
+- `POST /v1/brains/:id/pages/:pid/versions/:rev/hide {reason}` and `.../restore` (need `edit`) return `{ok: true}`. The current revision cannot be hidden (422 `current_revision`). Both write a receipt (`brain.version_hide`, `brain.version_restore`) and a log entry. A hidden revision is also hidden in `GET /v1/wiki/:ws/pages/:pid/history` (`hidden: true`, no diff) and `?rev=` answers 404 for a caller without `edit`. Erasure of a person stays a separate, two-person flow.
+
+### Questions upgrades
+
+- `GET /v1/questions?q=&brain=&kind=&age=` filters the list (still an array of the same `Question` shapes). `q` matches title and summary (as the caller sees them), `brain` is a `workspaceId`, `kind` is a `QuestionKind`, `age` is `1d | 7d | 30d` (newer than) or `older` (older than 30 days).
+- `POST /v1/questions/batch {items: [{id, action, revisionHash?, note?}]}` (1 to 50 distinct ids) returns `{results: [{id, ok, status, error?, reason?}], ok: number, failed: number}`. Each item runs the exact single-item rules (rights on the live record, never your own, `revisionHash` required for an approval, two-person counted per item). One refusal never stops the others, and one person's batch approval of an item that needs two is the first approval only.
+
+### Import
+
+- `POST /v1/brains/:id/import?format=okf|obsidian|outline` (needs `contribute`; body is the raw archive: `application/zip`, or `application/json` for a single Outline collection file; at most 5 MB) returns `{ok: true, format, imported: [{pageId, title, state: "published"|"draft", proposalId?}], skipped: [{path, reason}], asked: number}`.
+- Every page passes the routine classifier (R-110 personal passages removed, R-111 contact details masked, HR and mostly-personal items skipped). In a shared brain every kept page becomes a draft (a wiki review item, `state: "draft"`); in the Personal Brain a clean page is published directly (`state: "published"`) and a page the classifier would ask about stays a draft. Nothing in a shared brain is published by an import.
+- Guards: at most 200 entries and 200 pages, 256 KB per page, 20 MB unpacked, compression ratio at most 100:1, no encrypted or zip64 archive. Entry names with `..`, a leading `/` or a drive, a backslash or a NUL are skipped with reason `unsafe_path` (page ids come from titles, never paths). HTML, `javascript:` and `data:` links, event handlers and embedded images are stripped from the Markdown. `okf` skips `index.md` and `log.md`; `obsidian` skips `.obsidian/`, attachments and canvas files, turns `[[Note|alias]]` into text and `![[embed]]` into nothing; `outline` reads each document's `text`, or its ProseMirror `data`.
+- Rate limit 5 imports per minute per person. Errors: 400 `invalid_format`, 413 `too_large`, 422 `invalid_archive` (with `reason`).
+
+### Journal
+
+- `GET /v1/brains/:id/journal` returns `{days: [{date: "YYYY-MM-DD", pageId}]}`, newest first, at most 60 (journal pages the caller can read).
+- `POST /v1/brains/:id/journal/run {date?}` (needs `edit`; `date` defaults to yesterday, never in the future) writes or rewrites the page for that UTC day and returns `{ok: true, pageId, created: boolean}`. A Durable Object alarm does the same each night for yesterday.
+- The page is type `journal`, id `journal-YYYY-MM-DD`, and is built only from that brain's own wiki log. It holds counts and `[[page-id]]` links (ingested, decided, contradictions, lint, approvals), never titles or text, so it carries nothing another brain or a restricted source could leak. It feeds the weekly digest.
+
+### Structure Coach and MCP
+
+- `GET /v1/brains/:id/coach` (needs `manages`) returns `{brainId, questions: [{id, prompt, kind: "choice"|"text"|"list", options?: string[]}], templates: [{id, label, collections: [{type, label, required: string[]}]}], current: {template, collections: string[]}}`.
+- `POST /v1/brains/:id/coach/propose {answers: {role?, accounts?: string[], recurring?: string[], template?}}` (needs `manages`) returns `{proposalId, hash, template, collections: [{type, label, required: string[], action: "add"|"keep"}], rationale, expiresAt}`. It stores a proposal and changes nothing else. An unknown template is 400 `invalid_template`.
+- `POST /v1/brains/:id/coach/apply {proposalId, hash}` (needs `manages`) adds the proposed collections and sets the template; returns `{ok: true, created: string[]}`. A stale or unknown proposal is 404, a wrong `hash` is 409. It creates collections only (no pages, no members).
+- `GET /v1/brains/:id/guide` (read; also for MCP) returns `{brain: {id, type, name, template}, publication, collections: [{type, label, required, count}], tone, fields: FieldDef[] (definitions only), conventions: string[], howToPropose: string}`. It never contains page text or field values.
+- MCP tools: `get_brain_guide {brainId}` (scope `secondary.read`) calls the guide route; `coach_propose_structure {brainId, answers}` (scopes `secondary.read` + `secondary.contribute`) calls `coach/propose` and answers 403 for a brain the user does not manage. No MCP tool applies a structure.
+
+### Agent connections
+
+- `GET /v1/agents` returns `{hosts: [{id: "claude_code"|"claude_ai"|"chatgpt"|"codex"|"dust"|"copilot_studio"|"other", label, connected: boolean, lastCallAt: ISO|null, calls, scopes: string[], connections: [{id, lastCallAt, lastTool, scopes, state: "active"|"revoked"}]}]}`. Only the caller's own connections. A host with no connection is listed with `connected: false`.
+- `POST /v1/agents/connections/:id/revoke` and `POST /v1/agents/hosts/:host/revoke` return `{ok: true, revoked: number}` (404 for an id that is not the caller's). From the next call, the API refuses that token with 403 `connection_revoked`, and the MCP worker deletes the OAuth grant, so the token is dead at both ends. Connecting again creates a new grant and works.
+- Recorded per call by the API from the signed MCP principal (`grant_id`, `client_id`, `host`, scopes, tool). No token, no content.
+
+### Pilot cohorts (admin only: a role with `configure`)
+
+- `GET /v1/admin/pilot` returns `{cohorts: [{id, name, members: string[] (emails), flags: {key: boolean}, createdAt}], flagKeys: string[]}`. `flagKeys` are `brains_v3`, `imports`, `coach`, `batch_review`, `journal`.
+- `POST /v1/admin/pilot {name, members, flags}` creates (201 `{id}`), `PUT /v1/admin/pilot/:id` replaces, `DELETE /v1/admin/pilot/:id` removes (all audited). At most 20 cohorts, 500 members each.
+- `GET /v1/me/flags` returns `{flags: {key: boolean}}` for the caller. A key is **managed** once any cohort sets it: then it is on only for members of a cohort that turns it on. A key no cohort mentions is on for everyone. `imports`, `coach`, `batch_review` and `brains_v3` (the whole `/v1/brains` family) are enforced by the API.
