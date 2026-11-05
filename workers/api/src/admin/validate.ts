@@ -256,7 +256,7 @@ export function isSensitiveGrant(g: Grant, org: Org): boolean {
     const n = org.nodes.get(g.scope_id);
     if (n?.restricted) return true;
     if (g.scope_type === "department")
-      return n !== undefined && n.childIds.some((c) => org.nodes.get(c)?.restricted);
+      return n?.childIds.some((c) => org.nodes.get(c)?.restricted) ?? false;
   }
   return false;
 }

@@ -156,7 +156,6 @@ function RoleEditor({
             <legend className="eyebrow">Grants</legend>
             {grants.map((g, i) => (
               // The list is edited in place, so the position is the identity.
-              // biome-ignore lint/suspicious/noArrayIndexKey: rows have no stable id
               <div className="card" key={i}>
                 <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                   <Field id={`g-type-${i}`} label="Scope type">
