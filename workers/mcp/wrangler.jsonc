@@ -16,7 +16,7 @@
   // OAuth provider state (clients, grants, token hashes). KV is NOT EU-restricted: it holds only token
   // hashes, opaque ids and grant metadata, plus props encrypted with a key only the token holder can unwrap.
   // No Secondary content is ever stored here. Add "id" when the namespace is created at deploy time.
-  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "007da72a703c4a73b1ba042c3a02e87f" }],
   "services": [
     { "binding": "API", "service": "secondary-api-dev" },
     { "binding": "AUDIT", "service": "secondary-audit-dev" }

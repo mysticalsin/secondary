@@ -8,8 +8,9 @@ set +x
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-wr() { corepack pnpm exec wrangler "$@"; }
-in_worker() { local w="$1"; shift; (cd "$ROOT/workers/$w" && wr "$@"); }
+# wrangler is installed per worker package, not at the root.
+in_worker() { local w="$1"; shift; (cd "$ROOT/workers/$w" && corepack pnpm exec wrangler "$@"); }
+wr() { in_worker api "$@"; }
 die() { echo "error: $*" >&2; exit 1; }
 
 API=secondary-api-dev
