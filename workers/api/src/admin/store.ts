@@ -832,7 +832,13 @@ export class GovStore {
         if (exp <= now) return fail(409, "expired", "The expiry date has already passed");
         if (!this.hasPrincipal(p.principalId as string))
           return fail(404, "unknown_principal", "That person is no longer in the directory");
-        this.journal?.nda(p.principalId as string, p.accountId as string, true, now);
+        this.journal?.nda(p.principalId as string, p.accountId as string, true, now, {
+          reason: p.reason as string,
+          expiresAt: exp,
+          grantedBy: proposer,
+          approvedBy: approver,
+          grantedAt: now,
+        });
         this.sql.exec(
           `INSERT OR REPLACE INTO nda_grants (principal_id, account_id, reason, expires_at, granted_by, approved_by, granted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,

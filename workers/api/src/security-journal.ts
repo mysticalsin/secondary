@@ -43,8 +43,28 @@ export class SecurityJournal {
   switchSet(name: string, enabled: boolean, at: number): void {
     this.add(at, "switch", name, "", "", enabled ? 1 : 0);
   }
-  nda(principalId: string, accountId: string, granted: boolean, at: number): void {
-    this.add(at, "nda", principalId, accountId, "", granted ? 1 : 0);
+  /** `detail` carries the columns of a grant made through the console (reason, expiry, who granted and approved). */
+  nda(
+    principalId: string,
+    accountId: string,
+    granted: boolean,
+    at: number,
+    detail?: {
+      reason: string;
+      expiresAt: number | null;
+      grantedBy: string;
+      approvedBy: string;
+      grantedAt: number;
+    },
+  ): void {
+    this.add(
+      at,
+      "nda",
+      principalId,
+      accountId,
+      detail ? JSON.stringify(detail) : "",
+      granted ? 1 : 0,
+    );
   }
   member(principalId: string, scopeType: string, scopeId: string, added: boolean, at: number) {
     this.add(at, "member", principalId, scopeType, scopeId, added ? 1 : 0);
@@ -67,8 +87,6 @@ export class SecurityJournal {
 
   /**
    * Apply every entry again, oldest first, so the end state is what the tenant had before the restore.
-   * A grant is not replayed (the entry has no reason or expiry): an old snapshot can only lose it, never
-   * keep a revoked one, and an administrator grants it again through the console.
    */
   replay(): number {
     const rows = this.sql.exec("SELECT * FROM security_journal ORDER BY seq").toArray();
@@ -100,6 +118,31 @@ export class SecurityJournal {
         case "nda":
           if (!on)
             this.sql.exec("DELETE FROM nda_grants WHERE principal_id = ? AND account_id = ?", a, b);
+          else if (c) {
+            const d = JSON.parse(c) as {
+              reason: string;
+              expiresAt: number | null;
+              grantedBy: string;
+              approvedBy: string;
+              grantedAt: number;
+            };
+            this.sql.exec(
+              `INSERT OR REPLACE INTO nda_grants (principal_id, account_id, reason, expires_at, granted_by, approved_by, granted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              a,
+              b,
+              d.reason,
+              d.expiresAt,
+              d.grantedBy,
+              d.approvedBy,
+              d.grantedAt,
+            );
+          } else
+            this.sql.exec(
+              "INSERT OR IGNORE INTO nda_grants (principal_id, account_id) VALUES (?, ?)",
+              a,
+              b,
+            );
           break;
         case "member":
           if (on)

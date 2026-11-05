@@ -250,6 +250,44 @@ describe("restore guards", () => {
       });
   });
 
+  it("M-02: a pending first request, a repeat by the same person and a missing actor are told apart", async () => {
+    const meta = { v: 1, env: "staging", tenant: "tenant_x", kind: "tenant", scope: "" };
+    const key = "2026-11-05/tenant_x/tenant.jsonl.enc";
+    const plain = new TextEncoder().encode(
+      toJsonl(meta, { config: [] }),
+    ) as Uint8Array<ArrayBuffer>;
+    await env.BACKUPS.put(key, await encryptBackup(KEY, key, plain));
+    const seen: string[] = [];
+    const reply = (status: number, body: unknown) =>
+      ({
+        fetch: async (url: string) => {
+          seen.push(url);
+          return Response.json(body, { status });
+        },
+      }) as unknown as Fetcher;
+    const d = (api: Fetcher) => ({
+      BACKUPS: env.BACKUPS,
+      API: api,
+      ENVIRONMENT: "staging",
+      OPS_HMAC_KEY: env.OPS_HMAC_KEY,
+      BACKUP_KEY: KEY,
+      RESTORE_ENABLED: "yes",
+    });
+    expect(
+      await restoreBackup(d(reply(202, { status: "pending" })), key, false, "0123456789abcdef"),
+    ).toMatchObject({ ok: true, pending: true });
+    expect(await restoreBackup(d(reply(409, { error: "same_person" })), key)).toEqual({
+      ok: false,
+      error: "same_person",
+    });
+    expect(await restoreBackup(d(reply(403, { error: "actor_required" })), key)).toEqual({
+      ok: false,
+      error: "actor_required",
+    });
+    // The snapshot key travels with the request, so a confirmation is for that snapshot only.
+    expect(seen.every((u) => u.includes(`snapshot=${encodeURIComponent(key)}`))).toBe(true);
+  });
+
   it("M-02: the API call for a restore names who asked (a handle, never the identity)", async () => {
     const meta = { v: 1, env: "staging", tenant: "tenant_x", kind: "tenant", scope: "" };
     const key = "2026-11-05/tenant_x/tenant.jsonl.enc";

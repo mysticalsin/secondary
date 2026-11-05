@@ -22,7 +22,7 @@ Restore replaces the whole object with the snapshot, all or nothing. It also bum
 4. List: `scripts/restore.sh <env> list 2026-11-05/<tenant>/`
 5. Dry run (decrypts and counts rows, changes nothing): `scripts/restore.sh <env> dry-run <key>`
 6. Restore: `scripts/restore.sh <env> restore <key>` (prod also needs `CONFIRM_PROD=yes`). Restore the TenantPolicy before its Workspaces only if roles were damaged; they are independent. Outside dev this takes two people (M-02): the first call answers 202 `pending` and changes nothing (receipt `ops_restore_request`), then a different person, signed in to Access with their own identity or service token, runs the same command for the same snapshot within 24 hours. The same person asking again gets 409 `same_person`. The confirming call writes `ops_restore` (naming who asked first) and `ops_restore_done`. A confirmation is used once.
-   Leavers, revoked NDA grants and memberships, role removals and kill switch changes made since the snapshot are replayed from the tenant's security journal right after a directory restore (it lives outside snapshots and backups, 90 days), and the revocation epoch only moves up. Grants given since the snapshot are not replayed: an administrator grants them again.
+   Leavers, NDA grants and memberships (granted or revoked), role changes and kill switch changes made since the snapshot are replayed from the tenant's security journal right after a directory restore (it lives outside snapshots and backups, 90 days), and the revocation epoch only moves up.
 7. Verify: `GET /v1/ready`, then open the restored area as an affected user and read back the data. A restore is not done until the live result is read back.
 8. Turn restore off again in prod (step 2 in reverse).
 

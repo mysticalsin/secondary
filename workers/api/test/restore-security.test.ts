@@ -53,6 +53,14 @@ describe("N-02: a restore of an old snapshot cannot resurrect access", () => {
     expect(await t().epoch()).toBeGreaterThan(epoch);
   });
 
+  it("a grant made since the snapshot is applied again, so a restore also loses nothing it should keep", async () => {
+    const old = await t().exportAll();
+    await t().grantNda("u_ceo", "a_calypso");
+    await t().importAll(old);
+    const ceo = (old.principals as Loose[]).find((p) => p.id === "u_ceo").email;
+    expect((await sessionOf(ceo)).ndaGrants).toContain("a_calypso");
+  });
+
   it("a later re-enable of a switch survives a restore too", async () => {
     await t().setSwitch("ai", true, "u_admin", NOW + 20, false);
     const old = await t().exportAll();
