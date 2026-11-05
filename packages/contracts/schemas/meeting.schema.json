@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/meeting.schema.json",
+  "title": "Meeting",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.meeting/1"
+    },
+    "meeting_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "$ref": "common.schema.json#/$defs/plane_workspace"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/business_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "owner_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "source_lineage": {
+      "$ref": "common.schema.json#/$defs/source_lineage"
+    },
+    "lifecycle": {
+      "$ref": "common.schema.json#/$defs/lifecycle"
+    },
+    "retention": {
+      "$ref": "common.schema.json#/$defs/retention"
+    },
+    "object_type": {
+      "const": "meeting"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "summary": {
+      "type": ["string", "null"],
+      "maxLength": 2000
+    },
+    "content_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "scheduled_start": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "scheduled_end": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "attendee_refs": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/opaque_id"
+      },
+      "description": "Opaque stakeholder_ref ids resolved only in the contacts subspace. No names or emails."
+    },
+    "sensitivity_flags": {
+      "$ref": "common.schema.json#/$defs/sensitivity_flags"
+    },
+    "user_validated": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/user_validated"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "review_state": {
+      "enum": ["proposed", "reviewed", "approved"]
+    },
+    "reviewer_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "meeting_id",
+    "tenant_id",
+    "plane",
+    "revision",
+    "expected_previous_revision",
+    "classification",
+    "personal_data_state",
+    "owner_ref",
+    "source_lineage",
+    "lifecycle",
+    "retention",
+    "object_type",
+    "title",
+    "summary",
+    "content_ref",
+    "scheduled_start",
+    "scheduled_end",
+    "attendee_refs",
+    "sensitivity_flags",
+    "user_validated",
+    "review_state",
+    "reviewer_ref"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "quarantined"
+              }
+            },
+            "required": ["state"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "$ref": "common.schema.json#/$defs/account_classification"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "GLOBAL_NONPERSONAL"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "const": "global_reusable"
+          },
+          "personal_data_state": {
+            "const": "none_identified"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_state": {
+            "enum": ["reviewed", "approved"]
+          }
+        },
+        "required": ["review_state"]
+      },
+      "then": {
+        "properties": {
+          "reviewer_ref": {
+            "$ref": "common.schema.json#/$defs/opaque_id"
+          }
+        },
+        "required": ["reviewer_ref"]
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "review_state": {
+            "const": "approved"
+          }
+        },
+        "required": ["review_state"]
+      },
+      "then": {
+        "properties": {
+          "user_validated": {
+            "$ref": "common.schema.json#/$defs/user_validated"
+          },
+          "sensitivity_flags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "resolution": {
+                  "enum": ["excluded", "kept_by_user"]
+                }
+              }
+            }
+          }
+        },
+        "required": ["user_validated"]
+      }
+    }
+  ]
+}

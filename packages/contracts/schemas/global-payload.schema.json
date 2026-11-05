@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/global-payload.schema.json",
+  "title": "Global publication payload (v1.2)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.global/2"
+    },
+    "publication_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "const": "GLOBAL_NONPERSONAL"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "body_markdown": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1048576
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "minItems": 0,
+      "maxItems": 12,
+      "uniqueItems": true
+    },
+    "approved_global_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/opaque_id"
+      },
+      "minItems": 0,
+      "maxItems": 50,
+      "uniqueItems": true
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    }
+  },
+  "required": [
+    "schema_version",
+    "publication_id",
+    "revision",
+    "plane",
+    "title",
+    "body_markdown",
+    "tags",
+    "approved_global_refs"
+  ]
+}

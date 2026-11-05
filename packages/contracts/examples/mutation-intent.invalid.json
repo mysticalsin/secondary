@@ -1,0 +1,29 @@
+{
+  "schema_version": "secondary.mutation/2",
+  "workspace_id": "ws_synth_acme01",
+  "plane": "ACCOUNT_RESTRICTED",
+  "account_id": "acct_synth_acme_0001",
+  "subspace_id": "sub_synth_root01",
+  "object_id": "obj_synth_meeting01",
+  "expected_revision": 2,
+  "idempotency_key": "synthetic-idempotency-001",
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "byte_length": 120,
+  "sensitivity_flags": [
+    {
+      "category": "family",
+      "start": 10,
+      "end": 90,
+      "confidence": "low",
+      "resolution": "pending"
+    }
+  ],
+  "user_validated": null,
+  "source_claims": [
+    {
+      "source_id": "src_synth_0001",
+      "source_version": "synthetic-v1",
+      "evidence_status": "provider_claim"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": "secondary.decision/1",
+  "decision_id": "decision_synth_0001",
+  "tenant_id": "tenant_synth001",
+  "plane": "ACCOUNT_RESTRICTED",
+  "account_id": "acct_synth_acme_0001",
+  "subspace_id": "sub_synth_root01",
+  "revision": 1,
+  "expected_previous_revision": null,
+  "classification": "account_confidential",
+  "personal_data_state": "none_identified",
+  "owner_ref": "principal_synth_own01",
+  "source_lineage": [
+    {
+      "source_provider": "synthetic_upload",
+      "source_namespace": "ns_synth_drive01",
+      "source_id": "item_synth_0001",
+      "source_revision": "v3",
+      "evidence_status": "documented",
+      "evidence_locator": null
+    }
+  ],
+  "lifecycle": {
+    "state": "committed",
+    "created_at": "2026-11-04T15:00:00Z",
+    "updated_at": "2026-11-04T15:00:00Z"
+  },
+  "retention": {
+    "policy_ref": "retention_synth_draft01",
+    "review_due": null,
+    "legal_hold": false
+  },
+  "object_type": "decision",
+  "statement": "Adopt the staged rollout plan for the synthetic program.",
+  "decided_in_meeting_id": "meeting_synth_0001",
+  "decided_at": "2026-11-04T15:00:00Z",
+  "evidence_status": "unverified",
+  "supersedes_decision_id": null,
+  "review_state": "approved",
+  "reviewer_ref": "principal_synth_rev01"
+}

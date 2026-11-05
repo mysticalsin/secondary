@@ -1,0 +1,31 @@
+{
+  "schema_version": "secondary.task-grant/2",
+  "grant_id": "grant_synth_0001",
+  "tenant_id": "tenant_synth001",
+  "principal_ref": "principal_synth_ana01",
+  "workspace_id": "ws_synth_acme01",
+  "plane": "ACCOUNT_RESTRICTED",
+  "account_id": "acct_synth_acme_0001",
+  "task_type": "prepare_brief",
+  "execution_host": "approved_cloud",
+  "processor_profile_id": "processor_synth_host01",
+  "source_workspace_ids": ["ws_synth_acme01"],
+  "resource_refs": [
+    {
+      "object_id": "obj_synth_meeting01",
+      "revision": 2,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "tool_ids": ["tool_synth_read01"],
+  "destination_workspace_id": "ws_synth_personal01",
+  "policy_epoch": 3,
+  "expires_at": "2026-11-04T15:05:00Z",
+  "budget": {
+    "max_tool_calls": 3,
+    "max_retries": 2,
+    "max_input_tokens": 12000,
+    "max_output_tokens": 1500
+  },
+  "ancestry_ids": []
+}

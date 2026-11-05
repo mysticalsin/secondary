@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/account-relationship.schema.json",
+  "title": "Account Graph Relationship",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "edge_id",
+    "tenant_id",
+    "account_id",
+    "from_object_id",
+    "to_object_id",
+    "relation_type",
+    "policy_ref",
+    "provenance_refs",
+    "revision",
+    "plane",
+    "subspace_id",
+    "expected_previous_revision",
+    "classification",
+    "personal_data_state",
+    "lifecycle_state"
+  ],
+  "properties": {
+    "edge_id": {
+      "type": "string"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "from_object_id": {
+      "type": "string"
+    },
+    "to_object_id": {
+      "type": "string"
+    },
+    "relation_type": {
+      "enum": [
+        "parent_of",
+        "contains",
+        "belongs_to",
+        "supports",
+        "decided_in",
+        "delivered_by",
+        "depends_on",
+        "supersedes",
+        "evidenced_by",
+        "assigned_to_role",
+        "measured_by",
+        "derived_from"
+      ]
+    },
+    "policy_ref": {
+      "type": "string"
+    },
+    "provenance_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "valid_from": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "valid_to": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "plane": {
+      "const": "ACCOUNT_RESTRICTED"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/account_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "lifecycle_state": {
+      "enum": ["active", "quarantined", "superseded", "withdrawn"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle_state": {
+            "const": "quarantined"
+          }
+        }
+      }
+    }
+  ]
+}

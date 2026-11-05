@@ -1,0 +1,33 @@
+{
+  "object_id": "obj_synth_meeting01",
+  "tenant_id": "tenant_synth001",
+  "account_id": "acct_synth_acme_0001",
+  "plane": "ACCOUNT_RESTRICTED",
+  "subspace_id": "sub_synth_root01",
+  "parent_object_id": null,
+  "object_type": "meeting",
+  "revision": 2,
+  "expected_previous_revision": 1,
+  "title": "Acme Synthetic SA steering meeting",
+  "summary": null,
+  "content_ref": "content_synth_0001",
+  "classification": "account_confidential",
+  "audience_policy_ref": "policy_synth_account_restricted",
+  "source_lineage": [
+    {
+      "source_provider": "synthetic_upload",
+      "source_namespace": "ns_synth_drive01",
+      "source_id": "item_synth_0001",
+      "source_revision": "v3",
+      "evidence_status": "documented",
+      "evidence_locator": null
+    }
+  ],
+  "lifecycle_state": "committed",
+  "created_by_ref": "principal_synth_ana01",
+  "owner_ref": "principal_synth_own01",
+  "created_at": "2026-11-04T15:00:00Z",
+  "updated_at": "2026-11-04T15:00:00Z",
+  "review_due": null,
+  "retention_policy_ref": "retention_synth_draft01"
+}

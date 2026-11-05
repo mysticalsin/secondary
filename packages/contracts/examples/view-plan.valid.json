@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "title": "Bid and Pre-sales",
+  "components": [
+    {
+      "type": "KpiRow",
+      "props": {
+        "nodeId": "c_bid",
+        "metrics": ["items", "open", "gaps"]
+      }
+    },
+    {
+      "type": "NodeCard",
+      "props": {
+        "nodeId": "c_bid"
+      }
+    },
+    {
+      "type": "ItemList",
+      "props": {
+        "nodeId": "c_bid",
+        "filter": {
+          "status": "candidate"
+        },
+        "limit": 10
+      }
+    }
+  ]
+}

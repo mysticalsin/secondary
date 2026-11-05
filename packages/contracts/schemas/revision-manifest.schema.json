@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/revision-manifest.schema.json",
+  "title": "RevisionManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.revision-manifest/1"
+    },
+    "revision_manifest_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "$ref": "common.schema.json#/$defs/plane_hosted"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/business_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "owner_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "source_lineage": {
+      "$ref": "common.schema.json#/$defs/source_lineage"
+    },
+    "lifecycle": {
+      "$ref": "common.schema.json#/$defs/lifecycle"
+    },
+    "retention": {
+      "$ref": "common.schema.json#/$defs/retention"
+    },
+    "object_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "object_type": {
+      "enum": ["meeting", "decision", "action", "knowledge_item", "success_story", "source_note"]
+    },
+    "sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "byte_length": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
+    "content_type": {
+      "enum": ["text/markdown", "application/json"]
+    },
+    "content_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "committed_at": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "actor_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "policy_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "commit_state": {
+      "enum": ["committed", "conflict_preserved"]
+    },
+    "audit_outbox_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    }
+  },
+  "required": [
+    "schema_version",
+    "revision_manifest_id",
+    "tenant_id",
+    "plane",
+    "revision",
+    "expected_previous_revision",
+    "classification",
+    "personal_data_state",
+    "owner_ref",
+    "source_lineage",
+    "lifecycle",
+    "retention",
+    "object_id",
+    "object_type",
+    "sha256",
+    "byte_length",
+    "content_type",
+    "content_ref",
+    "committed_at",
+    "actor_ref",
+    "policy_epoch",
+    "commit_state",
+    "audit_outbox_ref"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "quarantined"
+              }
+            },
+            "required": ["state"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "$ref": "common.schema.json#/$defs/account_classification"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "GLOBAL_NONPERSONAL"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "const": "global_reusable"
+          },
+          "personal_data_state": {
+            "const": "none_identified"
+          }
+        }
+      }
+    }
+  ]
+}

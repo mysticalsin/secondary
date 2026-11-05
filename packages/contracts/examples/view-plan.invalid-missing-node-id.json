@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "title": "Account overview",
+  "components": [
+    {
+      "type": "NodeCard",
+      "props": {}
+    }
+  ]
+}

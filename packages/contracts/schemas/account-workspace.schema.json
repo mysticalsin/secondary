@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/account-workspace.schema.json",
+  "title": "Secondary Account Workspace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "account_id",
+    "tenant_id",
+    "canonical_name",
+    "lifecycle_state",
+    "classification",
+    "policy_ref",
+    "source_of_record",
+    "revision",
+    "created_at",
+    "updated_at",
+    "personal_data_state",
+    "expected_previous_revision"
+  ],
+  "properties": {
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "tenant_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128
+    },
+    "canonical_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 180
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 180
+      },
+      "uniqueItems": true
+    },
+    "crm_identity": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "tenant_namespace", "record_id"],
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "tenant_namespace": {
+            "type": "string"
+          },
+          "record_id": {
+            "type": "string"
+          },
+          "last_verified_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "parent_account_id": {
+      "type": ["string", "null"]
+    },
+    "legal_entity_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "brand_units": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "industry": {
+      "type": ["string", "null"]
+    },
+    "account_owner_ref": {
+      "type": "string",
+      "description": "Opaque identity reference; resolve only in the restricted identity service."
+    },
+    "membership_policy_ref": {
+      "type": "string"
+    },
+    "workspace_id": {
+      "type": "string"
+    },
+    "lifecycle_state": {
+      "enum": [
+        "proposed",
+        "active",
+        "restricted",
+        "closing",
+        "archived",
+        "deleted_pending_purge",
+        "quarantined"
+      ]
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/account_classification"
+    },
+    "policy_ref": {
+      "type": "string"
+    },
+    "source_of_record": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["domain", "provider", "authority"],
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "authority": {
+            "enum": ["authoritative", "reference_only", "derived"]
+          }
+        }
+      }
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "retention_policy_ref": {
+      "type": "string"
+    },
+    "residency_policy_ref": {
+      "type": "string"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle_state": {
+            "const": "quarantined"
+          }
+        }
+      }
+    }
+  ]
+}

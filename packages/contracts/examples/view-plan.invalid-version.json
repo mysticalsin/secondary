@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "title": "Future plan",
+  "components": [
+    {
+      "type": "NodeCard",
+      "props": {
+        "nodeId": "c_bid"
+      }
+    }
+  ]
+}

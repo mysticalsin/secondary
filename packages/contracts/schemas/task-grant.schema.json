@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/task-grant.schema.json",
+  "title": "Server-issued task grant (v1.2)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.task-grant/2"
+    },
+    "grant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "principal_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "$ref": "common.schema.json#/$defs/plane_hosted"
+    },
+    "task_type": {
+      "type": "string",
+      "enum": ["prepare_brief", "extract_actions", "stage_note", "propose_view"]
+    },
+    "execution_host": {
+      "type": "string",
+      "enum": ["enrolled_device", "approved_cloud"]
+    },
+    "processor_profile_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "resource_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/object_ref"
+      }
+    },
+    "tool_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/opaque_id"
+      },
+      "minItems": 0,
+      "maxItems": 8,
+      "uniqueItems": true
+    },
+    "destination_workspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "policy_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_tool_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "max_input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12000
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1500
+        }
+      },
+      "required": ["max_tool_calls", "max_retries", "max_input_tokens", "max_output_tokens"]
+    },
+    "ancestry_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "common.schema.json#/$defs/opaque_id"
+      },
+      "minItems": 0,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "source_workspace_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/opaque_id"
+      },
+      "description": "Workspaces the task may read. Distinct from destination_workspace_id (E-03)."
+    }
+  },
+  "required": [
+    "schema_version",
+    "grant_id",
+    "tenant_id",
+    "principal_ref",
+    "workspace_id",
+    "plane",
+    "task_type",
+    "execution_host",
+    "processor_profile_id",
+    "resource_refs",
+    "tool_ids",
+    "destination_workspace_id",
+    "policy_epoch",
+    "expires_at",
+    "budget",
+    "ancestry_ids",
+    "source_workspace_ids"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

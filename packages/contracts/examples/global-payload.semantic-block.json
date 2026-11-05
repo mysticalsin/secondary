@@ -1,0 +1,10 @@
+{
+  "schema_version": "secondary.global/2",
+  "publication_id": "pub_synth_0001",
+  "revision": 1,
+  "plane": "GLOBAL_NONPERSONAL",
+  "title": "Release readiness checklist",
+  "body_markdown": "Jane Example, the only payroll lead in Example City, approved an individual salary exception yesterday.",
+  "tags": ["release", "checklist"],
+  "approved_global_refs": []
+}

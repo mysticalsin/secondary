@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Account overview",
+  "components": [
+    {
+      "type": "RawHtml",
+      "props": {
+        "nodeId": "c_bid"
+      }
+    }
+  ]
+}
