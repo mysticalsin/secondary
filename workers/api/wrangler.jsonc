@@ -9,10 +9,12 @@
     "directory": "../../apps/web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    // API paths reach the worker first; everything else is served as a static asset.
-    "run_worker_first": ["/v1/*"]
+    // Every request reaches the worker first so that security headers are set on static assets too.
+    // The worker serves non-/v1 paths from the ASSETS binding.
+    "run_worker_first": true
   },
   "durable_objects": {
+    // Both namespaces are used through `namespace.jurisdiction("eu")` (see src/stubs.ts).
     "bindings": [
       { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
       { "name": "WORKSPACE", "class_name": "Workspace" }
@@ -28,6 +30,19 @@
     // Cloudflare Access team domain, e.g. "<team>.cloudflareaccess.com". Empty until Access is configured.
     "ACCESS_TEAM_DOMAIN": "",
     // Cloudflare Access application AUD tag used to verify the JWT. Empty until Access is configured.
-    "ACCESS_AUD": ""
+    "ACCESS_AUD": "",
+    // Tenant for emails whose domain is not in TENANT_DOMAINS.
+    "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
+    // JSON object mapping an email domain to a tenant id, e.g. {"example.invalid":"tenant_mantu_synthetic"}.
+    "TENANT_DOMAINS": "{}",
+    // Requests per principal per minute (Durable Object counter).
+    "RATE_LIMIT_PER_MIN": "600",
+    // Durable Objects are created in the EU jurisdiction. Local workerd cannot do that: .dev.vars sets "off".
+    "DO_JURISDICTION": "eu"
   }
+  // Secrets and local-only values, intentionally not set here (see .dev.vars.example):
+  //   INTERNAL_HMAC_KEY      secret, at least 32 characters. Shared with workers/mcp: verifies its signed calls (X-Secondary-*).
+  //   SEED_TOKEN             secret. Required by POST /v1/admin/seed (dev only).
+  //   DEV_AUTH_BYPASS_EMAIL  local-dev var. Honoured only when ENVIRONMENT is "dev" AND the request host is
+  //                          localhost, 127.0.0.1 or [::1]. Put it in .dev.vars, never in this file.
 }

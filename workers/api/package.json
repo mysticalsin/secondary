@@ -4,18 +4,21 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "build": "wrangler deploy --dry-run --outdir dist",
+    "dev": "node scripts/gen-validator.mjs && wrangler dev",
+    "build": "node scripts/gen-validator.mjs && wrangler deploy --dry-run --outdir dist",
     "types": "wrangler types",
-    "typecheck": "wrangler types && tsc --noEmit -p .",
-    "test": "vitest run"
+    "typecheck": "node scripts/gen-validator.mjs && wrangler types && tsc --noEmit -p .",
+    "test": "node scripts/gen-validator.mjs && vitest run"
   },
   "dependencies": {
-    "hono": "4.13.16"
+    "@secondary/policy": "workspace:*",
+    "hono": "4.13.16",
+    "jose": "6.2.15"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.5.1",
     "@secondary/web": "workspace:*",
+    "ajv": "8.20.0",
     "wrangler": "4.153.0"
   }
 }
