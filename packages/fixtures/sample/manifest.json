@@ -16,7 +16,9 @@
     "decisions": 98,
     "actions": 94,
     "canaries": 16,
-    "hostile_docs": 3
+    "hostile_docs": 3,
+    "transcripts": 10,
+    "personal_segments": 34
   },
   "hostile_docs": [
     {

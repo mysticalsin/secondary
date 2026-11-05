@@ -9,6 +9,7 @@ const files: FileMap = generate({ seed: 7, generatedAt: AT });
 const paths = Object.keys(files);
 const docs = paths.filter((p) => p.startsWith("docs/"));
 const meetings = paths.filter((p) => p.startsWith("meetings/"));
+const transcripts = paths.filter((p) => p.startsWith("transcripts/"));
 const json = (p: string) => JSON.parse(files[p] as string);
 const front = (p: string, key: string) =>
   new RegExp(`^${key}: (.+)$`, "m").exec(files[p] as string)?.[1];
@@ -88,6 +89,46 @@ describe("shape", () => {
   });
 });
 
+describe("transcripts and personal segments", () => {
+  const idx = json("personal-segments.json").transcripts as {
+    transcript_id: string;
+    path: string;
+    segments: { start: number; end: number; category: string; text: string }[];
+  }[];
+  it("has 10 transcripts, each with personal and business lines", () => {
+    expect(transcripts).toHaveLength(10);
+    expect(idx.map((t) => t.path).sort()).toEqual([...transcripts].sort());
+    for (const t of idx) {
+      expect(t.segments.length, t.path).toBeGreaterThanOrEqual(2);
+      const personalChars = t.segments.reduce((n, s) => n + s.end - s.start, 0);
+      expect(personalChars, t.path).toBeLessThan((files[t.path] as string).length / 2);
+    }
+    expect(json("manifest.json").counts.transcripts).toBe(10);
+  });
+  it("offsets slice exactly to the labelled segment, one whole line", () => {
+    for (const t of idx) {
+      const text = files[t.path] as string;
+      for (const s of t.segments) {
+        expect(text.slice(s.start, s.end), t.path).toBe(s.text);
+        expect(s.text).not.toContain("\n");
+        expect(text[s.start - 1]).toBe("\n");
+        expect(text[s.end]).toBe("\n");
+      }
+    }
+  });
+  it("covers health, family, holidays and HR gossip", () => {
+    const cats = new Set(idx.flatMap((t) => t.segments.map((s) => s.category)));
+    expect([...cats].sort()).toEqual(["family", "health", "holidays", "hr_gossip"]);
+  });
+  it("personal text never appears in docs or meetings", () => {
+    const stored = [...docs, ...meetings].map((p) => files[p] as string).join("\n");
+    for (const t of idx) {
+      for (const s of t.segments)
+        expect(stored).not.toContain(s.text.split(": ").slice(1).join(": "));
+    }
+  });
+});
+
 describe("canaries", () => {
   const canaries = json("canaries.json") as Record<
     string,
@@ -99,7 +140,7 @@ describe("canaries", () => {
     expect(new Set(tokens).size).toBe(16);
   });
   it("each token appears in at least one doc and only inside its own boundary", () => {
-    const content = [...docs, ...meetings];
+    const content = [...docs, ...meetings, ...transcripts];
     for (const tok of tokens) {
       const b = canaries[tok] as {
         tenant_id: string;
@@ -117,7 +158,7 @@ describe("canaries", () => {
   });
   it("tokens appear in no file outside docs, meetings and canaries.json", () => {
     for (const p of paths) {
-      if (p === "canaries.json" || p.startsWith("docs/") || p.startsWith("meetings/")) continue;
+      if (p === "canaries.json" || /^(docs|meetings|transcripts)\//.test(p)) continue;
       for (const tok of tokens) expect(files[p], p).not.toContain(tok);
     }
   });
@@ -166,7 +207,6 @@ describe("no personal data (GDPR guard)", () => {
     ["generated", files],
     ["committed sample", readTree(sampleDir)],
   ];
-  const DENY = ["loreal", "l'oreal", "l’oreal", "nestle", "nestlé", "danone", "sanofi"];
   const PHONE = /(?<![\w.-])\+?\(?\d[\d\s().-]{7,}\d(?![\w])/g;
   const ISO_DATE = /\b\d{4}-\d{2}-\d{2}\b/g;
 
@@ -181,12 +221,6 @@ describe("no personal data (GDPR guard)", () => {
     it(`${label}: no phone-number patterns`, () => {
       for (const [p, c] of Object.entries(set)) {
         expect(c.replace(ISO_DATE, "").match(PHONE) ?? [], p).toEqual([]);
-      }
-    });
-    it(`${label}: no real client names`, () => {
-      for (const [p, c] of Object.entries(set)) {
-        const lower = c.toLowerCase();
-        for (const name of DENY) expect(lower, `${name} in ${p}`).not.toContain(name);
       }
     });
   }

@@ -1,0 +1,270 @@
+{
+  "note": "Personal conversation (health, family, holidays, HR gossip). Must never reach stored account records or model context.",
+  "offset_unit": "UTF-16 code units from the start of the transcript file; start inclusive, end exclusive; the segment is one full line without its newline",
+  "transcripts": [
+    {
+      "transcript_id": "trn-0001",
+      "path": "transcripts/acct-acme/trn-0001.md",
+      "segments": [
+        {
+          "start": 397,
+          "end": 511,
+          "category": "hr_gossip",
+          "text": "[03:00] usr-001 Ines Marlowe: Apparently there was a complaint about a team lead and HR is keeping quiet about it."
+        },
+        {
+          "start": 512,
+          "end": 618,
+          "category": "health",
+          "text": "[04:30] usr-002 Jonas Verhoeven: My knee surgery is booked for next month and I am a bit nervous about it."
+        },
+        {
+          "start": 1303,
+          "end": 1426,
+          "category": "hr_gossip",
+          "text": "[15:00] usr-006 Nils Backstrom: Did you hear that a colleague was passed over for promotion and is looking for another job?"
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0002",
+      "path": "transcripts/acct-acme/trn-0002.md",
+      "segments": [
+        {
+          "start": 516,
+          "end": 627,
+          "category": "family",
+          "text": "[04:30] usr-002 Jonas Verhoeven: My father moved into a care home last week and it has been hard on the family."
+        },
+        {
+          "start": 1058,
+          "end": 1152,
+          "category": "holidays",
+          "text": "[12:00] usr-006 Nils Backstrom: I am taking the whole of July off to drive around the islands."
+        },
+        {
+          "start": 1153,
+          "end": 1261,
+          "category": "hr_gossip",
+          "text": "[13:30] usr-006 Nils Backstrom: Between us, I heard a manager is about to put someone on a performance plan."
+        },
+        {
+          "start": 1360,
+          "end": 1469,
+          "category": "family",
+          "text": "[16:30] usr-001 Ines Marlowe: My daughter just started at a new school and she is struggling to make friends."
+        },
+        {
+          "start": 1470,
+          "end": 1562,
+          "category": "holidays",
+          "text": "[18:00] usr-001 Ines Marlowe: I am taking the whole of July off to drive around the islands."
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0003",
+      "path": "transcripts/acct-acme/trn-0003.md",
+      "segments": [
+        {
+          "start": 490,
+          "end": 575,
+          "category": "holidays",
+          "text": "[04:30] usr-006 Nils Backstrom: My partner and I booked a ski trip over the new year."
+        },
+        {
+          "start": 576,
+          "end": 698,
+          "category": "hr_gossip",
+          "text": "[06:00] usr-003 Kemi Oyelaran: Did you hear that a colleague was passed over for promotion and is looking for another job?"
+        },
+        {
+          "start": 1438,
+          "end": 1559,
+          "category": "hr_gossip",
+          "text": "[18:00] usr-001 Ines Marlowe: Did you hear that a colleague was passed over for promotion and is looking for another job?"
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0004",
+      "path": "transcripts/acct-borealis/trn-0004.md",
+      "segments": [
+        {
+          "start": 290,
+          "end": 383,
+          "category": "family",
+          "text": "[01:30] usr-009 Quinn Alder: We are expecting a baby in March, so I will take parental leave."
+        },
+        {
+          "start": 483,
+          "end": 604,
+          "category": "hr_gossip",
+          "text": "[04:30] usr-001 Ines Marlowe: Did you hear that a colleague was passed over for promotion and is looking for another job?"
+        },
+        {
+          "start": 1814,
+          "end": 1934,
+          "category": "hr_gossip",
+          "text": "[22:30] usr-009 Quinn Alder: Did you hear that a colleague was passed over for promotion and is looking for another job?"
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0005",
+      "path": "transcripts/acct-borealis/trn-0005.md",
+      "segments": [
+        {
+          "start": 503,
+          "end": 613,
+          "category": "health",
+          "text": "[04:30] usr-004 Luc Tremblay-Fictif: My knee surgery is booked for next month and I am a bit nervous about it."
+        },
+        {
+          "start": 1169,
+          "end": 1282,
+          "category": "holidays",
+          "text": "[13:30] usr-006 Nils Backstrom: We are flying to the coast for two weeks in August and the kids are very excited."
+        },
+        {
+          "start": 1614,
+          "end": 1713,
+          "category": "holidays",
+          "text": "[19:30] usr-004 Luc Tremblay-Fictif: I am taking the whole of July off to drive around the islands."
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0006",
+      "path": "transcripts/acct-borealis/trn-0006.md",
+      "segments": [
+        {
+          "start": 183,
+          "end": 301,
+          "category": "holidays",
+          "text": "[00:00] usr-004 Luc Tremblay-Fictif: We are flying to the coast for two weeks in August and the kids are very excited."
+        },
+        {
+          "start": 528,
+          "end": 624,
+          "category": "family",
+          "text": "[04:30] usr-006 Nils Backstrom: We are expecting a baby in March, so I will take parental leave."
+        },
+        {
+          "start": 1475,
+          "end": 1586,
+          "category": "holidays",
+          "text": "[18:00] usr-001 Ines Marlowe: We are flying to the coast for two weeks in August and the kids are very excited."
+        },
+        {
+          "start": 1713,
+          "end": 1819,
+          "category": "health",
+          "text": "[21:00] usr-002 Jonas Verhoeven: My knee surgery is booked for next month and I am a bit nervous about it."
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0007",
+      "path": "transcripts/acct-calypso/trn-0007.md",
+      "segments": [
+        {
+          "start": 537,
+          "end": 636,
+          "category": "holidays",
+          "text": "[04:30] usr-004 Luc Tremblay-Fictif: I am taking the whole of July off to drive around the islands."
+        },
+        {
+          "start": 858,
+          "end": 974,
+          "category": "family",
+          "text": "[09:00] usr-004 Luc Tremblay-Fictif: My daughter just started at a new school and she is struggling to make friends."
+        },
+        {
+          "start": 1752,
+          "end": 1861,
+          "category": "family",
+          "text": "[21:00] usr-001 Ines Marlowe: My daughter just started at a new school and she is struggling to make friends."
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0008",
+      "path": "transcripts/acct-calypso/trn-0008.md",
+      "segments": [
+        {
+          "start": 495,
+          "end": 608,
+          "category": "hr_gossip",
+          "text": "[04:30] usr-005 Marta Quint: Apparently there was a complaint about a team lead and HR is keeping quiet about it."
+        },
+        {
+          "start": 1598,
+          "end": 1691,
+          "category": "family",
+          "text": "[19:30] usr-005 Marta Quint: We are expecting a baby in March, so I will take parental leave."
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0009",
+      "path": "transcripts/acct-delta/trn-0009.md",
+      "segments": [
+        {
+          "start": 381,
+          "end": 500,
+          "category": "hr_gossip",
+          "text": "[03:00] usr-012 Tara Nwosu: Did you hear that a colleague was passed over for promotion and is looking for another job?"
+        },
+        {
+          "start": 501,
+          "end": 617,
+          "category": "health",
+          "text": "[04:30] usr-010 Rosa Delmar: I have been sleeping badly since the diagnosis and the specialist changed my treatment."
+        },
+        {
+          "start": 823,
+          "end": 936,
+          "category": "hr_gossip",
+          "text": "[09:00] usr-010 Rosa Delmar: Apparently there was a complaint about a team lead and HR is keeping quiet about it."
+        },
+        {
+          "start": 1340,
+          "end": 1456,
+          "category": "health",
+          "text": "[16:30] usr-010 Rosa Delmar: I have been sleeping badly since the diagnosis and the specialist changed my treatment."
+        },
+        {
+          "start": 1795,
+          "end": 1910,
+          "category": "health",
+          "text": "[22:30] usr-011 Soren Vale: I have been sleeping badly since the diagnosis and the specialist changed my treatment."
+        }
+      ]
+    },
+    {
+      "transcript_id": "trn-0010",
+      "path": "transcripts/acct-delta/trn-0010.md",
+      "segments": [
+        {
+          "start": 495,
+          "end": 602,
+          "category": "family",
+          "text": "[04:30] usr-011 Soren Vale: My daughter just started at a new school and she is struggling to make friends."
+        },
+        {
+          "start": 603,
+          "end": 684,
+          "category": "holidays",
+          "text": "[06:00] usr-011 Soren Vale: My partner and I booked a ski trip over the new year."
+        },
+        {
+          "start": 1178,
+          "end": 1293,
+          "category": "health",
+          "text": "[15:00] usr-012 Tara Nwosu: I have been sleeping badly since the diagnosis and the specialist changed my treatment."
+        }
+      ]
+    }
+  ]
+}
