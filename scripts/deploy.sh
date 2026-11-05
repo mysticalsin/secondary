@@ -25,6 +25,8 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+# L6: every Durable Object is created in the EU. A config that says otherwise is not deployed.
+node "$ROOT/scripts/assert-eu.mjs" "$TARGET"
 
 # dev is the top level of each wrangler.jsonc; staging and prod are `env` blocks.
 if [ "$TARGET" = "dev" ]; then ENV_ARGS=(); else ENV_ARGS=(--env "$TARGET"); fi

@@ -386,8 +386,19 @@ describe("jurisdiction", () => {
     inJurisdiction({ ENVIRONMENT: "dev" }, ns(c));
     inJurisdiction({ ENVIRONMENT: "dev", DO_JURISDICTION: "eu" }, ns(c));
     expect(c).toEqual(["eu", "eu", "eu", "eu"]);
-    const off = inJurisdiction({ ENVIRONMENT: "dev", DO_JURISDICTION: "off" }, ns(c));
-    expect(c).toHaveLength(4);
+    // L6: a stray DO_JURISDICTION=off on the deployed dev environment changes nothing. Only a local
+    // checkout (the local sign-in address is set, and it works on loopback only) can turn it off.
+    inJurisdiction({ ENVIRONMENT: "dev", DO_JURISDICTION: "off" }, ns(c));
+    inJurisdiction(
+      { ENVIRONMENT: "staging", DO_JURISDICTION: "off", DEV_AUTH_BYPASS_EMAIL: "d@x.invalid" },
+      ns(c),
+    );
+    expect(c).toEqual(["eu", "eu", "eu", "eu", "eu", "eu"]);
+    const off = inJurisdiction(
+      { ENVIRONMENT: "dev", DO_JURISDICTION: "off", DEV_AUTH_BYPASS_EMAIL: "dev@example.invalid" },
+      ns(c),
+    );
+    expect(c).toHaveLength(6);
     expect(off).toBeDefined();
   });
 });

@@ -26,6 +26,9 @@ export default defineConfig({
           ACCESS_TEAM_DOMAIN: "",
           ACCESS_AUD: "",
           DO_JURISDICTION: "off",
+          // Local checkout marker: without it the code would ask for the EU jurisdiction, which workerd
+          // cannot create (B1 L6). The sign-in bypass still needs a localhost request host.
+          DEV_AUTH_BYPASS_EMAIL: "dev@example.invalid",
           // Wiki jobs wait for POST /v1/wiki/:ws/run in tests; only the alarm test turns them on.
           WIKI_ALARMS: "off",
           AUDIT_KEY_API: "test-audit-key-api-0123456789abcdef0123",

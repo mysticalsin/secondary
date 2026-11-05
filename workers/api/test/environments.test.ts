@@ -2,6 +2,7 @@
 // committed wrangler files, so a drift (a shared bucket, a dev flag in prod) fails here.
 
 import { describe, expect, it } from "vitest";
+import { parseJsonc as parseJsoncScript, pinnedToEu } from "../../../scripts/assert-eu.mjs";
 import deployRaw from "../../../scripts/deploy.sh?raw";
 import auditRaw from "../../audit/wrangler.jsonc?raw";
 import connectorRaw from "../../connector/wrangler.jsonc?raw";
@@ -224,6 +225,18 @@ describe("environments: audit, mcp, ops", () => {
     expect(deployRaw).toMatch(/^shared_secret OPS_HMAC_KEY api ops$/m);
     expect(deployRaw).toMatch(/^shared_secret INTERNAL_HMAC_KEY api mcp$/m);
     expect(deployRaw).not.toMatch(/OPS_HMAC_KEY[^\n]*\bmcp\b/);
+  });
+
+  it("L6: deploy.sh refuses a config that does not pin the Durable Objects to the EU", () => {
+    expect(deployRaw.indexOf('node "$ROOT/scripts/assert-eu.mjs" "$TARGET"')).toBeGreaterThan(-1);
+    expect(deployRaw.indexOf("assert-eu.mjs")).toBeLessThan(deployRaw.indexOf("==> build"));
+    for (const t of ["dev", ...ENVS]) expect(pinnedToEu(api, t), t).toBe(true);
+    expect(pinnedToEu({ vars: { DO_JURISDICTION: "off" } }, "dev")).toBe(false);
+    expect(pinnedToEu({ env: { prod: { vars: {} } } }, "prod")).toBe(false);
+    expect(parseJsoncScript('{ "a": "https://x", /* c */ "b": [1,], // d\n }')).toEqual({
+      a: "https://x",
+      b: [1],
+    });
   });
 
   it("N-04: the brief proof key is generated for the api alone", () => {
