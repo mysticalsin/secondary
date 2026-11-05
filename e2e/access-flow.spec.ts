@@ -77,7 +77,7 @@ test.describe("access request loop", () => {
     });
     expect(made.status).toBe(201);
     const reviewer = await asPersona(browser, "reviewer");
-    await reviewer.goto("/");
+    await reviewer.goto("/today");
     await reviewer.getByRole("button", { name: /Notifications/ }).click();
     await expect(reviewer.getByText(/waiting for review/).first()).toBeVisible();
     await expect(reviewer.getByText("Runbook for handover")).toHaveCount(0);
