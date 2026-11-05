@@ -256,3 +256,25 @@ Jobs: a new or changed source (record create or update, meeting record, Personal
 Lint findings (review items, one each): contradiction, orphan page, broken link, source hash changed or gone, stale claim, uncited claim, missing schema section. Dreaming proposes merges, summary sections and cross-links, within the workspace, and never writes.
 
 MCP (`workers/mcp`): `wiki_search` and `wiki_read` (scope `secondary.read`), `wiki_propose` (`secondary.read` + `secondary.contribute`, creates a review item only). No tool approves.
+
+## UX v2 endpoints (docs/DESIGN-UX-V2.md), normative shapes
+
+All are policy-gated and use the caller's scope, with `no-store`.
+
+- `POST /v1/ask {q, scope?}`, response `text/event-stream`. Events are named `status`, `citation`, `plan`, `answer` and `usage`:
+  - `status`: `{stage}`.
+  - `citation`: `{pageId, title, workspaceId, sourceIds[]}`.
+  - `plan`: a ViewPlan.
+  - `answer`: `{markdown, unknown: boolean}`.
+  - `usage`: `{inputTokens, outputTokens, indexTokensRead, fullContextEstimate, savedPct, processor:"anthropic"|"deterministic"}`.
+  - The stream ends with `done`. Without AI the deterministic path still emits every event.
+- `GET /v1/brain/tree?root=personal|company`, response `{roots:[TreeNode]}`, where `TreeNode={id, label, kind:"workspace"|"folder"|"page", access:"full"|"partial"|"locked", count?, children?: TreeNode[]}`. Folders are the wiki page types (Clients, Projects, Opportunities, Bids, Offers, Expertise, Interactions, Entities, Contacts). Locked nodes have no children. Hidden nodes are absent.
+- `GET /v1/questions`, response a list of `{id, kind:"ingest"|"contradiction"|"lint"|"review"|"release", title, workspaceId, createdAt, summary, options:[{action, label}], detail}`. `detail` for a contradiction is `{current:{text, sources[]}, incoming:{text, sources[]}}`. `POST /v1/questions/:id {action, revisionHash?, note?}` returns `{ok}` or 403 `{reason}`.
+- Routines:
+  - `GET/POST /v1/routines`, `GET/PUT/DELETE /v1/routines/:id`.
+  - A Routine is `{id, name, source:{kind:"sharepoint"|"meetings"|"notes"|"manual", ref?}, schedule:"daily"|"weekly"|"manual", targetScopeId, guardrails:{excludePersonal:true, excludeHR:true, excludeNewsletters:boolean}, enabled}`.
+  - `POST /v1/routines/:id/run` returns a run.
+  - `GET /v1/routines/:id/runs` returns a list of `{id, at, ingested, skipped, asked, tokens, items:[{title, verdict:"ingest"|"skip"|"ask", reason}]}`.
+- `GET /v1/usage?period=7d|30d`, response `{me:{tokens, runs, answers, savedPct}, byCapability:[{capability, tokens, runs}], tenant?: {...}}`. `tenant` is present for admins only.
+- `GET /v1/digest/preview`, response `{weekOf, sections:[{title, items:[{label, pageId?, meta}]}], stats:{opportunities, newLeads, commitmentsDue, wins}}`. `POST /v1/digest/draft` returns `{draftId}`. It creates an email draft only and never sends.
+- `GET /v1/brain/export?workspaceId=` returns a zip of Markdown: one folder per page type, an `index.md` per folder, and frontmatter on each page. It contains readable content only.
