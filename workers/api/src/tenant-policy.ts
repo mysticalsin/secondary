@@ -484,6 +484,7 @@ export class TenantPolicy extends DurableObject<Env> {
     actor: string,
     now: number,
     twoPerson: boolean,
+    email = "",
   ): { status: "applied" | "pending"; sameActor?: boolean } {
     const apply = () => {
       this.sql.exec(
@@ -505,7 +506,7 @@ export class TenantPolicy extends DurableObject<Env> {
     }
     if (this.switchState()[name]) return { status: "applied" };
     if (twoPerson) {
-      const r = this.requestSecond(`switch:${name}`, actor, now);
+      const r = this.requestSecond(`switch:${name}`, actor, now, email);
       if (r !== "second") return { status: "pending", sameActor: r === "same" };
     }
     apply();
@@ -515,8 +516,11 @@ export class TenantPolicy extends DurableObject<Env> {
   /**
    * Two-person rule. "first": recorded. "same": the same person asked again, nothing changes.
    * "second": a different person confirmed within 24 hours, so the caller may proceed.
+   * "Same" is decided on the stable identity (N-01): one human under two principal ids is one person.
+   * `email` is the address the actor is signed in with; pass it so the identity can be matched.
    */
-  requestSecond(key: string, actor: string, now: number): "first" | "same" | "second" {
+  requestSecond(key: string, actor: string, now: number, email = ""): "first" | "same" | "second" {
+    this.rememberAddress(actor, email);
     const row = this.sql
       .exec("SELECT requested_by, requested_at FROM pending_ops WHERE key = ?", key)
       .toArray()[0];
@@ -530,9 +534,61 @@ export class TenantPolicy extends DurableObject<Env> {
       );
       return "first";
     }
-    if (row.requested_by === actor) return "same";
+    if (this.sameHuman(row.requested_by as string, actor)) return "same";
     this.sql.exec("DELETE FROM pending_ops WHERE key = ?", key);
     return "second";
+  }
+
+  /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */
+  private rememberAddress(principalId: string, email: string): void {
+    const e = email.trim().toLowerCase();
+    if (!e || !e.includes("@")) return;
+    this.sql.exec(
+      "INSERT INTO gov_identity (principal_id, email) VALUES (?, ?) ON CONFLICT(principal_id) DO UPDATE SET email = excluded.email",
+      principalId,
+      e,
+    );
+  }
+
+  /**
+   * The stable identity behind a principal id: the Entra subject (tenant + oid) when the directory
+   * has one, else the normalised address it signed in with, else the id itself.
+   */
+  private humanKey(principalId: string): string {
+    const p = this.sql
+      .exec("SELECT subject, email FROM principals WHERE id = ?", principalId)
+      .toArray()[0];
+    const e = (
+      (p?.email as string | undefined) ??
+      (this.sql
+        .exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId)
+        .toArray()[0]?.email as string | undefined)
+    )?.toLowerCase();
+    const subject =
+      (p?.subject as string | null | undefined) ??
+      (e
+        ? (this.sql.exec("SELECT subject FROM principals WHERE email = ?", e).toArray()[0]
+            ?.subject as string | null | undefined)
+        : null);
+    if (subject) return `sub:${subject}`;
+    return e ? `mail:${e}` : `id:${principalId}`;
+  }
+
+  private sameHuman(a: string, b: string): boolean {
+    return a === b || this.humanKey(a) === this.humanKey(b);
+  }
+
+  /** Every principal id of the same human as `principalId`, itself included (N-01). */
+  humanIds(principalId: string, email = ""): string[] {
+    this.rememberAddress(principalId, email);
+    const key = this.humanKey(principalId);
+    const ids = new Set([principalId]);
+    for (const r of [
+      ...this.sql.exec("SELECT id FROM principals").toArray(),
+      ...this.sql.exec("SELECT principal_id AS id FROM gov_identity").toArray(),
+    ])
+      if (this.humanKey(r.id as string) === key) ids.add(r.id as string);
+    return [...ids];
   }
 
   /** Id of the principal behind an email, or the stable anonymous id when the email is not in the directory. */

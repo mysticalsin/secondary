@@ -755,11 +755,15 @@ export class Workspace extends WikiBase {
   }
 
   /** The contributor and anyone who edited the item count as its authors, on every revision. */
-  private authored(rec: ItemRecord, actorId: string): boolean {
-    if (rec.authorId === actorId) return true;
+  private authored(rec: ItemRecord, ids: string[]): boolean {
+    if (rec.authorId !== null && ids.includes(rec.authorId)) return true;
     return (
       this.sql
-        .exec("SELECT 1 FROM edits WHERE item_id = ? AND actor_id = ? LIMIT 1", rec.id, actorId)
+        .exec(
+          `SELECT 1 FROM edits WHERE item_id = ? AND actor_id IN (${ids.map(() => "?").join(",")}) LIMIT 1`,
+          rec.id,
+          ...ids,
+        )
         .toArray().length > 0
     );
   }
@@ -770,10 +774,12 @@ export class Workspace extends WikiBase {
     actorId: string,
     verdict: string,
     now: number,
+    /** Every principal id of the same human (N-01). */
+    sameHuman: string[] = [],
   ): ReviewResult {
     const rec = this.load(id, expected);
     if ("ok" in rec) return rec;
-    if (this.authored(rec, actorId))
+    if (this.authored(rec, [actorId, ...sameHuman]))
       return {
         ok: false,
         code: "self_approval",
@@ -797,10 +803,18 @@ export class Workspace extends WikiBase {
    * Approve one exact revision. The contributor never counts. A release needs distinct approvers:
    * one for a scope release, two when the item is released to Company Global.
    */
-  approve(id: string, expected: number, actorId: string, now: number): ApproveResult {
+  approve(
+    id: string,
+    expected: number,
+    actorId: string,
+    now: number,
+    /** Every principal id of the same human, so one person cannot count as two approvers (N-01). */
+    sameHuman: string[] = [],
+  ): ApproveResult {
     const rec = this.load(id, expected);
     if ("ok" in rec) return rec;
-    if (this.authored(rec, actorId))
+    const ids = [actorId, ...sameHuman];
+    if (this.authored(rec, ids))
       return {
         ok: false,
         code: "self_approval",
@@ -809,6 +823,18 @@ export class Workspace extends WikiBase {
       };
     if (rec.status !== "candidate")
       return { ok: false, code: "not_pending", message: "The item is not awaiting release" };
+    if (
+      this.sql
+        .exec(
+          `SELECT 1 FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'
+           AND actor_id IN (${ids.map(() => "?").join(",")}) LIMIT 1`,
+          id,
+          rec.revision,
+          ...ids,
+        )
+        .toArray().length
+    )
+      return { ok: false, code: "already_done", message: "You already approved this revision" };
     const inserted = this.sql
       .exec(
         `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)

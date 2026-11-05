@@ -8,6 +8,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { appendReceipt, newReceiptId } from "./audit.ts";
 import { requireOrg, viewOf } from "./auth.ts";
+import { humanIdsOf } from "./human.ts";
 import {
   eraseSubject,
   exportSubject,
@@ -120,6 +121,7 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       s.principal.id,
       now(),
       isProd(c.env),
+      s.principal.email,
     );
     // Turning a switch off must never wait for the audit log (incident response).
     if (!enabled) await audit(c, s, "switch_disable", `${name} off`);
@@ -143,6 +145,7 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       `export:${principalId}`,
       s.principal.id,
       now(),
+      s.principal.email,
     );
     if (step !== "second") {
       if (!(await audit(c, s, "rights_export_request", `export requested for ${pseudonym}`)))
@@ -165,12 +168,14 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     const principalId = await resolveSubject(c.env, s.tenantId, raw);
     const pseudonym = await pseudonymFor(c.env, s.tenantId, principalId);
     if (!pseudonym) return c.json({ error: "erase_disabled" }, 503);
-    if (principalId === s.principal.id) return c.json({ error: "cannot_erase_self" }, 409);
+    if ((await humanIdsOf(c.env, s)).includes(principalId))
+      return c.json({ error: "cannot_erase_self" }, 409);
 
     const step = await tenantStub(c.env, s.tenantId).requestSecond(
       `erase:${principalId}`,
       s.principal.id,
       now(),
+      s.principal.email,
     );
     if (step !== "second") {
       await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);

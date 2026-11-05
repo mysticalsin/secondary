@@ -26,6 +26,7 @@ import { appendReceipt, fetchReceipts, newReceiptId, type Receipt } from "./audi
 import { authenticate, requireOrg, viewOf } from "./auth.ts";
 import { checkSourceAccess, NOT_CONFIRMED, SOURCE_ITEM_ID } from "./connector.ts";
 import { MAX_PROMPT, planView } from "./genui.ts";
+import { humanIdsOf } from "./human.ts";
 import { readiness } from "./observe.ts";
 import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
 import { PERSONAL_KINDS, type PersonalKind, personalKindOf } from "./personal-kind.ts";
@@ -921,7 +922,14 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
           : rejected(r as Fail);
       }
       case "review": {
-        const r = await ws.review(nodeId, revision as number, s.principal.id, verdict, now);
+        const r = await ws.review(
+          nodeId,
+          revision as number,
+          s.principal.id,
+          verdict,
+          now,
+          await humanIdsOf(c.env, s),
+        );
         if (!r.ok) return rejected(r);
         if (cand && verdict === "changes_requested")
           await notifyChangesRequested(
@@ -933,7 +941,13 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
         return c.json({ ok: true, receiptId: receipt.receiptId, revision: r.revision });
       }
       case "approve_release": {
-        const r = await ws.approve(nodeId, revision as number, s.principal.id, now);
+        const r = await ws.approve(
+          nodeId,
+          revision as number,
+          s.principal.id,
+          now,
+          await humanIdsOf(c.env, s),
+        );
         if (!r.ok) return rejected(r);
         if (cand)
           await notifyApproved(

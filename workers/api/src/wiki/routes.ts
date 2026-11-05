@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
 import { checkSourceAccess } from "../connector.ts";
+import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
 import { detectSensitivity } from "../sensitivity.ts";
@@ -756,6 +757,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       return c.json({ error: "audit_unavailable" }, 503);
     const res = await w.stub.wikiDecide(id, b.decision, s.principal.id, s.ctx.now, {
       ...(typeof b.revisionHash === "string" ? { revisionHash: b.revisionHash } : {}),
+      sameHuman: await humanIdsOf(c.env, s),
     });
     if (!res.ok) return failResponse(c, res);
     return c.json({

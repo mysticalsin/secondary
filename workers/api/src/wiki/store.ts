@@ -789,7 +789,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     const f = this.sql.exec("SELECT source_ids FROM wiki_facts WHERE id = ?", id).toArray()[0];
     if (!f) return { ok: false, code: "not_found", message: "No such fact" };
     const personal = isPersonalScope(this.metaGet("scope_id") ?? "");
-    if (!personal && this.wroteSourceOf(JSON.parse(f.source_ids as string) as string[], actor))
+    if (!personal && this.wroteSourceOf(JSON.parse(f.source_ids as string) as string[], [actor]))
       return {
         ok: false,
         code: "self_approval",
@@ -1177,20 +1177,25 @@ export abstract class WikiBase extends DurableObject<Env> {
   }
 
   /** The contributor and anyone who edited the proposal count as its authors (H-01). */
-  private wikiAuthored(item: ItemRecord, actorId: string): boolean {
-    if (item.authorId === actorId) return true;
+  private wikiAuthored(item: ItemRecord, ids: string[]): boolean {
+    if (item.authorId !== null && ids.includes(item.authorId)) return true;
     return (
       this.sql
-        .exec("SELECT 1 FROM edits WHERE item_id = ? AND actor_id = ? LIMIT 1", item.id, actorId)
+        .exec(
+          `SELECT 1 FROM edits WHERE item_id = ? AND actor_id IN (${ids.map(() => "?").join(",")}) LIMIT 1`,
+          item.id,
+          ...ids,
+        )
         .toArray().length > 0
     );
   }
 
   /** The actor wrote one of the sources the proposal is drawn from (L-03). */
-  private wroteSourceOf(sourceIds: string[], actorId: string): boolean {
+  private wroteSourceOf(sourceIds: string[], ids: string[]): boolean {
     for (const sid of sourceIds.slice(0, 200)) {
       const it = this.get(sid);
-      if (it && SOURCE_KINDS.has(it.kind) && it.authorId === actorId) return true;
+      if (it && SOURCE_KINDS.has(it.kind) && it.authorId !== null && ids.includes(it.authorId))
+        return true;
     }
     return false;
   }
@@ -1206,8 +1211,10 @@ export abstract class WikiBase extends DurableObject<Env> {
     decision: "approve" | "reject",
     actorId: string,
     now: number,
-    opts: { revisionHash?: string } = {},
+    opts: { revisionHash?: string; sameHuman?: string[] } = {},
   ): Promise<DecideResult> {
+    // Every principal id of the same human counts as the actor (N-01).
+    const ids = [actorId, ...(opts.sameHuman ?? [])];
     const item = this.get(id);
     const m = this.wikiMeta();
     if (!item || !m || !isWikiKind(item.kind))
@@ -1215,7 +1222,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     if (item.status !== "candidate")
       return { ok: false, code: "not_pending", message: "The proposal was already decided" };
     const personal = isPersonalScope(m.scopeId);
-    if (!personal && this.wikiAuthored(item, actorId))
+    if (!personal && this.wikiAuthored(item, ids))
       return {
         ok: false,
         code: "self_approval",
@@ -1227,7 +1234,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       !personal &&
       this.wroteSourceOf(
         p.sources.map((x) => x.id),
-        actorId,
+        ids,
       )
     )
       return {
@@ -1280,16 +1287,27 @@ export abstract class WikiBase extends DurableObject<Env> {
         };
     }
     const required = personal ? 1 : item.required;
-    const mine = this.sql
+    const already = this.sql
       .exec(
-        `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
-         RETURNING actor_id`,
+        `SELECT 1 FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'
+         AND actor_id IN (${ids.map(() => "?").join(",")}) LIMIT 1`,
         id,
         item.revision,
-        actorId,
-        now,
+        ...ids,
       )
       .toArray();
+    const mine = already.length
+      ? []
+      : this.sql
+          .exec(
+            `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
+             RETURNING actor_id`,
+            id,
+            item.revision,
+            actorId,
+            now,
+          )
+          .toArray();
     if (!mine.length)
       return { ok: false, code: "already_done", message: "You already approved this revision" };
     const approvals = item.approvals + 1;

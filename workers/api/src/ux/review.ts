@@ -5,6 +5,7 @@
 import { canDoInView } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
+import { humanIdsOf } from "../human.ts";
 import { parseCandidateId, scopeOfNode } from "../scope.ts";
 import { workspaceStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
@@ -118,7 +119,14 @@ export function reviewRoutes(): Hono<AppEnv> {
     if (!d.allowed) return forbidden(c, d.reason);
     if (!(await audit(c, { action: "review", nodeId: id, scopeId: scope, revision })))
       return c.json({ error: "audit_unavailable" }, 503);
-    const res = await stub.review(id, revision, s.principal.id, b.verdict, s.ctx.now);
+    const res = await stub.review(
+      id,
+      revision,
+      s.principal.id,
+      b.verdict,
+      s.ctx.now,
+      await humanIdsOf(c.env, s),
+    );
     if (!res.ok) return failResponse(c, res);
     if (t) await stub.comment(id, s.principal.id, t, s.ctx.now);
     if (b.verdict === "changes_requested")
