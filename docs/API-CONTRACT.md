@@ -172,3 +172,12 @@ Roles are data in TenantPolicy (seeded from `packages/policy` roles, versioned w
 - The api calls `POST /internal/acl/check` on the connector (signed with the user's id and email). Only an explicit `allowed: true` shows an item.
 - `GET /v1/search` may return `kind: "source"` results. `GET /v1/sources/:id` returns the file record, or 403 `source permission could not be confirmed`. A caller without content access to the item's gate node gets 404. The web app does not render `source` results yet.
 
+## AI processor (B2, `workers/api/src/ai`)
+
+- Off unless the secret `ANTHROPIC_API_KEY` is set (the UI says "AI processor not configured"). Kill switch: var `AI_ENABLED=false`. Other vars: `AI_MODEL` (default `claude-sonnet-5-5`), `AI_DAILY_TOKEN_BUDGET` (per tenant per UTC day, default 200000), `AI_TIMEOUT_MS`. Calls go to the Anthropic Messages API over fetch, tool-free, 2 retries, at most 8 evidence excerpts, about 12k evidence tokens and 1500 output tokens.
+- `GET /v1/ai/status` returns `{state: ready|disabled|not_configured, reason, processor, model, region}`. No secrets.
+- `POST /v1/briefs {accountId | nodeId, meetingId?, question?, save?}` returns `{brief, saved}`. Evidence comes only from the caller's admitted view. Refusals make no model call: 503 `ai_disabled` and `ai_not_configured`, 403 `ai_constraint` (the account's "AI use with client" is `unknown` or `not allowed`), 429 `ai_budget_exhausted`, 404 outside the view, 403 for Personal Brain nodes. The model must cite evidence ids (`E1`...) or mark a claim `unknown`; the server drops uncited claims and invalid ids. `save` defaults to true and stores a private Personal Brain item (kind `brief`, one item per target and meeting, a new revision each time).
+- `POST /v1/briefs/save {brief}` saves a brief the caller holds, re-validated against the caller's view.
+- R-110: personal segments (health, family, holidays, HR, private life) are removed before any text reaches a prompt or storage. The response lists what was excluded for the owner. Storage keeps counts only.
+- `POST /v1/genui/plan` uses the model when the processor is ready and falls back to the deterministic planner on any failure (schema, node outside the view, upstream error).
+- Each brief writes an `ai.brief` receipt (ids only) before anything leaves the system.

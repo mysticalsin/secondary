@@ -12,3 +12,8 @@ INTERNAL_HMAC_KEY=local-internal-hmac-key-0123456789abcdef
 # ENTRA_CLIENT_ID=00000000-0000-0000-0000-000000000000
 # ENTRA_CLIENT_SECRET=local-only-value
 # SCIM_TOKEN=local-scim-token-at-least-32-characters
+# AI processor (B2). Leave ANTHROPIC_API_KEY unset to keep the feature off. Real keys go through `wrangler secret put`.
+# AI_ENABLED=false switches it off. AI_MODEL defaults to claude-sonnet-5-5.
+# ANTHROPIC_API_KEY=
+# AI_MODEL=claude-sonnet-5-5
+# AI_DAILY_TOKEN_BUDGET=200000

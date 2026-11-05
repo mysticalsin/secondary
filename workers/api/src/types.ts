@@ -32,4 +32,8 @@ export interface AppDeps {
   now?: () => number;
   /** Fetch and key resolver for the Entra ID flow. Default: global fetch and the remote JWKS. */
   entra?: EntraDeps;
+  /** Outbound fetch for the AI processor. Default: global fetch. Tests inject a stub. */
+  fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** Backoff between processor retries. Default: setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
 }

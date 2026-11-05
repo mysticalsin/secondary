@@ -26,4 +26,14 @@ interface Env {
   SCIM_TENANT_ID?: string;
   /** Secret (at least 32 characters). Shared with workers/connector: signs calls in both directions. */
   CONNECTOR_HMAC_KEY?: string;
+  /** Secret. Anthropic API key. Unset means the AI processor is off ("AI processor not configured"). */
+  ANTHROPIC_API_KEY?: string;
+  /** Var. Kill switch: "false" (or 0, off, no) switches the AI processor off. Default on. */
+  AI_ENABLED?: string;
+  /** Var. Model id. Default claude-sonnet-5-5. */
+  AI_MODEL?: string;
+  /** Var. Tokens per tenant per UTC day. Default 200000. */
+  AI_DAILY_TOKEN_BUDGET?: string;
+  /** Var. Per-attempt timeout in ms. Default 30000. */
+  AI_TIMEOUT_MS?: string;
 }

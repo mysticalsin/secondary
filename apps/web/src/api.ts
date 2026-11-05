@@ -18,6 +18,7 @@ import type {
   SearchResult,
   ViewPlan,
 } from "./types";
+import type { AiStatus, Brief, BriefRequest, BriefResponse } from "./views/brief/types";
 
 export const MOCK = import.meta.env.VITE_MOCK === "1";
 
@@ -146,6 +147,10 @@ export const api = {
   contributeTargets: () => request<ContributeTarget[]>("GET", "/v1/personal/targets"),
   plan: (body: { prompt?: string; nodeId?: string }) =>
     request<ViewPlan>("POST", "/v1/genui/plan", body),
+  aiStatus: () => request<AiStatus>("GET", "/v1/ai/status"),
+  brief: (body: BriefRequest) => request<BriefResponse>("POST", "/v1/briefs", body),
+  saveBrief: (brief: Brief) =>
+    request<{ saved: { id: string; revision: number } }>("POST", "/v1/briefs/save", { brief }),
   adminRoles: () => request<AdminRole[]>("GET", "/v1/admin/roles"),
   adminAudit: () => request<AuditReceipt[]>("GET", "/v1/admin/audit"),
 };
