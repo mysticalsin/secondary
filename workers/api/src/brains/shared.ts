@@ -18,6 +18,7 @@ import {
   defaultTemplate,
   type Health,
   type HealthPage,
+  SESSION_REPORT_TYPE,
   TEMPLATES,
   type TemplateId,
 } from "./model.ts";
@@ -26,7 +27,11 @@ import type { BrainConfig } from "./store.ts";
 
 export { lineReadable };
 
-export const SKIP_TYPES: ReadonlySet<string> = new Set([...Object.keys(GENERATED), "journal"]);
+export const SKIP_TYPES: ReadonlySet<string> = new Set([
+  ...Object.keys(GENERATED),
+  "journal",
+  SESSION_REPORT_TYPE,
+]);
 
 export interface Seen {
   brain: Brain;

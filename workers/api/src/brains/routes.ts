@@ -494,7 +494,7 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
         .map((t) => ({ id: t.id, label: t.label, collections: t.collections })),
       current: {
         template: config.template ?? defaultTemplate(b.facts.type),
-        collections: Object.keys(schema.types).filter((t) => !GENERATED[t] && t !== "journal"),
+        collections: Object.keys(schema.types).filter((t) => !SKIP_TYPES.has(t)),
       },
     });
   });

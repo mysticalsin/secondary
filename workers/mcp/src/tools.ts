@@ -29,6 +29,10 @@ export const TOOL_NAMES = [
   "wiki_propose",
   "get_brain_guide",
   "coach_propose_structure",
+  "list_brains",
+  "propose_page",
+  "propose_change",
+  "write_session_report",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -48,6 +52,10 @@ export const TOOL_SCOPES: Record<ToolName, readonly [Scope, ...Scope[]]> = {
   wiki_propose: ["secondary.read", "secondary.contribute"],
   get_brain_guide: ["secondary.read"],
   coach_propose_structure: ["secondary.read", "secondary.contribute"],
+  list_brains: ["secondary.read"],
+  propose_page: ["secondary.read", "secondary.contribute"],
+  propose_change: ["secondary.read", "secondary.contribute"],
+  write_session_report: ["secondary.read", "secondary.contribute"],
 };
 
 const MAX_TEXT = 60_000;
@@ -114,9 +122,10 @@ export function buildServer({ env, caller }: ServerDeps): McpServer {
     {
       instructions:
         "Secondary is Mantu's governed knowledge map. Every answer is limited to what the signed-in user's role allows. " +
-        "Tools read or draft only. Ask the user before calling personal_note_create, contribute or wiki_propose, and never include personal " +
+        "Tools read or draft only. Ask the user before calling personal_note_create, contribute, wiki_propose, propose_page, propose_change or write_session_report, and never include personal " +
         "or client-confidential details they have not confirmed. wiki_search and wiki_read answer from the workspace wikis the user may read, with citations; " +
-        "wiki_propose only queues a page for human review. To show a visual, plan a view from the catalog " +
+        "wiki_propose only queues a page for human review. list_brains names the brains the user may read and their role in each; propose_page, propose_change and " +
+        "write_session_report push into one of them with the user's own rights and always wait for review in a shared brain (they need the contributor role there). To show a visual, plan a view from the catalog " +
         "(KpiRow, NodeCard, ItemList, AccountSummary, StageBoard, MapMini, Callout, Table) and call render_view; props are queries (ids, lens, filters), never data.",
     },
   );
@@ -418,6 +427,126 @@ export function buildServer({ env, caller }: ServerDeps): McpServer {
         fromApi(
           await api.post(`/v1/brains/${q(brainId)}/coach/propose`, { answers }),
           len("collections"),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "list_brains",
+    {
+      title: "List my brains",
+      description:
+        "The brains the user can read (their Personal Brain, governance brains, account brains and Company Global) with the user's role in each: reader, contributor, editor, steward or owner. Pushing needs contributor or above.",
+      inputSchema: noInput,
+      annotations: read,
+      scopeChallenge: challenge("list_brains"),
+    },
+    () =>
+      run("list_brains", [], async (api) => {
+        const r = await api.get<{ brains?: Json[] }>("/v1/brains");
+        if (!r.ok) return fromApi(r, () => 0);
+        const brains = (r.data.brains ?? []).map((b) => ({
+          id: b.id,
+          name: b.name,
+          type: b.type,
+          role: b.role,
+          publication: b.publication,
+        }));
+        return fromApi({ ...r, data: { brains } }, len("brains"));
+      }),
+  );
+
+  const brainId = wikiWs.describe("A brain id from list_brains, or me for the Personal Brain");
+  const markdown = z.string().trim().min(1).max(20_000);
+  server.registerTool(
+    "propose_page",
+    {
+      title: "Propose a page in a brain",
+      description:
+        "Propose a new page in a brain (or a new version of the page with the same title). It always waits for a person to review it in a shared brain, and is never published directly. Needs the contributor role in that brain. Read get_brain_guide first, cite sources, and ask the user to confirm the text.",
+      inputSchema: z.object({
+        brainId,
+        title: z.string().trim().min(1).max(120),
+        markdown,
+        type: z
+          .string()
+          .regex(
+            /^[a-z][a-z0-9_]{0,40}$/,
+            "a collection type from get_brain_guide, for example topic",
+          )
+          .optional()
+          .describe("Collection type; defaults to topic"),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("propose_page"),
+    },
+    ({ brainId: id, title, markdown: md, type }) =>
+      run("propose_page", [id], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(id)}/push/page`, {
+            title,
+            markdown: md,
+            ...(type ? { type } : {}),
+          }),
+          () => 1,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "propose_change",
+    {
+      title: "Propose a change to a page",
+      description:
+        "Propose a new version of an existing page you can read: send the whole new Markdown. It waits for review, shows the reviewer a diff, and never publishes directly. Needs the contributor role in that brain.",
+      inputSchema: z.object({
+        brainId,
+        pageId: wikiPage,
+        markdown,
+        rationale: z.string().trim().max(500).optional().describe("Why the page should change"),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("propose_change"),
+    },
+    ({ brainId: id, pageId, markdown: md, rationale }) =>
+      run("propose_change", [id], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(id)}/push/change`, {
+            pageId,
+            markdown: md,
+            ...(rationale ? { rationale } : {}),
+          }),
+          () => 1,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "write_session_report",
+    {
+      title: "Write a session report",
+      description:
+        "Save a summary of this working session as a page under Sources > Session reports > the user's name in a brain. It waits for review in a shared brain; in the user's Personal Brain it follows that brain's publication mode. Needs the contributor role in that brain. Ask the user to confirm the summary first, and leave out personal or client-confidential details.",
+      inputSchema: z.object({
+        brainId,
+        markdown,
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD")
+          .optional()
+          .describe("Day of the session; defaults to today"),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("write_session_report"),
+    },
+    ({ brainId: id, markdown: md, date }) =>
+      run("write_session_report", [id], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(id)}/push/session-report`, {
+            markdown: md,
+            ...(date ? { date } : {}),
+          }),
+          () => 1,
         ),
       ),
   );

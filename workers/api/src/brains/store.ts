@@ -14,6 +14,7 @@ import {
   DAY,
   type FieldDef,
   isCalendarDay,
+  SESSION_REPORT_TYPE,
   schemaTypeOf,
   type TemplateId,
 } from "./model.ts";
@@ -22,6 +23,8 @@ export type BrainFail = { ok: false; code: string; message: string };
 const fail = (code: string, message: string): BrainFail => ({ ok: false, code, message });
 
 export const JOURNAL_TYPE: SchemaType = { label: "Journal", required: [], generated: true };
+/** Where agents' session reports go (Sources > Session reports). Every brain knows it. */
+export const SESSION_REPORT_SCHEMA: SchemaType = { label: "Session reports", required: [] };
 const JOURNAL_ID = /^journal-\d{4}-\d{2}-\d{2}$/;
 const SERVICE = "system:journal";
 const MAX_LOOKBACK_DAYS = 7;
@@ -99,10 +102,18 @@ export abstract class BrainBase extends WikiBase {
     });
   }
 
-  /** The schema always knows the journal collection, whatever an older stored schema says. */
+  /** The schema always knows the journal and session report collections, whatever an older stored schema says. */
   override wikiSchema(): WikiSchema {
     const s = super.wikiSchema();
-    return s.types.journal ? s : { ...s, types: { ...s.types, journal: JOURNAL_TYPE } };
+    if (s.types.journal && s.types[SESSION_REPORT_TYPE]) return s;
+    return {
+      ...s,
+      types: {
+        journal: JOURNAL_TYPE,
+        [SESSION_REPORT_TYPE]: SESSION_REPORT_SCHEMA,
+        ...s.types,
+      },
+    };
   }
 
   // ---- config ----

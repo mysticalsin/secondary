@@ -302,3 +302,6 @@ export type HostId = (typeof HOSTS)[number][0];
 export const isHostId = (v: string): v is HostId => HOSTS.some((h) => h[0] === v);
 
 export type { Everyone, Publication };
+
+/** The page type of an agent's session report: a collection every brain has, left out of health. */
+export const SESSION_REPORT_TYPE = "session_report";

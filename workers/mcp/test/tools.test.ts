@@ -29,6 +29,10 @@ const CONTRACT_TOOLS = [
   "wiki_propose",
   "get_brain_guide",
   "coach_propose_structure",
+  "list_brains",
+  "propose_page",
+  "propose_change",
+  "write_session_report",
 ];
 
 beforeEach(async () => {

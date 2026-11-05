@@ -134,6 +134,15 @@ const INTERNAL_ROUTES: readonly { method: string; path: RegExp; scope: string }[
   // v3 brains: the guide (structure, never content) and a Structure Coach proposal. Nothing applies.
   { method: "GET", path: /^\/v1\/brains\/[^/]+\/guide$/, scope: READ },
   { method: "POST", path: /^\/v1\/brains\/[^/]+\/coach\/propose$/, scope: "secondary.contribute" },
+  // v4: the brains the caller may read, and pushing into one with their own rights (review only).
+  { method: "GET", path: /^\/v1\/brains$/, scope: READ },
+  { method: "POST", path: /^\/v1\/brains\/[^/]+\/push\/page$/, scope: "secondary.contribute" },
+  { method: "POST", path: /^\/v1\/brains\/[^/]+\/push\/change$/, scope: "secondary.contribute" },
+  {
+    method: "POST",
+    path: /^\/v1\/brains\/[^/]+\/push\/session-report$/,
+    scope: "secondary.contribute",
+  },
   { method: "POST", path: /^\/v1\/personal\/items$/, scope: "secondary.personal.write" },
   {
     method: "POST",

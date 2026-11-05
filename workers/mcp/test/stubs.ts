@@ -175,6 +175,39 @@ function route(method: string, path: string, query: URLSearchParams): Response {
         conventions: ["Cite every claim"],
         howToPropose: "wiki_propose",
       });
+    if (path === "/v1/brains")
+      return j({
+        brains: [
+          {
+            id: "me",
+            type: "personal",
+            name: "My Secondary",
+            template: "personal",
+            readers: 1,
+            manages: true,
+            restricted: false,
+            publication: "review",
+            role: "owner",
+            pages: 3,
+            health: { score: 80 },
+            lastActivityAt: null,
+          },
+          {
+            id: "c_bid",
+            type: "team",
+            name: "Bid & Pre-sales",
+            template: "team",
+            readers: 4,
+            manages: false,
+            restricted: false,
+            publication: "review",
+            role: "contributor",
+            pages: 9,
+            health: { score: 71 },
+            lastActivityAt: "2026-11-05T10:00:00.000Z",
+          },
+        ],
+      });
     if (path === "/v1/review") return j({ candidates: [{ id: "cand1", title: "Pricing FAQ" }] });
   }
   if (method === "POST") {
@@ -188,6 +221,23 @@ function route(method: string, path: string, query: URLSearchParams): Response {
         rationale: "r",
         expiresAt: "2026-11-05T12:00:00.000Z",
       });
+    }
+    const push = /^\/v1\/brains\/([^/]+)\/push\/(page|change|session-report)$/.exec(path);
+    if (push) {
+      if (push[1]?.includes("denied")) return j({ error: "not_found" }, 404);
+      return j(
+        {
+          ok: true,
+          brainId: push[1],
+          pageId: "p1",
+          proposalId: "cand:c_bid:00000002",
+          status: "candidate",
+          ...(push[2] === "session-report"
+            ? { folder: ["Sources", "Session reports", "Alice"] }
+            : {}),
+        },
+        201,
+      );
     }
     if (path === "/v1/personal/items") return j({ ok: true, id: "pb:u1:n1" });
     if (/^\/v1\/wiki\/[^/]+\/propose$/.test(path))

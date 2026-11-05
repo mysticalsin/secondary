@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { agentRoutes } from "./agents.ts";
 import { dataRoutes } from "./data.ts";
+import { pushRoutes } from "./push.ts";
 import { brainRoutes } from "./routes.ts";
 
 export function brainsRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -11,5 +12,6 @@ export function brainsRoutes(deps: AppDeps): Hono<AppEnv> {
   r.route("/", brainRoutes(deps));
   r.route("/", dataRoutes(deps));
   r.route("/", agentRoutes(deps));
+  r.route("/", pushRoutes(deps));
   return r;
 }
