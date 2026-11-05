@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "secondary-mcp-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // global_fetch_strictly_public: required for safe Client ID Metadata Document fetches (SSRF protection).
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // OAuth provider state (clients, grants, token hashes). KV is NOT EU-restricted: it holds only token
+  // hashes, opaque ids and grant metadata, plus props encrypted with a key only the token holder can unwrap.
+  // No Secondary content is ever stored here. Add "id" when the namespace is created at deploy time.
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
+  "services": [
+    { "binding": "API", "service": "secondary-api-dev" },
+    { "binding": "AUDIT", "service": "secondary-audit-dev" }
+  ],
+  "vars": {
+    "ENVIRONMENT": "dev",
+    // Canonical public origin, for example "https://secondary-mcp-dev.<account>.workers.dev". It is the token
+    // audience (RFC 8707). Required outside dev; in dev an empty value falls back to the request origin.
+    "MCP_PUBLIC_URL": "",
+    // Cloudflare Access in front of /authorize. Empty until Access is configured (dev test mode then applies).
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    // Redirect URI hosts allowed to receive authorization codes (B-05).
+    "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt,localhost,127.0.0.1"
+  }
+  // Secret (wrangler secret put INTERNAL_HMAC_KEY): never in this file.
+}

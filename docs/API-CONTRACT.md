@@ -89,3 +89,27 @@ Clarifications fixed by `packages/policy` (B1):
 - No tool approves, deletes or changes membership.
 - Per-tool scopes are `secondary.read`, `secondary.personal.write` and `secondary.contribute`. A token without a scope gets 403 insufficient_scope.
 - Every tool call writes an audit receipt (who, host client id, tool, scope ids, result count; no content).
+
+## Internal service auth (workers/mcp to workers/api)
+
+`workers/mcp` calls `workers/api` through the service binding `API`. It never forwards the host's OAuth access token (no token passthrough). It sends a signed principal instead. The shared helper is `workers/mcp/src/internal-auth.ts` (WebCrypto only), exported as `@secondary/mcp/internal-auth`: `signInternalRequest` for the signer, `verifyInternalRequest(request, env.INTERNAL_HMAC_KEY)` for the verifier. If the integrator prefers, move the file to a shared package; the wire format below is the contract.
+
+Headers (all three required):
+
+| Header | Value |
+|---|---|
+| `X-Secondary-Principal` | base64url(JSON), `{v:1, iss:"secondary-mcp", aud:"secondary-api", sub, email, persona?, client_id, scope:[...], tool}` |
+| `X-Secondary-Timestamp` | unix seconds, integer |
+| `X-Secondary-Signature` | `v1=` + lowercase hex HMAC-SHA256 |
+
+`signature = HMAC-SHA256(INTERNAL_HMAC_KEY, ["v1", timestamp, METHOD, pathname+search, sha256hex(body), principalHeaderValue].join("\n"))`. The key is the secret `INTERNAL_HMAC_KEY` (at least 32 characters), set on both workers. Skew is 60 seconds either way. Method, path, query, body and principal are all signed. There is no nonce, so an identical request can be replayed inside the 60 second window by something that can already reach the binding.
+
+What `workers/api` must do:
+
+1. Call `verifyInternalRequest` before the Access path whenever `X-Secondary-Signature` is present. A present but invalid signature is a 401. It never falls through to Access or to `X-Demo-Persona`.
+2. Resolve the Principal from `email` exactly as for an Access JWT. Honor `persona` only when `ENVIRONMENT=dev`, as `X-Demo-Persona`.
+3. Allow internal principals only these routes, and refuse the rest with 403: `GET /v1/me`, `/v1/map`, `/v1/nodes/:id`, `/v1/search`, `/v1/accounts/:id`, `/v1/governances`, `/v1/review` (need scope `secondary.read`), `POST /v1/personal/items` (needs `secondary.personal.write`), `POST /v1/personal/items/:id/contribute` (needs `secondary.contribute`). `/v1/actions` and `/v1/admin/*` are never reachable this way, so MCP cannot approve, delete or change membership.
+4. Record `client_id` and `tool` in the API's own audit receipt.
+5. Request and response shapes `workers/mcp` assumes beyond this contract: `POST /v1/personal/items` body `{kind:"note", title, body}`; `GET /v1/accounts/:id` returns `{label?, sections:[{title|label, count?, items?:[{title}]}]}`; `GET /v1/governances` returns `{governances:[{id,label,stages: {name:count} | [{stage,count}]}]}` or the bare array; `GET /v1/review` returns `{candidates:[...]}` or an array. The MCP resolver is tolerant, but the API owner should confirm.
+
+`workers/mcp` audit receipts (service binding `AUDIT`, `POST /append`, JSON): `{at, source:"secondary-mcp", kind:"mcp.tool_call"|"mcp.oauth", action, who, client_id, oauth_scopes, scope_ids, result_count, outcome:"ok"|"denied"|"error", reason?, redirect_host?}`. Identity and counts only, never content. The audit worker owner maps it to `audit-event.schema.json`.
