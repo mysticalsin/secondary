@@ -1,0 +1,31 @@
+{
+  "name": "@secondary/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./internal-auth": "./src/internal-auth.ts"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "gen:validator": "node scripts/build-validator.ts",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "types": "wrangler types --strict-vars=false",
+    "typecheck": "wrangler types --strict-vars=false && tsc --noEmit -p .",
+    "test": "node scripts/build-validator.ts --check && vitest run"
+  },
+  "dependencies": {
+    "@cloudflare/workers-oauth-provider": "1.2.4",
+    "@modelcontextprotocol/core": "2.4.0",
+    "@modelcontextprotocol/ext-apps": "2.0.4",
+    "@modelcontextprotocol/server": "2.4.0",
+    "agents": "0.33.0",
+    "ajv": "8.20.0",
+    "jose": "6.2.15",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.5.1",
+    "wrangler": "4.153.0"
+  }
+}
