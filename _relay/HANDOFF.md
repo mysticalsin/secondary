@@ -16,7 +16,6 @@ Source: `docs/security/B2-SECURITY-REVIEW.md` (OneDrive project) plus the wiki r
 - I-02 and I-04 are accepted, not built (see ACCEPTED-RISKS). Dev reseeds clear tombstones.
 - Deploy notes: no new secrets. api, audit, connector, ops and mcp must deploy together (the `userKey` change empties the ACL cache once; the erase walk and restore route changed on both sides).
 
-
 Updated: 2026-11-05. By: Claude (Opus, remaining B2 review findings; earlier B3 wiki security fixes; Sonnet built B3). Earlier: tasks G0.7 and G0.8 of the roadmap.
 
 ## B3 wiki security review fixes (2026-11-05, Claude Opus, `main`, commits ac56af8 and d4f9508, dev redeployed, nothing pushed)
