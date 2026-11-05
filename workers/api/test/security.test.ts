@@ -109,6 +109,27 @@ describe("request guards", () => {
     expect(same.status).toBe(200);
   });
 
+  it("L-03: a body-less mutation from a sibling subdomain or another origin is refused", async () => {
+    const path = "/v1/admin/elevations/elv_none/end";
+    const sibling = await as("platform_admin", path, {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-site" },
+    });
+    expect(sibling.status).toBe(403);
+    expect((await json(sibling)).error).toBe("forbidden");
+    const foreign = await as("platform_admin", path, {
+      method: "POST",
+      headers: { Origin: "https://evil.example.invalid" },
+    });
+    expect(foreign.status).toBe(403);
+    // Our own origin passes the guard (the route then answers on its merits).
+    const own = await as("platform_admin", path, {
+      method: "POST",
+      headers: { "Sec-Fetch-Site": "same-origin", Origin: "https://secondary.example.test" },
+    });
+    expect(own.status).not.toBe(403);
+  });
+
   it("limits request size", async () => {
     const big = await as("ceo", "/v1/genui/plan", { body: { prompt: "a".repeat(40_000) } });
     expect(big.status).toBe(413);

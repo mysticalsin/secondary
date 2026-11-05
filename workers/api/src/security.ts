@@ -54,12 +54,19 @@ export const limitBody = bodyLimit({
 
 /**
  * Mutations need a JSON content type (which a cross-site form cannot send without a CORS
- * preflight, and there is no CORS) and must not be flagged cross-site by the browser.
+ * preflight, and there is no CORS) and must come from this origin when a browser says where from.
+ * Browsers always send Sec-Fetch-Site; a sibling subdomain is "same-site", not "same-origin", and
+ * a body-less POST needs no content type, so same-site is refused too (L-03). Callers that are
+ * not browsers (service bindings, scripts) send neither header and are authenticated by other means.
  */
 export const mutationGuard: MiddlewareHandler<AppEnv> = async (c, next) => {
   const m = c.req.method;
   if (m !== "GET" && m !== "HEAD" && m !== "OPTIONS") {
-    if (c.req.header("Sec-Fetch-Site") === "cross-site") return c.json({ error: "forbidden" }, 403);
+    const site = c.req.header("Sec-Fetch-Site");
+    if (site && site !== "same-origin" && site !== "none")
+      return c.json({ error: "forbidden" }, 403);
+    const origin = c.req.header("Origin");
+    if (origin && origin !== new URL(c.req.url).origin) return c.json({ error: "forbidden" }, 403);
     const hasBody = c.req.header("Content-Length") !== "0" && c.req.raw.body !== null;
     if (
       hasBody &&
