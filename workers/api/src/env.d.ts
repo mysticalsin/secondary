@@ -54,6 +54,8 @@ interface Env {
   AI_MODEL?: string;
   /** Var. Tokens per tenant per UTC day. Default 200000. */
   AI_DAILY_TOKEN_BUDGET?: string;
+  /** Var. Tokens per person per UTC day. Default 40000. */
+  AI_USER_DAILY_TOKEN_BUDGET?: string;
   /** Var. Per-attempt timeout in ms. Default 30000. */
   AI_TIMEOUT_MS?: string;
   /** Var. "off" stops wiki jobs from scheduling Durable Object alarms (jobs then run through POST /v1/wiki/:ws/run). */

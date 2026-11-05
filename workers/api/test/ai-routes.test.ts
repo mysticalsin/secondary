@@ -797,6 +797,92 @@ describe("LLM GenUI planner", () => {
     expect(m.calls).toHaveLength(0);
   });
 
+  it("M-06: every planner call leaves a receipt before the model is called, with ids only", async () => {
+    const m = stubModel(() => plan);
+    const secretWords = "zebra-quartz-confidential";
+    const r = await aiCall("reviewer", "/v1/genui/plan", {
+      body: { prompt: `show accounts ${secretWords}` },
+      env: KEY,
+      fetch: m.fetch,
+    });
+    expect(await json(r)).toEqual(plan);
+    const rec = await json(
+      await aiCall("auditor", "/v1/audit/receipts?principal=u_reviewer&days=1"),
+    );
+    const mine = rec.receipts.filter((x: Loose) => x.action === "ai.plan");
+    expect(mine.some((x: Loose) => x.decision === "allow")).toBe(true);
+    expect(JSON.stringify(rec)).not.toContain(secretWords);
+
+    // Audit down: nothing leaves the system, the deterministic planner answers.
+    const m2 = stubModel(() => plan);
+    const down = { AUDIT: { fetch: async () => new Response("down", { status: 503 }) } };
+    const r2 = await aiCall("reviewer", "/v1/genui/plan", {
+      body: { prompt: "show accounts" },
+      env: { ...KEY, ...down },
+      fetch: m2.fetch,
+    });
+    expect(r2.status).toBe(200);
+    expect((await json(r2)).title).toBe("Accounts");
+    expect(m2.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ["a_ember", "unknown"],
+    ["a_lumen", "not allowed"],
+  ])("M-06: a node of %s (contract %s) never goes to the model", async (accountId) => {
+    const m = stubModel(() => plan);
+    const r = await aiCall("ceo", "/v1/genui/plan", {
+      body: { nodeId: accountId },
+      env: KEY,
+      fetch: m.fetch,
+    });
+    expect(r.status).toBe(200);
+    expect(m.calls).toHaveLength(0);
+    const rec = await json(await aiCall("auditor", "/v1/audit/receipts?principal=u_ceo&days=1"));
+    expect(
+      rec.receipts.some(
+        (x: Loose) => x.action === "ai.plan" && x.decision === "deny" && x.nodeId === accountId,
+      ),
+    ).toBe(true);
+  });
+
+  it("M-06: a prompt that names an account without a contract yes stays with the deterministic planner", async () => {
+    const m = stubModel(() => plan);
+    for (const prompt of ["show the Ember account", "open a_lumen please"]) {
+      const r = await aiCall("ceo", "/v1/genui/plan", {
+        body: { prompt },
+        env: KEY,
+        fetch: m.fetch,
+      });
+      expect(r.status, prompt).toBe(200);
+    }
+    expect(m.calls).toHaveLength(0);
+    // An account whose contract says allowed still reaches the model.
+    const ok = await aiCall("ceo", "/v1/genui/plan", {
+      body: { nodeId: "a_acme", prompt: "overview" },
+      env: KEY,
+      fetch: m.fetch,
+    });
+    expect(ok.status).toBe(200);
+    expect(m.calls).toHaveLength(1);
+  });
+
+  it("M-06: one user cannot drain the day's budget: a per-user daily cap, the tenant keeps its share", async () => {
+    const env = { ...KEY, AI_USER_DAILY_TOKEN_BUDGET: "1500" };
+    const m = stubModel(() => plan);
+    const ask = (who: string) =>
+      aiCall(who, "/v1/genui/plan", { body: { prompt: "show accounts" }, env, fetch: m.fetch });
+    expect(await json(await ask("platform_admin"))).toEqual(plan);
+    // The next request would take the same person past the cap: deterministic plan, no call.
+    const over = await ask("platform_admin");
+    expect(over.status).toBe(200);
+    expect((await json(over)).title).toBe("Accounts");
+    expect(m.calls).toHaveLength(1);
+    // Somebody else still has their own share.
+    expect(await json(await ask("auditor"))).toEqual(plan);
+    expect(m.calls).toHaveLength(2);
+  });
+
   it("a hostile prompt cannot put free text into the plan", async () => {
     const m = stubModel((call) => ({
       version: 1,

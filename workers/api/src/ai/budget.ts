@@ -50,6 +50,22 @@ export function doBudget(env: Env, tenantId: string, now: number, bucket = "usag
   };
 }
 
+/**
+ * The tenant's budget with a per-person cap on top (M-06). A spend counts against both; when either
+ * is full nothing is taken. Settling (the cap is MAX_SAFE_INTEGER) never refuses.
+ */
+export function withUserCap(tenant: BudgetStore, user: BudgetStore, userCap: number): BudgetStore {
+  return {
+    async add(tokens, cap) {
+      const u = await user.add(tokens, cap === Number.MAX_SAFE_INTEGER ? cap : userCap);
+      if (u === null) return null;
+      const t = await tenant.add(tokens, cap);
+      if (t === null) await user.add(-tokens, Number.MAX_SAFE_INTEGER);
+      return t;
+    },
+  };
+}
+
 /** Reserve up front, settle after the call. Returns null when the day's budget is spent. */
 export async function reserve(
   store: BudgetStore,

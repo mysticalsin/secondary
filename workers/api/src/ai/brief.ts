@@ -45,7 +45,14 @@ export type Refusal =
   | { ok: false; status: 502; error: "ai_unavailable"; reason: string };
 
 export type AiGate =
-  | { ok: true; apiKey: string; model: string; dailyBudget: number; timeoutMs: number }
+  | {
+      ok: true;
+      apiKey: string;
+      model: string;
+      dailyBudget: number;
+      userDailyBudget: number;
+      timeoutMs: number;
+    }
   | Refusal;
 
 /**
@@ -87,6 +94,7 @@ export function gate(env: AiEnv, switchOn = true): AiGate {
     apiKey: s.apiKey,
     model: s.model,
     dailyBudget: s.dailyBudget,
+    userDailyBudget: s.userDailyBudget,
     timeoutMs: s.timeoutMs,
   };
 }

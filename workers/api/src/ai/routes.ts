@@ -22,7 +22,7 @@ import {
   REGION_NOTE,
   renderBrief,
 } from "./brief.ts";
-import { doBudget } from "./budget.ts";
+import { doBudget, withUserCap } from "./budget.ts";
 import { llmPlan } from "./planner.ts";
 import { validateBrief, withoutPersonalClaims } from "./prompt.ts";
 import { briefProof, briefProofValid } from "./proof.ts";
@@ -101,12 +101,20 @@ function resolveTarget(
   return { accountId, nodeId, meetingId: o.meetingId ?? null };
 }
 
+/** The request names the account by its label or by the first word of it ("Ember Sample SAS" is "Ember"). */
+const namesAccount = (asked: string, label: string): boolean => {
+  const l = label.toLowerCase();
+  const first = l.split(/\s+/)[0] ?? "";
+  return asked.includes(l) || (first.length >= 4 && asked.includes(first));
+};
+
 export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
   const ai = new Hono<AppEnv>();
 
   const audit = (
     c: Context<AppEnv>,
     i: Pick<Receipt, "nodeId" | "scopeId" | "decision" | "reason">,
+    action = "ai.brief",
   ): Promise<boolean> => {
     const s = c.get("session");
     return appendReceipt(c.env, {
@@ -115,13 +123,26 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
       at: new Date().toISOString(),
       tenantId: s.tenantId,
       principalId: s.principal.id,
-      action: "ai.brief",
+      action,
       revision: null,
       requestId: c.get("requestId") ?? null,
       clientId: s.internal?.clientId ?? null,
       tool: s.internal?.tool ?? null,
     });
   };
+
+  /** The tenant's day, with one person's share of it (M-06). */
+  const budgetFor = (
+    env: Env,
+    s: AppEnv["Variables"]["session"],
+    g: Extract<ReturnType<typeof gate>, { ok: true }>,
+    now: number,
+  ) =>
+    withUserCap(
+      doBudget(env, s.tenantId, now),
+      doBudget(env, s.tenantId, now, `u-${s.principal.id}`),
+      g.userDailyBudget,
+    );
 
   ai.get("/ai/status", (c) => {
     const g = gate(c.env, c.get("session").switches.ai);
@@ -231,7 +252,7 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
       view,
       principal: s.principal,
       ai: g,
-      budget: doBudget(c.env, s.tenantId, now),
+      budget: budgetFor(c.env, s, g, now),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
       now,
@@ -320,10 +341,53 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
       return next();
     }
     if (!prompt && !nodeId) return next();
+    const view = viewOf(s);
+    // M-06: the account contract decides, as it does for a brief. An account the node belongs to, or
+    // that the request names, without an explicit "allowed" keeps the request with the deterministic
+    // planner: nothing is sent. Every call to the model is on the record first, ids only.
+    const node = nodeId ? view.nodes.get(nodeId) : undefined;
+    if (nodeId && !node) return next();
+    const accounts = new Set<string>();
+    if (node) {
+      const a = node.kind === "account" ? node.id : node.account;
+      if (a) accounts.add(a);
+    }
+    const asked = (prompt ?? "").toLowerCase();
+    if (asked)
+      for (const [id, n] of view.nodes)
+        if (
+          n.kind === "account" &&
+          (asked.includes(id.toLowerCase()) || namesAccount(asked, n.label))
+        )
+          accounts.add(id);
+    for (const a of accounts) {
+      const refusal = contractGate(view, a);
+      if (refusal) {
+        await audit(
+          c,
+          { nodeId: nodeId ?? a, scopeId: a, decision: "deny", reason: refusal.error },
+          "ai.plan",
+        );
+        return next();
+      }
+    }
+    if (
+      !(await audit(
+        c,
+        {
+          nodeId: nodeId ?? null,
+          scopeId: [...accounts][0] ?? null,
+          decision: "allow",
+          reason: "plan requested",
+        },
+        "ai.plan",
+      ))
+    )
+      return next();
     const plan = await llmPlan({
       ai: g,
-      view: viewOf(s),
-      budget: doBudget(c.env, s.tenantId, s.ctx.now),
+      view,
+      budget: budgetFor(c.env, s, g, s.ctx.now),
       ...(prompt ? { prompt } : {}),
       ...(nodeId ? { nodeId } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),

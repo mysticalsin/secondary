@@ -3,6 +3,8 @@
 
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 export const DEFAULT_DAILY_TOKEN_BUDGET = 200_000;
+/** One person's share of the tenant's day (M-06): a fifth of the default tenant budget. */
+export const DEFAULT_USER_DAILY_TOKEN_BUDGET = 40_000;
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
 /** Per-request limits (BUILD-PLAN-B2 section 4). */
@@ -24,6 +26,8 @@ export interface AiEnv {
   AI_MODEL?: string;
   /** Tokens per tenant per UTC day. */
   AI_DAILY_TOKEN_BUDGET?: string;
+  /** Tokens per person per UTC day (default 40000), so one user cannot spend the tenant's whole day. */
+  AI_USER_DAILY_TOKEN_BUDGET?: string;
   AI_TIMEOUT_MS?: string;
 }
 
@@ -36,6 +40,7 @@ export type AiState =
       apiKey: string;
       model: string;
       dailyBudget: number;
+      userDailyBudget: number;
       timeoutMs: number;
     };
 
@@ -60,6 +65,7 @@ export function aiState(env: AiEnv): AiState {
     apiKey,
     model: /^[a-z0-9][a-z0-9._-]{2,80}$/.test(model) ? model : DEFAULT_MODEL,
     dailyBudget: posInt(env.AI_DAILY_TOKEN_BUDGET, DEFAULT_DAILY_TOKEN_BUDGET),
+    userDailyBudget: posInt(env.AI_USER_DAILY_TOKEN_BUDGET, DEFAULT_USER_DAILY_TOKEN_BUDGET),
     timeoutMs: posInt(env.AI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
   };
 }
