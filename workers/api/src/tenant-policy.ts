@@ -584,8 +584,15 @@ export class TenantPolicy extends DurableObject<Env> {
 
   // ---- identity: sessions, Entra group map, SCIM (see auth/identity-store.ts) ----
 
-  loginStatePut(h: string, nonce: string, verifier: string, returnTo: string | null, now: number) {
-    this.identity.loginStatePut(h, nonce, verifier, returnTo, now);
+  loginStatePut(
+    h: string,
+    nonce: string,
+    verifier: string,
+    returnTo: string | null,
+    now: number,
+    ipHash = "",
+  ) {
+    this.identity.loginStatePut(h, nonce, verifier, returnTo, now, ipHash);
   }
   loginStateTake(h: string, now: number) {
     return this.identity.loginStateTake(h, now);

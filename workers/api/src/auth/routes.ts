@@ -82,6 +82,7 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
       verifier,
       safeReturnTo(c.req.query("returnTo")),
       now,
+      (await sha256Hex(`login-ip:${ip}`)).slice(0, 16),
     );
     setLoginCookie(c, state);
     return c.redirect(
@@ -162,6 +163,10 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
       log(`signin_${made.reason}`);
       return c.json({ error: "account_disabled" }, 403);
     }
+    // L-07: a session the browser already held is ended, not left to expire.
+    const held = getCookie(c, SESSION_COOKIE);
+    const heldParsed = held ? await parseSessionValue(held, c.env) : null;
+    if (heldParsed) await tenantStub(c.env, heldParsed.tenantId).sessionDelete(heldParsed.hash);
     setSessionCookie(c, value);
     return c.redirect(saved.returnTo ?? "/", 303);
   });

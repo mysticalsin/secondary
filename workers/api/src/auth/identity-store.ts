@@ -8,6 +8,7 @@ import {
   IDLE_MS,
   LOGIN_STATE_MS,
   MAX_LOGIN_STATES,
+  MAX_LOGIN_STATES_PER_IP,
   MAX_SESSIONS_PER_PRINCIPAL,
 } from "./limits.ts";
 
@@ -121,6 +122,12 @@ export class IdentityStore {
       CREATE TABLE IF NOT EXISTS scim_group_members (
         group_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (group_id, user_id));
     `);
+    // L-07: each pending sign-in remembers a hash of the address that started it.
+    try {
+      this.sql.exec("ALTER TABLE login_state ADD COLUMN ip_hash TEXT NOT NULL DEFAULT ''");
+    } catch {
+      // The column exists already.
+    }
     // H-01: an Entra principal is keyed by `tid:oid`. The email column is an attribute.
     try {
       this.sql.exec("ALTER TABLE principals ADD COLUMN subject TEXT");
@@ -256,21 +263,38 @@ export class IdentityStore {
     verifier: string,
     returnTo: string | null,
     now: number,
+    ipHash = "",
   ): void {
     this.sql.exec("DELETE FROM login_state WHERE expires_at <= ?", now);
+    // L-07: one address cannot push other people's pending sign-ins out. Its own oldest states go
+    // first, and when the table is full the rows of the busiest addresses go before anyone else's.
     this.sql.exec(
       `DELETE FROM login_state WHERE state_hash IN (
-         SELECT state_hash FROM login_state ORDER BY created_at DESC LIMIT -1 OFFSET ?)`,
+         SELECT state_hash FROM (
+           SELECT state_hash, row_number() OVER (PARTITION BY ip_hash ORDER BY created_at DESC, rowid DESC) AS rk
+             FROM login_state WHERE ip_hash = ?) WHERE rk > ?)`,
+      ipHash,
+      MAX_LOGIN_STATES_PER_IP - 1,
+    );
+    this.sql.exec(
+      `DELETE FROM login_state WHERE state_hash IN (
+         SELECT state_hash FROM (
+           SELECT state_hash,
+                  row_number() OVER (PARTITION BY ip_hash ORDER BY created_at DESC, rowid DESC) AS rk,
+                  created_at
+             FROM login_state)
+         ORDER BY rk DESC, created_at ASC LIMIT max(0, (SELECT COUNT(*) FROM login_state) - ?))`,
       MAX_LOGIN_STATES - 1,
     );
     this.sql.exec(
-      "INSERT INTO login_state (state_hash, nonce, verifier, return_to, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO login_state (state_hash, nonce, verifier, return_to, created_at, expires_at, ip_hash) VALUES (?, ?, ?, ?, ?, ?, ?)",
       stateHash,
       nonce,
       verifier,
       returnTo,
       now,
       now + LOGIN_STATE_MS,
+      ipHash,
     );
   }
 
