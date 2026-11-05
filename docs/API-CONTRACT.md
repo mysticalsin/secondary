@@ -140,3 +140,13 @@ What `workers/api` must do:
 - **Release rules.** Whoever wrote or edited an item counts as its author, on every revision, for review and approve. Only the contributor edits a candidate (others comment or request changes). Knowledge reviewers hold `review` and `approve_release` on Company Global. A global release needs two distinct approvers, none of them the contributor or an editor. `own_drafts` means authored by the caller.
 - **MCP dev sign-in.** `X-Dev-Email` and `X-Dev-Persona` count only on a loopback host (localhost, 127.0.0.1) in dev with Access unset. Anywhere else `/authorize` answers 401 until the Access team domain and aud are configured.
 - **Web.** Planes in the UI use the policy names. `GET /v1/admin/roles` and `/v1/admin/audit` are bare arrays, so the web derives "structure only" from the viewer's roles (Platform admin, Auditor).
+
+## AI processor (B2, `workers/api/src/ai`)
+
+- Off unless the secret `ANTHROPIC_API_KEY` is set (the UI says "AI processor not configured"). Kill switch: var `AI_ENABLED=false`. Other vars: `AI_MODEL` (default `claude-sonnet-5-5`), `AI_DAILY_TOKEN_BUDGET` (per tenant per UTC day, default 200000), `AI_TIMEOUT_MS`. Calls go to the Anthropic Messages API over fetch, tool-free, 2 retries, at most 8 evidence excerpts, about 12k evidence tokens and 1500 output tokens.
+- `GET /v1/ai/status` returns `{state: ready|disabled|not_configured, reason, processor, model, region}`. No secrets.
+- `POST /v1/briefs {accountId | nodeId, meetingId?, question?, save?}` returns `{brief, saved}`. Evidence comes only from the caller's admitted view. Refusals make no model call: 503 `ai_disabled` and `ai_not_configured`, 403 `ai_constraint` (the account's "AI use with client" is `unknown` or `not allowed`), 429 `ai_budget_exhausted`, 404 outside the view, 403 for Personal Brain nodes. The model must cite evidence ids (`E1`...) or mark a claim `unknown`; the server drops uncited claims and invalid ids. `save` defaults to true and stores a private Personal Brain item (kind `brief`, one item per target and meeting, a new revision each time).
+- `POST /v1/briefs/save {brief}` saves a brief the caller holds, re-validated against the caller's view.
+- R-110: personal segments (health, family, holidays, HR, private life) are removed before any text reaches a prompt or storage. The response lists what was excluded for the owner. Storage keeps counts only.
+- `POST /v1/genui/plan` uses the model when the processor is ready and falls back to the deterministic planner on any failure (schema, node outside the view, upstream error).
+- Each brief writes an `ai.brief` receipt (ids only) before anything leaves the system.

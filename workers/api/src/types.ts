@@ -26,4 +26,8 @@ export interface AppDeps {
   /** Key resolver for the Access JWT. Default: remote JWKS from the team domain's certs URL. */
   jwks?: (teamDomain: string) => JWTVerifyGetKey;
   now?: () => number;
+  /** Outbound fetch for the AI processor. Default: global fetch. Tests inject a stub. */
+  fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  /** Backoff between processor retries. Default: setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
 }

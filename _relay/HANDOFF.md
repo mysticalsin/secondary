@@ -49,6 +49,7 @@ corepack pnpm --filter @secondary/web dev:mock   # web with mock data
 ```
 
 What changed beyond the three merges:
+
 - Web: plane names are the policy names, lists are bare arrays, revisions are integers (shown as r3), `/v1/personal/targets`, contribute sends `user_validated` and acknowledges the server's flags (the browser scan is gone), review verdict is `changes_requested`, drawer has comment, edit and contribute forms, GenUI follows `view-plan.schema.json` (Callout uses `template`). Saved personal notes are read-only (the API has no update). Mock mode mirrors the same shapes.
 - Map ring: labels at least 12 px rendered (hubs 14 px bold), the ring is fitted to the panel and refits on resize.
 - Security review: C1, H1, H2, M1 to M4 fixed with regression tests (see `docs/API-CONTRACT.md`, "Integration notes"). Reviewer holds approve_release on Company Global (two distinct approvers).
@@ -56,8 +57,13 @@ What changed beyond the three merges:
 - `workers/mcp/package.json` declares `@modelcontextprotocol/sdk` (optional peer of `agents`, tests failed without it).
 
 Open items and notes:
+
 - L1 to L6 of the review are not done (key id for HMAC rotation, redirect allowlist by path, rate limits on /register /token, search over-fetch, `DO_JURISDICTION=off` only on loopback).
 - M3 second half (pass the live Workspace record into item-level decisions) is not done; `own_drafts` now needs author == caller.
 - With the seeded personas only the Knowledge reviewer holds approve on Company Global, so a global release needs a second approver from another scope or a new persona.
 - The Personal Brain workspaces are not wiped by a reseed (they are not part of the seed scopes).
 - Deploy: routes are optional placeholders in the three wrangler configs. At deploy set secrets (`INTERNAL_HMAC_KEY`, `SEED_TOKEN`, `AUDIT_KEY_API`, `AUDIT_KEY_MCP`, `AUDIT_KEY_READ`), Access team domain and aud on api and mcp, `MCP_PUBLIC_URL`, the KV id for `OAUTH_KV`, and keep `DO_JURISDICTION=eu`.
+
+## B2 AI workstream, 2026-11-05 (Claude, branch b2/ai)
+
+Built `workers/api/src/ai/*` (processor, budget, evidence, R-110 segments, briefs, LLM planner, routes) mounted with one line in `routes.ts`, and `apps/web/src/views/brief/*` ("Prepare brief" on Today, account page and each meeting). Contract in `docs/API-CONTRACT.md`, "AI processor". No real key was used: tests stub fetch. Not done: a mock-mode handler for `/v1/briefs` (dev:mock shows "AI processor not configured"), live call against the Anthropic API (needs the key from Tony), Entra or Graph transcript sources (R-110 runs on any evidence body already).

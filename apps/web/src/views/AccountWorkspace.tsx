@@ -5,6 +5,7 @@ import { api } from "../api";
 import { Await, Chip, Empty, fmtRev, PlaneBadge, statusTone } from "../components/ui";
 import type { AccountRecord } from "../types";
 import { useApi } from "../useApi";
+import { PrepareBrief } from "./brief/PrepareBrief";
 
 function Story({ r }: { r: AccountRecord }) {
   if (!r.story) return null;
@@ -83,6 +84,7 @@ export function AccountWorkspace() {
                   Contacts are visible to account members only.
                 </p>
               </header>
+              <PrepareBrief accountId={d.account.id} aiProcessing={d.account.aiProcessing} />
               <div className="tabs" role="tablist" aria-label="Account sections" onKeyDown={onKey}>
                 {d.sections.map((s) => (
                   <button
@@ -120,6 +122,14 @@ export function AccountWorkspace() {
                           </p>
                         ) : null}
                         <Story r={r} />
+                        {section?.key === "meetings" ? (
+                          <PrepareBrief
+                            accountId={d.account.id}
+                            meetingId={r.id}
+                            label="Prepare brief for this meeting"
+                            aiProcessing={d.account.aiProcessing}
+                          />
+                        ) : null}
                       </li>
                     ))}
                   </ul>

@@ -52,6 +52,9 @@
   //   AUDIT_KEY_READ         secret (32+ chars). Reads receipts from workers/audit (Auditor views).
   //   INTERNAL_HMAC_KEY      secret, at least 32 characters. Shared with workers/mcp: verifies its signed calls (X-Secondary-*).
   //   SEED_TOKEN             secret. Required by POST /v1/admin/seed (dev only).
+  //   ANTHROPIC_API_KEY      secret. Anthropic API key for the AI processor. Unset means the feature is off.
+  //   AI_ENABLED / AI_MODEL / AI_DAILY_TOKEN_BUDGET / AI_TIMEOUT_MS  optional vars (kill switch "false", model id,
+  //                          tokens per tenant per day, timeout). Defaults live in src/ai/config.ts.
   //   DEV_AUTH_BYPASS_EMAIL  local-dev var. Honoured only when ENVIRONMENT is "dev" AND the request host is
   //                          localhost, 127.0.0.1 or [::1]. Put it in .dev.vars, never in this file.
 }

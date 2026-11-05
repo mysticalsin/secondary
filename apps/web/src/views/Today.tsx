@@ -7,6 +7,7 @@ import { AskPanel } from "../genui";
 import { PERSONAS } from "../personas";
 import { useApp } from "../state";
 import { useApi } from "../useApi";
+import { BriefCard } from "./brief/PrepareBrief";
 
 const WORLD: [string, string][] = [
   ["Montreal", "America/Toronto"],
@@ -196,6 +197,8 @@ export function Today() {
           </Await>
         )}
       </section>
+
+      <BriefCard accounts={accounts.data ?? []} />
 
       <AskPanel />
 
