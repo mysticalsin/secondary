@@ -6,6 +6,18 @@ import { AccountWorkspace } from "./views/AccountWorkspace";
 import { Admin } from "./views/admin";
 import { Ask } from "./views/ask/Ask";
 import { Brain } from "./views/brain/Brain";
+import {
+  AccessPage,
+  AgentsPage,
+  BrainHomeView,
+  CoachPage,
+  Directory,
+  FieldsPage,
+  ImportPage,
+  JournalPage,
+  PilotPage,
+  VersionsPage,
+} from "./views/brains";
 import { GovernanceBoard } from "./views/GovernanceBoard";
 import { Governances } from "./views/Governances";
 import { MapPage } from "./views/MapPage";
@@ -26,6 +38,16 @@ export function App() {
         <Route index element={<Ask />} />
         <Route path="today" element={<Today />} />
         <Route path="brain" element={<Brain />} />
+        <Route path="brains" element={<Directory />} />
+        <Route path="brains/:id" element={<BrainHomeView />} />
+        <Route path="brains/:id/access" element={<AccessPage />} />
+        <Route path="brains/:id/fields" element={<FieldsPage />} />
+        <Route path="brains/:id/import" element={<ImportPage />} />
+        <Route path="brains/:id/journal" element={<JournalPage />} />
+        <Route path="brains/:id/coach" element={<CoachPage />} />
+        <Route path="brains/:id/pages/:pid/versions" element={<VersionsPage />} />
+        <Route path="settings/agents" element={<AgentsPage />} />
+        <Route path="settings/pilot" element={<PilotPage />} />
         <Route path="questions" element={<Questions />} />
         <Route path="studio" element={<Studio />} />
         <Route path="routines" element={<Routines />} />
