@@ -1,0 +1,426 @@
+[
+  {
+    "schema": "audit-event.schema.json",
+    "example": "../examples/audit-event.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "audit-event.schema.json",
+    "example": "../examples/audit-event.valid-membership.json",
+    "expected_schema_valid": true,
+    "purpose": "Membership change recorded as an audit event (B-11)."
+  },
+  {
+    "schema": "audit-event.schema.json",
+    "example": "../examples/audit-event.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "ACCOUNT_RESTRICTED subject plane without account_id (B-01).",
+    "expect_error_match": "account_id"
+  },
+  {
+    "schema": "audit-event.schema.json",
+    "example": "../examples/audit-event.invalid-membership-no-target.json",
+    "expected_schema_valid": false,
+    "purpose": "Membership change without a target is rejected (B-11).",
+    "expect_error_match": "target_ref"
+  },
+  {
+    "schema": "task-grant.schema.json",
+    "example": "../examples/task-grant.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "task-grant.schema.json",
+    "example": "../examples/task-grant.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "ACCOUNT_RESTRICTED grant without subspace_id (B-01, E-03).",
+    "expect_error_match": "subspace_id"
+  },
+  {
+    "schema": "task-grant.schema.json",
+    "example": "../examples/task-grant.invalid-team-with-account.json",
+    "expected_schema_valid": false,
+    "purpose": "TEAM_RESTRICTED must not carry account_id (D6: team = internal non-customer).",
+    "expect_error_match": "else"
+  },
+  {
+    "schema": "mutation-intent.schema.json",
+    "example": "../examples/mutation-intent.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "mutation-intent.schema.json",
+    "example": "../examples/mutation-intent.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "Missing personal_data_state (B-19).",
+    "expect_error_match": "personal_data_state"
+  },
+  {
+    "schema": "mutation-intent.schema.json",
+    "example": "../examples/mutation-intent.invalid-bad-flag-category.json",
+    "expected_schema_valid": false,
+    "purpose": "Unknown sensitivity category.",
+    "expect_error_match": "category"
+  },
+  {
+    "schema": "mutation-intent.schema.json",
+    "example": "../examples/mutation-intent.invalid-string-revision.json",
+    "expected_schema_valid": false,
+    "purpose": "v1.1 string revision is rejected (E-10).",
+    "expect_error_match": "expected_revision"
+  },
+  {
+    "schema": "export-manifest.schema.json",
+    "example": "../examples/export-manifest.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "export-manifest.schema.json",
+    "example": "../examples/export-manifest.invalid-unvalidated.json",
+    "expected_schema_valid": false,
+    "purpose": "Export without user validation (R-111).",
+    "expect_error_match": "user_validated"
+  },
+  {
+    "schema": "export-manifest.schema.json",
+    "example": "../examples/export-manifest.invalid-pending-flag.json",
+    "expected_schema_valid": false,
+    "purpose": "Pending sensitivity flag blocks export (R-111).",
+    "expect_error_match": "resolution"
+  },
+  {
+    "schema": "export-manifest.schema.json",
+    "example": "../examples/export-manifest.invalid-unknown-classification.json",
+    "expected_schema_valid": false,
+    "purpose": "Unknown classification blocks export (R-111).",
+    "expect_error_match": "personal_data_state"
+  },
+  {
+    "schema": "export-manifest.schema.json",
+    "example": "../examples/export-manifest.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "ACCOUNT_RESTRICTED export without account_id.",
+    "expect_error_match": "account_id"
+  },
+  {
+    "schema": "global-payload.schema.json",
+    "example": "../examples/global-payload.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "global-payload.schema.json",
+    "example": "../examples/global-payload.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "String revision rejected (E-10).",
+    "expect_error_match": "revision"
+  },
+  {
+    "schema": "global-payload.schema.json",
+    "example": "../examples/global-payload.semantic-block.json",
+    "expected_schema_valid": true,
+    "expected_application_outcome": "BLOCK_GLOBAL_PUBLICATION",
+    "purpose": "Deliberately schema-valid identifying text; semantic review must block. Application gate NOT_RUN."
+  },
+  {
+    "schema": "account-workspace.schema.json",
+    "example": "../examples/acme-account-shell.synthetic.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic workspace shell. The v1.1 _notice property moved to the sidecar note acme-account-shell.synthetic.notice.md."
+  },
+  {
+    "schema": "account-workspace.schema.json",
+    "example": "../examples/account-workspace.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "unknown_quarantined with a non-quarantined lifecycle (B-19).",
+    "expect_error_match": "quarantined"
+  },
+  {
+    "schema": "account-workspace.schema.json",
+    "example": "../examples/account-workspace.invalid-notice-property.json",
+    "expected_schema_valid": false,
+    "purpose": "The v1.1 inline _notice property fails additionalProperties (E-14).",
+    "expect_error_match": "_notice"
+  },
+  {
+    "schema": "account-knowledge-record.schema.json",
+    "example": "../examples/account-knowledge-record.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "account-knowledge-record.schema.json",
+    "example": "../examples/account-knowledge-record.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "Missing personal_data_state (B-19).",
+    "expect_error_match": "personal_data_state"
+  },
+  {
+    "schema": "account-knowledge-record.schema.json",
+    "example": "../examples/account-knowledge-record.invalid-mixed-classification.json",
+    "expected_schema_valid": false,
+    "purpose": "v1.1 mixed enum value rejected (E-12).",
+    "expect_error_match": "classification"
+  },
+  {
+    "schema": "account-success-story.schema.json",
+    "example": "../examples/account-success-story.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic empty story. The v1.1 _notice property moved to the sidecar note account-success-story.valid.notice.md."
+  },
+  {
+    "schema": "account-success-story.schema.json",
+    "example": "../examples/account-success-story.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "allowed:true with null approval refs is now schema-invalid (B-22).",
+    "expect_error_match": "legal_approval_ref"
+  },
+  {
+    "schema": "account-success-story.schema.json",
+    "example": "../examples/account-success-story.invalid-notice-property.json",
+    "expected_schema_valid": false,
+    "purpose": "The v1.1 inline _notice property fails additionalProperties (E-14).",
+    "expect_error_match": "_notice"
+  },
+  {
+    "schema": "account-relationship.schema.json",
+    "example": "../examples/account-relationship.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "account-relationship.schema.json",
+    "example": "../examples/account-relationship.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "Missing expected_previous_revision (E-11).",
+    "expect_error_match": "expected_previous_revision"
+  },
+  {
+    "schema": "source-record.schema.json",
+    "example": "../examples/source-record.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "source-record.schema.json",
+    "example": "../examples/source-record.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "Stale ACL must not be servable (fail closed).",
+    "expect_error_match": "servable"
+  },
+  {
+    "schema": "revision-manifest.schema.json",
+    "example": "../examples/revision-manifest.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "revision-manifest.schema.json",
+    "example": "../examples/revision-manifest.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "String revision rejected (E-10).",
+    "expect_error_match": "revision"
+  },
+  {
+    "schema": "membership.schema.json",
+    "example": "../examples/membership.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "membership.schema.json",
+    "example": "../examples/membership.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "Membership must not inherit to subspaces.",
+    "expect_error_match": "inheritance"
+  },
+  {
+    "schema": "policy-decision.schema.json",
+    "example": "../examples/policy-decision.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Deny decision (default for unknown principals)."
+  },
+  {
+    "schema": "policy-decision.schema.json",
+    "example": "../examples/policy-decision.valid-allow.json",
+    "expected_schema_valid": true,
+    "purpose": "Allow decision with a 30 s lease."
+  },
+  {
+    "schema": "policy-decision.schema.json",
+    "example": "../examples/policy-decision.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "allow without a lease expiry.",
+    "expect_error_match": "expires_at"
+  },
+  {
+    "schema": "meeting.schema.json",
+    "example": "../examples/meeting.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "meeting.schema.json",
+    "example": "../examples/meeting.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "Meeting records never live in the Global plane.",
+    "expect_error_match": "plane"
+  },
+  {
+    "schema": "decision.schema.json",
+    "example": "../examples/decision.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "decision.schema.json",
+    "example": "../examples/decision.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "approved decision with unverified evidence (R-097).",
+    "expect_error_match": "evidence_status"
+  },
+  {
+    "schema": "action.schema.json",
+    "example": "../examples/action.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "action.schema.json",
+    "example": "../examples/action.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "reviewed state without a reviewer.",
+    "expect_error_match": "reviewer_ref"
+  },
+  {
+    "schema": "customer-permission.schema.json",
+    "example": "../examples/customer-permission.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "customer-permission.schema.json",
+    "example": "../examples/customer-permission.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "quote permitted without the quoted individual consent (C-10).",
+    "expect_error_match": "quote_consent_ref"
+  },
+  {
+    "schema": "event-envelope.schema.json",
+    "example": "../examples/event-envelope.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Synthetic valid example."
+  },
+  {
+    "schema": "event-envelope.schema.json",
+    "example": "../examples/event-envelope.invalid.json",
+    "expected_schema_valid": false,
+    "purpose": "Inline payload is not allowed; events carry references only.",
+    "expect_error_match": "payload"
+  },
+  {
+    "schema": "meeting.schema.json",
+    "example": "../examples/meeting.invalid-approved-unvalidated.json",
+    "expected_schema_valid": false,
+    "purpose": "approved meeting without user_validated (R-111).",
+    "expect_error_match": "user_validated"
+  },
+  {
+    "schema": "meeting.schema.json",
+    "example": "../examples/meeting.invalid-pending-flag-approved.json",
+    "expected_schema_valid": false,
+    "purpose": "Pending personal segment on an approved meeting (R-110).",
+    "expect_error_match": "resolution"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.valid.json",
+    "expected_schema_valid": true,
+    "purpose": "Node overview: KpiRow, NodeCard, ItemList with a filter query."
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.valid-account.json",
+    "expected_schema_valid": true,
+    "purpose": "Account plan: AccountSummary, Table, Callout by template key."
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.valid-governance.json",
+    "expected_schema_valid": true,
+    "purpose": "Governance plan: lens KPI, StageBoard, MapMini focused on a country."
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.valid-all-components.json",
+    "expected_schema_valid": true,
+    "purpose": "All eight catalog components with minimal props."
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-unknown-type.json",
+    "expected_schema_valid": false,
+    "purpose": "A component type outside the catalog is rejected.",
+    "expect_error_match": "oneOf"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-inline-data-prop.json",
+    "expected_schema_valid": false,
+    "purpose": "A prop named data carrying inline content is rejected (props are queries only).",
+    "expect_error_match": "data"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-inline-items-prop.json",
+    "expected_schema_valid": false,
+    "purpose": "A prop named items carrying inline content is rejected (props are queries only).",
+    "expect_error_match": "items"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-missing-node-id.json",
+    "expected_schema_valid": false,
+    "purpose": "NodeCard needs a nodeId query.",
+    "expect_error_match": "nodeId"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-top-level-permission.json",
+    "expected_schema_valid": false,
+    "purpose": "A plan cannot carry permissions.",
+    "expect_error_match": "permissions"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-version.json",
+    "expected_schema_valid": false,
+    "purpose": "Only version 1 exists.",
+    "expect_error_match": "const"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-no-components.json",
+    "expected_schema_valid": false,
+    "purpose": "A plan needs at least one component.",
+    "expect_error_match": "minItems"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-bad-node-id.json",
+    "expected_schema_valid": false,
+    "purpose": "Node ids are tokens, never paths.",
+    "expect_error_match": "pattern"
+  },
+  {
+    "schema": "view-plan.schema.json",
+    "example": "../examples/view-plan.invalid-component-extra-key.json",
+    "expected_schema_valid": false,
+    "purpose": "A component carries type and props only.",
+    "expect_error_match": "html"
+  }
+]

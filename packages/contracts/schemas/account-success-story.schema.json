@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/account-success-story.schema.json",
+  "title": "Account Success Story",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "story_id",
+    "account_id",
+    "revision",
+    "story_kind",
+    "status",
+    "problem",
+    "intervention",
+    "scope",
+    "time_period",
+    "claims",
+    "account_visibility_policy_ref",
+    "external_release",
+    "tenant_id",
+    "plane",
+    "subspace_id",
+    "expected_previous_revision",
+    "classification",
+    "personal_data_state"
+  ],
+  "properties": {
+    "story_id": {
+      "type": "string"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "engagement_id": {
+      "type": ["string", "null"]
+    },
+    "project_id": {
+      "type": ["string", "null"]
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "story_kind": {
+      "enum": ["internal_account_story", "generalized_company_lesson", "external_case_study"]
+    },
+    "status": {
+      "enum": [
+        "evidence_pending",
+        "internal_draft",
+        "account_restricted_reviewed",
+        "anonymization_candidate",
+        "global_lesson_reviewed",
+        "customer_external_approval_pending",
+        "customer_approved_external",
+        "published_external",
+        "withdrawn",
+        "quarantined"
+      ]
+    },
+    "problem": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "intervention": {
+      "type": "string",
+      "maxLength": 4000
+    },
+    "scope": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "time_period": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {
+          "type": "string",
+          "format": "date"
+        },
+        "end": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim_id", "metric_name", "claim_status", "evidence_refs"],
+        "properties": {
+          "claim_id": {
+            "type": "string"
+          },
+          "metric_name": {
+            "type": "string"
+          },
+          "baseline_value": {
+            "type": ["number", "null"]
+          },
+          "target_value": {
+            "type": ["number", "null"]
+          },
+          "achieved_value": {
+            "type": ["number", "null"]
+          },
+          "unit": {
+            "type": ["string", "null"]
+          },
+          "calculation_method": {
+            "type": ["string", "null"]
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "claim_status": {
+            "enum": [
+              "measured",
+              "customer_reported",
+              "internally_estimated",
+              "inferred",
+              "unverified"
+            ]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "reviewed_by_ref": {
+            "type": ["string", "null"]
+          },
+          "reviewed_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "customer_permission_ref": {
+      "type": ["string", "null"]
+    },
+    "approved_customer_name": {
+      "type": "boolean",
+      "default": false
+    },
+    "approved_logo": {
+      "type": "boolean",
+      "default": false
+    },
+    "approved_quote": {
+      "type": "boolean",
+      "default": false
+    },
+    "approved_metrics": {
+      "type": "boolean",
+      "default": false
+    },
+    "approved_channels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "permission_expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "anonymization_review_ref": {
+      "type": ["string", "null"]
+    },
+    "account_visibility_policy_ref": {
+      "type": "string"
+    },
+    "external_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed"],
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "legal_approval_ref": {
+          "type": ["string", "null"]
+        },
+        "marketing_approval_ref": {
+          "type": ["string", "null"]
+        },
+        "customer_permission_ref": {
+          "type": ["string", "null"]
+        },
+        "channel": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "const": "ACCOUNT_RESTRICTED"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/account_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "quarantined"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "external_release": {
+            "type": "object",
+            "properties": {
+              "allowed": {
+                "const": true
+              }
+            },
+            "required": ["allowed"]
+          }
+        },
+        "required": ["external_release"]
+      },
+      "then": {
+        "required": ["customer_permission_ref", "permission_expires_at"],
+        "properties": {
+          "story_kind": {
+            "const": "external_case_study"
+          },
+          "status": {
+            "enum": ["customer_approved_external", "published_external"]
+          },
+          "customer_permission_ref": {
+            "$ref": "common.schema.json#/$defs/opaque_id"
+          },
+          "permission_expires_at": {
+            "$ref": "common.schema.json#/$defs/timestamp"
+          },
+          "external_release": {
+            "type": "object",
+            "required": [
+              "legal_approval_ref",
+              "marketing_approval_ref",
+              "customer_permission_ref",
+              "channel"
+            ],
+            "properties": {
+              "legal_approval_ref": {
+                "$ref": "common.schema.json#/$defs/opaque_id"
+              },
+              "marketing_approval_ref": {
+                "$ref": "common.schema.json#/$defs/opaque_id"
+              },
+              "customer_permission_ref": {
+                "$ref": "common.schema.json#/$defs/opaque_id"
+              },
+              "channel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

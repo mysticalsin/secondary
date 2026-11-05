@@ -1,0 +1,1 @@
+SYNTHETIC EMPTY TEMPLATE. `account-success-story.valid.json` asserts no customer outcome, metric, source or approval. It belongs to the fictional account "Acme Synthetic SA". This note replaces the `_notice` property that v1.1 embedded in the JSON (errata ERR-14).

@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/account-knowledge-record.schema.json",
+  "title": "Account Knowledge Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "object_id",
+    "tenant_id",
+    "account_id",
+    "object_type",
+    "revision",
+    "expected_previous_revision",
+    "title",
+    "content_ref",
+    "classification",
+    "audience_policy_ref",
+    "source_lineage",
+    "lifecycle_state",
+    "created_by_ref",
+    "created_at",
+    "updated_at",
+    "plane",
+    "subspace_id",
+    "personal_data_state"
+  ],
+  "properties": {
+    "object_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "parent_object_id": {
+      "type": ["string", "null"]
+    },
+    "object_type": {
+      "enum": [
+        "account_strategy",
+        "engagement",
+        "opportunity",
+        "project",
+        "workstream",
+        "interaction",
+        "meeting",
+        "decision",
+        "commitment",
+        "action",
+        "deliverable",
+        "outcome",
+        "success_story",
+        "risk",
+        "issue",
+        "knowledge_item",
+        "evidence_claim",
+        "stakeholder_ref"
+      ]
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 240
+    },
+    "summary": {
+      "type": ["string", "null"],
+      "maxLength": 2000
+    },
+    "content_ref": {
+      "type": "string",
+      "description": "Opaque content reference, never a public URL."
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/account_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "audience_policy_ref": {
+      "type": "string"
+    },
+    "source_lineage": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_provider",
+          "source_namespace",
+          "source_id",
+          "source_revision",
+          "evidence_status"
+        ],
+        "properties": {
+          "source_provider": {
+            "type": "string"
+          },
+          "source_namespace": {
+            "type": "string"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "source_revision": {
+            "type": ["string", "null"]
+          },
+          "evidence_status": {
+            "enum": ["observed", "documented", "reported", "inferred", "unverified"]
+          },
+          "evidence_locator": {
+            "type": ["string", "null"]
+          },
+          "source_acl_ref": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "lifecycle_state": {
+      "enum": [
+        "draft",
+        "proposed",
+        "reviewed",
+        "approved",
+        "committed",
+        "superseded",
+        "restricted",
+        "withdrawn",
+        "deleted_pending_purge",
+        "quarantined"
+      ]
+    },
+    "created_by_ref": {
+      "type": "string"
+    },
+    "owner_ref": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "review_due": {
+      "type": ["string", "null"],
+      "format": "date"
+    },
+    "retention_policy_ref": {
+      "type": "string"
+    },
+    "plane": {
+      "const": "ACCOUNT_RESTRICTED"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle_state": {
+            "const": "quarantined"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "object_type": {
+            "const": "stakeholder_ref"
+          }
+        },
+        "required": ["object_type"]
+      },
+      "then": {
+        "properties": {
+          "personal_data_state": {
+            "const": "present_restricted"
+          }
+        }
+      }
+    }
+  ]
+}

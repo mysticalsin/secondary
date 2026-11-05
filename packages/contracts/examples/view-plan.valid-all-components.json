@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "title": "Every catalog component",
+  "components": [
+    {
+      "type": "KpiRow",
+      "props": {
+        "nodeId": "d_amaris"
+      }
+    },
+    {
+      "type": "NodeCard",
+      "props": {
+        "nodeId": "d_amaris"
+      }
+    },
+    {
+      "type": "ItemList",
+      "props": {
+        "nodeId": "c_sales"
+      }
+    },
+    {
+      "type": "AccountSummary",
+      "props": {
+        "accountId": "a_acme"
+      }
+    },
+    {
+      "type": "StageBoard",
+      "props": {}
+    },
+    {
+      "type": "MapMini",
+      "props": {
+        "lens": "departments"
+      }
+    },
+    {
+      "type": "Callout",
+      "props": {
+        "template": "personal_private"
+      }
+    },
+    {
+      "type": "Table",
+      "props": {
+        "lens": "topics",
+        "filter": {
+          "tag": "pricing"
+        }
+      }
+    }
+  ]
+}

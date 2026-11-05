@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/view-plan.schema.json",
+  "title": "GenUI ViewPlan v1",
+  "description": "A ViewPlan lists trusted catalog components. Props are queries (a node id, a lens, a filter), never data: the renderer resolves every query through the API as the viewer, so a plan cannot raise permission. Replaces the v1.2 layout-oriented view-plan/2 (see docs/API-CONTRACT.md, GenUI).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "title", "components"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 12,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/KpiRow"
+          },
+          {
+            "$ref": "#/$defs/NodeCard"
+          },
+          {
+            "$ref": "#/$defs/ItemList"
+          },
+          {
+            "$ref": "#/$defs/AccountSummary"
+          },
+          {
+            "$ref": "#/$defs/StageBoard"
+          },
+          {
+            "$ref": "#/$defs/MapMini"
+          },
+          {
+            "$ref": "#/$defs/Callout"
+          },
+          {
+            "$ref": "#/$defs/Table"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "nodeId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.:-]{0,127}$",
+      "description": "A node id as issued by the API. Never a path, never content."
+    },
+    "lens": {
+      "enum": ["departments", "accounts", "topics", "governances"]
+    },
+    "filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": ["approved", "candidate", "draft"]
+        },
+        "evidence": {
+          "enum": ["supported", "partial", "unsupported"]
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "pattern": "^[A-Za-z0-9 &-]+$"
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "pattern": "^[a-z0-9-]+$"
+        }
+      },
+      "description": "A query filter. Values select records; they never carry records."
+    },
+    "KpiRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "Headline counts for a node or a lens.",
+      "properties": {
+        "type": {
+          "const": "KpiRow"
+        },
+        "props": {
+          "$ref": "#/$defs/KpiRowProps"
+        }
+      }
+    },
+    "NodeCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "Summary card for one node.",
+      "properties": {
+        "type": {
+          "const": "NodeCard"
+        },
+        "props": {
+          "$ref": "#/$defs/NodeCardProps"
+        }
+      }
+    },
+    "ItemList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "Items under a node, optionally filtered.",
+      "properties": {
+        "type": {
+          "const": "ItemList"
+        },
+        "props": {
+          "$ref": "#/$defs/ItemListProps"
+        }
+      }
+    },
+    "AccountSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "Account workspace summary.",
+      "properties": {
+        "type": {
+          "const": "AccountSummary"
+        },
+        "props": {
+          "$ref": "#/$defs/AccountSummaryProps"
+        }
+      }
+    },
+    "StageBoard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "Use cases by maturity stage.",
+      "properties": {
+        "type": {
+          "const": "StageBoard"
+        },
+        "props": {
+          "$ref": "#/$defs/StageBoardProps"
+        }
+      }
+    },
+    "MapMini": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "Small map of a lens, optionally focused on a node.",
+      "properties": {
+        "type": {
+          "const": "MapMini"
+        },
+        "props": {
+          "$ref": "#/$defs/MapMiniProps"
+        }
+      }
+    },
+    "Callout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "A fixed message chosen by key. No free text.",
+      "properties": {
+        "type": {
+          "const": "Callout"
+        },
+        "props": {
+          "$ref": "#/$defs/CalloutProps"
+        }
+      }
+    },
+    "Table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "props"],
+      "description": "Tabular rows for a node or lens.",
+      "properties": {
+        "type": {
+          "const": "Table"
+        },
+        "props": {
+          "$ref": "#/$defs/TableProps"
+        }
+      }
+    },
+    "KpiRowProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "lens": {
+          "$ref": "#/$defs/lens"
+        },
+        "metrics": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "enum": ["items", "topics", "open", "gaps", "stars"]
+          }
+        }
+      }
+    },
+    "NodeCardProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/nodeId"
+        }
+      },
+      "required": ["nodeId"]
+    },
+    "ItemListProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "filter": {
+          "$ref": "#/$defs/filter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        }
+      },
+      "required": ["nodeId"]
+    },
+    "AccountSummaryProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "$ref": "#/$defs/nodeId"
+        }
+      },
+      "required": ["accountId"]
+    },
+    "StageBoardProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "governanceId": {
+          "$ref": "#/$defs/nodeId"
+        }
+      }
+    },
+    "MapMiniProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "lens": {
+          "$ref": "#/$defs/lens"
+        },
+        "focusId": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "hops": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        }
+      },
+      "required": ["lens"]
+    },
+    "CalloutProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "enum": [
+            "no_access",
+            "empty",
+            "stale",
+            "gap",
+            "nda_locked",
+            "personal_private",
+            "candidate_pending"
+          ]
+        },
+        "tone": {
+          "enum": ["info", "warning", "success"]
+        },
+        "nodeId": {
+          "$ref": "#/$defs/nodeId"
+        }
+      },
+      "required": ["template"]
+    },
+    "TableProps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nodeId": {
+          "$ref": "#/$defs/nodeId"
+        },
+        "lens": {
+          "$ref": "#/$defs/lens"
+        },
+        "filter": {
+          "$ref": "#/$defs/filter"
+        },
+        "columns": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "enum": ["label", "kind", "items", "open", "gaps", "freshness"]
+          }
+        },
+        "sort": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "by": {
+              "enum": ["label", "items", "open", "gaps", "freshness"]
+            },
+            "dir": {
+              "enum": ["asc", "desc"]
+            }
+          },
+          "required": ["by"]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "anyOf": [
+        {
+          "properties": {
+            "nodeId": true
+          },
+          "required": ["nodeId"]
+        },
+        {
+          "properties": {
+            "lens": true
+          },
+          "required": ["lens"]
+        }
+      ]
+    }
+  }
+}

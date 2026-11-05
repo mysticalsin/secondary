@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "title": "Acme workspace",
+  "components": [
+    {
+      "type": "AccountSummary",
+      "props": {
+        "accountId": "a_acme"
+      }
+    },
+    {
+      "type": "Table",
+      "props": {
+        "nodeId": "a_acme",
+        "columns": ["label", "items", "freshness"],
+        "sort": {
+          "by": "items",
+          "dir": "desc"
+        },
+        "limit": 20
+      }
+    },
+    {
+      "type": "Callout",
+      "props": {
+        "template": "gap",
+        "tone": "warning",
+        "nodeId": "a_acme"
+      }
+    }
+  ]
+}

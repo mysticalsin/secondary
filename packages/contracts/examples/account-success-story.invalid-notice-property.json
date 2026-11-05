@@ -1,0 +1,40 @@
+{
+  "story_id": "story_synth_pending_0001",
+  "account_id": "acct_synth_acme_0001",
+  "tenant_id": "tenant_synth001",
+  "plane": "ACCOUNT_RESTRICTED",
+  "subspace_id": "sub_synth_root01",
+  "engagement_id": null,
+  "project_id": null,
+  "revision": 1,
+  "expected_previous_revision": null,
+  "classification": "account_confidential",
+  "personal_data_state": "none_identified",
+  "story_kind": "internal_account_story",
+  "status": "evidence_pending",
+  "problem": "",
+  "intervention": "",
+  "scope": "",
+  "time_period": {
+    "start": "2026-01-01",
+    "end": "2026-01-01"
+  },
+  "claims": [],
+  "customer_permission_ref": null,
+  "approved_customer_name": false,
+  "approved_logo": false,
+  "approved_quote": false,
+  "approved_metrics": false,
+  "approved_channels": [],
+  "permission_expires_at": null,
+  "anonymization_review_ref": null,
+  "account_visibility_policy_ref": "policy_synth_account_restricted",
+  "external_release": {
+    "allowed": false,
+    "legal_approval_ref": null,
+    "marketing_approval_ref": null,
+    "customer_permission_ref": null,
+    "channel": null
+  },
+  "_notice": "SYNTHETIC EMPTY TEMPLATE."
+}

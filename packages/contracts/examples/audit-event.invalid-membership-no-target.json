@@ -1,0 +1,29 @@
+{
+  "schema_version": "secondary.audit/2",
+  "event_id": "event_synth_0001",
+  "tenant_id": "tenant_synth001",
+  "plane": "AUDIT_CONTROL",
+  "subject_plane": "ACCOUNT_RESTRICTED",
+  "account_id": "acct_synth_acme_0001",
+  "subspace_id": "sub_synth_root01",
+  "actor_ref": "actor_synth_0001",
+  "delegated_agent_ref": null,
+  "session_ref": "session_synth_0001",
+  "purpose_code": "review",
+  "target_ref": null,
+  "operation": "membership_changed",
+  "object_refs": [
+    {
+      "object_id": "obj_synth_meeting01",
+      "revision": 2,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "grant_ref": "grant_synth_0001",
+  "policy_epoch": 3,
+  "occurred_at": "2026-11-04T15:00:00Z",
+  "outcome": "accepted",
+  "correlation_id": "correlation_synth_001",
+  "bytes_served": 120,
+  "reason_code": "policy_allowed"
+}

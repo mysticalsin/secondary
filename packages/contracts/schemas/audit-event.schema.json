@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/audit-event.schema.json",
+  "title": "Restricted minimal audit event (v1.2)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.audit/2"
+    },
+    "event_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "const": "AUDIT_CONTROL"
+    },
+    "actor_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "source_acquired",
+        "model_disclosed",
+        "content_read",
+        "draft_committed",
+        "contribution_reviewed",
+        "publication_committed",
+        "export_prepared",
+        "export_started",
+        "export_finished",
+        "export_failed",
+        "policy_revoked",
+        "deletion_completed",
+        "view_applied",
+        "membership_changed",
+        "role_changed",
+        "identity_resolved",
+        "break_glass_used",
+        "policy_changed",
+        "account_merged",
+        "customer_permission_recorded",
+        "external_release_approved",
+        "task_granted",
+        "device_enrolled",
+        "session_revoked",
+        "user_validation_recorded"
+      ]
+    },
+    "object_refs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/object_ref"
+      }
+    },
+    "grant_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "policy_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": ["accepted", "denied", "failed", "partial"]
+    },
+    "correlation_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "bytes_served": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reason_code": {
+      "$ref": "common.schema.json#/$defs/reason_code"
+    },
+    "subject_plane": {
+      "$ref": "common.schema.json#/$defs/plane_any"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "delegated_agent_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "session_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "purpose_code": {
+      "$ref": "common.schema.json#/$defs/purpose_code"
+    },
+    "target_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Membership, role, identity or policy target. Set for membership/role/identity/policy/merge events."
+    }
+  },
+  "required": [
+    "schema_version",
+    "event_id",
+    "tenant_id",
+    "plane",
+    "actor_ref",
+    "operation",
+    "object_refs",
+    "grant_ref",
+    "policy_epoch",
+    "occurred_at",
+    "outcome",
+    "correlation_id",
+    "bytes_served",
+    "reason_code",
+    "subject_plane",
+    "delegated_agent_ref",
+    "session_ref",
+    "purpose_code",
+    "target_ref"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "subject_plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["subject_plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "membership_changed",
+              "role_changed",
+              "identity_resolved",
+              "break_glass_used",
+              "policy_changed",
+              "account_merged"
+            ]
+          }
+        },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "target_ref": {
+            "$ref": "common.schema.json#/$defs/opaque_id"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": ["identity_resolved", "break_glass_used"]
+          }
+        },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "purpose_code": {
+            "enum": ["security_investigation", "rights_request"]
+          }
+        }
+      }
+    }
+  ]
+}

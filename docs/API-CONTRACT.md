@@ -53,7 +53,17 @@ MapNode = { id, label, kind, plane, access, counts|null, freshnessDays|null, sig
 NodeDetail = { node: MapNode & {facts:Record<string,string>, badges:string[]}, items:[{title,source,ownerRole,revision,evidence,plane,reviewedBy2}], backlinks:[{id,label,type}], actions:[{action,label,group:'Collaborate'|'Govern'|'Admin',allowed,reason}] }
 ```
 
-Locked nodes have `counts:null` and no children. Hidden nodes are absent.
+Locked nodes have `counts:null` and no children. Hidden nodes are absent. Structure-only nodes (for example under Platform admin) also have `counts:null`.
+
+Clarifications fixed by `packages/policy` (B1):
+
+- `Link = { from, to, kind: 'replication'|'in-sector', label? }`. Both ends are in the viewer's view. Links appear on the `accounts` lens only; a replication link needs the use case it derives from to be admitted too.
+- Node ids are slash-free tokens matching `^[a-z0-9][a-z0-9_.:-]*$`, so `/v1/nodes/:id` routes cleanly (for example `c_bid:pricing-models`, `a_acme:eng:0`, `pb:<principalId>`).
+- `plane` uses `common.schema.json` names: `GLOBAL_NONPERSONAL` (core, themes, governances), `TEAM_RESTRICTED` (departments, circles, topics), `ACCOUNT_RESTRICTED`, `PERSONAL_HOSTED`. `revision` is an integer.
+- `toNodeDetail(view, nodeId, principal)` returns `null` for a node outside the view. Actions use the ctx stored on the view (`view.ctx`). `request_access` is listed only for locked nodes.
+- `Ctx.ndaGrants` holds account ids (named grant per account). Elevation is active while `now < elevatedUntil` and `elevatedUntil - now <= role.elevation.hours`.
+- The Personal Brain never appears in `MapView`. It is reachable through `NodeDetail` by its owner only.
+- `view-plan.schema.json` is the GenUI ViewPlan v1. `Callout` takes a `template` key (no free text); `ItemList`, `Table` and the rest take queries only, and every props object has `additionalProperties:false`.
 
 ## GenUI (ViewPlan)
 

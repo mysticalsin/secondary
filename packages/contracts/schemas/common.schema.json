@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/common.schema.json",
+  "title": "Shared definitions v1.2",
+  "description": "Shared $defs for all Secondary v1.2 contracts. Revision type is INTEGER everywhere (errata ERR-12).",
+  "$defs": {
+    "opaque_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_:-]{5,95}$",
+      "description": "Opaque, server-assigned identifier. Never derived from a customer or person name."
+    },
+    "account_id": {
+      "type": "string",
+      "pattern": "^acct_[A-Za-z0-9_-]{8,80}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Per-object monotonically increasing revision. Replaces the v1.1 string revision_id."
+    },
+    "expected_previous_revision": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "description": "Revision the writer saw as head. null only when creating revision 1. Stale value yields HTTP 409 and both drafts are kept."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "reason_code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,63}$",
+      "description": "Token only. Free text is not allowed because it can carry content (B-11)."
+    },
+    "plane_any": {
+      "enum": [
+        "LOCAL_ONLY",
+        "PERSONAL_HOSTED",
+        "TEAM_RESTRICTED",
+        "GLOBAL_NONPERSONAL",
+        "ACCOUNT_RESTRICTED",
+        "AUDIT_CONTROL"
+      ],
+      "description": "The six planes (decision D6, PROPOSED). TEAM_RESTRICTED = internal non-customer circles only."
+    },
+    "plane_hosted": {
+      "enum": ["PERSONAL_HOSTED", "TEAM_RESTRICTED", "GLOBAL_NONPERSONAL", "ACCOUNT_RESTRICTED"],
+      "description": "Planes that hold content on the server. LOCAL_ONLY never reaches the server; AUDIT_CONTROL holds receipts only."
+    },
+    "plane_workspace": {
+      "enum": ["PERSONAL_HOSTED", "TEAM_RESTRICTED", "ACCOUNT_RESTRICTED"],
+      "description": "Non-global hosted planes (records that must never sit in Global)."
+    },
+    "plane_server": {
+      "enum": [
+        "PERSONAL_HOSTED",
+        "TEAM_RESTRICTED",
+        "GLOBAL_NONPERSONAL",
+        "ACCOUNT_RESTRICTED",
+        "AUDIT_CONTROL"
+      ]
+    },
+    "business_classification": {
+      "enum": [
+        "personal_private",
+        "internal_confidential",
+        "account_confidential",
+        "project_restricted",
+        "legal_finance_security_restricted",
+        "customer_contract_restricted",
+        "global_reusable"
+      ],
+      "description": "Business confidentiality only. Personal-data status lives in personal_data_state (errata ERR-09)."
+    },
+    "account_classification": {
+      "enum": [
+        "internal_confidential",
+        "account_confidential",
+        "project_restricted",
+        "legal_finance_security_restricted",
+        "customer_contract_restricted"
+      ]
+    },
+    "personal_data_state": {
+      "enum": ["none_identified", "present_restricted", "unknown_quarantined"],
+      "description": "Independent of business classification. unknown_quarantined forces lifecycle state quarantined."
+    },
+    "evidence_status": {
+      "enum": ["observed", "documented", "reported", "inferred", "unverified"]
+    },
+    "purpose_code": {
+      "enum": [
+        "brief_preparation",
+        "action_extraction",
+        "review",
+        "publication",
+        "export",
+        "administration",
+        "source_sync",
+        "security_investigation",
+        "rights_request"
+      ]
+    },
+    "sensitivity_flag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "start", "end", "confidence", "resolution"],
+      "description": "Advisory detection of a possibly sensitive span (R-110, R-111). Offsets only, never the text itself. The owner confirms.",
+      "properties": {
+        "category": {
+          "enum": [
+            "health",
+            "family",
+            "private_life",
+            "off_topic_personal",
+            "hr_matter",
+            "contact_data",
+            "other_sensitive"
+          ]
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confidence": {
+          "enum": ["low", "medium", "high"]
+        },
+        "resolution": {
+          "enum": ["pending", "excluded", "kept_by_user"],
+          "description": "excluded = removed from storage and model context. pending blocks any share."
+        }
+      }
+    },
+    "sensitivity_flags": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/sensitivity_flag"
+      }
+    },
+    "user_validated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["by_ref", "at", "revision"],
+      "description": "Explicit user confirmation before send, share, publish or export (R-111). Written to audit as user_validation_recorded.",
+      "properties": {
+        "by_ref": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_:-]{5,95}$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "lineage_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_provider",
+        "source_namespace",
+        "source_id",
+        "source_revision",
+        "evidence_status"
+      ],
+      "properties": {
+        "source_provider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "source_namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "source_revision": {
+          "type": ["string", "null"],
+          "maxLength": 200
+        },
+        "evidence_status": {
+          "$ref": "common.schema.json#/$defs/evidence_status"
+        },
+        "evidence_locator": {
+          "type": ["string", "null"],
+          "maxLength": 300
+        },
+        "source_acl_ref": {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        }
+      }
+    },
+    "source_lineage": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/lineage_item"
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "created_at", "updated_at"],
+      "properties": {
+        "state": {
+          "enum": [
+            "draft",
+            "proposed",
+            "reviewed",
+            "approved",
+            "committed",
+            "superseded",
+            "restricted",
+            "quarantined",
+            "withdrawn",
+            "deleted_pending_purge"
+          ]
+        },
+        "created_at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        "updated_at": {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_ref", "review_due", "legal_hold"],
+      "properties": {
+        "policy_ref": {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        "review_due": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/date"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "legal_hold": {
+          "type": "boolean"
+        }
+      }
+    },
+    "object_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["object_id", "revision", "sha256"],
+      "properties": {
+        "object_id": {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        "revision": {
+          "$ref": "common.schema.json#/$defs/revision"
+        },
+        "sha256": {
+          "$ref": "common.schema.json#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": "secondary.export/2",
+  "export_id": "export_synth_0001",
+  "tenant_id": "tenant_synth001",
+  "workspace_id": "ws_synth_acme01",
+  "plane": "ACCOUNT_RESTRICTED",
+  "account_id": "acct_synth_acme_0001",
+  "subspace_id": "sub_synth_root01",
+  "actor_ref": "actor_synth_0001",
+  "objects": [
+    {
+      "object_id": "obj_synth_meeting01",
+      "revision": 2,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "purpose_code": "approved_handover",
+  "destination_class": "approved_company_system",
+  "policy_epoch": 3,
+  "approval_ref": "approval_synth_0001",
+  "expires_at": "2026-11-04T16:00:00Z",
+  "manifest_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "personal_data_state": "none_identified",
+  "sensitivity_flags": [
+    {
+      "category": "health",
+      "start": 120,
+      "end": 260,
+      "confidence": "medium",
+      "resolution": "excluded"
+    }
+  ]
+}

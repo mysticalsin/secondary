@@ -1,0 +1,18 @@
+{
+  "edge_id": "edge_synth_0001",
+  "tenant_id": "tenant_synth001",
+  "account_id": "acct_synth_acme_0001",
+  "plane": "ACCOUNT_RESTRICTED",
+  "subspace_id": "sub_synth_root01",
+  "from_object_id": "obj_synth_decision01",
+  "to_object_id": "obj_synth_meeting01",
+  "relation_type": "decided_in",
+  "policy_ref": "policy_synth_account_restricted",
+  "provenance_refs": ["prov_synth_0001"],
+  "valid_from": null,
+  "valid_to": null,
+  "revision": 1,
+  "classification": "account_confidential",
+  "personal_data_state": "none_identified",
+  "lifecycle_state": "active"
+}

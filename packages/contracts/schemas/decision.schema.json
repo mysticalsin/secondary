@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/decision.schema.json",
+  "title": "Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.decision/1"
+    },
+    "decision_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "$ref": "common.schema.json#/$defs/plane_workspace"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/business_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "owner_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "source_lineage": {
+      "$ref": "common.schema.json#/$defs/source_lineage"
+    },
+    "lifecycle": {
+      "$ref": "common.schema.json#/$defs/lifecycle"
+    },
+    "retention": {
+      "$ref": "common.schema.json#/$defs/retention"
+    },
+    "object_type": {
+      "const": "decision"
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "decided_in_meeting_id": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "decided_at": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "evidence_status": {
+      "$ref": "common.schema.json#/$defs/evidence_status"
+    },
+    "supersedes_decision_id": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "review_state": {
+      "enum": ["proposed", "reviewed", "approved"]
+    },
+    "reviewer_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "decision_id",
+    "tenant_id",
+    "plane",
+    "revision",
+    "expected_previous_revision",
+    "classification",
+    "personal_data_state",
+    "owner_ref",
+    "source_lineage",
+    "lifecycle",
+    "retention",
+    "object_type",
+    "statement",
+    "decided_in_meeting_id",
+    "decided_at",
+    "evidence_status",
+    "supersedes_decision_id",
+    "review_state",
+    "reviewer_ref"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "quarantined"
+              }
+            },
+            "required": ["state"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "$ref": "common.schema.json#/$defs/account_classification"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "GLOBAL_NONPERSONAL"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "const": "global_reusable"
+          },
+          "personal_data_state": {
+            "const": "none_identified"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "review_state": {
+            "enum": ["reviewed", "approved"]
+          }
+        },
+        "required": ["review_state"]
+      },
+      "then": {
+        "properties": {
+          "reviewer_ref": {
+            "$ref": "common.schema.json#/$defs/opaque_id"
+          }
+        },
+        "required": ["reviewer_ref"]
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "review_state": {
+            "const": "approved"
+          }
+        },
+        "required": ["review_state"]
+      },
+      "then": {
+        "properties": {
+          "evidence_status": {
+            "enum": ["observed", "documented", "reported"]
+          }
+        }
+      }
+    }
+  ]
+}

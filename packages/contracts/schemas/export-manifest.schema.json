@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/export-manifest.schema.json",
+  "title": "Exact version export manifest (v1.2)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.export/2"
+    },
+    "export_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "actor_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "objects": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "common.schema.json#/$defs/object_ref"
+      }
+    },
+    "purpose_code": {
+      "type": "string",
+      "enum": ["personal_exit", "approved_handover", "approved_reference", "rights_request"]
+    },
+    "destination_class": {
+      "type": "string",
+      "enum": ["enrolled_device", "approved_company_system", "verified_rights_recipient"]
+    },
+    "policy_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "approval_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "manifest_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "plane": {
+      "$ref": "common.schema.json#/$defs/plane_hosted"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "personal_data_state": {
+      "enum": ["none_identified", "present_restricted"],
+      "description": "unknown_quarantined is not allowed in an export: unknown classification blocks (R-111)."
+    },
+    "sensitivity_flags": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "start", "end", "confidence", "resolution"],
+        "properties": {
+          "category": {
+            "enum": [
+              "health",
+              "family",
+              "private_life",
+              "off_topic_personal",
+              "hr_matter",
+              "contact_data",
+              "other_sensitive"
+            ]
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "confidence": {
+            "enum": ["low", "medium", "high"]
+          },
+          "resolution": {
+            "enum": ["excluded", "kept_by_user"]
+          }
+        }
+      }
+    },
+    "user_validated": {
+      "$ref": "common.schema.json#/$defs/user_validated"
+    }
+  },
+  "required": [
+    "schema_version",
+    "export_id",
+    "tenant_id",
+    "workspace_id",
+    "actor_ref",
+    "objects",
+    "purpose_code",
+    "destination_class",
+    "policy_epoch",
+    "approval_ref",
+    "expires_at",
+    "manifest_sha256",
+    "plane",
+    "personal_data_state",
+    "sensitivity_flags",
+    "user_validated"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

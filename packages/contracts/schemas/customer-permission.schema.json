@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/customer-permission.schema.json",
+  "title": "CustomerPermission",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.customer-permission/1"
+    },
+    "customer_permission_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "const": "ACCOUNT_RESTRICTED"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/business_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "owner_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "source_lineage": {
+      "$ref": "common.schema.json#/$defs/source_lineage"
+    },
+    "lifecycle": {
+      "$ref": "common.schema.json#/$defs/lifecycle"
+    },
+    "retention": {
+      "$ref": "common.schema.json#/$defs/retention"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "logo", "quote", "metrics", "channels", "territories"],
+      "properties": {
+        "name": {
+          "type": "boolean"
+        },
+        "logo": {
+          "type": "boolean"
+        },
+        "quote": {
+          "type": "boolean"
+        },
+        "metrics": {
+          "type": "boolean"
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          }
+        },
+        "territories": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 250,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$"
+          }
+        }
+      }
+    },
+    "valid_from": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "valid_until": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "approver_contact_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "signed_artifact_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "signed_artifact_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "source_evidence_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "quote_consent_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "enum": ["active", "expired", "withdrawn"]
+    },
+    "withdrawn_at": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "customer_permission_id",
+    "tenant_id",
+    "plane",
+    "revision",
+    "expected_previous_revision",
+    "classification",
+    "personal_data_state",
+    "owner_ref",
+    "source_lineage",
+    "lifecycle",
+    "retention",
+    "account_id",
+    "subspace_id",
+    "scope",
+    "valid_from",
+    "valid_until",
+    "approver_contact_ref",
+    "signed_artifact_ref",
+    "signed_artifact_sha256",
+    "source_evidence_ref",
+    "quote_consent_ref",
+    "status",
+    "withdrawn_at"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "quarantined"
+              }
+            },
+            "required": ["state"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "$ref": "common.schema.json#/$defs/account_classification"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "GLOBAL_NONPERSONAL"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "const": "global_reusable"
+          },
+          "personal_data_state": {
+            "const": "none_identified"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "const": "withdrawn"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "withdrawn_at": {
+            "$ref": "common.schema.json#/$defs/timestamp"
+          }
+        },
+        "required": ["withdrawn_at"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "scope": {
+            "type": "object",
+            "properties": {
+              "quote": {
+                "const": true
+              }
+            },
+            "required": ["quote"]
+          }
+        },
+        "required": ["scope"]
+      },
+      "then": {
+        "properties": {
+          "quote_consent_ref": {
+            "$ref": "common.schema.json#/$defs/opaque_id"
+          }
+        }
+      }
+    }
+  ]
+}

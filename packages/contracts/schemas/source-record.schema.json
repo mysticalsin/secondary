@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/source-record.schema.json",
+  "title": "SourceRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.source-record/1"
+    },
+    "source_record_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "tenant_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "plane": {
+      "$ref": "common.schema.json#/$defs/plane_hosted"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "revision": {
+      "$ref": "common.schema.json#/$defs/revision"
+    },
+    "expected_previous_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "classification": {
+      "$ref": "common.schema.json#/$defs/business_classification"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state"
+    },
+    "owner_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "source_lineage": {
+      "$ref": "common.schema.json#/$defs/source_lineage"
+    },
+    "lifecycle": {
+      "$ref": "common.schema.json#/$defs/lifecycle"
+    },
+    "retention": {
+      "$ref": "common.schema.json#/$defs/retention"
+    },
+    "provider": {
+      "enum": ["sharepoint_drive", "onedrive_folder", "synthetic_upload"]
+    },
+    "drive_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "item_ref": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "source_revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "content_sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "byte_length": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 104857600
+    },
+    "extractor_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "fetched_at": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "acl_checked_at": {
+      "$ref": "common.schema.json#/$defs/timestamp"
+    },
+    "acl_state": {
+      "enum": ["current", "stale", "revoked", "unknown"]
+    },
+    "acl_max_age_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400
+    },
+    "servable": {
+      "type": "boolean",
+      "description": "Fail closed: only true when acl_state is current."
+    },
+    "delta_cursor_ref": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/opaque_id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "source_record_id",
+    "tenant_id",
+    "plane",
+    "revision",
+    "expected_previous_revision",
+    "classification",
+    "personal_data_state",
+    "owner_ref",
+    "source_lineage",
+    "lifecycle",
+    "retention",
+    "provider",
+    "drive_ref",
+    "item_ref",
+    "source_revision",
+    "content_sha256",
+    "byte_length",
+    "extractor_version",
+    "fetched_at",
+    "acl_checked_at",
+    "acl_state",
+    "acl_max_age_seconds",
+    "servable",
+    "delta_cursor_ref"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "personal_data_state": {
+            "const": "unknown_quarantined"
+          }
+        },
+        "required": ["personal_data_state"]
+      },
+      "then": {
+        "properties": {
+          "lifecycle": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "const": "quarantined"
+              }
+            },
+            "required": ["state"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "$ref": "common.schema.json#/$defs/account_classification"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "GLOBAL_NONPERSONAL"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "classification": {
+            "const": "global_reusable"
+          },
+          "personal_data_state": {
+            "const": "none_identified"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acl_state": {
+            "enum": ["stale", "revoked", "unknown"]
+          }
+        },
+        "required": ["acl_state"]
+      },
+      "then": {
+        "properties": {
+          "servable": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

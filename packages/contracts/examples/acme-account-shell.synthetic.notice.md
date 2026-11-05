@@ -1,0 +1,1 @@
+SYNTHETIC TEMPLATE ONLY. `acme-account-shell.synthetic.json` is a fictional account ("Acme Synthetic SA"). It is not a real customer record, engagement, relationship, success story or evidence. No real data is included. This note replaces the `_notice` property that v1.1 embedded in the JSON (errata ERR-14).

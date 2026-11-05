@@ -1,0 +1,10 @@
+{
+  "schema_version": "secondary.global/2",
+  "publication_id": "pub_synth_0001",
+  "revision": "rev_synth_0001",
+  "plane": "GLOBAL_NONPERSONAL",
+  "title": "Release readiness checklist",
+  "body_markdown": "Require a tested rollback plan before a production release.",
+  "tags": ["release", "checklist"],
+  "approved_global_refs": []
+}

@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.secondary.invalid/prd/1.2/mutation-intent.schema.json",
+  "title": "Private mutation intent (v1.2)",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "secondary.mutation/2"
+    },
+    "workspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "object_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "expected_revision": {
+      "$ref": "common.schema.json#/$defs/expected_previous_revision"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "sha256": {
+      "$ref": "common.schema.json#/$defs/sha256"
+    },
+    "byte_length": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1048576
+    },
+    "source_claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "$ref": "common.schema.json#/$defs/opaque_id"
+          },
+          "source_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "evidence_status": {
+            "type": "string",
+            "enum": ["observed", "provider_claim", "unknown"]
+          }
+        },
+        "required": ["source_id", "source_version", "evidence_status"]
+      },
+      "minItems": 0,
+      "maxItems": 20,
+      "uniqueItems": true
+    },
+    "plane": {
+      "$ref": "common.schema.json#/$defs/plane_hosted"
+    },
+    "account_id": {
+      "$ref": "common.schema.json#/$defs/account_id"
+    },
+    "subspace_id": {
+      "$ref": "common.schema.json#/$defs/opaque_id"
+    },
+    "personal_data_state": {
+      "$ref": "common.schema.json#/$defs/personal_data_state",
+      "description": "Client declaration, untrusted. The server may only raise it. unknown_quarantined is the default for unscreened content."
+    },
+    "sensitivity_flags": {
+      "$ref": "common.schema.json#/$defs/sensitivity_flags"
+    },
+    "user_validated": {
+      "anyOf": [
+        {
+          "$ref": "common.schema.json#/$defs/user_validated"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "workspace_id",
+    "object_id",
+    "expected_revision",
+    "idempotency_key",
+    "sha256",
+    "byte_length",
+    "source_claims",
+    "plane",
+    "personal_data_state",
+    "sensitivity_flags",
+    "user_validated"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "plane": {
+            "const": "ACCOUNT_RESTRICTED"
+          }
+        },
+        "required": ["plane"]
+      },
+      "then": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "required": ["account_id", "subspace_id"]
+      },
+      "else": {
+        "properties": {
+          "account_id": {},
+          "subspace_id": {}
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": ["account_id"]
+            },
+            {
+              "required": ["subspace_id"]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

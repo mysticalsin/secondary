@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "title": "AI use cases by stage",
+  "components": [
+    {
+      "type": "KpiRow",
+      "props": {
+        "lens": "governances"
+      }
+    },
+    {
+      "type": "StageBoard",
+      "props": {
+        "governanceId": "g_lbc"
+      }
+    },
+    {
+      "type": "MapMini",
+      "props": {
+        "lens": "accounts",
+        "focusId": "k_brazil",
+        "hops": 2
+      }
+    }
+  ]
+}

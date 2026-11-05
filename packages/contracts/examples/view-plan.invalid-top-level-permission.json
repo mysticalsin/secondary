@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "title": "Account overview",
+  "components": [
+    {
+      "type": "NodeCard",
+      "props": {
+        "nodeId": "c_bid"
+      }
+    }
+  ],
+  "permissions": ["view_content"]
+}

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "title": "Account overview",
+  "components": [
+    {
+      "type": "ItemList",
+      "props": {
+        "nodeId": "c_bid",
+        "items": [
+          {
+            "title": "Pricing models: guidance page"
+          }
+        ]
+      }
+    }
+  ]
+}
