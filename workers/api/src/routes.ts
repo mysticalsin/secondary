@@ -23,6 +23,9 @@ import { HTTPException } from "hono/http-exception";
 import { appendReceipt, fetchReceipts, newReceiptId, type Receipt } from "./audit.ts";
 import { authenticate, requireOrg, viewOf } from "./auth.ts";
 import { MAX_PROMPT, planView } from "./genui.ts";
+import { readiness } from "./observe.ts";
+import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
+import { PERSONAL_KINDS, type PersonalKind, personalKindOf } from "./personal-kind.ts";
 import { candidateId, parseCandidateId, scopeOfNode } from "./scope.ts";
 import { limitBody, mutationGuard, safeEqual } from "./security.ts";
 import { seedTenant } from "./seed.ts";
@@ -170,6 +173,7 @@ function parseUserValidated(v: unknown, s: Session, expectedRevision: number): U
 
 async function submitCandidate(c: C, view: AdmittedView, i: CandidateInput): Promise<Response> {
   const s = sess(c);
+  if (!s.switches.contribute) return c.json(switchedOff("contribute"), 503);
   const flags = detectSensitivity({ title: i.title, body: i.body });
   const pending = flags.filter((f) => !i.acknowledged.includes(f.id));
   // R-110/R-111: anything flagged blocks until the owner acknowledges each flag.
@@ -259,19 +263,7 @@ function collectAccounts(nodes: MapNode[], out: MapNode[]): MapNode[] {
   return out;
 }
 
-type PersonalKind = "note" | "brief" | "view" | "draft";
-const PERSONAL_KINDS: readonly string[] = ["note", "brief", "view", "draft"];
-
-/** Seeded personal items carry their kind in the label prefix; items created here store it as a tag. */
-function personalKindOf(r: ItemRecord): PersonalKind {
-  const tag = r.tags.find((t) => PERSONAL_KINDS.includes(t));
-  if (tag) return tag as PersonalKind;
-  const l = r.label.toLowerCase();
-  if (l.startsWith("private brief")) return "brief";
-  if (l.startsWith("saved view")) return "view";
-  if (l.startsWith("draft")) return "draft";
-  return "note";
-}
+const personalKindFor = (r: ItemRecord): PersonalKind => personalKindOf(r.label, r.tags);
 
 const personalView = (
   r: ItemRecord,
@@ -280,7 +272,7 @@ const personalView = (
   id: r.id,
   title: r.label,
   body: r.body ?? "",
-  kind: personalKindOf(r),
+  kind: personalKindFor(r),
   updatedAt: new Date(r.updatedAt).toISOString(),
   ...(contributed.length
     ? {
@@ -355,7 +347,15 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   // Unauthenticated: liveness only, no data.
   v1.get("/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION }));
 
+  // Readiness: Durable Object and R2 reachability. No data, no identity, answers are cached for 5 s.
+  v1.get("/ready", async (c) => {
+    const body = await readiness(c.env);
+    return c.json(body, body.ready ? 200 : 503);
+  });
+
   v1.use("*", authenticate(deps));
+  v1.use("*", switchGate);
+  v1.route("/admin", opsAdminRoutes(deps));
 
   // Dev only. Needs BOTH a valid Access identity (this route sits behind `authenticate`) AND the
   // SEED_TOKEN secret, compared in constant time. Attempts are rate limited per signed-in user.

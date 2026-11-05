@@ -45,13 +45,97 @@
     // Requests per principal per minute (Durable Object counter).
     "RATE_LIMIT_PER_MIN": "600",
     // Durable Objects are created in the EU jurisdiction. Local workerd cannot do that: .dev.vars sets "off".
-    "DO_JURISDICTION": "eu"
+    "DO_JURISDICTION": "eu",
+    // Retention (days) for Personal Brain drafts and briefs. The ops cron deletes older ones.
+    "RETENTION_DRAFT_DAYS": "90",
+    "RETENTION_BRIEF_DAYS": "30",
+    // Whether /v1/internal/ops/restore accepts a snapshot. "yes" in dev and staging, "no" in prod.
+    "RESTORE_ENABLED": "yes"
+  },
+  // Environments. Wrangler does not inherit bindings or vars into an env, so each block is complete:
+  // its own Durable Objects, EU buckets and audit worker. Dev-only features (personas, localhost
+  // bypass, auto-seed) are keyed on ENVIRONMENT === "dev" in code, so they are off in both.
+  // Deploy with scripts/deploy.sh <dev|staging|prod>.
+  "env": {
+    "staging": {
+      "name": "secondary-api-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "assets": {
+        "directory": "../../apps/web/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
+          { "name": "WORKSPACE", "class_name": "Workspace" }
+        ]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] }],
+      "r2_buckets": [
+        { "binding": "BLOBS", "bucket_name": "secondary-blobs-staging", "jurisdiction": "eu" }
+      ],
+      "services": [{ "binding": "AUDIT", "service": "secondary-audit-staging" }],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": "",
+        "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
+        "TENANT_DOMAINS": "{}",
+        "RATE_LIMIT_PER_MIN": "600",
+        "DO_JURISDICTION": "eu",
+        "RETENTION_DRAFT_DAYS": "90",
+        "RETENTION_BRIEF_DAYS": "30",
+        "RESTORE_ENABLED": "yes"
+      }
+    },
+    "prod": {
+      "name": "secondary-api-prod",
+      // No workers.dev host in production: the custom domain below is the only entry point.
+      // Placeholder until the domain is chosen. A deploy fails on it on purpose.
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "secondary.<your-domain>/*", "zone_name": "<your-domain>" }],
+      "assets": {
+        "directory": "../../apps/web/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
+          { "name": "WORKSPACE", "class_name": "Workspace" }
+        ]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] }],
+      "r2_buckets": [
+        { "binding": "BLOBS", "bucket_name": "secondary-blobs-prod", "jurisdiction": "eu" }
+      ],
+      "services": [{ "binding": "AUDIT", "service": "secondary-audit-prod" }],
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": "",
+        "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
+        "TENANT_DOMAINS": "{}",
+        "RATE_LIMIT_PER_MIN": "600",
+        "DO_JURISDICTION": "eu",
+        "RETENTION_DRAFT_DAYS": "90",
+        "RETENTION_BRIEF_DAYS": "30",
+        "RESTORE_ENABLED": "no"
+      }
+    }
   }
   // Secrets and local-only values, intentionally not set here (see .dev.vars.example):
   //   AUDIT_KEY_API          secret (32+ chars). Appends receipts to workers/audit.
   //   AUDIT_KEY_READ         secret (32+ chars). Reads receipts from workers/audit (Auditor views).
   //   INTERNAL_HMAC_KEY      secret, at least 32 characters. Shared with workers/mcp: verifies its signed calls (X-Secondary-*).
   //   SEED_TOKEN             secret. Required by POST /v1/admin/seed (dev only).
+  //   AUDIT_KEY_ERASE        secret (32+ chars). Lets the API pseudonymise receipts in workers/audit (right to erasure).
+  //   PSEUDONYM_KEY          secret (32+ chars). Keys the pseudonyms; erasure is refused without it.
   //   DEV_AUTH_BYPASS_EMAIL  local-dev var. Honoured only when ENVIRONMENT is "dev" AND the request host is
   //                          localhost, 127.0.0.1 or [::1]. Put it in .dev.vars, never in this file.
 }

@@ -7,6 +7,10 @@ interface Env {
   /** Secrets (at least 32 characters). Authenticate this worker to workers/audit. */
   AUDIT_KEY_API?: string;
   AUDIT_KEY_READ?: string;
+  /** Secret (at least 32 characters). Keys the pseudonyms that replace a person's id on erasure. */
+  PSEUDONYM_KEY?: string;
+  /** Secret (at least 32 characters). Lets this worker ask workers/audit to pseudonymise receipts. */
+  AUDIT_KEY_ERASE?: string;
   /** Local-dev only. Honoured for localhost hosts in ENVIRONMENT=dev. */
   DEV_AUTH_BYPASS_EMAIL?: string;
 }

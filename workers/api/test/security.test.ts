@@ -199,7 +199,6 @@ describe("binding inventory", () => {
     "routes",
     "route",
     "triggers",
-    "env",
   ];
 
   it("api worker holds exactly the allowlisted bindings", () => {
@@ -228,6 +227,9 @@ describe("binding inventory", () => {
       "DO_JURISDICTION",
       "ENVIRONMENT",
       "RATE_LIMIT_PER_MIN",
+      "RESTORE_ENABLED",
+      "RETENTION_BRIEF_DAYS",
+      "RETENTION_DRAFT_DAYS",
       "TENANT_DOMAINS",
     ]);
     expect(api.vars.DO_JURISDICTION).toBe("eu");

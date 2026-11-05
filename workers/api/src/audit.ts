@@ -48,3 +48,35 @@ export async function fetchReceipts(
     return null;
   }
 }
+
+/**
+ * Right to erasure: ask workers/audit to replace a principal id with its pseudonym in every stored
+ * receipt of the tenant. Pages through the bucket. Returns the number of receipts rewritten, or
+ * null when the audit worker is unavailable or refuses.
+ */
+export async function pseudonymiseReceipts(
+  env: Env,
+  tenantId: string,
+  from: string,
+  to: string,
+): Promise<number | null> {
+  let rewritten = 0;
+  let cursor: string | undefined;
+  try {
+    for (let page = 0; page < 200; page++) {
+      const res = await env.AUDIT.fetch(`${AUDIT_ORIGIN}/pseudonymise`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Audit-Key": env.AUDIT_KEY_ERASE ?? "" },
+        body: JSON.stringify({ tenant: tenantId, from, to, ...(cursor ? { cursor } : {}) }),
+      });
+      if (!res.ok) return null;
+      const out = (await res.json()) as { rewritten: number; cursor?: string };
+      rewritten += out.rewritten;
+      if (!out.cursor) return rewritten;
+      cursor = out.cursor;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}

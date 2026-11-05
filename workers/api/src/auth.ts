@@ -203,6 +203,7 @@ export const authenticate =
       epoch: s.epoch,
       internal,
       org: s.config ? getOrg(s.config) : null,
+      switches: s.switches,
     };
     c.set("session", session);
     await next();

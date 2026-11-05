@@ -1,12 +1,14 @@
 // Append-only audit log. Reachable only through service bindings:
 //  - wrangler.jsonc turns off workers.dev and preview URLs and declares no routes, so there is no public URL;
-//  - every request must carry `X-Audit-Key`, a secret that only the bound workers hold. There are three
-//    keys: one append key per writer (api, mcp) and one read key (api only, for the Auditor views).
+//  - every request must carry `X-Audit-Key`, a secret that only the bound workers hold. There are four
+//    keys: one append key per writer (api, mcp), one read key (api only, for the Auditor views) and one
+//    erase key (api only).
 //    The key decides the receipt `source`, so a writer cannot claim to be the other one, and the
 //    MCP worker, which faces the internet, holds no read key;
 //  - as defence in depth, a request that carries CF-Connecting-IP (public traffic) is refused.
 // Each receipt is written once as its own R2 object holding one JSON line, keyed by date and tenant.
-// Nothing here updates or deletes. Receipts hold who, what, where and the decision, never content.
+// Nothing here updates or deletes, with one exception: POST /pseudonymise (right to erasure, own key) swaps a
+// principal id for its pseudonym. Receipts hold who, what, where and the decision, never content.
 
 import { Hono } from "hono";
 import {
@@ -27,7 +29,7 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-type Role = { kind: "append"; source: ReceiptSource } | { kind: "read" };
+type Role = { kind: "append"; source: ReceiptSource } | { kind: "read" } | { kind: "erase" };
 
 const app = new Hono<{ Bindings: Env; Variables: { role: Role } }>();
 
@@ -38,6 +40,7 @@ function roleOf(c: { env: Env; req: { header: (n: string) => string | undefined 
     [c.env.AUDIT_KEY_API, { kind: "append", source: "api" }],
     [c.env.AUDIT_KEY_MCP, { kind: "append", source: "mcp" }],
     [c.env.AUDIT_KEY_READ, { kind: "read" }],
+    [c.env.AUDIT_KEY_ERASE, { kind: "erase" }],
   ];
   let found: Role | null = null;
   // Compare against every configured key so timing does not reveal which one matched.
@@ -119,6 +122,57 @@ app.get("/receipts", async (c) => {
     .sort((a, b) => b.at.localeCompare(a.at))
     .slice(0, 200);
   return c.json({ receipts });
+});
+
+// Right to erasure. The only route that rewrites a receipt, and only the principal id (and the
+// personal scope id that embeds it) are replaced, never anything else. It needs its own key, held by
+// workers/api, which computes the pseudonym. Each call handles up to PAGE_OBJECTS receipts and
+// returns a cursor when there are more.
+const PAGE_OBJECTS = 500;
+
+const swap = (v: unknown, from: string, to: string): unknown => {
+  if (v === from) return to;
+  if (v === `personal:${from}`) return `personal:${to}`;
+  return Array.isArray(v) ? v.map((x) => swap(x, from, to)) : v;
+};
+
+app.post("/pseudonymise", async (c) => {
+  if (c.get("role").kind !== "erase") return c.json({ error: "forbidden" }, 403);
+  let body: Record<string, unknown>;
+  try {
+    body = (await c.req.json()) as Record<string, unknown>;
+  } catch {
+    return c.json({ error: "invalid_json" }, 400);
+  }
+  const tenant = str(body.tenant, TENANT_ID);
+  const from = str(body.from, PRINCIPAL_ID);
+  const to = str(body.to, PRINCIPAL_ID);
+  const cursor = typeof body.cursor === "string" ? body.cursor : undefined;
+  if (!tenant || !from || !to || from === to) return c.json({ error: "invalid_request" }, 400);
+
+  const page = await c.env.AUDIT_LOG.list({ limit: PAGE_OBJECTS, ...(cursor ? { cursor } : {}) });
+  let rewritten = 0;
+  for (const obj of page.objects) {
+    // Keys are <date>/<tenant>/<file>: only this tenant's objects.
+    if (obj.key.split("/")[1] !== tenant) continue;
+    const text = (await (await c.env.AUDIT_LOG.get(obj.key))?.text()) ?? "";
+    if (!text.trim()) continue;
+    const receipt = JSON.parse(text) as Record<string, unknown>;
+    let changed = false;
+    for (const k of ["principalId", "nodeId", "scopeId", "scopeIds"]) {
+      const next = swap(receipt[k], from, to);
+      if (JSON.stringify(next) !== JSON.stringify(receipt[k])) {
+        receipt[k] = next;
+        changed = true;
+      }
+    }
+    if (!changed) continue;
+    await c.env.AUDIT_LOG.put(obj.key, `${JSON.stringify(receipt)}\n`, {
+      httpMetadata: { contentType: "application/x-ndjson" },
+    });
+    rewritten++;
+  }
+  return c.json({ rewritten, ...(page.truncated ? { cursor: page.cursor } : {}) });
 });
 
 app.all("*", (c) => c.json({ error: "not_found" }, 404));

@@ -1,0 +1,63 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "secondary-ops-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Backups and restore. A cron snapshots every TenantPolicy and Workspace Durable Object (through the
+  // API's signed export endpoint) into an EU R2 bucket as AES-GCM encrypted JSONL, prunes snapshots
+  // older than BACKUP_RETENTION_DAYS, and runs the retention job. The admin routes (list, backup now,
+  // restore) need the OPS_ADMIN_KEY secret and answer 404 for anything else. Preview URLs are off.
+  "workers_dev": true,
+  "preview_urls": false,
+  "triggers": { "crons": ["17 2 * * *", "47 3 * * *"] },
+  "r2_buckets": [
+    { "binding": "BACKUPS", "bucket_name": "secondary-backups-dev", "jurisdiction": "eu" }
+  ],
+  "services": [{ "binding": "API", "service": "secondary-api-dev" }],
+  "vars": {
+    "ENVIRONMENT": "dev",
+    "BACKUP_RETENTION_DAYS": "35",
+    // Whether POST /restore may run. "yes" in dev and staging, "no" in prod (set to "yes" only during a restore).
+    "RESTORE_ENABLED": "yes"
+  },
+  "env": {
+    "staging": {
+      "name": "secondary-ops-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      "triggers": { "crons": ["17 2 * * *", "47 3 * * *"] },
+      "r2_buckets": [
+        { "binding": "BACKUPS", "bucket_name": "secondary-backups-staging", "jurisdiction": "eu" }
+      ],
+      "services": [{ "binding": "API", "service": "secondary-api-staging" }],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "BACKUP_RETENTION_DAYS": "35",
+        "RESTORE_ENABLED": "yes"
+      }
+    },
+    "prod": {
+      "name": "secondary-ops-prod",
+      // No workers.dev host in production. Placeholder route until the domain is chosen; a deploy fails on it on purpose.
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [{ "pattern": "secondary-ops.<your-domain>/*", "zone_name": "<your-domain>" }],
+      "triggers": { "crons": ["17 2 * * *", "47 3 * * *"] },
+      "r2_buckets": [
+        { "binding": "BACKUPS", "bucket_name": "secondary-backups-prod", "jurisdiction": "eu" }
+      ],
+      "services": [{ "binding": "API", "service": "secondary-api-prod" }],
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "BACKUP_RETENTION_DAYS": "35",
+        "RESTORE_ENABLED": "no"
+      }
+    }
+  }
+  // Secrets (wrangler secret put ...), never in this file:
+  //   BACKUP_KEY           32+ chars. Encrypts snapshots. Keep a copy in the key vault: a snapshot cannot be read without it.
+  //   BACKUP_KEY_PREVIOUS  optional, the key before a rotation. Used to read older snapshots.
+  //   INTERNAL_HMAC_KEY    shared with workers/api and workers/mcp. Signs the calls to the API.
+  //   OPS_ADMIN_KEY        32+ chars. Guards /snapshots, /backup and /restore.
+}

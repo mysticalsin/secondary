@@ -4,6 +4,8 @@
 
 import { DurableObject } from "cloudflare:workers";
 import type { ScopeType } from "@secondary/policy";
+import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
+import { allOn, isSwitchName, SWITCHES, type SwitchName, type SwitchState } from "./switches.ts";
 
 export type Membership = { scope_type: ScopeType; scope_id: string };
 export type TenantConfig = { tenantId: string; seed: number; personalOwners: string[] };
@@ -24,10 +26,25 @@ export type Session = {
   elevatedUntil: number | null;
   epoch: number;
   config: TenantConfig | null;
+  switches: SwitchState;
 };
 
 const WINDOW_MS = 60_000;
 const MAX_ELEVATION_HOURS = 24;
+/** A first approval waits this long for the second person. */
+const SECOND_PERSON_TTL_MS = 24 * 3_600_000;
+/** Tables that make up a TenantPolicy snapshot. The request counter is not part of it. */
+const SNAPSHOT_TABLES = [
+  "config",
+  "principals",
+  "role_assignments",
+  "memberships",
+  "nda_grants",
+  "elevations",
+  "revocation",
+  "switches",
+  "pending_ops",
+] as const;
 
 const toHex = (buf: ArrayBuffer): string =>
   [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -62,6 +79,10 @@ export class TenantPolicy extends DurableObject<Env> {
         INSERT OR IGNORE INTO revocation (id, epoch) VALUES (1, 0);
         CREATE TABLE IF NOT EXISTS rate (
           principal_id TEXT PRIMARY KEY, window INTEGER NOT NULL, count INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS switches (
+          name TEXT PRIMARY KEY, enabled INTEGER NOT NULL, changed_by TEXT NOT NULL, changed_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS pending_ops (
+          key TEXT PRIMARY KEY, requested_by TEXT NOT NULL, requested_at INTEGER NOT NULL);
       `);
     });
   }
@@ -194,6 +215,7 @@ export class TenantPolicy extends DurableObject<Env> {
       elevatedUntil: until,
       epoch: this.epoch(),
       config: this.getConfig(),
+      switches: this.switchState(),
     };
   }
 
@@ -291,5 +313,150 @@ export class TenantPolicy extends DurableObject<Env> {
         this.sql.exec(`DELETE FROM ${t} WHERE principal_id = ?`, principalId);
     });
     return this.bump();
+  }
+
+  // ---- operations: kill switches, two-person steps, snapshots, rights ----
+
+  private switchState(): SwitchState {
+    const out = allOn();
+    for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray())
+      if (isSwitchName(r.name)) out[r.name] = r.enabled === 1;
+    return out;
+  }
+
+  /** Current state with who changed it and when, plus the re-enable requests waiting for a second person. */
+  switchStatus(now: number): {
+    switches: Record<SwitchName, { enabled: boolean; changedAt: number | null }>;
+    pending: { switch: SwitchName; requestedAt: number }[];
+  } {
+    const state = this.switchState();
+    const at = new Map(
+      this.sql
+        .exec("SELECT name, changed_at FROM switches")
+        .toArray()
+        .map((r) => [r.name as string, r.changed_at as number]),
+    );
+    const switches = Object.fromEntries(
+      SWITCHES.map((n) => [n, { enabled: state[n], changedAt: at.get(n) ?? null }]),
+    ) as Record<SwitchName, { enabled: boolean; changedAt: number | null }>;
+    const pending = this.sql
+      .exec(
+        "SELECT key, requested_at FROM pending_ops WHERE key LIKE 'switch:%' AND requested_at > ?",
+        now - SECOND_PERSON_TTL_MS,
+      )
+      .toArray()
+      .map((r) => ({
+        switch: (r.key as string).slice(7) as SwitchName,
+        requestedAt: r.requested_at as number,
+      }));
+    return { switches, pending };
+  }
+
+  /**
+   * Turning a switch off is always one person. Turning it back on needs a second, different person
+   * when `twoPerson` is set (prod): the first request is recorded and expires after 24 hours.
+   */
+  setSwitch(
+    name: SwitchName,
+    enabled: boolean,
+    actor: string,
+    now: number,
+    twoPerson: boolean,
+  ): { status: "applied" | "pending"; sameActor?: boolean } {
+    const apply = () =>
+      this.sql.exec(
+        `INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, changed_by = excluded.changed_by,
+           changed_at = excluded.changed_at`,
+        name,
+        enabled ? 1 : 0,
+        actor,
+        now,
+      );
+    if (!enabled) {
+      apply();
+      this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${name}`);
+      return { status: "applied" };
+    }
+    if (this.switchState()[name]) return { status: "applied" };
+    if (twoPerson) {
+      const r = this.requestSecond(`switch:${name}`, actor, now);
+      if (r !== "second") return { status: "pending", sameActor: r === "same" };
+    }
+    apply();
+    return { status: "applied" };
+  }
+
+  /**
+   * Two-person rule. "first": recorded. "same": the same person asked again, nothing changes.
+   * "second": a different person confirmed within 24 hours, so the caller may proceed.
+   */
+  requestSecond(key: string, actor: string, now: number): "first" | "same" | "second" {
+    const row = this.sql
+      .exec("SELECT requested_by, requested_at FROM pending_ops WHERE key = ?", key)
+      .toArray()[0];
+    if (!row || (row.requested_at as number) <= now - SECOND_PERSON_TTL_MS) {
+      this.sql.exec(
+        `INSERT INTO pending_ops (key, requested_by, requested_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET requested_by = excluded.requested_by, requested_at = excluded.requested_at`,
+        key,
+        actor,
+        now,
+      );
+      return "first";
+    }
+    if (row.requested_by === actor) return "same";
+    this.sql.exec("DELETE FROM pending_ops WHERE key = ?", key);
+    return "second";
+  }
+
+  /** Id of the principal behind an email, or the stable anonymous id when the email is not in the directory. */
+  async resolvePrincipalId(email: string): Promise<string> {
+    const e = email.trim().toLowerCase();
+    const row = this.sql.exec("SELECT id FROM principals WHERE email = ?", e).toArray()[0];
+    return (row?.id as string | undefined) ?? (await anonymousId(e));
+  }
+
+  listPrincipalIds(): string[] {
+    const ids = new Set(
+      this.sql
+        .exec("SELECT id FROM principals ORDER BY id")
+        .toArray()
+        .map((r) => r.id as string),
+    );
+    for (const id of this.getConfig()?.personalOwners ?? []) ids.add(id);
+    return [...ids].sort();
+  }
+
+  /** Right to erasure for the directory: identity, roles, memberships, grants, elevations, counters. */
+  erasePrincipal(principalId: string): number {
+    this.ctx.storage.transactionSync(() => {
+      for (const t of [
+        "principals",
+        "role_assignments",
+        "memberships",
+        "nda_grants",
+        "elevations",
+        "rate",
+      ])
+        this.sql.exec(
+          `DELETE FROM ${t} WHERE ${t === "principals" ? "id" : "principal_id"} = ?`,
+          principalId,
+        );
+      this.sql.exec("DELETE FROM pending_ops WHERE requested_by = ?", principalId);
+    });
+    return this.bump();
+  }
+
+  exportAll(): Snapshot {
+    return exportTables(this.sql, SNAPSHOT_TABLES);
+  }
+
+  /** Replace this tenant's directory from a snapshot and bump the epoch so every session is re-checked. */
+  importAll(data: unknown): number {
+    const rows = replaceTables(this.ctx.storage, SNAPSHOT_TABLES, data);
+    this.sql.exec("INSERT OR IGNORE INTO revocation (id, epoch) VALUES (1, 0)");
+    this.bump();
+    return rows;
   }
 }
