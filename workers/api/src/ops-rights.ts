@@ -77,9 +77,25 @@ export async function exportSubject(env: Env, tenantId: string, org: Org, princi
       items: personal.items ?? [],
       comments: personal.comments ?? [],
       contributions: personal.contributions ?? [],
+      // The personal wiki is the person's own data too (M-02).
+      wiki: {
+        pages: personal.wiki_pages ?? [],
+        revisions: personal.wiki_page_revisions ?? [],
+        facts: personal.wiki_facts ?? [],
+        sources: personal.wiki_sources ?? [],
+        log: personal.wiki_log ?? [],
+        schema: personal.wiki_schema ?? [],
+      },
     },
     authoredCompany: authored.filter(
-      (a) => a.items.length || a.comments.length || a.approvals.length || a.edits.length,
+      (a) =>
+        a.items.length ||
+        a.comments.length ||
+        a.approvals.length ||
+        a.edits.length ||
+        a.wiki.revisions.length ||
+        a.wiki.factsVerified.length ||
+        a.wiki.log.length,
     ),
     receipts: { windowDays: 30, available: receipts !== null, items: receipts ?? [] },
   };
@@ -101,8 +117,15 @@ export async function eraseSubject(
   pseudonym: string,
 ): Promise<EraseSummary | null> {
   const authored = { items: 0, comments: 0, approvals: 0, edits: 0 };
+  // The address can be typed into wiki text (an owner, a note): it is replaced with the id.
+  const email = await tenantStub(env, tenantId).emailOfPrincipal(principalId);
+  const aliases = email ? [email, email.toLowerCase()] : [];
   for (const scope of companyScopes(org)) {
-    const r = await workspaceStub(env, tenantId, scope).pseudonymise(principalId, pseudonym);
+    const r = await workspaceStub(env, tenantId, scope).pseudonymise(
+      principalId,
+      pseudonym,
+      aliases,
+    );
     authored.items += r.items;
     authored.comments += r.comments;
     authored.approvals += r.approvals;

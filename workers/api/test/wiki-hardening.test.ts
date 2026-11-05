@@ -325,6 +325,87 @@ describe("M-01: a generated line that merges two sources is dropped unless every
   });
 });
 
+// ---------------------------------------------------------------- M-02
+
+describe("M-02: retention and rights reach the derived wiki", () => {
+  it("deleting a source erases the facts, page lines, revisions, search rows, proposals and titles it fed", async () => {
+    const MARK = "Zorblax";
+    const S1 = srcId("m02done");
+    const S2 = srcId("m02wait");
+    await restrictedSource(
+      S1,
+      `${MARK} contract.md`,
+      `Decision: Approve ${MARK} rebate (status: decided)`,
+    );
+    const done = (await run()).find((r) => r.triage === "proposed")?.id as string;
+    expect((await approveAs(C, done)).status).toBe(200);
+    await restrictedSource(S2, `${MARK} annex.md`, `Decision: Extend ${MARK} annex (status: open)`);
+    const waiting = (await run()).find((r) => r.triage === "proposed")?.id as string;
+    const ws = wsOf(ALPHA, ACC);
+    expect(JSON.stringify(await ws.exportAll())).toContain(MARK);
+    await ws.sourceDelete([S1, S2]);
+    const dump = JSON.stringify(await ws.exportAll());
+    expect(dump).not.toContain(MARK);
+    // The pending proposal is rejected, not left to be approved on nothing.
+    expect((await ws.get(waiting))?.status).toBe("rejected");
+    const page = await json(await get("acme_lead", `${ACC}/pages/decision-log`, { env: allow }));
+    expect(JSON.stringify(page)).not.toContain(MARK);
+  });
+
+  it("deleting a Personal Brain note erases what the personal wiki learned from it, and the subject export carries the personal wiki", async () => {
+    const MARK = "Quuxmarker";
+    const made = await json(
+      await as("consultant", "/v1/personal/items", {
+        body: { title: `Notes ${MARK}`, body: `Decision: Keep ${MARK} private (status: decided)` },
+      }),
+    );
+    const r = await post("consultant", "me/run", {});
+    expect(r.status).toBe(200);
+    const queued = (await json<Loose[]>(await get("consultant", "me/proposals")))[0];
+    expect(queued).toBeTruthy();
+    expect(
+      (
+        await post("consultant", `me/proposals/${queued.id}/decide`, {
+          decision: "approve",
+          revisionHash: (
+            await json(await get("consultant", `me/proposals/${queued.id}`))
+          ).revisionHash,
+        })
+      ).status,
+    ).toBe(200);
+    const exp1 = await adminExport("u_consultant");
+    expect(JSON.stringify(exp1.personalBrain.wiki)).toContain(MARK);
+    const del = await as("consultant", `/v1/personal/items/${made.id}`, { method: "DELETE" });
+    expect(del.status).toBeLessThan(300);
+    const dump = JSON.stringify(await wsOf(ALPHA, "personal:u_consultant").exportAll());
+    expect(dump).not.toContain(MARK);
+  });
+
+  it("erasing a person replaces their address and id inside wiki text, log and titles too", async () => {
+    const WHO = "dana.duval@example.invalid";
+    await post("acme_lead", `${ACC}/meetings`, {
+      title: `Owner check ${WHO}`,
+      date: "2026-11-03",
+      commitments: [{ title: `Send the pack ${uid()}`, owner: WHO }],
+    });
+    const id = (await run()).find((r) => r.triage === "proposed")?.id as string;
+    expect((await approveAs(C, id)).status).toBe(200);
+    const ws = wsOf(ALPHA, ACC);
+    expect(JSON.stringify(await ws.exportAll())).toContain(WHO);
+    await ws.pseudonymise("u_dana", "pz_dana", [WHO, "u_dana"]);
+    expect(JSON.stringify(await ws.exportAll())).not.toContain(WHO);
+  });
+});
+
+async function adminExport(principal: string): Promise<Loose> {
+  const req = (email: string) =>
+    as("platform_admin", `/v1/admin/rights/export?principal=${principal}`, { email });
+  const first = await req("admin-wiki-a@example.invalid");
+  const res = first.status === 202 ? await req("admin-wiki-b@example.invalid") : first;
+  expect(res.status, await res.clone().text()).toBe(200);
+  return json(res);
+}
+
 // ---------------------------------------------------------------- M-03
 
 describe("M-03: history and diffs are bounded", () => {

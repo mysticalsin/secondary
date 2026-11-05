@@ -1614,8 +1614,12 @@ export abstract class WikiBase extends DurableObject<Env> {
     for (const t of WIKI_TABLES) this.sql.exec(`DELETE FROM ${t}`);
   }
 
-  /** Right to erasure: a person's id in the wiki becomes a pseudonym. */
-  wikiPseudonymise(from: string, to: string): number {
+  /**
+   * Right to erasure: a person's id becomes a pseudonym in every actor column, and the id and any
+   * alias (address, name) typed into facts, pages, revisions, the search index, the log, source
+   * titles and the text of records and proposals is replaced too (M-02).
+   */
+  wikiPseudonymise(from: string, to: string, aliases: string[] = []): number {
     let n = 0;
     for (const [t, c] of [
       ["wiki_facts", "verified_by"],
@@ -1625,7 +1629,204 @@ export abstract class WikiBase extends DurableObject<Env> {
       n += this.sql
         .exec(`UPDATE ${t} SET ${c} = ? WHERE ${c} = ? RETURNING 1`, to, from)
         .toArray().length;
+    const names = [
+      ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length >= 3)),
+    ];
+    const touched = new Set<string>();
+    for (const a of names) {
+      const hit = (t: string, cols: string[], extra = "") => {
+        const set = cols.map((c) => `${c} = replace(${c}, ?, ?)`).join(", ");
+        const any = cols.map((c) => `instr(${c}, ?) > 0`).join(" OR ");
+        const args: string[] = [...cols.flatMap(() => [a, to]), ...cols.map(() => a)];
+        return this.sql
+          .exec(`UPDATE ${t} SET ${set} WHERE (${any})${extra} RETURNING 1`, ...args)
+          .toArray().length;
+      };
+      for (const r of this.sql
+        .exec("SELECT id FROM wiki_pages WHERE instr(markdown, ?) > 0 OR instr(title, ?) > 0", a, a)
+        .toArray())
+        touched.add(r.id as string);
+      n += hit("wiki_facts", ["subject", "object"]);
+      n += hit("wiki_pages", ["title", "markdown", "summary"]);
+      n += hit("wiki_page_revisions", ["title", "markdown"]);
+      n += hit("wiki_log", ["detail"]);
+      n += hit("wiki_sources", ["title"]);
+      n += hit("wiki_promotions", ["title"]);
+      n += hit(
+        "items",
+        ["label", "body"],
+        " AND (kind IN ('meeting_record', 'record') OR kind LIKE 'wiki\\_%' ESCAPE '\\')",
+      );
+    }
+    for (const id of touched) this.reindexPage(id);
     return n;
+  }
+
+  /** Rebuild the search row of one page from what is stored now. */
+  private reindexPage(id: string): void {
+    this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", id);
+    const p = this.pageById(id);
+    if (p?.status === "published")
+      this.sql.exec(
+        "INSERT INTO wiki_fts (title, summary, body, id) VALUES (?, ?, ?, ?)",
+        p.title,
+        summaryOf(p.markdown),
+        p.markdown.replace(/\{src:[^}]*\}/g, ""),
+        id,
+      );
+  }
+
+  /**
+   * Retention and erasure follow derived knowledge (M-02). A source is gone (deleted at the customer's
+   * request, retention purge, a removed note): the facts that rest on it are deleted, the page lines
+   * that cite it are removed from every page and every revision, search rows are rebuilt, proposals
+   * that cite it are rejected and emptied, and its title leaves the source table, the jobs and the
+   * log. Runs inside the caller's transaction.
+   */
+  wikiForgetSources(
+    ids: string[],
+    now: number,
+  ): { facts: number; pages: number; proposals: number } {
+    const gone = new Set(ids);
+    const out = { facts: 0, pages: 0, proposals: 0 };
+    if (!gone.size) return out;
+    const hit = (cites: string[]) => cites.some((x) => gone.has(x));
+    for (const r of this.sql
+      .exec("SELECT id, source_ids, source_hashes FROM wiki_facts")
+      .toArray()) {
+      const sids = JSON.parse(r.source_ids as string) as string[];
+      if (!hit(sids)) continue;
+      const rest = sids.filter((x) => !gone.has(x));
+      if (!rest.length) {
+        this.sql.exec("DELETE FROM wiki_facts WHERE id = ?", r.id as number);
+        out.facts++;
+      } else {
+        const hashes = JSON.parse(r.source_hashes as string) as Record<string, string>;
+        for (const x of gone) delete hashes[x];
+        this.sql.exec(
+          "UPDATE wiki_facts SET source_ids = ?, source_hashes = ? WHERE id = ?",
+          JSON.stringify(rest),
+          JSON.stringify(hashes),
+          r.id as number,
+        );
+      }
+    }
+    // A line that cites a gone source is dropped from the page and from every revision.
+    const redact = (md: string): string =>
+      md
+        .split("\n")
+        .filter((l) => !hit(citationsOf(l)))
+        .join("\n");
+    const hasContent = (md: string): boolean =>
+      md.split("\n").some((l) => l.trim() !== "" && !l.startsWith("#"));
+    for (const r of this.sql.exec("SELECT id, markdown FROM wiki_pages").toArray()) {
+      const md = r.markdown as string;
+      if (!hit(citationsOf(md))) continue;
+      const next = redact(md);
+      out.pages++;
+      if (!hasContent(next)) {
+        this.sql.exec("DELETE FROM wiki_pages WHERE id = ?", r.id as string);
+        this.sql.exec("DELETE FROM wiki_page_revisions WHERE page_id = ?", r.id as string);
+        this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", r.id as string);
+      } else {
+        this.sql.exec(
+          "UPDATE wiki_pages SET markdown = ?, summary = ? WHERE id = ?",
+          next,
+          summaryOf(next),
+          r.id as string,
+        );
+        this.reindexPage(r.id as string);
+      }
+    }
+    for (const r of this.sql
+      .exec("SELECT page_id, revision, markdown FROM wiki_page_revisions")
+      .toArray()) {
+      const md = r.markdown as string;
+      if (hit(citationsOf(md)))
+        this.sql.exec(
+          "UPDATE wiki_page_revisions SET markdown = ? WHERE page_id = ? AND revision = ?",
+          redact(md),
+          r.page_id as string,
+          r.revision as number,
+        );
+    }
+    const scrubbed: string[] = [];
+    for (const r of this.sql
+      .exec("SELECT id FROM items WHERE kind LIKE 'wiki\\_%' ESCAPE '\\'")
+      .toArray()) {
+      const it = this.get(r.id as string);
+      const p = it ? this.parse(it) : null;
+      if (!it || !p) continue;
+      if (!hit([...(p.titleSources ?? []), ...sourcesOfLegacy(p), ...p.reingest])) continue;
+      const empty: Proposal = {
+        v: 1,
+        kind: p.kind,
+        title: "Erased source",
+        rationale: "",
+        origin: p.origin,
+        pages: [],
+        facts: [],
+        invalidate: [],
+        confirm: [],
+        archive: [],
+        reingest: [],
+        sources: [],
+        findingKey: p.findingKey,
+        titleSources: [],
+      };
+      this.sql.exec(
+        "UPDATE items SET label = ?, body = ?, status = CASE WHEN status = 'candidate' THEN 'rejected' ELSE status END, updated_at = ? WHERE id = ?",
+        empty.title,
+        JSON.stringify(empty),
+        now,
+        it.id,
+      );
+      this.sql.exec("DELETE FROM items_fts WHERE id = ?", it.id);
+      scrubbed.push(it.id);
+      out.proposals++;
+    }
+    for (const x of gone) {
+      this.sql.exec("DELETE FROM wiki_sources WHERE source_id = ?", x);
+      this.sql.exec("DELETE FROM wiki_jobs WHERE instr(payload, ?) > 0", x);
+    }
+    for (const x of scrubbed)
+      this.sql.exec(
+        "UPDATE wiki_log SET detail = json_remove(detail, '$.title') WHERE json_valid(detail) AND json_extract(detail, '$.id') = ?",
+        x,
+      );
+    if (out.facts || out.pages || out.proposals)
+      this.wikiLogAppend("system", "sources.forgotten", { ...out, sources: gone.size }, now);
+    return out;
+  }
+
+  /** What a person did in this wiki, for the subject export. */
+  wikiAuthoredBy(principalId: string): {
+    revisions: { pageId: string; revision: number; title: string; at: number }[];
+    factsVerified: number[];
+    log: { at: number; kind: string }[];
+  } {
+    return {
+      revisions: this.sql
+        .exec(
+          "SELECT page_id, revision, title, at FROM wiki_page_revisions WHERE actor = ? ORDER BY at",
+          principalId,
+        )
+        .toArray()
+        .map((r) => ({
+          pageId: r.page_id as string,
+          revision: r.revision as number,
+          title: r.title as string,
+          at: r.at as number,
+        })),
+      factsVerified: this.sql
+        .exec("SELECT id FROM wiki_facts WHERE verified_by = ? ORDER BY id", principalId)
+        .toArray()
+        .map((r) => r.id as number),
+      log: this.sql
+        .exec("SELECT at, kind FROM wiki_log WHERE actor = ? ORDER BY id", principalId)
+        .toArray()
+        .map((r) => ({ at: r.at as number, kind: r.kind as string })),
+    };
   }
 
   /** For the mismatch check in tests: the tables that hold published knowledge. */

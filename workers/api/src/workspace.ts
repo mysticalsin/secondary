@@ -284,6 +284,8 @@ export class Workspace extends WikiBase {
           .toArray().length;
         this.sql.exec("DELETE FROM source_fts WHERE id = ?", id);
       }
+      // Derived knowledge goes with its source (M-02).
+      this.wikiForgetSources(ids, Date.now());
     });
     return n;
   }
@@ -586,6 +588,7 @@ export class Workspace extends WikiBase {
         this.sql.exec(`DELETE FROM ${t} WHERE item_id = ?`, id);
       this.sql.exec("DELETE FROM items_fts WHERE id = ?", id);
       this.sql.exec("DELETE FROM items WHERE id = ?", id);
+      this.wikiForgetSources([id], Date.now());
     });
     return true;
   }
@@ -851,8 +854,10 @@ export class Workspace extends WikiBase {
     comments: Comment[];
     approvals: { itemId: string; revision: number; kind: string; at: number }[];
     edits: { itemId: string; revision: number; at: number }[];
+    wiki: ReturnType<WikiBase["wikiAuthoredBy"]>;
   } {
     return {
+      wiki: this.wikiAuthoredBy(principalId),
       items: this.sql
         .exec("SELECT * FROM items WHERE author_id = ? ORDER BY created_at, id", principalId)
         .toArray()
@@ -897,6 +902,7 @@ export class Workspace extends WikiBase {
   pseudonymise(
     from: string,
     to: string,
+    aliases: string[] = [],
   ): { items: number; comments: number; approvals: number; edits: number } {
     let out = { items: 0, comments: 0, approvals: 0, edits: 0 };
     this.ctx.storage.transactionSync(() => {
@@ -916,7 +922,7 @@ export class Workspace extends WikiBase {
       this.sql.exec("UPDATE comments SET author_id = ? WHERE author_id = ?", to, from);
       this.sql.exec("UPDATE approvals SET actor_id = ? WHERE actor_id = ?", to, from);
       this.sql.exec("UPDATE edits SET actor_id = ? WHERE actor_id = ?", to, from);
-      this.wikiPseudonymise(from, to);
+      this.wikiPseudonymise(from, to, aliases);
       for (const r of this.sql
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
         .toArray()) {
@@ -948,6 +954,7 @@ export class Workspace extends WikiBase {
    */
   purgeExpired(cutoffs: Record<string, number>): number {
     let n = 0;
+    const purged: string[] = [];
     this.ctx.storage.transactionSync(() => {
       const rows = this.sql
         .exec("SELECT id, label, tags, updated_at FROM items WHERE kind = 'personalitem'")
@@ -957,6 +964,7 @@ export class Workspace extends WikiBase {
         const cutoff = cutoffs[kind];
         if (cutoff === undefined || (r.updated_at as number) >= cutoff) continue;
         const id = r.id as string;
+        purged.push(id);
         for (const [t, col] of [
           ["items", "id"],
           ["items_fts", "id"],
@@ -968,6 +976,8 @@ export class Workspace extends WikiBase {
           this.sql.exec(`DELETE FROM ${t} WHERE ${col} = ?`, id);
         n++;
       }
+      // What the personal wiki learned from a purged note goes with it (M-02).
+      this.wikiForgetSources(purged, Date.now());
     });
     return n;
   }

@@ -517,6 +517,14 @@ export class TenantPolicy extends DurableObject<Env> {
     return (row?.id as string | undefined) ?? (await principalIdFor(e));
   }
 
+  /** The address behind a principal id, for erasure (it may be typed into wiki text). */
+  emailOfPrincipal(principalId: string): string | null {
+    const row = this.sql
+      .exec("SELECT email FROM principals WHERE id = ?", principalId)
+      .toArray()[0];
+    return (row?.email as string | undefined) ?? null;
+  }
+
   listPrincipalIds(): string[] {
     const ids = new Set(
       this.sql

@@ -228,19 +228,25 @@ Claims are Markdown bullets with `{src:<source id>}` tokens. Links are `[[page-i
 | GET | `/v1/wiki/health` | per admitted wiki: pages, facts, unverified, openFindings, openProposals, stale, score (map signal) |
 | GET | `/v1/wiki/:ws/index` | pages (id, title, type, one-line summary), schema, health, settings, `can` |
 | GET | `/v1/wiki/:ws/pages/:pid?rev=` | page with citations resolved for the caller; `restricted` counts dropped claims |
-| GET | `/v1/wiki/:ws/pages/:pid/history` | revisions with line diffs |
+| GET | `/v1/wiki/:ws/pages/:pid/history?limit=&before=` | revisions with line diffs, newest first, at most `limit` (default 20, max 50). Header `X-Next-Before` is the cursor for the next answer |
 | GET | `/v1/wiki/:ws/facts?all=1&subject=` | facts over time, unverified flag, readable sources only |
-| GET | `/v1/wiki/:ws/log` | append-only log |
+| GET | `/v1/wiki/:ws/log` | append-only log. Entries hold ids; proposal titles are looked up per caller |
 | GET | `/v1/wiki/:ws/search?q=` , `/ask?q=` | index first. `ws` may be `all` (admitted wikis). `ask` answers with cited lines or `{unknown: true, answer: null}` |
 | GET | `/v1/wiki/:ws/proposals?status=` , `/proposals/:id` | wiki review items (decide rights) |
-| POST | `/v1/wiki/:ws/proposals/:id/decide {decision: approve\|reject}` | applies or rejects. A proposal's author cannot approve it (except in the owner's own Personal Brain). 409 when a page moved since the draft |
-| POST | `/v1/wiki/:ws/proposals/:id/edit {pageId, markdown}` | a reviewer's own wording, applied as written |
+| POST | `/v1/wiki/:ws/proposals/:id/decide {decision: approve\|reject, revisionHash}` | `approve` names the exact revision read (`revisionHash` of `GET .../proposals/:id`), else 400 `revision_required`; 409 when the proposal was edited since or a page moved since the draft. The author, anyone who edited the proposal and anyone who wrote a source it is drawn from are refused (403), except in the owner's own Personal Brain. Where two approvers are required (Company Global) the first approval answers `status: "pending"` and a different person's applies it; an edit starts a new revision and drops earlier approvals |
+| POST | `/v1/wiki/:ws/proposals/:id/edit {pageId, markdown}` | a reviewer's own wording, applied as written. The editor becomes an author, the revision moves on, generated pages (decision log, commitments, risks, overview) are refused (422), and a citation to a source the editor cannot read is removed |
 | POST | `/v1/wiki/:ws/propose {title, markdown, pageId?}` | creates a `wiki_ingest` review item (origin human). MCP `wiki_propose` |
 | POST | `/v1/wiki/:ws/meetings {title, date?, decisions[], commitments[], risks[], notes?}` | stores a `meeting_record` source and queues an ingest |
 | POST | `/v1/wiki/:ws/run {jobs?: ["lint","dream"]}` | runs what is due now, plus lint or dreaming on demand |
 | POST | `/v1/wiki/:ws/facts/:id/verify` | a person confirms a fact |
 | PUT | `/v1/wiki/:ws/settings {autoAccept?, freshnessDays?}` | `autoAccept` is for `me` only |
 | POST | `/v1/wiki/:ws/pages/:pid/promote {user_validated, acknowledged_flags}` | account wikis only. De-identified candidate to Company Global through the contribute flow (sensitivity flags, release needs 2 approvers). Registers the candidate in the global wiki, which publishes the page once it is released |
+
+**Per-viewer masking (security review B3, H-02, M-01).** Every text derived from a source is re-checked for the caller. A generated or authored line is shown only when every source it cites is readable; a page whose cited sources are all unreadable is not listed, read, searched or shown in history; a proposal (title, rationale, detail, fact subjects and objects, page titles, `/v1/review` rows) rests on `titleSources` and shows `restricted source` when the caller cannot read all of them. Proposal titles in the log are looked up the same way.
+
+**Limits (M-03, M-05).** Pages hold at most 1,000 lines; diffs above 1,000 changed lines are shown as a replacement; at most 500 pages are loaded per call. Search and ask: `WIKI_SEARCH_PER_MIN` (default 30) per person, one connector check per query, at most 20 hit pages. Writes (propose, edit, meetings, run): `WIKI_WRITE_PER_MIN` (default 30). A source ingested in the last 10 minutes waits for that window before its next ingest. The wiki spends at most 40% of the tenant's daily AI budget (its own counter, also counted in the tenant's).
+
+**Retention and rights (M-02).** Deleting a source, purging a Personal Brain note or removing an item deletes the facts that rest on it, removes the page lines citing it from pages and every revision, rebuilds search, rejects and empties the proposals that cite it, and drops its title from source rows, jobs and log. Erasure also replaces the person's id, address and aliases inside wiki text. The subject export carries the personal wiki and what the person did in company wikis.
 
 Review items are workspace items of kind `wiki_ingest`, `wiki_lint` or `wiki_dream` (id `cand:<node>:<hex>`), so they appear in `GET /v1/review` with `kind` set; `/v1/actions` refuses to decide them. The body is a JSON proposal (pages with before and after, new facts, facts to end, facts to confirm, sources and hashes).
 
