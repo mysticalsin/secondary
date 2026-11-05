@@ -30,6 +30,8 @@ export interface Change {
   decidedAt: number | null;
   note: string | null;
   baseVersion: number | null;
+  /** The requester of the access request this change fulfils, if any. */
+  requestedBy?: string | null;
 }
 
 export type ElevationStatus = "pending" | "active" | "denied" | "ended" | "expired";
@@ -496,7 +498,11 @@ export class GovStore {
 
   private getChange(id: string, now: number): Change | null {
     const r = this.sql.exec("SELECT * FROM gov_changes WHERE id = ?", id).toArray()[0];
-    return r ? toChange(r, now) : null;
+    if (!r) return null;
+    const q = this.sql
+      .exec("SELECT principal_id FROM gov_access_requests WHERE change_id = ?", id)
+      .toArray()[0];
+    return { ...toChange(r, now), requestedBy: q ? s(q.principal_id) : null };
   }
 
   change(id: string, now: number): Change | null {
@@ -515,8 +521,14 @@ export class GovStore {
     const rows = this.sql
       .exec("SELECT * FROM gov_changes ORDER BY proposed_at DESC, id DESC LIMIT 300")
       .toArray();
+    const requester = new Map(
+      this.sql
+        .exec("SELECT change_id, principal_id FROM gov_access_requests WHERE change_id IS NOT NULL")
+        .toArray()
+        .map((r) => [s(r.change_id), s(r.principal_id)] as const),
+    );
     return rows
-      .map((r) => toChange(r, now))
+      .map((r) => ({ ...toChange(r, now), requestedBy: requester.get(s(r.id)) ?? null }))
       .filter(
         (c) =>
           (!f.status || c.status === f.status) &&
@@ -632,6 +644,13 @@ export class GovStore {
         "self_approval",
         "Two-person rule: you proposed this change, so someone else must decide it",
       );
+    // The person the change benefits, or who asked for it, never casts a deciding vote (H-04).
+    if (this.isBeneficiary(c, deciderId))
+      return fail(
+        403,
+        "beneficiary_decision",
+        "Two-person rule: this change is about you or your request, so someone else must decide it",
+      );
     const r = this.tx((): Fail | null => {
       if (approve) {
         const err = this.applyChange(c, c.proposedBy, deciderId, now);
@@ -649,6 +668,11 @@ export class GovStore {
       return null;
     });
     return r ?? { ok: true, change: this.getChange(id, now) as Change };
+  }
+
+  /** True when `who` is the subject of the change (payload.principalId) or requested it. */
+  isBeneficiary(c: Change, who: string): boolean {
+    return c.payload.principalId === who || c.requestedBy === who;
   }
 
   withdraw(id: string, by: string, now: number): { ok: true; change: Change } | Fail {

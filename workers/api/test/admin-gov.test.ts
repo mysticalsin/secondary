@@ -849,6 +849,111 @@ describe("two-person rule in the store", () => {
   });
 });
 
+describe("H-04: the beneficiary cannot be the deciding vote", () => {
+  const gov = (m: string, ...a: unknown[]) => tenantDo(ALPHA).gov(m, a) as Promise<Loose>;
+  const propose = (principalId: string, proposedBy: string, t0: number, requestId?: string) =>
+    gov(
+      "propose",
+      {
+        kind: "member_add",
+        payload: {
+          principalId,
+          scope: { type: "account", id: "a_acme" },
+          subspace: null,
+        },
+        scopeKey: "account:a_acme",
+        scope: null,
+        needsSecond: true,
+        proposedBy,
+        label: "t",
+        ...(requestId ? { requestId } : {}),
+      },
+      t0,
+    );
+
+  it("store: the person the change benefits cannot approve or reject it", async () => {
+    const t0 = Date.now();
+    const p = await propose("u_reviewer", "u_x", t0);
+    expect(p.ok).toBe(true);
+    for (const approve of [true, false]) {
+      const r = await gov("decide", p.change.id, approve, "u_reviewer", null, t0);
+      expect(r).toMatchObject({ ok: false, code: "beneficiary_decision", status: 403 });
+    }
+    expect((await gov("decide", p.change.id, true, "u_y", null, t0)).ok).toBe(true);
+  });
+
+  it("store: the requester of the linked access request cannot decide the change", async () => {
+    const t0 = Date.now();
+    const made = await gov(
+      "createRequest",
+      {
+        principalId: "u_consultant",
+        nodeId: "a_acme",
+        scope: {
+          type: "account",
+          id: "a_acme",
+          dept: null,
+          label: "Acme Synthetic SA",
+          restricted: true,
+          nda: false,
+          subspace: null,
+        },
+        reason: "Join the team",
+      },
+      t0,
+    );
+    // Admin B proposes on behalf of a request, naming a different beneficiary than the requester.
+    const p = await propose("u_reviewer", "u_x", t0, made.request.id);
+    expect(p.ok).toBe(true);
+    const r = await gov("decide", p.change.id, true, "u_consultant", null, t0);
+    expect(r).toMatchObject({ ok: false, code: "beneficiary_decision", status: 403 });
+  });
+
+  it("route: admin A asks for access, admin B approves the request, A cannot approve the resulting change", async () => {
+    const t0 = Date.now();
+    const aId = (await json(await as("platform_admin", "/v1/me", { now: t0 }))).principal.id;
+    const made = await gov(
+      "createRequest",
+      {
+        principalId: aId,
+        nodeId: "a_acme",
+        scope: {
+          type: "account",
+          id: "a_acme",
+          dept: null,
+          label: "Acme Synthetic SA",
+          restricted: true,
+          nda: false,
+          subspace: null,
+        },
+        reason: "Need the account",
+      },
+      t0,
+    );
+    const first = await post(
+      "platform_admin",
+      `/access-requests/${made.request.id}/approve`,
+      {},
+      { email: other(2), now: t0 },
+    );
+    const out = await json(first);
+    expect(first.status, JSON.stringify(out)).toBe(200);
+    expect(out.applied).toBe(false);
+    const queue = await json(await get("platform_admin", "/changes?status=pending", { now: t0 }));
+    expect(queue.find((c: Loose) => c.id === out.change.id)?.canDecide).toBe(false);
+    const self = await post("platform_admin", `/changes/${out.change.id}/approve`, {}, { now: t0 });
+    expect(self.status).toBe(403);
+    // A third person can finish it.
+    const done = await post(
+      "platform_admin",
+      `/changes/${out.change.id}/approve`,
+      {},
+      { email: other(3), now: t0 },
+    );
+    expect(done.status).toBe(200);
+  });
+});
+
 describe("notifications", () => {
   it("steward queue items reach every approver except the proposer", async () => {
     await post("acme_lead", "/memberships", {

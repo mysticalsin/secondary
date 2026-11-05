@@ -328,7 +328,11 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
             : null,
         proposedByEmail: email.get(x.proposedBy) ?? null,
         canDecide:
-          x.status === "pending" && x.proposedBy !== w.s.principal.id && authorityFor(w, x),
+          x.status === "pending" &&
+          x.proposedBy !== w.s.principal.id &&
+          x.payload.principalId !== w.s.principal.id &&
+          x.requestedBy !== w.s.principal.id &&
+          authorityFor(w, x),
         canWithdraw: x.status === "pending" && x.proposedBy === w.s.principal.id,
       })),
     );
@@ -361,6 +365,13 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
           c,
           action,
           "Two-person rule: you proposed this change, so someone else must decide it",
+          chg.scopeKey,
+        );
+      if (chg.payload.principalId === w.s.principal.id || chg.requestedBy === w.s.principal.id)
+        return deny(
+          c,
+          action,
+          "Two-person rule: this change is about you or your request, so someone else must decide it",
           chg.scopeKey,
         );
       return mutate(c, { action, scopeId: chg.scopeKey, reason: `${verb} ${chg.id}` }, () =>
