@@ -1,0 +1,14 @@
+{
+  "root": false,
+  "extends": "//",
+  "linter": {
+    "rules": {
+      "a11y": {
+        "useSemanticElements": "off",
+        "noStaticElementInteractions": "off",
+        "noNoninteractiveElementToInteractiveRole": "off",
+        "useFocusableInteractive": "off"
+      }
+    }
+  }
+}
