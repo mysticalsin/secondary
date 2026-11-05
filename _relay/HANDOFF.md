@@ -1,5 +1,23 @@
 # HANDOFF
 
+## Staging re-check items closed (2026-11-05, Claude Opus, `main`, nothing pushed, dev redeployed)
+
+Source: `docs/security/STAGING-GO-NOGO.md` (OneDrive project). Each fix has a regression test that failed on the old code first and passes now. Nothing is left in `docs/security/ACCEPTED-RISKS.md` for these items (only the M-08 wording changed).
+
+- N-02 `security-journal.ts`, `tenant-policy.ts` `importAll`: an append-only journal (`security_journal`, outside `SNAPSHOT_TABLES`, 90 days) records deprovisioning (`principal_status`), kill switches, NDA grants and revocations (with the console's reason and expiry), memberships and role changes. A tenant restore replays it, oldest first, and the revocation epoch never goes below the live value. Erasure drops a person's entries; a reseed clears it. Test `restore-security.test.ts`.
+- N-01 `human.ts`, `TenantPolicy.humanIds` and `requestSecond(key, actor, now, email)`: one human is the Entra subject (tenant plus oid) or the normalised address. Content release and review, wiki decide, prod switch re-enable, rights export and erase, and "cannot erase self" compare it; Workspace `review`, `approve` and `wikiDecide` take the actor's other ids. Test `b2-sameperson.test.ts`.
+- B2 M-02 `ops-internal.ts` `/restore`, `workers/ops/src/backup.ts`: outside dev the first request records (`ops_restore_request`, 202 `pending`), a different Access handle confirms the same snapshot within 24 h (`ops_restore`, `ops_restore_done`), the same person gets 409 `same_person`, no handle is 403 `actor_required`. Off by default (`RESTORE_ENABLED`). Tests `ops-restore-twoperson.test.ts`, `ops.test.ts`.
+- N-03 `ops-admin.ts`: rights export is `POST /v1/admin/rights/export {principal}` behind the mutation guard; GET is 405. Test in `ops-rights.test.ts`.
+- N-04 `ai/proof.ts`: `BRIEF_PROOF_KEY`, a secret the api alone holds (`deploy.sh` generates it with `single_secret api`, `dev-all.mjs` for local). No key, no proof. Test in `ai-routes.test.ts`, `environments.test.ts`.
+- B2 M-06 `ai/routes.ts`, `ai/budget.ts` `withUserCap`: the planner writes an `ai.plan` receipt before the model call (audit down means deterministic plan), runs `contractGate` on the node's account and on any account the prompt names (unknown or not allowed means deterministic plan and a deny receipt), and briefs and planner share a per-person daily token cap (`AI_USER_DAILY_TOKEN_BUDGET`, default 40000).
+- B1 M3 `packages/policy/src/engine.ts` `canDoInView(..., live?)`: `/v1/actions`, the review queue and the review decision pass the live record (author, status, revision). `own_drafts` needs author == caller and a draft or candidate status. Tests `prototype-checks.test.ts` 19b, `actions.test.ts`.
+- B1 L3 `workers/mcp/src/config.ts`: `ALLOWED_REDIRECT_URIS` (exact URLs or `*` path prefixes) replaces the host list; port only on loopback, no credentials or fragment; `chat.openai.com` dropped; `/authorize` refuses a request without an S256 challenge. L4 `workers/mcp/src/rate-limit.ts`: per-address KV counters on `/register` (plus a per-address and a global daily cap), `/token`, `/authorize`; the edge rule is in `docs/runbooks/MCP-EDGE-LIMITS.md`. L5 `routes.ts` `visibleHits`: search reads pages of 50 until it has 25 visible hits (500 rows scanned at most). L6 `stubs.ts`: `DO_JURISDICTION=off` needs the local sign-in address too, and `scripts/assert-eu.mjs` stops `deploy.sh` unless the config says `eu`.
+- Deploy: new secret `BRIEF_PROOF_KEY` (api only, set by `deploy.sh`, never printed). The mcp var `ALLOWED_REDIRECT_HOSTS` is now `ALLOWED_REDIRECT_URIS`. Pilot checklist item: add the Cloudflare rate limiting rule on the MCP host. Deploy all five workers together.
+- Gates at the last run: build, typecheck and `biome check .` clean. Tests fixtures 23, contracts 91, policy 57, web 49, audit 10, connector 53, ops 15, mcp 87, api 515 (900 in all). Playwright 50 passed. `bash scripts/deploy.sh dev` exited 0; the api host answers 302 (Access), so `/v1/health` cannot be read back from outside.
+- Not changed: N-05 and N-06 (info). The dev persona header stays dev only.
+
+Updated: 2026-11-05. By: Claude (Opus, staging re-check items).
+
 ## B2 review, remaining findings closed (2026-11-05, Claude Opus, `main`, commits acac616 to 5f8887c, nothing pushed)
 
 Source: `docs/security/B2-SECURITY-REVIEW.md` (OneDrive project) plus the wiki review L-07. Every finding was open in the code before this pass (checked one by one). Each fix has a regression test that failed on the old source and passes now. Accepted decisions: `docs/security/ACCEPTED-RISKS.md` (owner Tony Walteur).
