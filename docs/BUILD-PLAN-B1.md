@@ -34,6 +34,12 @@ workers/api (Hono, TypeScript)  ── verifies Access JWT ─> principal
 - **Dev personas:** while there is no Entra group mapping, a dev-only persona switch maps the signed-in Access user to a synthetic role. It is enabled only when `ENVIRONMENT=dev`, it is shown in a visible banner, and a test asserts it is off in prod config.
 - **Security baseline:** CSP and security headers; `Cache-Control: no-store` on authenticated responses; no secrets in code (wrangler secrets); CORS closed (same origin); audit receipt for each action; cross-tenant and cross-account canary tests; binding inventory test (the global-serving path holds no private bindings).
 
+## Sponsor scope additions (2026-11-04)
+- **Both layers:** Personal Brain (owner-only) and Company Brain (governed). See docs/API-CONTRACT.md.
+- **MCP server you can add to any LLM host** (Claude, ChatGPT, Claude Code, Dust): `workers/mcp`, OAuth through Access, host allowlist, read/draft tools, audit.
+- **GenUI:** ViewPlans from a trusted component catalog, rendered in the web app and as MCP App UI inside hosts. The host LLM plans by calling `render_view`. The server resolves data per viewer.
+- **Visuals:** Mantu brand per docs/DESIGN-WEB.md.
+
 ## Repo layout
 
 ```
