@@ -156,15 +156,16 @@ test.describe("acceptance", () => {
     await page.context().close();
   });
 
-  test("Studio: digest links open, the draft says nothing is sent, Landing Page Studio is not a button", async ({
+  test("Studio: digest links open, the draft says nothing is sent, Landing Page Studio offers a new page", async ({
     browser,
   }) => {
     const page = await as(browser, "consultant");
     await open(page, "/studio");
     await expect(page.getByTestId("draft-note")).toContainText("Nothing is sent");
-    await expect(page.getByTestId("lp-soon")).toContainText("Coming soon, decision pending");
-    await expect(page.getByTestId("lp-soon").getByRole("button")).toHaveCount(0);
-    await expect(page.getByTestId("lp-soon").getByRole("link")).toHaveCount(0);
+    await expect(
+      page.getByTestId("lp-card").getByRole("button", { name: "New page" }),
+    ).toBeVisible();
+    await expect(page.getByTestId("lp-card")).not.toContainText("Coming soon");
     await page.screenshot({ path: `${SCREENS}studio-1280.png`, fullPage: true });
     const links = page.locator(".digest-sec a");
     const n = await links.count();

@@ -141,12 +141,6 @@ export const ux2En = {
     "This makes a draft only. Nothing is sent. You review it and send it yourself.",
   "digest.drafted":
     "Draft created. Nothing was sent. Open your drafts to review it and send it yourself.",
-  "lp.title": "Landing Page Studio",
-  "lp.badge": "Coming soon, decision pending",
-  "lp.lead":
-    "Personalised client pages built from approved success stories. It will never use a client name, logo or quote without a permission on record.",
-  "lp.pending":
-    "We are choosing between connecting an existing tool and building it here. There is nothing to click yet.",
 
   // routines
   "rt.title": "Routines that feed your brain",
@@ -367,12 +361,6 @@ export const ux2Fr: Record<keyof typeof ux2En, string> = {
     "Cela crée un brouillon seulement. Rien n'est envoyé. Vous le relisez et l'envoyez vous-même.",
   "digest.drafted":
     "Brouillon créé. Rien n'a été envoyé. Ouvrez vos brouillons pour le relire et l'envoyer vous-même.",
-  "lp.title": "Landing Page Studio",
-  "lp.badge": "Bientôt, décision en attente",
-  "lp.lead":
-    "Des pages client personnalisées à partir de réussites approuvées. Jamais de nom, logo ou citation de client sans permission au dossier.",
-  "lp.pending":
-    "Nous choisissons entre brancher un outil existant et le construire ici. Il n'y a encore rien à cliquer.",
 
   "rt.title": "Des routines qui nourrissent votre cerveau",
   "rt.lead":

@@ -14,6 +14,7 @@ import { Questions } from "./views/questions/Questions";
 import { Review } from "./views/Review";
 import { Routines } from "./views/routines/Routines";
 import { SourceView } from "./views/SourceView";
+import { LpEditorPage } from "./views/studio/lp/Editor";
 import { Studio } from "./views/studio/Studio";
 import { Today } from "./views/Today";
 import { Usage } from "./views/usage/Usage";
@@ -28,6 +29,7 @@ export function App() {
         <Route path="brain" element={<Brain />} />
         <Route path="questions" element={<Questions />} />
         <Route path="studio" element={<Studio />} />
+        <Route path="studio/lp/:id" element={<LpEditorPage />} />
         <Route path="routines" element={<Routines />} />
         <Route path="usage" element={<Usage />} />
         <Route path="map" element={<MapPage />} />

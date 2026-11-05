@@ -1,4 +1,4 @@
-import { Clock, Mail } from "lucide-react";
+import { Mail } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ApiError } from "../../api";
@@ -7,6 +7,7 @@ import { useI18n } from "../../i18n";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
 import type { Digest } from "../../uxv2/types";
+import { LandingPages } from "./lp/LandingPages";
 
 const brainLink = (pageId: string) => `/brain?page=${encodeURIComponent(pageId)}`;
 
@@ -97,16 +98,7 @@ export function Studio() {
         <Await state={digest} skeleton={3}>
           {(d) => <DigestCard d={d} />}
         </Await>
-        <section className="studio-card soon" aria-labelledby="lp-h" data-testid="lp-soon">
-          <header>
-            <h3 id="lp-h">{t("lp.title")}</h3>
-            <span className="chip t-open">
-              <Clock size={13} aria-hidden /> {t("lp.badge")}
-            </span>
-          </header>
-          <p>{t("lp.lead")}</p>
-          <p className="muted">{t("lp.pending")}</p>
-        </section>
+        <LandingPages />
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
 import type { Question, QuestionKind } from "../../uxv2/types";
+import { LandingReview } from "../studio/lp/LandingReview";
 
 export const QUESTIONS_CHANGED = "secondary:questions";
 
@@ -128,6 +129,8 @@ export function QuestionCard({ q, onDone }: { q: Question; onDone: (id: string) 
         </div>
       ) : null}
 
+      {d.landing ? <LandingReview detail={d.landing} /> : null}
+
       {q.kind === "ingest" && d.reason ? (
         <p className="q-reason">
           <b>{t("q.why")}</b> {d.reason}
@@ -167,7 +170,7 @@ export function QuestionCard({ q, onDone }: { q: Question; onDone: (id: string) 
               {busy === o.action ? t("common.working") : o.label}
             </button>
           ))}
-          {q.kind === "review" || q.kind === "release" ? (
+          {(q.kind === "review" || q.kind === "release") && !d.landing ? (
             <Link className="btn ghost" to="/review">
               {t("q.openreview")}
             </Link>
