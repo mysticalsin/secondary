@@ -19,6 +19,8 @@ export interface WikiPageRow {
   revision: number;
   updatedAt: string;
   restricted: number;
+  /** Absent on the live API (every listed page is published). The dev mock marks drafts. */
+  status?: "published" | "draft";
 }
 
 export interface WikiIndex {
@@ -58,6 +60,8 @@ export interface WikiPage {
 export interface WikiDiffLine {
   type: "add" | "del" | "same";
   text: string;
+  /** Numbers a run of added or removed lines on a proposal (docs/API-CONTRACT.md v4). */
+  change?: number;
 }
 
 export interface WikiRevision {
@@ -114,6 +118,7 @@ export interface WikiProposal {
   /** Moves on with every edit; `revisionHash` is what an approval binds. */
   revision: number;
   revisionHash: string;
+  changeCount?: number;
   approvals: number;
   required: number;
   pages: {

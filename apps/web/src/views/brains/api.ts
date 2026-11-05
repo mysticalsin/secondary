@@ -10,6 +10,7 @@ import type {
   BrainType,
   CoachProposal,
   CoachView,
+  DirectoryEntry,
   Everyone,
   FieldDef,
   FieldsView,
@@ -18,6 +19,7 @@ import type {
   ImportResult,
   JournalDays,
   MemberResult,
+  NavItem,
   PilotView,
   Publication,
   Template,
@@ -35,7 +37,24 @@ export const v3 = {
     const s = p.toString();
     return request<{ brains: BrainCard[] }>("GET", `/v1/brains${s ? `?${s}` : ""}`);
   },
+  nav: () => request<{ items: NavItem[] }>("GET", "/v1/brains/nav"),
+  /** Every brain the person can open, and those they can see but not open (request access). */
+  directory: (type?: BrainType | "", term?: string) => {
+    const p = new URLSearchParams({ scope: "all" });
+    if (type) p.set("type", type);
+    if (term) p.set("q", term);
+    return request<{ brains: DirectoryEntry[] }>("GET", `/v1/brains?${p}`);
+  },
+  requestAccess: (nodeId: string, reason: string) =>
+    request<{ ok?: boolean }>("POST", "/v1/admin/access-requests", { nodeId, reason }),
   brain: (id: string) => request<BrainHome>("GET", b(id)),
+  /** Send a page into a brain as a proposal (the same call the MCP tool `propose_page` makes). */
+  pushPage: (id: string, body: { title: string; markdown: string; type?: string }) =>
+    request<{ ok: true; pageId: string; proposalId: string; status: "candidate" | "published" }>(
+      "POST",
+      `${b(id)}/push/page`,
+      body,
+    ),
   setTemplate: (id: string, template: Template) =>
     request<{ ok: boolean; template: Template; added: string[] }>("POST", `${b(id)}/template`, {
       template,
@@ -75,6 +94,8 @@ export const v3 = {
   agentConfig: () => request<{ mcpUrl: string | null }>("GET", "/v1/agents/config"),
   revokeConnection: (id: string) =>
     request<{ ok: true; revoked: number }>("POST", `/v1/agents/connections/${q(id)}/revoke`, {}),
+  revokeAll: () =>
+    request<{ ok: true; revoked: number }>("POST", "/v1/agents/revoke-all", { confirm: true }),
   revokeHost: (host: string) =>
     request<{ ok: true; revoked: number }>("POST", `/v1/agents/hosts/${q(host)}/revoke`, {}),
   pilot: () => request<PilotView>("GET", "/v1/admin/pilot"),

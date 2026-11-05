@@ -21,6 +21,8 @@ import type {
   ImportPreview,
   ImportResult,
   Member,
+  NavBrain,
+  NavItem,
   Publication,
   Template,
   Version,
@@ -406,6 +408,32 @@ const BRAINS: MockBrain[] = [
   },
 ];
 
+{
+  const bid = BRAINS.find((b) => b.id === "c_bid") as MockBrain;
+  BRAINS.push({
+    ...bid,
+    id: "c_sales",
+    name: "Sales",
+    template: "team",
+    readers: 24,
+    sees: ["ceo"],
+    manages: ["ceo"],
+    collections: [
+      { type: "client", label: "Clients", count: 12, expected: true },
+      { type: "opportunity", label: "Opportunities", count: 9, expected: true },
+    ],
+    changes: [],
+    members: bid.members.map((m) => ({ ...m })),
+    fields: [],
+  });
+}
+
+/** Brains a person can see in the directory but not open (request access). */
+const SEE_ONLY: { id: string; type: BrainType; name: string; opens: string[] }[] = [
+  { id: "c_sales", type: "team", name: "Sales", opens: ["ceo"] },
+  { id: "c_hr", type: "team", name: "HR, Legal and Hub Operations", opens: ["ceo"] },
+];
+
 const FLAG_KEYS = ["brains_v3", "imports", "coach", "batch_review", "journal"];
 const cohorts: Cohort[] = [
   {
@@ -420,7 +448,7 @@ const cohorts: Cohort[] = [
 const label = (r: string) => r.replace(/_/g, " ");
 const brainOf = (id: string, role: string): MockBrain => {
   const br = BRAINS.find((x) => x.id === id);
-  if (!br || !br.sees.includes(role)) throw new ApiError(404, "Not found.", { error: "not_found" });
+  if (!br?.sees.includes(role)) throw new ApiError(404, "Not found.", { error: "not_found" });
   return br;
 };
 const manages = (br: MockBrain, role: string) => br.manages.includes(role);
@@ -524,8 +552,18 @@ const ROLE_INFO: AccessView["roles"] = [
   },
 ];
 
+const roleIn = (br: MockBrain, role: string): BrainRole =>
+  br.type === "personal" || manages(br, role)
+    ? "owner"
+    : br.type === "global"
+      ? "reader"
+      : role === "reviewer"
+        ? "steward"
+        : "contributor";
+
 const card = (br: MockBrain, role: string): BrainCard => ({
   id: br.id,
+  role: roleIn(br, role),
   type: br.type,
   name: br.name,
   template: br.template,
@@ -882,7 +920,8 @@ export function handleV3(
           id: it.id,
           ok: false,
           status: "refused",
-          error: "refused",
+          error:
+            e instanceof ApiError && typeof e.body.error === "string" ? e.body.error : "refused",
           reason: e instanceof ApiError ? e.reason : "Refused.",
         });
       }
@@ -963,6 +1002,69 @@ export function handleV3(
     }
   }
 
+  if (p === "/v1/brains/nav" && method === "GET") {
+    const mine = BRAINS.filter((x) => x.sees.includes(role));
+    const withRole = (x: MockBrain) => card(x, role) as NavBrain;
+    const order = ["c_bid", "c_sales", "accounts", "c_delivery"];
+    const items: NavItem[] = [];
+    for (const x of mine.filter((b) => b.type === "personal"))
+      items.push({ ...withRole(x), group: "personal" });
+    const accounts = mine.filter((b) => b.type === "account");
+    const gov = mine.filter((b) => b.type === "team");
+    const slots = order.flatMap((id): NavItem[] => {
+      if (id === "accounts")
+        return accounts.length
+          ? [
+              {
+                ...withRole(accounts[0] as MockBrain),
+                id: "accounts",
+                name: "Accounts",
+                type: "team",
+                readers: 0,
+                group: "governance",
+                children: accounts.map(withRole),
+              },
+            ]
+          : [];
+      const b = gov.find((g) => g.id === id);
+      return b ? [{ ...withRole(b), group: "governance", governanceId: b.id }] : [];
+    });
+    items.push(...slots);
+    for (const x of mine.filter((b) => b.type === "global"))
+      items.push({ ...withRole(x), group: "global" });
+    return { items };
+  }
+
+  if (p === "/v1/brains" && method === "GET" && search.get("scope") === "all") {
+    const type = search.get("type");
+    const term = (search.get("q") ?? "").toLowerCase();
+    const open = BRAINS.filter((x) => x.sees.includes(role)).map((x) => ({
+      ...card(x, role),
+      canOpen: true as const,
+    }));
+    const closed = SEE_ONLY.filter((x) => !x.opens.includes(role)).map((x) => ({
+      id: x.id,
+      type: x.type,
+      name: x.name,
+      canOpen: false as const,
+      restricted: true,
+      canRequestAccess: role !== "auditor",
+    }));
+    return {
+      brains: [...open, ...closed].filter(
+        (b) => (!type || b.type === type) && (!term || b.name.toLowerCase().includes(term)),
+      ),
+    };
+  }
+
+  if (p === "/v1/agents/revoke-all" && method === "POST") {
+    if (body.confirm !== true) throw new ApiError(400, "Confirm first.");
+    return { ok: true, revoked: 1 };
+  }
+  if (p === "/v1/admin/principals" && method === "GET")
+    return ALL.map((r) => ({ id: `u_${r}`, email: `${r}@example.invalid`, roleIds: [r] }));
+  if (p === "/v1/admin/access-requests" && method === "POST") return { ok: true };
+
   if (p === "/v1/brains" && method === "GET") {
     const type = search.get("type");
     const term = (search.get("q") ?? "").toLowerCase();
@@ -979,6 +1081,41 @@ export function handleV3(
   const br = brainOf(id, role);
 
   if (rest === "" && method === "GET") return homeOf(br, role);
+
+  if (rest === "/push/page" && method === "POST") {
+    const title = String(body.title ?? "").trim();
+    if (!title) throw new ApiError(400, "Give the page a title.", { error: "invalid_title" });
+    const pageId = `new-${title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")}`;
+    const proposalId = `q_push_${Date.now() % 100000}`;
+    const lines = String(body.markdown ?? "")
+      .split("\n")
+      .map((text) => ({ type: "add" as const, text }));
+    const numberedLines = lines.map((l, i) => ({ ...l, change: i === 0 ? 0 : 0 }));
+    (questions() as unknown[]).push({
+      id: proposalId,
+      kind: "review",
+      title,
+      workspaceId: br.id,
+      createdAt: new Date().toISOString(),
+      summary: String(body.markdown ?? "").slice(0, 120),
+      options: [
+        { action: "approve", label: "Approve" },
+        { action: "reject", label: "Reject" },
+      ],
+      detail: {
+        approvals: 0,
+        required: 1,
+        revisionHash: "9".repeat(64),
+        authorId: `u_${role}`,
+        changeCount: 1,
+        pages: [{ pageId, title, diff: numberedLines }],
+      },
+    });
+    return { ok: true, brainId: br.id, pageId, proposalId, status: "candidate" };
+  }
 
   if (rest === "/template" && method === "POST") {
     need(br, role);

@@ -1,10 +1,12 @@
 export { AccessPage } from "./Access";
-export { AgentsPage } from "./Agents";
+export { AgentsSection } from "./Agents";
+export { BrainPage } from "./BrainPage";
 export { CoachPage } from "./Coach";
 export { Directory } from "./Directory";
+export { ActivityPage, TrashPage } from "./Extras";
 export { FieldsPage } from "./Fields";
-export { BrainHomeView } from "./Home";
 export { ImportPage } from "./Import";
 export { JournalPage } from "./Journal";
+export { PageView } from "./PageView";
 export { PilotPage } from "./Pilot";
 export { VersionsPage } from "./Versions";

@@ -2,10 +2,10 @@
 // steward approves or denies with a reason; nothing is granted automatically.
 
 import { useState } from "react";
-import { api } from "../../api";
 import { Await, Chip } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { useApi } from "../../useApi";
+import { v3 } from "../brains/api";
 import { type AccessReq, adm } from "./api";
 import { Field, fmtTime, Reason, useAct } from "./shared";
 
@@ -33,8 +33,8 @@ export function RequestAccessForm({
   const { t } = useI18n();
   const locked = useApi(async () => {
     if (nodeId) return [{ id: nodeId, label: label ?? nodeId }];
-    const m = await api.map("departments");
-    return m.hubs.filter((h) => h.access === "locked").map((h) => ({ id: h.id, label: h.label }));
+    const d = await v3.directory();
+    return d.brains.filter((b) => !b.canOpen).map((b) => ({ id: b.id, label: b.name }));
   }, [nodeId]);
   const [node, setNode] = useState(nodeId ?? "");
   const [reason, setReason] = useState("");

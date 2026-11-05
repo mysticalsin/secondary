@@ -25,7 +25,7 @@ function Day({ ws, pid }: { ws: string; pid: string }) {
             citations={p.citations}
             links={p.links}
             onLink={(id) =>
-              nav(`/brain?ws=${encodeURIComponent(ws)}&page=${encodeURIComponent(id)}`)
+              nav(`/brains/${encodeURIComponent(ws)}/pages/${encodeURIComponent(id)}`)
             }
           />
         </article>
@@ -54,7 +54,7 @@ export function JournalPage() {
     }
   };
   return (
-    <BrainFrame id={id} tab="journal">
+    <BrainFrame id={id} title={t("b3.tab.journal")}>
       {(b) => (
         <section aria-labelledby="jr-h">
           <div className="row between">

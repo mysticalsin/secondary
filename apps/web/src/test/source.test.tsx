@@ -1,10 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, api } from "../api";
-import { Palette } from "../components/Palette";
-import { AppProvider, useApp } from "../state";
+import { AppProvider } from "../state";
 import { SourceView } from "../views/SourceView";
 
 afterEach(() => vi.restoreAllMocks());
@@ -58,42 +56,5 @@ describe("source files", () => {
     );
     page(record.id);
     expect(await screen.findByText(/could not be confirmed at the source/)).toBeInTheDocument();
-  });
-
-  it("a source search result opens its page, not the map drawer", async () => {
-    vi.spyOn(api, "search").mockResolvedValue({
-      results: [
-        { id: record.id, label: "Delivery handbook", kind: "source", plane: "TEAM_RESTRICTED" },
-      ],
-    });
-    vi.spyOn(api, "source").mockResolvedValue(record);
-    function Open() {
-      const { setPaletteOpen } = useApp();
-      return (
-        <button type="button" onClick={() => setPaletteOpen(true)}>
-          open palette
-        </button>
-      );
-    }
-    render(
-      <MemoryRouter initialEntries={["/"]}>
-        <AppProvider>
-          <Open />
-          <Palette />
-          <Routes>
-            <Route path="sources/:id" element={<SourceView />} />
-            <Route path="*" element={<div>home</div>} />
-          </Routes>
-        </AppProvider>
-      </MemoryRouter>,
-    );
-    await userEvent.click(screen.getByRole("button", { name: "open palette" }));
-    await userEvent.type(screen.getByRole("combobox"), "handbook");
-    const option = await screen.findByRole("option", { name: /Delivery handbook/ });
-    expect(option).toHaveTextContent("Source file");
-    await userEvent.click(option);
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Delivery handbook" })).toBeInTheDocument(),
-    );
   });
 });

@@ -330,8 +330,9 @@ export function ImportWizard({ b }: { b: BrainHome }) {
 
 export function ImportPage() {
   const { id = "" } = useParams();
+  const { t } = useI18n();
   return (
-    <BrainFrame id={id} tab="import">
+    <BrainFrame id={id} title={t("b3.tab.import")}>
       {(b) => <ImportWizard b={b} />}
     </BrainFrame>
   );

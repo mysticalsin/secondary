@@ -122,6 +122,14 @@ export interface Me {
   env: "dev" | "prod" | string;
   /** Advice for the rail. The server re-checks every action. */
   capabilities: { configure: boolean; review: boolean };
+  /** Claims from the Microsoft account, when the sign-in carried them. Every field is optional. */
+  profile?: {
+    name?: string;
+    jobTitle?: string;
+    department?: string;
+    office?: string;
+    country?: string;
+  };
 }
 
 export interface SearchResult {

@@ -1,7 +1,7 @@
 import { Check, Copy, Unplug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../../api";
-import { Await, fmtDate, PageHead } from "../../components/ui";
+import { Await, fmtDate } from "../../components/ui";
 import { type Key, useI18n } from "../../i18n";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
@@ -9,13 +9,14 @@ import { v3 } from "./api";
 import "./brains.css";
 import type { AgentHost, HostId } from "./types";
 
+/** The order of the reference: the terminal agents first, then the ones configured in a web page. */
 export const HOST_TABS: HostId[] = [
   "claude_code",
-  "claude_ai",
-  "chatgpt",
   "codex",
   "dust",
   "copilot_studio",
+  "claude_ai",
+  "chatgpt",
 ];
 
 /**
@@ -56,7 +57,7 @@ export const SNIPPET = `Use the Secondary connector for company knowledge.
 4. Send new knowledge as a proposal for review. Never publish directly.
 5. Never send personal conversations or client contact details.`;
 
-function CopyBox({ label, text }: { label: string; text: string }) {
+export function CopyBox({ label, text }: { label: string; text: string }) {
   const { t } = useI18n();
   const [done, setDone] = useState(false);
   const timer = useRef<number | undefined>(undefined);
@@ -189,14 +190,33 @@ export function HostPanel({
       say(e instanceof ApiError ? e.reason : t("common.failed"));
     }
   };
+  const terminal = host.id === "claude_code" || host.id === "codex";
   return (
     <div
-      className="host-panel"
+      className="host-panel4"
       role="tabpanel"
       id={`ag-panel-${host.id}`}
       aria-labelledby={`ag-tab-${host.id}`}
     >
-      <section className="card status" aria-labelledby={`st-${host.id}`}>
+      {terminal ? (
+        <p className="agline">
+          {t("v4.ag.runit")} <code>/mcp</code> {t("v4.ag.auth")}
+        </p>
+      ) : (
+        <ol className="agsteps">
+          {steps.map((k) => (
+            <li key={k}>{t(k, { name: host.label, url })}</li>
+          ))}
+        </ol>
+      )}
+      {cmd ? (
+        <CopyBox label={t("v4.ag.interminal")} text={cmd} />
+      ) : (
+        <CopyBox label={t("b3.ag.url")} text={url} />
+      )}
+      <CopyBox label={t("v4.ag.thensay")} text={t("v4.ag.say")} />
+      {!terminal ? <CopyBox label={t("b3.ag.snippet.l")} text={SNIPPET} /> : null}
+      <section className="agstatus" aria-labelledby={`st-${host.id}`}>
         <h3 id={`st-${host.id}`}>{t("b3.ag.status")}</h3>
         <p>
           <span className={`chip t-${host.connected ? "done" : "open"}`} data-testid="host-state">
@@ -219,30 +239,11 @@ export function HostPanel({
           <p className="muted">{t("b3.ag.noconn")}</p>
         )}
       </section>
-      <section className="card" aria-labelledby={`cn-${host.id}`}>
-        <h3 id={`cn-${host.id}`}>{t("b3.ag.connect")}</h3>
-        {cmd ? (
-          <CopyBox label={t("b3.ag.command")} text={cmd} />
-        ) : (
-          <CopyBox label={t("b3.ag.url")} text={url} />
-        )}
-        <ol className="agsteps">
-          {steps.map((k) => (
-            <li key={k}>{t(k, { name: host.label, url })}</li>
-          ))}
-        </ol>
-        <p className="muted">{t("b3.ag.dcr")}</p>
-      </section>
-      <section className="card" aria-labelledby={`sn-${host.id}`}>
-        <h3 id={`sn-${host.id}`}>{t("b3.ag.snippet")}</h3>
-        <p className="muted">{t("b3.ag.snippet.lead")}</p>
-        <CopyBox label={t("b3.ag.snippet.l")} text={SNIPPET} />
-      </section>
     </div>
   );
 }
 
-export function AgentsPage() {
+export function AgentsSection() {
   const { t } = useI18n();
   const { me } = useApp();
   // The API says where the MCP door is (its configured MCP_PUBLIC_URL). Only when it does not (null) does
@@ -265,8 +266,11 @@ export function AgentsPage() {
     document.getElementById(`ag-tab-${next}`)?.focus();
   };
   return (
-    <div className="page brains agents">
-      <PageHead eyebrow={t("nav.agents")} title={t("b3.ag.title")} lead={t("b3.ag.lead")} />
+    <section aria-labelledby="ag-h">
+      <h2 id="ag-h" className="sec-title">
+        {t("v4.ag.title")}
+      </h2>
+      <p className="muted">{t("v4.ag.lead")}</p>
       <Await state={list} skeleton={3}>
         {({ hosts, mcpUrl: configured }) => {
           const byId = new Map(hosts.map((h) => [h.id, h]));
@@ -280,8 +284,8 @@ export function AgentsPage() {
             connections: [],
           };
           return (
-            <>
-              <div className="tabs" role="tablist" aria-label={t("b3.ag.hosts")}>
+            <div className="agcard">
+              <div className="pilltabs" role="tablist" aria-label={t("b3.ag.hosts")}>
                 {HOST_TABS.map((h, i) => {
                   const x = byId.get(h);
                   return (
@@ -289,7 +293,7 @@ export function AgentsPage() {
                       key={h}
                       id={`ag-tab-${h}`}
                       type="button"
-                      className="tab"
+                      className="ptab"
                       role="tab"
                       aria-selected={tab === h}
                       aria-controls={`ag-panel-${h}`}
@@ -297,8 +301,8 @@ export function AgentsPage() {
                       onClick={() => setTab(h)}
                       onKeyDown={(e) => onKey(e, i)}
                     >
-                      <i className={`dot-s ${x?.connected ? "on" : ""}`} aria-hidden />
                       {x?.label ?? h}
+                      {x?.connected ? <i className="dot-s on" aria-hidden /> : null}
                       {x?.connected ? (
                         <span className="sr-only"> ({t("b3.ag.connected")})</span>
                       ) : null}
@@ -312,10 +316,10 @@ export function AgentsPage() {
                 onChange={list.reload}
                 url={configured ?? mcpUrl()}
               />
-            </>
+            </div>
           );
         }}
       </Await>
-    </div>
+    </section>
   );
 }

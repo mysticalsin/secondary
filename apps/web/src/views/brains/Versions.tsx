@@ -140,13 +140,13 @@ export function VersionsPage() {
   const { t } = useI18n();
   const list = useApi(() => v3.versions(id, pid), [id, pid]);
   return (
-    <BrainFrame id={id} tab="versions">
+    <BrainFrame id={id} title={t("b3.ver.title")}>
       {() => (
         <section className="card" aria-labelledby="ver-h">
           <h3 id="ver-h">{t("b3.ver.title")}</h3>
           <p className="muted">{t("b3.ver.lead")}</p>
           <p>
-            <Link to={`/brain?ws=${encodeURIComponent(id)}&page=${encodeURIComponent(pid)}`}>
+            <Link to={`/brains/${encodeURIComponent(id)}/pages/${encodeURIComponent(pid)}`}>
               {t("b3.ver.page", { id: pid })}
             </Link>
           </p>

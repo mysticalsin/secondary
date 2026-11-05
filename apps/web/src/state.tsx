@@ -10,6 +10,7 @@ import {
 } from "react";
 import { api, setPersona as storePersona } from "./api";
 import { I18nProvider, initialLang, isLang, type Lang, storeLang } from "./i18n";
+import { applyTheme, readTheme, storeTheme, type Theme } from "./lib/theme";
 import type { Me } from "./types";
 
 interface AppState {
@@ -18,17 +19,10 @@ interface AppState {
   /** Bumps when the demo persona changes, so every view refetches as the new viewer. */
   epoch: number;
   setPersona: (id: string) => void;
-  drawerId: string | null;
-  openNode: (id: string) => void;
-  closeDrawer: () => void;
-  paletteOpen: boolean;
-  setPaletteOpen: (v: boolean) => void;
+  theme: Theme;
+  setTheme: (t: Theme) => void;
   toast: string | null;
   say: (msg: string) => void;
-  /** Onboarding tour: open until the person dismisses it, remembered per user through the API. */
-  tourOpen: boolean;
-  openTour: () => void;
-  finishTour: () => void;
 }
 
 const Ctx = createContext<AppState | null>(null);
@@ -37,11 +31,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState<string | null>(null);
   const [epoch, setEpoch] = useState(0);
-  const [drawerId, setDrawerId] = useState<string | null>(null);
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [theme, setThemeState] = useState<Theme>(readTheme);
   const [toast, setToast] = useState<string | null>(null);
   const [lang, setLangState] = useState<Lang>(initialLang);
-  const [tourOpen, setTourOpen] = useState(false);
   // True once the person has picked a language by hand, so a late preference never overrides it.
   const chosen = useRef(false);
 
@@ -60,7 +52,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
               setLangState(p.lang);
               storeLang(p.lang);
             }
-            setTourOpen(!p.tourDone && m.seeded);
           },
           () => {},
         );
@@ -83,9 +74,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = lang;
   }, [lang]);
 
+  useEffect(() => {
+    applyTheme(theme);
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const on = () => applyTheme("system");
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, [theme]);
+
+  const setTheme = useCallback((t: Theme) => {
+    storeTheme(t);
+    setThemeState(t);
+  }, []);
+
   const setPersona = useCallback((id: string) => {
     storePersona(id);
-    setDrawerId(null);
     setEpoch((e) => e + 1);
   }, []);
 
@@ -96,29 +100,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     api.savePrefs({ lang: l }).catch(() => {});
   }, []);
 
-  const finishTour = useCallback(() => {
-    setTourOpen(false);
-    api.savePrefs({ tourDone: true }).catch(() => {});
-  }, []);
-
   const value = useMemo<AppState>(
     () => ({
       me,
       meError,
       epoch,
       setPersona,
-      drawerId,
-      openNode: (id) => setDrawerId(id),
-      closeDrawer: () => setDrawerId(null),
-      paletteOpen,
-      setPaletteOpen,
+      theme,
+      setTheme,
       toast,
       say: setToast,
-      tourOpen,
-      openTour: () => setTourOpen(true),
-      finishTour,
     }),
-    [me, meError, epoch, setPersona, drawerId, paletteOpen, toast, tourOpen, finishTour],
+    [me, meError, epoch, setPersona, theme, setTheme, toast],
   );
   return (
     <Ctx.Provider value={value}>

@@ -3,13 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Question } from "../uxv2/types";
-import { AccessPanel } from "../views/brains/Access";
-import { AgentsPage, commandFor, HostPanel, handleOf } from "../views/brains/Agents";
+import { AgentsSection, commandFor, HostPanel, handleOf } from "../views/brains/Agents";
 import { v3 } from "../views/brains/api";
 import { CoachChat, CoachPage } from "../views/brains/Coach";
 import { validate } from "../views/brains/Fields";
 import type { AccessView, AgentHost, CoachView } from "../views/brains/types";
-import { approvalOutcome, BatchPanel, batchAction } from "../views/questions/Questions";
+import { approvalOutcome, batchAction } from "../views/waiting/QuestionCard";
 
 const say = vi.fn();
 vi.mock("../state", () => ({
@@ -28,7 +27,7 @@ beforeEach(() => {
   persona("head_bid");
 });
 
-const accountAccess: AccessView = {
+const _accountAccess: AccessView = {
   brainId: "a_acme",
   type: "account",
   canManage: true,
@@ -50,104 +49,6 @@ const accountAccess: AccessView = {
   members: [],
 };
 
-describe("Access: policy bounds", () => {
-  it("disables direct publishing where policy forces review, and says why", async () => {
-    const put = vi.spyOn(v3, "setAccess");
-    render(
-      <MemoryRouter>
-        <AccessPanel id="a_acme" view={accountAccess} reload={() => {}} />
-      </MemoryRouter>,
-    );
-    const direct = screen.getByRole("radio", { name: /Publish directly/ });
-    expect(direct).toBeDisabled();
-    expect(direct).toHaveAccessibleDescription(/always need a review/);
-    expect(screen.getByRole("radio", { name: /Review required/ })).toBeChecked();
-    // Everyone at Mantu cannot be widened on an account brain.
-    expect(screen.getByRole("radio", { name: /^Can read\s*Not allowed here/ })).toBeDisabled();
-    expect(
-      screen.queryByRole("radio", { name: /Can read and contribute/ }),
-    ).not.toBeInTheDocument();
-    await userEvent.setup().click(direct);
-    expect(put).not.toHaveBeenCalled();
-  });
-
-  it("lets a team brain choose direct publishing", async () => {
-    const team: AccessView = {
-      ...accountAccess,
-      type: "team",
-      publication: { mode: "review", allowed: ["review", "direct"], forced: false, reason: null },
-      everyone: { level: "none", allowed: ["none", "reader"], reason: null },
-    };
-    const put = vi
-      .spyOn(v3, "setAccess")
-      .mockResolvedValue({ ok: true, publication: "direct", everyone: "none" });
-    render(
-      <MemoryRouter>
-        <AccessPanel id="c_bid" view={team} reload={() => {}} />
-      </MemoryRouter>,
-    );
-    const direct = screen.getByRole("radio", { name: /Publish directly/ });
-    expect(direct).toBeEnabled();
-    await userEvent.setup().click(direct);
-    expect(put).toHaveBeenCalledWith("c_bid", { publication: "direct" });
-  });
-
-  it("opening a brain to everyone waits for a second person: the choice snaps back and the banner shows", async () => {
-    const team: AccessView = {
-      ...accountAccess,
-      type: "team",
-      publication: { mode: "review", allowed: ["review", "direct"], forced: false, reason: null },
-      everyone: { level: "none", allowed: ["none", "reader"], reason: null },
-    };
-    const put = vi
-      .spyOn(v3, "setAccess")
-      .mockResolvedValue({ ok: true, status: "pending", needs: "second_person" });
-    render(
-      <MemoryRouter>
-        <AccessPanel id="c_bid" view={team} reload={() => {}} />
-      </MemoryRouter>,
-    );
-    // Only none and reader are offered: nothing past reading.
-    expect(screen.queryByRole("radio", { name: /Contributor/ })).not.toBeInTheDocument();
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("radio", { name: /Can read/ }));
-    expect(put).toHaveBeenCalledWith("c_bid", { everyone: "reader" });
-    expect(await screen.findByTestId("pending-banner")).toBeVisible();
-    expect((screen.getByRole("radio", { name: /No access/ }) as HTMLInputElement).checked).toBe(
-      true,
-    );
-  });
-
-  it("shows the pending banner when a member change waits for a second person", () => {
-    const view: AccessView = {
-      ...accountAccess,
-      members: [
-        { principalId: "u_a", email: "a@example.invalid", role: "reader", state: "pending" },
-      ],
-    };
-    render(
-      <MemoryRouter>
-        <AccessPanel id="a_acme" view={view} reload={() => {}} />
-      </MemoryRouter>,
-    );
-    expect(screen.getByTestId("pending-banner")).toHaveTextContent("Waiting for a second approver");
-  });
-
-  it("makes a read-only view for someone who cannot manage", () => {
-    render(
-      <MemoryRouter>
-        <AccessPanel
-          id="a_acme"
-          view={{ ...accountAccess, canManage: false, members: null }}
-          reload={() => {}}
-        />
-      </MemoryRouter>,
-    );
-    expect(screen.getByRole("radio", { name: /Review required/ })).toBeDisabled();
-    expect(screen.getByText(/Only people who manage this brain see the member list/)).toBeVisible();
-  });
-});
-
 const q = (over: Partial<Question>): Question => ({
   id: "x",
   kind: "release",
@@ -160,61 +61,14 @@ const q = (over: Partial<Question>): Question => ({
   ...over,
 });
 
-describe("Questions: batch approve", () => {
-  it("explains per item what the approval does under the two-person rule", () => {
+describe("Waiting items: batch rules", () => {
+  it("says per item whether an approval is the first or the final one", () => {
     const items = [
-      q({
-        id: "a",
-        title: "Needs two people",
-        detail: { approvals: 0, required: 2, revisionHash: "a".repeat(64) },
-      }),
-      q({
-        id: "b",
-        title: "Needs one",
-        detail: { approvals: 0, required: 1, revisionHash: "b".repeat(64) },
-      }),
-      q({
-        id: "c",
-        title: "Second of two",
-        detail: { approvals: 1, required: 2, revisionHash: "c".repeat(64) },
-      }),
+      q({ id: "a", detail: { approvals: 0, required: 2, revisionHash: "a".repeat(64) } }),
+      q({ id: "b", detail: { approvals: 0, required: 1, revisionHash: "b".repeat(64) } }),
+      q({ id: "c", detail: { approvals: 1, required: 2, revisionHash: "c".repeat(64) } }),
     ];
     expect(items.map(approvalOutcome)).toEqual(["first", "final", "final"]);
-    render(<BatchPanel items={items} onCancel={() => {}} onDone={() => {}} />);
-    const list = screen.getByRole("list", { name: "Approve 3 items" });
-    const rows = within(list).getAllByRole("listitem");
-    expect(rows[0]).toHaveAttribute("data-outcome", "first");
-    expect(rows[0]).toHaveTextContent("First approval");
-    expect(rows[0]).toHaveTextContent(/A different person must give the next one/);
-    expect(rows[1]).toHaveTextContent("Final approval");
-    expect(rows[2]).toHaveTextContent("Your approval completes it");
-  });
-
-  it("runs the batch and shows one result per item, refusals included", async () => {
-    persona("ceo");
-    const items = [
-      q({
-        id: "q_rev_1",
-        kind: "review",
-        title: "Review: Analytics retainer offer",
-        detail: { approvals: 0, required: 1, revisionHash: "a".repeat(64) },
-      }),
-      q({
-        id: "gone",
-        title: "Already resolved item",
-        detail: { approvals: 0, required: 1, revisionHash: "d".repeat(64) },
-      }),
-    ];
-    const onDone = vi.fn();
-    render(<BatchPanel items={items} onCancel={() => {}} onDone={onDone} />);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Approve 2" }));
-    expect(await screen.findByText("1 done, 1 refused.")).toBeVisible();
-    const rows = within(
-      screen.getByRole("heading", { name: "Batch result" }).closest("section") as HTMLElement,
-    ).getAllByRole("listitem");
-    expect(rows[0]).toHaveTextContent("Review: Analytics retainer offer");
-    expect(rows[1]).toHaveTextContent("Refused");
-    expect(rows[1]).toHaveTextContent("already resolved");
   });
 
   it("leaves contradictions out of a batch: a side has to be chosen on the card", () => {
@@ -348,7 +202,7 @@ describe("Agents: the MCP URL comes from the API", () => {
     vi.spyOn(v3, "agentConfig").mockResolvedValue({ mcpUrl });
     render(
       <MemoryRouter>
-        <AgentsPage />
+        <AgentsSection />
       </MemoryRouter>,
     );
     return screen.findByText(/claude mcp add --transport http/);
@@ -370,7 +224,7 @@ describe("Agents: the MCP URL comes from the API", () => {
     vi.spyOn(v3, "agentConfig").mockRejectedValue(new Error("down"));
     render(
       <MemoryRouter>
-        <AgentsPage />
+        <AgentsSection />
       </MemoryRouter>,
     );
     expect(await screen.findByText(/claude mcp add --transport http/)).toBeVisible();

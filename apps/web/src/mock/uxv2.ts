@@ -2,8 +2,22 @@
 // Synthetic data only (docs: CLAUDE.md data rules). Loaded only when VITE_MOCK=1.
 import { ApiError } from "../api";
 import type { ViewPlan } from "../types";
-import type { AskEvent, Question, Routine, RoutineRun, TreeNode, Usage } from "../uxv2/types";
-import type { WikiFact, WikiPage, WikiRevision, WikiSearchHit } from "../views/wiki/types";
+import type {
+  AskEvent,
+  DiffLine,
+  Question,
+  Routine,
+  RoutineRun,
+  TreeNode,
+  Usage,
+} from "../uxv2/types";
+import type {
+  WikiFact,
+  WikiIndex,
+  WikiPage,
+  WikiRevision,
+  WikiSearchHit,
+} from "../views/wiki/types";
 
 export const NOT_HANDLED = Symbol("not handled");
 
@@ -120,6 +134,86 @@ const PAGES: MockPage[] = [
     md: "# Group entities\n\nThe group runs five regions: Montreal, Sao Paulo, Bogota, Paris and Ho Chi Minh City {src:doc:ent:1}.",
   },
   {
+    ws: "core",
+    id: "mantu-overview",
+    type: "overview",
+    title: "Company Global: overview",
+    summary: "What this brain holds, who reads it and how a page gets here.",
+    md: "# Company Global: overview\n\nApproved, de-identified knowledge that everyone at Mantu can read.\n\n- Pages arrive through a review by two people\n- See [[bid-playbook]] for the bid method",
+  },
+  {
+    ws: "c_bid",
+    id: "bid-checklist",
+    type: "bid",
+    title: "Bid qualification checklist",
+    summary: "Eight questions that decide whether we respond to a tender.",
+    md: "# Bid qualification checklist\n\n- Do we know the buyer? {src:doc:bid:1}\n- Can we staff it in time? {src:doc:bid:1}\n- Is the price band realistic? {src:doc:bid:2}",
+  },
+  {
+    ws: "c_bid",
+    id: "bid-playbook",
+    type: "bid",
+    title: "Bid playbook",
+    summary: "How we qualify, price and review a bid.",
+    md: "# Bid playbook\n\n- Qualify within two days {src:doc:bid:1}\n- Price with a second pair of eyes {src:doc:bid:1}\n- Red team before sending {src:doc:bid:2}",
+  },
+  {
+    ws: "c_bid",
+    id: "pricing-guide",
+    type: "offer",
+    title: "Pricing guide",
+    summary: "Price bands and when to discount.",
+    md: "# Pricing guide\n\nThree bands, set by scope {src:doc:offer:1}.",
+  },
+  {
+    ws: "c_bid",
+    id: "bid-overview",
+    type: "overview",
+    title: "Bid and Pre-sales: overview",
+    summary: "What this brain holds and who writes in it.",
+    md: "# Bid and Pre-sales: overview\n\nBids, offers and lessons for the bid circle.\n\n- Start with [[bid-checklist]]",
+  },
+  {
+    ws: "c_bid",
+    id: "session-report-ada-2026-11-04",
+    type: "session_report",
+    title: "Session report Ada Lovelace 2026-11-04",
+    summary: "Folder: Sources / Session reports / Ada Lovelace",
+    md: "# Session report Ada Lovelace 2026-11-04\n\nFolder: Sources / Session reports / Ada Lovelace\n\n- Drafted the offer one pager\n- Reviewed two bid answers",
+  },
+  {
+    ws: "c_bid",
+    id: "session-report-ada-2026-11-03",
+    type: "session_report",
+    title: "Session report Ada Lovelace 2026-11-03",
+    summary: "Folder: Sources / Session reports / Ada Lovelace",
+    md: "# Session report Ada Lovelace 2026-11-03\n\nFolder: Sources / Session reports / Ada Lovelace\n\n- Qualified a tender",
+  },
+  {
+    ws: "c_bid",
+    id: "session-report-grace-2026-11-04",
+    type: "session_report",
+    title: "Session report Grace Hopper 2026-11-04",
+    summary: "Folder: Sources / Session reports / Grace Hopper",
+    md: "# Session report Grace Hopper 2026-11-04\n\nFolder: Sources / Session reports / Grace Hopper\n\n- Red team on the Acme proposal",
+  },
+  {
+    ws: "c_delivery",
+    id: "delivery-rituals",
+    type: "project",
+    title: "Delivery rituals",
+    summary: "The weekly rhythm of a delivery team.",
+    md: "# Delivery rituals\n\nEvery step has an owner {src:doc:del:1}.",
+  },
+  {
+    ws: "c_sales",
+    id: "sales-pipeline",
+    type: "opportunity",
+    title: "Pipeline review method",
+    summary: "How the weekly pipeline review runs.",
+    md: "# Pipeline review method\n\nOne owner per deal.",
+  },
+  {
     ws: "me",
     id: "me-notes",
     type: "interaction",
@@ -154,12 +248,27 @@ const WS_LABEL: Record<string, string> = {
   core: "Company Global",
   a_acme: "Acme",
   me: "Personal Brain",
+  c_bid: "Bid & Pre-sales",
+  c_delivery: "Delivery excellence",
+  c_sales: "Sales",
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  ...FOLDERS,
+  overview: "Overview",
+  lesson: "Lessons",
+  note: "Notes",
+  session_report: "Session reports",
 };
 
 type Seen = "full" | "locked" | "hidden";
 /** What a role sees per folder type. Contacts are locked or absent, Bids vary. Server enforcement is real, this is a stand-in. */
 function seen(role: string, ws: string, type: string): Seen {
   if (ws === "me") return "full";
+  if (ws === "c_bid" && !["ceo", "head_bid", "reviewer", "platform_admin"].includes(role))
+    return "hidden";
+  if (ws === "c_delivery" && !["ceo", "consultant", "reviewer"].includes(role)) return "hidden";
+  if (ws === "c_sales" && role !== "ceo") return "hidden";
   if (ws === "a_acme" && !["ceo", "acme_lead", "head_bid"].includes(role)) return "hidden";
   if (type === "contact")
     return role === "acme_lead" || role === "ceo"
@@ -314,6 +423,98 @@ function backlinks(role: string, ws: string, id: string): WikiSearchHit[] {
 
 // ---------- questions, routines, usage (in memory, per role) ----------
 
+const same = (text: string): DiffLine => ({ type: "same", text });
+const add = (text: string): DiffLine => ({ type: "add", text });
+const del = (text: string): DiffLine => ({ type: "del", text });
+/** Numbers each run of added or removed lines from 0, the way the API does. */
+function numbered(lines: DiffLine[]): { lines: DiffLine[]; count: number } {
+  let count = 0;
+  let inRun = false;
+  const out = lines.map((l) => {
+    if (l.type === "same") {
+      inRun = false;
+      return l;
+    }
+    if (!inRun) {
+      inRun = true;
+      count++;
+    }
+    return { ...l, change: count - 1 };
+  });
+  return { lines: out, count };
+}
+
+const PROPOSAL_CHANGE = (): Question => {
+  const d = numbered([
+    same("# Bid playbook"),
+    same(""),
+    same("- Qualify within two days"),
+    del("- Price with a second pair of eyes"),
+    add("- Price with a second pair of eyes and a written range"),
+    same("- Red team before sending"),
+    same(""),
+    same("## Lessons"),
+    add("- Keep the qualification answers in the bid page"),
+    add("- Record the reason for every no-go"),
+    same(""),
+    ...Array.from({ length: 14 }, (_, i) => same(`Context line ${i + 1} that did not change.`)),
+    same("## Pricing"),
+    add("Show the price range, never a single number."),
+  ]);
+  return {
+    id: "q_prop_1",
+    kind: "review",
+    title: "Bid playbook: price with a written range",
+    workspaceId: "c_bid",
+    createdAt: "2026-11-04T16:00:00.000Z",
+    summary: "Adds a written price range to the bid method and two lessons.",
+    options: [
+      { action: "approve", label: "Approve" },
+      { action: "reject", label: "Reject" },
+    ],
+    detail: {
+      approvals: 0,
+      required: 1,
+      revisionHash: "e".repeat(64),
+      authorId: "u_consultant",
+      changeCount: d.count,
+      pages: [{ pageId: "bid-playbook", title: "Bid playbook", diff: d.lines }],
+    },
+  };
+};
+
+const PROPOSAL_NEW = (): Question => {
+  const d = numbered([
+    add("# Session report Grace Hopper 2026-11-05"),
+    add(""),
+    add("Folder: Sources / Session reports / Grace Hopper"),
+    add(""),
+    add("- Red team on the Acme proposal"),
+  ]);
+  return {
+    id: "q_prop_2",
+    kind: "review",
+    title: "Session report Grace Hopper 2026-11-05",
+    workspaceId: "c_bid",
+    createdAt: "2026-11-05T11:00:00.000Z",
+    summary: "Session report of 2026-11-05 covering the Acme red team.",
+    options: [
+      { action: "approve", label: "Approve" },
+      { action: "reject", label: "Reject" },
+    ],
+    detail: {
+      approvals: 0,
+      required: 1,
+      revisionHash: "f".repeat(64),
+      authorId: "svc:wiki:c_bid",
+      changeCount: d.count,
+      pages: [
+        { pageId: "session-report-grace-2026-11-05", title: "Session report", diff: d.lines },
+      ],
+    },
+  };
+};
+
 const questionsByRole = new Map<string, Question[]>();
 export function questionsFor(role: string): Question[] {
   let list = questionsByRole.get(role);
@@ -371,6 +572,7 @@ export function questionsFor(role: string): Question[] {
       detail: { approvals: 0, required: 1, revisionHash: "c".repeat(64) },
     },
   ];
+  if (["ceo", "head_bid", "reviewer"].includes(role)) list.push(PROPOSAL_CHANGE(), PROPOSAL_NEW());
   if (["ceo", "head_bid", "reviewer"].includes(role))
     list.push(
       {
@@ -649,12 +851,72 @@ export function handleV2(
       };
       return out;
     }
+    if (rest === "index") {
+      const mine = PAGES.filter((x) => x.ws === ws && seen(role, ws, x.type) === "full");
+      if (!mine.length && !WS_LABEL[ws]) throw new ApiError(404, "Not found.");
+      if (!["me", "core", "a_acme", "c_bid", "c_delivery", "c_sales"].includes(ws))
+        throw new ApiError(404, "Not found.");
+      const types = [
+        ...new Set([...mine.map((x) => x.type), ...(ws === "c_bid" ? ["lesson"] : [])]),
+      ];
+      const out: WikiIndex = {
+        ws,
+        nodeId: ws,
+        label: WS_LABEL[ws] ?? ws,
+        personal: ws === "me",
+        pages: mine.map((x) => ({
+          id: x.id,
+          title: x.title,
+          type: x.type,
+          summary: x.summary,
+          revision: 2,
+          updatedAt: "2026-11-03T15:20:00.000Z",
+          restricted: 0,
+          ...(x.id === "pricing-guide" ? { status: "draft" as const } : {}),
+        })),
+        schema: {
+          types: Object.fromEntries(
+            types
+              .filter((t) => t !== "overview")
+              .map((t) => [
+                t,
+                {
+                  label: TYPE_LABEL[t] ?? t,
+                  required: [],
+                  ...(t === "session_report" ? { generated: true } : {}),
+                },
+              ]),
+          ),
+        },
+        health: null,
+        settings: { autoAccept: false, freshnessDays: 180 },
+        can: { contribute: true, edit: true, decide: true, promote: false },
+      };
+      return out;
+    }
     if (rest.startsWith("facts")) return FACTS[ws] ?? [];
     if (rest.startsWith("search")) {
       // The real search is text based, so a page's backlinks are the pages that match its title.
       const term = (search.get("q") ?? "").toLowerCase();
       const self = PAGES.find((x) => x.ws === ws && x.title.toLowerCase() === term);
-      return { results: self ? backlinks(role, ws, self.id) : [] };
+      if (self) return { results: backlinks(role, ws, self.id) };
+      return {
+        results: PAGES.filter(
+          (x) =>
+            x.ws === ws &&
+            seen(role, ws, x.type) === "full" &&
+            `${x.title} ${x.summary}`.toLowerCase().includes(term),
+        ).map((x) => ({
+          ws,
+          label: WS_LABEL[ws] ?? ws,
+          pageId: x.id,
+          title: x.title,
+          type: x.type,
+          summary: x.summary,
+          lines: [],
+          restricted: 0,
+        })),
+      };
     }
   }
   if (method === "GET" && p === "/v1/questions") return questionsFor(role);
@@ -672,6 +934,21 @@ export function handleV2(
       !body.revisionHash
     )
       throw new ApiError(400, "Name the revision you read before approving.");
+    if (/^(approve|prefer|keep)/.test(String(body.action)) && (item.detail?.changeCount ?? 0) > 0) {
+      const seenBody = body.seenChanges as
+        | { revisionHash?: string; indexes?: number[] }
+        | undefined;
+      const need = item.detail?.changeCount ?? 0;
+      const got = new Set(seenBody?.indexes ?? []);
+      const ok =
+        seenBody?.revisionHash === item.detail?.revisionHash &&
+        Array.from({ length: need }, (_, k) => k).every((k) => got.has(k));
+      if (!ok)
+        throw new ApiError(409, "See every change before you approve.", {
+          error: "changes_not_seen",
+          changeCount: need,
+        });
+    }
     list.splice(i, 1);
     return { ok: true };
   }

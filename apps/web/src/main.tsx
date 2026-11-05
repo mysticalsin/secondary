@@ -8,7 +8,11 @@ import { App } from "./App";
 import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/uxv2.css";
+import "./styles/v4.css";
+import { applyTheme, readTheme } from "./lib/theme";
 import { AppProvider } from "./state";
+
+applyTheme(readTheme());
 
 const el = document.getElementById("root");
 if (!el) throw new Error("Missing #root");

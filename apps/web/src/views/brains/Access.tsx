@@ -1,108 +1,143 @@
-import { Lock, UserPlus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Building2, Lock } from "lucide-react";
+import { type FormEvent, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ApiError } from "../../api";
-import { TableWrap } from "../../components/ui";
+import { ApiError, request } from "../../api";
+import { Await } from "../../components/ui";
 import { type Key, useI18n } from "../../i18n";
+import { initialsOf, nameOfEmail } from "../../lib/people";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
+import { ux2 } from "../../uxv2/api";
+import { wikiApi } from "../wiki/api";
 import { v3 } from "./api";
+import { Choice, type ChoiceOption } from "./Choice";
 import { BrainFrame } from "./shared";
-import type { AccessView, BrainRole, Everyone, Publication } from "./types";
+import type { AccessView, BrainHome, BrainRole, Everyone, FieldsView, Publication } from "./types";
 
-// Everyone at Mantu lifts reading only, so "reader" is the only open level (contributor is not offered).
-const EVERYONE: Everyone[] = ["none", "reader"];
-const PUBLICATION: Publication[] = ["review", "direct"];
+const ROLE_KEY: Record<BrainRole, [Key, Key]> = {
+  reader: ["v4.role.reader", "v4.role.reader.d"],
+  contributor: ["v4.role.contributor", "v4.role.contributor.d"],
+  editor: ["v4.role.editor", "v4.role.editor.d"],
+  steward: ["v4.role.steward", "v4.role.steward.d"],
+  owner: ["v4.role.owner", "v4.role.owner.d"],
+};
 
-/**
- * Radios for one bounded setting. An option outside the policy bound is disabled and the reason
- * the server gave is on the page, tied to the option, not only in a tooltip.
- */
-export function BoundedChoice<T extends string>({
-  name,
-  legend,
-  values,
-  allowed,
-  value,
-  reason,
-  disabled,
-  label,
-  hint,
-  onChange,
+function useRoleOptions(view: AccessView): ChoiceOption[] {
+  const { t } = useI18n();
+  return view.roles.map((r) => ({
+    id: r.id,
+    label: t(ROLE_KEY[r.id][0]),
+    desc: t(ROLE_KEY[r.id][1]),
+  }));
+}
+
+function Who({ email }: { email: string }) {
+  const name = nameOfEmail(email);
+  return (
+    <>
+      <span className="avatar sm" aria-hidden>
+        {initialsOf(name)}
+      </span>
+      <span className="who">
+        <b>{name}</b>
+        <span className="muted">{email}</span>
+      </span>
+    </>
+  );
+}
+
+function EveryoneRow({
+  id,
+  view,
+  onSaved,
+  onPending,
 }: {
-  name: string;
-  legend: string;
-  values: T[];
-  allowed: T[];
-  value: T;
-  reason: string | null;
-  disabled: boolean;
-  label: (v: T) => string;
-  hint: (v: T) => string;
-  onChange: (v: T) => void;
+  id: string;
+  view: AccessView;
+  onSaved: () => void;
+  onPending: () => void;
 }) {
   const { t } = useI18n();
-  const blocked = values.some((v) => !allowed.includes(v));
+  const { say } = useApp();
+  const opts: ChoiceOption[] = (["none", "reader"] as Everyone[]).map((v) => ({
+    id: v,
+    label: t(v === "none" ? "v4.every.none" : "v4.every.reader"),
+    desc: t(v === "none" ? "v4.every.none.d" : "v4.every.reader.d"),
+    disabled: !view.everyone.allowed.includes(v),
+  }));
+  const pick = async (v: string) => {
+    try {
+      const r = await v3.setAccess(id, { everyone: v as Everyone });
+      if ("status" in r && r.status === "pending") {
+        say(t("b3.acc.pending.say"));
+        onPending();
+        return;
+      }
+      say(t("b3.acc.saved"));
+      onSaved();
+    } catch (e) {
+      say(e instanceof ApiError ? e.reason : t("common.failed"));
+    }
+  };
+  const blocked = opts.some((o) => o.disabled) && view.everyone.reason;
   return (
-    <fieldset className="choices bounded">
-      <legend>{legend}</legend>
-      {values.map((v) => {
-        const off = !allowed.includes(v);
-        const rid = `${name}-${v}`;
-        return (
-          <label key={v} className={`choice${off ? " locked" : ""}`} htmlFor={rid}>
-            <input
-              id={rid}
-              type="radio"
-              name={name}
-              value={v}
-              checked={value === v}
-              disabled={disabled || off}
-              aria-describedby={off && reason ? `${name}-why` : undefined}
-              onChange={() => onChange(v)}
-            />
-            <span>
-              <b>
-                {label(v)}
-                {off ? (
-                  <span className="chip t-attn" style={{ marginLeft: 8 }}>
-                    <Lock size={11} aria-hidden /> {t("b3.acc.notallowed")}
-                  </span>
-                ) : null}
-              </b>
-              <span className="muted">{hint(v)}</span>
-            </span>
-          </label>
-        );
-      })}
-      {blocked && reason ? (
-        <p id={`${name}-why`} className="bound-why">
-          <Lock size={14} aria-hidden /> {reason}
-        </p>
-      ) : null}
-    </fieldset>
+    <li className="arow" data-testid="everyone-row">
+      <span className="avatar sm bld" aria-hidden>
+        <Building2 size={15} />
+      </span>
+      <span className="who">
+        <b>{t("v4.everyone")}</b>
+        {blocked ? (
+          <span className="muted why">
+            <Lock size={12} aria-hidden /> {view.everyone.reason}
+          </span>
+        ) : null}
+      </span>
+      <Choice
+        label={t("v4.everyone")}
+        value={view.everyone.level === "contributor" ? "reader" : view.everyone.level}
+        options={opts}
+        disabled={!view.canManage}
+        onPick={pick}
+      />
+    </li>
   );
+}
+
+/** Email or id to the principal id the API wants. Stewards can read the directory; others type an id. */
+async function resolvePrincipal(input: string): Promise<string> {
+  const text = input.trim();
+  if (!text.includes("@")) return text;
+  try {
+    const people = await request<{ id: string; email: string }[]>("GET", "/v1/admin/principals");
+    const hit = people.find((p) => p.email.toLowerCase() === text.toLowerCase());
+    if (hit) return hit.id;
+  } catch {
+    /* the directory is for stewards: fall through and let the API say if the address is unknown */
+  }
+  return text;
 }
 
 function Members({
   id,
   view,
-  onChange,
+  reload,
   onPending,
 }: {
   id: string;
   view: AccessView;
-  onChange: () => void;
+  reload: () => void;
   onPending: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, tn } = useI18n();
   const { say } = useApp();
-  const [busy, setBusy] = useState<string | null>(null);
+  const roles = useRoleOptions(view);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [newId, setNewId] = useState("");
-  const [newRole, setNewRole] = useState<BrainRole>("reader");
-  const run = async (key: string, fn: () => ReturnType<typeof v3.setMember>) => {
-    setBusy(key);
+  const [who, setWho] = useState("");
+  const [role, setRole] = useState<BrainRole>("reader");
+  const run = async (fn: () => ReturnType<typeof v3.setMember>) => {
+    setBusy(true);
     setErr(null);
     try {
       const r = await fn();
@@ -110,257 +145,290 @@ function Members({
         say(t("b3.acc.pending.say"));
         onPending();
       } else say(t("b3.acc.saved"));
-      onChange();
+      reload();
+      return true;
     } catch (e) {
       setErr(e instanceof ApiError ? e.reason : t("common.failed"));
+      return false;
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
   const members = view.members ?? [];
+  const add = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!who.trim()) return;
+    const pid = await resolvePrincipal(who);
+    if (await run(() => v3.setMember(id, pid, role))) setWho("");
+  };
   return (
-    <section className="card" aria-labelledby="mem-h">
-      <h3 id="mem-h">{t("b3.acc.members")}</h3>
-      {view.members === null ? <p className="muted">{t("b3.acc.members.hidden")}</p> : null}
+    <section aria-labelledby="acc-h" className="asec">
+      {view.canManage && view.type !== "personal" ? (
+        <form className="addrow" onSubmit={add}>
+          <label className="sr-only" htmlFor="m-new">
+            {t("v4.add.ph")}
+          </label>
+          <input
+            id="m-new"
+            className="input big"
+            value={who}
+            onChange={(e) => setWho(e.target.value)}
+            placeholder={t("v4.add.ph")}
+          />
+          <label className="sr-only" htmlFor="m-role">
+            {t("b3.acc.role")}
+          </label>
+          <select
+            id="m-role"
+            className="select big"
+            value={role}
+            onChange={(e) => setRole(e.target.value as BrainRole)}
+          >
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className="btn primary big" disabled={busy || !who.trim()}>
+            {t("b3.acc.add")}
+          </button>
+        </form>
+      ) : null}
       {err ? (
         <div className="errorbox" role="alert">
           {err}
         </div>
       ) : null}
-      {members.length ? (
-        <TableWrap label={t("b3.acc.members")}>
-          <table className="t">
-            <thead>
-              <tr>
-                <th scope="col">{t("b3.acc.person")}</th>
-                <th scope="col">{t("b3.acc.role")}</th>
-                <th scope="col">{t("b3.acc.state")}</th>
-                <th scope="col">
-                  <span className="sr-only">{t("b3.acc.actions")}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((m) => (
-                <tr key={m.principalId}>
-                  <th scope="row">{m.email}</th>
-                  <td>
-                    <label className="sr-only" htmlFor={`role-${m.principalId}`}>
-                      {t("b3.acc.role.of", { who: m.email })}
-                    </label>
-                    <select
-                      id={`role-${m.principalId}`}
-                      className="select"
-                      value={m.role}
-                      disabled={!view.canManage || busy !== null}
-                      onChange={(e) =>
-                        run(m.principalId, () =>
-                          v3.setMember(id, m.principalId, e.target.value as BrainRole),
-                        )
-                      }
-                    >
-                      {view.roles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <span className={`chip t-${m.state === "pending" ? "attn" : "done"}`}>
-                      {t(m.state === "pending" ? "b3.acc.s.pending" : "b3.acc.s.active")}
-                    </span>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn sm danger"
-                      disabled={!view.canManage || busy !== null}
-                      onClick={() => run(m.principalId, () => v3.removeMember(id, m.principalId))}
-                    >
-                      {t("b3.acc.remove")}
-                      <span className="sr-only"> {m.email}</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableWrap>
-      ) : view.members ? (
-        <p className="muted">{t("b3.acc.members.none")}</p>
-      ) : null}
-      {view.canManage && view.type !== "personal" ? (
-        <form
-          className="row addmember"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!newId.trim()) return;
-            run("new", () => v3.setMember(id, newId.trim(), newRole)).then(() => setNewId(""));
-          }}
-        >
-          <div className="field">
-            <label htmlFor="m-new">{t("b3.acc.add.id")}</label>
-            <input
-              id="m-new"
-              className="input"
-              value={newId}
-              onChange={(e) => setNewId(e.target.value)}
-              placeholder="u_…"
+      <h2 id="acc-h" className="sub">
+        {t("v4.who.has")}{" "}
+        <span className="cnt">{tn(members.length + 1, "v4.people.one", "v4.people.other")}</span>
+      </h2>
+      {view.members === null ? <p className="muted">{t("b3.acc.members.hidden")}</p> : null}
+      <ul className="alist">
+        <EveryoneRow id={id} view={view} onSaved={reload} onPending={onPending} />
+        {members.map((m) => (
+          <li key={m.principalId} className="arow">
+            <Who email={m.email} />
+            {m.state === "pending" ? (
+              <span className="tag attn">{t("b3.acc.s.pending")}</span>
+            ) : null}
+            <Choice
+              label={t("b3.acc.role.of", { who: m.email })}
+              value={m.role}
+              options={roles}
+              disabled={!view.canManage || busy}
+              onPick={(r) => run(() => v3.setMember(id, m.principalId, r as BrainRole))}
+              {...(view.canManage
+                ? {
+                    remove: {
+                      label: t("v4.remove"),
+                      onPick: () => {
+                        void run(() => v3.removeMember(id, m.principalId));
+                      },
+                    },
+                  }
+                : {})}
             />
-          </div>
-          <div className="field">
-            <label htmlFor="m-role">{t("b3.acc.role")}</label>
-            <select
-              id="m-role"
-              className="select"
-              value={newRole}
-              onChange={(e) => setNewRole(e.target.value as BrainRole)}
-            >
-              {view.roles.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button type="submit" className="btn" disabled={busy !== null || !newId.trim()}>
-            <UserPlus size={16} aria-hidden /> {t("b3.acc.add")}
-          </button>
-        </form>
-      ) : null}
-      <details className="roles-legend">
-        <summary>{t("b3.acc.roles.legend")}</summary>
-        <dl>
-          {view.roles.map((r) => (
-            <div key={r.id}>
-              <dt>{r.label}</dt>
-              <dd className="muted">{r.summary}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
 
-export function AccessPanel({
+function PublicationSection({
   id,
   view,
   reload,
+  onPending,
 }: {
   id: string;
   view: AccessView;
   reload: () => void;
+  onPending: () => void;
 }) {
   const { t } = useI18n();
   const { say } = useApp();
-  const [err, setErr] = useState<string | null>(null);
-  const [pendingNow, setPendingNow] = useState(false);
-  // The choice shows at once and snaps back if the server refuses it.
-  const [pub, setPub] = useState(view.publication.mode);
-  const [every, setEvery] = useState(view.everyone.level);
-  useEffect(() => {
-    setPub(view.publication.mode);
-    setEvery(view.everyone.level);
-  }, [view.publication.mode, view.everyone.level]);
-  const save = async (body: { publication?: Publication; everyone?: Everyone }) => {
-    setErr(null);
-    if (body.publication) setPub(body.publication);
-    if (body.everyone) setEvery(body.everyone);
+  const waiting = useApi(() => ux2.questions({ brain: id }), [id]);
+  const n = waiting.data?.length ?? 0;
+  const needReview = (waiting.data ?? []).filter((q) => (q.detail?.required ?? 1) > 1).length;
+  const opts: ChoiceOption[] = (["review", "direct"] as Publication[]).map((v) => ({
+    id: v,
+    label: t(`b3.acc.pub.${v}` as Key),
+    desc: t(`b3.acc.pub.${v}.d` as Key),
+    disabled: !view.publication.allowed.includes(v),
+  }));
+  const pick = async (v: string) => {
     try {
-      const r = await v3.setAccess(id, body);
-      if ("status" in r && r.status === "pending") {
-        // Opening a brain to everyone needs a second person: nothing changed yet.
-        setEvery(view.everyone.level);
-        setPendingNow(true);
-        say(t("b3.acc.pending.say"));
-        return;
-      }
+      const r = await v3.setAccess(id, { publication: v as Publication });
+      if ("status" in r && r.status === "pending") onPending();
       say(t("b3.acc.saved"));
       reload();
     } catch (e) {
-      setPub(view.publication.mode);
-      setEvery(view.everyone.level);
-      setErr(e instanceof ApiError ? e.reason : t("common.failed"));
+      say(e instanceof ApiError ? e.reason : t("common.failed"));
     }
   };
-  const waiting = (view.members ?? []).filter((m) => m.state === "pending").length;
-  const showBanner = waiting > 0 || pendingNow;
   return (
-    <div className="stack access">
-      {showBanner ? (
-        <div className="banner" role="status" data-testid="pending-banner">
-          <b>{t("b3.acc.banner.title")}</b>{" "}
-          <span>{t("b3.acc.banner.lead", { n: Math.max(waiting, 1) })}</span>{" "}
-          <Link to="/admin">{t("b3.acc.banner.link")}</Link>
+    <section className="asec" aria-labelledby="pub-h">
+      <div className="split-row">
+        <div>
+          <h2 id="pub-h" className="sub">
+            {t("v4.publication")}
+          </h2>
+          {n > 0 ? (
+            <p className="muted publine">
+              {t("v4.pub.waiting", { n })} ·{" "}
+              <Link to={`/waiting?brain=${encodeURIComponent(id)}`}>{t("v4.pub.publish")}</Link>
+              {needReview ? <> · {t("v4.pub.needs", { n: needReview })}</> : null}
+            </p>
+          ) : (
+            <p className="muted publine">{t("v4.pub.none")}</p>
+          )}
+          {view.publication.reason && view.publication.allowed.length < 2 ? (
+            <p className="muted why">
+              <Lock size={12} aria-hidden /> {view.publication.reason}
+            </p>
+          ) : null}
         </div>
-      ) : null}
-      {view.type === "personal" ? (
-        <div className="banner info" role="note">
-          {t("b3.acc.personal")}
-        </div>
-      ) : null}
-      {!view.canManage ? (
-        <p className="muted" role="note">
-          {t("b3.acc.readonly")}
-        </p>
-      ) : null}
-      {err ? (
-        <div className="errorbox" role="alert">
-          {err}
-        </div>
-      ) : null}
-      <section className="card two-col">
-        <BoundedChoice<Everyone>
-          name="everyone"
-          legend={t("b3.acc.everyone")}
-          values={EVERYONE}
-          allowed={view.everyone.allowed}
-          value={every}
-          reason={view.everyone.reason}
+        <Choice
+          label={t("v4.publication")}
+          value={view.publication.mode}
+          options={opts}
           disabled={!view.canManage}
-          label={(v) => t(`b3.acc.ev.${v}` as Key)}
-          hint={(v) => t(`b3.acc.ev.${v}.d` as Key)}
-          onChange={(v) => save({ everyone: v })}
+          onPick={pick}
         />
-        <BoundedChoice<Publication>
-          name="publication"
-          legend={t("b3.acc.publication")}
-          values={PUBLICATION}
-          allowed={view.publication.allowed}
-          value={pub}
-          reason={view.publication.reason}
-          disabled={!view.canManage}
-          label={(v) => t(`b3.acc.pub.${v}` as Key)}
-          hint={(v) => t(`b3.acc.pub.${v}.d` as Key)}
-          onChange={(v) => save({ publication: v })}
-        />
-      </section>
-      {view.type !== "personal" ? (
-        <Members id={id} view={view} onChange={reload} onPending={() => setPendingNow(true)} />
-      ) : null}
-    </div>
+      </div>
+    </section>
+  );
+}
+
+function BusinessFields({ id, b }: { id: string; b: BrainHome }) {
+  const { t, td } = useI18n();
+  const fields = useApi(() => v3.fields(id), [id]);
+  return (
+    <section className="asec" aria-labelledby="bf-h">
+      <div className="split-row">
+        <div>
+          <h2 id="bf-h" className="sub">
+            {t("v4.fields")}
+          </h2>
+          <p className="muted">{t("v4.fields.lead")}</p>
+        </div>
+        <Link className="btn soft sm" to={`/brains/${encodeURIComponent(id)}/fields`}>
+          {b.manages ? t("v4.fields.edit") : t("v4.fields.view")}
+        </Link>
+      </div>
+      <Await state={fields} skeleton={1}>
+        {(f: FieldsView) =>
+          f.fields.length ? (
+            <ul className="chips">
+              {f.fields.map((x) => (
+                <li key={x.key} className="chip t-open">
+                  {x.label || x.key}
+                  <span className="sr-only">: </span>
+                  <span className="mute-s">{td("b3.fld.sens", x.sensitivity, x.sensitivity)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">{t("v4.fields.none")}</p>
+          )
+        }
+      </Await>
+    </section>
+  );
+}
+
+function HiddenVersions({ id }: { id: string }) {
+  const { t } = useI18n();
+  const idx = useApi(() => wikiApi.index(id), [id]);
+  const [pid, setPid] = useState("");
+  const pages = useMemo(() => idx.data?.pages ?? [], [idx.data]);
+  return (
+    <section className="asec" aria-labelledby="hv-h">
+      <h2 id="hv-h" className="sub">
+        {t("v4.hidden")}
+      </h2>
+      <p className="muted">{t("v4.hidden.lead")}</p>
+      <div className="addrow">
+        <label className="sr-only" htmlFor="hv-page">
+          {t("v4.hidden.pick")}
+        </label>
+        <select
+          id="hv-page"
+          className="select big"
+          value={pid}
+          onChange={(e) => setPid(e.target.value)}
+        >
+          <option value="">{t("v4.hidden.pick")}</option>
+          {pages.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title}
+            </option>
+          ))}
+        </select>
+        {pid ? (
+          <Link
+            className="btn soft"
+            to={`/brains/${encodeURIComponent(id)}/pages/${encodeURIComponent(pid)}/versions`}
+          >
+            {t("v4.hidden.open")}
+          </Link>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
 export function AccessPage() {
   const { id = "" } = useParams();
-  const access = useApi(() => v3.access(id), [id]);
   const { t } = useI18n();
+  const access = useApi(() => v3.access(id), [id]);
+  const [pendingNow, setPendingNow] = useState(false);
   return (
-    <BrainFrame id={id} tab="access">
-      {() => (
-        <>
-          <h3 className="sec-h">{t("b3.acc.title")}</h3>
-          {access.data ? (
-            <AccessPanel id={id} view={access.data} reload={access.reload} />
-          ) : access.error ? (
-            <div className="errorbox" role="alert">
-              {access.error}
-            </div>
-          ) : null}
-        </>
+    <BrainFrame id={id} title={t("v4.members.access")} width="narrow">
+      {(b) => (
+        <Await state={access} skeleton={3}>
+          {(view) => {
+            const waiting = (view.members ?? []).filter((m) => m.state === "pending").length;
+            return (
+              <div className="stack access4">
+                {waiting > 0 || pendingNow ? (
+                  <div className="banner" role="status" data-testid="pending-banner">
+                    <b>{t("b3.acc.banner.title")}</b>{" "}
+                    <span>{t("b3.acc.banner.lead", { n: Math.max(waiting, 1) })}</span>{" "}
+                    <Link to="/settings/members">{t("b3.acc.banner.link")}</Link>
+                  </div>
+                ) : null}
+                {view.type === "personal" ? (
+                  <div className="banner info" role="note">
+                    {t("b3.acc.personal")}
+                  </div>
+                ) : null}
+                {!view.canManage ? (
+                  <p className="muted" role="note">
+                    {t("b3.acc.readonly")}
+                  </p>
+                ) : null}
+                <Members
+                  id={id}
+                  view={view}
+                  reload={access.reload}
+                  onPending={() => setPendingNow(true)}
+                />
+                <PublicationSection
+                  id={id}
+                  view={view}
+                  reload={access.reload}
+                  onPending={() => setPendingNow(true)}
+                />
+                <BusinessFields id={id} b={b} />
+                <HiddenVersions id={id} />
+              </div>
+            );
+          }}
+        </Await>
       )}
     </BrainFrame>
   );

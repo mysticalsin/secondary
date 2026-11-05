@@ -1,4 +1,4 @@
-import { Lock, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Lock, ShieldCheck } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Await } from "../../components/ui";
@@ -115,78 +115,34 @@ export function LastActive({ iso }: { iso: string | null }) {
   return <>{tn(d, "b3.activity.day", "b3.activity.days")}</>;
 }
 
-type TabId = "home" | "access" | "fields" | "import" | "journal" | "coach" | "versions";
-
-/** Header and tabs shared by every page of one brain. Tabs follow the caller's pilot flags and rights. */
+/** The header of a page that belongs to one brain: a link back to the brain and the page's own title. */
 export function BrainFrame({
   id,
-  tab,
+  title,
   children,
+  width,
 }: {
   id: string;
-  tab: TabId;
-  children: (b: BrainHome) => ReactNode;
+  title: string;
+  children: ReactNode | ((b: BrainHome) => ReactNode);
+  width?: "narrow";
 }) {
-  const { t, tn } = useI18n();
+  const { t } = useI18n();
   const brain = useApi(() => v3.brain(id), [id]);
-  const flags = useFlags();
-  const on = (k: string) => !flags || flags[k] !== false;
-  const base = `/brains/${encodeURIComponent(id)}`;
   return (
-    <div className="page brains">
-      <p className="crumbs">
-        <Link to="/brains">{t("b3.all")}</Link>
-      </p>
-      <Await state={brain} skeleton={3}>
-        {(b) => {
-          const tabs: { id: TabId; to: string; label: string; show: boolean }[] = [
-            { id: "home", to: base, label: t("b3.tab.home"), show: true },
-            { id: "access", to: `${base}/access`, label: t("b3.tab.access"), show: true },
-            { id: "fields", to: `${base}/fields`, label: t("b3.tab.fields"), show: true },
-            { id: "import", to: `${base}/import`, label: t("b3.tab.import"), show: on("imports") },
-            {
-              id: "journal",
-              to: `${base}/journal`,
-              label: t("b3.tab.journal"),
-              show: on("journal"),
-            },
-            {
-              id: "coach",
-              to: `${base}/coach`,
-              label: t("b3.tab.coach"),
-              show: b.manages && on("coach"),
-            },
-          ];
-          return (
-            <>
-              <header className="bh">
-                <div className="bh-name">
-                  <div className="row">
-                    <TypeChip type={b.type} />
-                    {b.restricted ? <RestrictedChip /> : null}
-                    {b.manages ? <ManageChip /> : null}
-                  </div>
-                  <h2>{b.name}</h2>
-                  <p className="muted">
-                    {tn(b.readers, "b3.readers.one", "b3.readers.other")} ·{" "}
-                    {tn(b.pages, "b3.pages.one", "b3.pages.other")}
-                  </p>
-                </div>
-                <HealthRing score={b.health.score} size={64} />
-              </header>
-              <nav className="btabs" aria-label={t("b3.tabs")}>
-                {tabs
-                  .filter((x) => x.show)
-                  .map((x) => (
-                    <Link key={x.id} to={x.to} aria-current={tab === x.id ? "page" : undefined}>
-                      {x.label}
-                    </Link>
-                  ))}
-              </nav>
-              {children(b)}
-            </>
-          );
-        }}
+    <div className={`page v4page${width === "narrow" ? " narrow" : ""}`}>
+      <Await state={brain} skeleton={2}>
+        {(b) => (
+          <>
+            <p className="backlink">
+              <Link to={`/brains/${encodeURIComponent(id)}`}>
+                <ArrowLeft size={14} aria-hidden /> {id === "me" ? t("v4.personal") : b.name}
+              </Link>
+            </p>
+            <h1 className="ptitle">{title}</h1>
+            {typeof children === "function" ? children(b) : children}
+          </>
+        )}
       </Await>
     </div>
   );

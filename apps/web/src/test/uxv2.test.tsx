@@ -6,10 +6,9 @@ import { ApiError } from "../api";
 import { en } from "../i18n/en";
 import { fr } from "../i18n/fr";
 import { parseSse, ux2 } from "../uxv2/api";
-import type { Question, TreeNode } from "../uxv2/types";
+import type { Question } from "../uxv2/types";
 import { Ask } from "../views/ask/Ask";
-import { BrainTree } from "../views/brain/Tree";
-import { QuestionCard } from "../views/questions/Questions";
+import { QuestionCard } from "../views/waiting/QuestionCard";
 
 const say = vi.fn();
 vi.mock("../state", () => ({
@@ -29,7 +28,7 @@ beforeEach(() => {
 });
 
 describe("Ask: streaming answer", () => {
-  it("shows the stage while streaming, then the answer, citations as links to Brain, and the usage footer", async () => {
+  it("shows the stage while streaming, then the answer, citations as links to the page, and the usage footer", async () => {
     wrap(<Ask />);
     const user = userEvent.setup();
     await user.click(
@@ -41,7 +40,7 @@ describe("Ask: streaming answer", () => {
     const chip = within(screen.getByRole("group", { name: "Sources" })).getByRole("link", {
       name: "Delivery handbook",
     });
-    expect(chip).toHaveAttribute("href", "/brain?ws=core&page=delivery-handbook");
+    expect(chip).toHaveAttribute("href", "/brains/core/pages/delivery-handbook");
     const foot = await screen.findByTestId("usage-foot", {}, { timeout: 4000 });
     expect(foot).toHaveTextContent("tokens used");
     expect(foot).toHaveTextContent("Saved 96% by reading the index first");
@@ -83,57 +82,6 @@ describe("SSE parsing", () => {
     const seen: string[] = [];
     for await (const ev of parseSse(body)) seen.push(ev.event);
     expect(seen).toEqual(["status", "answer", "done"]);
-  });
-});
-
-describe("Brain tree", () => {
-  const roots: TreeNode[] = [
-    {
-      id: "core",
-      label: "Company Global",
-      kind: "workspace",
-      access: "full",
-      children: [
-        {
-          id: "core/offer",
-          label: "Offers",
-          kind: "folder",
-          access: "full",
-          count: 1,
-          children: [{ id: "p1", label: "Analytics retainer offer", kind: "page", access: "full" }],
-        },
-        { id: "core/contact", label: "Contacts", kind: "folder", access: "locked" },
-      ],
-    },
-  ];
-  const props = {
-    groups: [{ key: "company", title: "Company Brain", nodes: roots }],
-    selected: null,
-    onPage: vi.fn(),
-    onFolder: vi.fn(),
-  };
-
-  it("shows a locked folder by name only and never as a control", () => {
-    render(<BrainTree {...props} />);
-    const locked = screen.getByTestId("tree-locked");
-    expect(locked).toHaveTextContent("Contacts");
-    expect(locked).toHaveTextContent("Locked");
-    expect(within(locked).queryByRole("button")).not.toBeInTheDocument();
-  });
-
-  it("does not render what the API left out", () => {
-    render(<BrainTree {...props} />);
-    expect(screen.queryByText("Bids")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button").map((b) => b.textContent)).not.toContain("Contacts");
-  });
-
-  it("opens a folder and picks a page", async () => {
-    const onPage = vi.fn();
-    render(<BrainTree {...props} onPage={onPage} />);
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Offers/ }));
-    await user.click(screen.getByRole("button", { name: "Analytics retainer offer" }));
-    expect(onPage).toHaveBeenCalledWith("core", "p1");
   });
 });
 

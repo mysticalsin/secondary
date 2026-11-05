@@ -7,6 +7,7 @@ import type {
   Routine,
   RoutineInput,
   RoutineRun,
+  SeenChanges,
   TreeNode,
   Usage,
 } from "./types";
@@ -28,8 +29,10 @@ export const ux2 = {
     const s = p.toString();
     return request<Question[]>("GET", `/v1/questions${s ? `?${s}` : ""}`);
   },
-  answer: (id: string, body: { action: string; revisionHash?: string; note?: string }) =>
-    request<{ ok: boolean }>("POST", `/v1/questions/${q(id)}`, body),
+  answer: (
+    id: string,
+    body: { action: string; revisionHash?: string; note?: string; seenChanges?: SeenChanges },
+  ) => request<{ ok: boolean }>("POST", `/v1/questions/${q(id)}`, body),
   routines: () => request<Routine[]>("GET", "/v1/routines"),
   createRoutine: (r: RoutineInput) => request<Routine>("POST", "/v1/routines", r),
   updateRoutine: (id: string, r: Routine) => request<Routine>("PUT", `/v1/routines/${q(id)}`, r),

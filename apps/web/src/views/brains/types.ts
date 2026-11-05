@@ -26,6 +26,8 @@ export interface Health {
 
 export interface BrainCard {
   id: string;
+  /** The caller's effective role in this brain (nav and directory answers). */
+  role?: BrainRole;
   type: BrainType;
   name: string;
   template: Template;
@@ -37,6 +39,27 @@ export interface BrainCard {
   health: { score: number };
   lastActivityAt: string | null;
 }
+
+/** `GET /v1/brains/nav` (docs/API-CONTRACT.md "v4"). Accounts is a group whose `children` are brains. */
+export interface NavBrain extends BrainCard {
+  role: BrainRole;
+}
+export interface NavItem extends NavBrain {
+  group: "personal" | "governance" | "global";
+  governanceId?: string;
+  children?: NavBrain[];
+}
+/** `GET /v1/brains?scope=all`: an openable brain, or one the person can see but not open. */
+export type DirectoryEntry =
+  | (BrainCard & { canOpen: true })
+  | {
+      id: string;
+      type: BrainType;
+      name: string;
+      canOpen: false;
+      restricted: boolean;
+      canRequestAccess: boolean;
+    };
 
 export interface Change {
   pageId: string;

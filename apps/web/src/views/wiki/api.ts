@@ -1,4 +1,5 @@
 import { getPersona, request } from "../../api";
+import type { SeenChanges } from "../../uxv2/types";
 import type {
   MeetingInput,
   WikiAnswer,
@@ -47,11 +48,21 @@ export const wikiApi = {
   proposal: (ws: string, id: string) =>
     request<WikiProposal>("GET", `${base(ws)}/proposals/${q(id)}`),
   /** Approving names the revision that was read (`revisionHash` from the proposal). */
-  decide: (ws: string, id: string, decision: "approve" | "reject", revisionHash?: string) =>
+  decide: (
+    ws: string,
+    id: string,
+    decision: "approve" | "reject",
+    revisionHash?: string,
+    seenChanges?: SeenChanges,
+  ) =>
     request<{ ok: boolean; status: string; approvals?: number; required?: number }>(
       "POST",
       `${base(ws)}/proposals/${q(id)}/decide`,
-      { decision, ...(revisionHash ? { revisionHash } : {}) },
+      {
+        decision,
+        ...(revisionHash ? { revisionHash } : {}),
+        ...(seenChanges ? { seenChanges } : {}),
+      },
     ),
   editProposal: (ws: string, id: string, pageId: string, markdown: string) =>
     request<{ ok: boolean }>("POST", `${base(ws)}/proposals/${q(id)}/edit`, { pageId, markdown }),

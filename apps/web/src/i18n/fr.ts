@@ -2,8 +2,10 @@
 import type { en } from "./en";
 import { ux2Fr } from "./ux2";
 import { v3Fr } from "./v3";
+import { v4Fr } from "./v4";
 
 export const fr: Record<keyof typeof en, string> = {
+  ...v4Fr,
   ...ux2Fr,
   ...v3Fr,
   "common.cancel": "Annuler",

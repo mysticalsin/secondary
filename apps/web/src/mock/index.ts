@@ -792,6 +792,25 @@ function govCard(role: string, id: string, label: string, group: "bl" | "cf"): G
   };
 }
 
+const PROFILE_NAMES: Record<string, string> = {
+  ceo: "Alex Morgan",
+  head_bid: "Sam Rivera",
+  acme_lead: "Jordan Lee",
+  consultant: "Robin Chen",
+  reviewer: "Casey Park",
+  platform_admin: "Taylor Quinn",
+  auditor: "Morgan Hale",
+};
+const PROFILE_TITLES: Record<string, string> = {
+  ceo: "Chief executive",
+  head_bid: "Head of Bid and Pre-sales",
+  acme_lead: "Account lead",
+  consultant: "Consultant",
+  reviewer: "Knowledge reviewer",
+  platform_admin: "Platform admin",
+  auditor: "Auditor",
+};
+
 function me(role: string): Me {
   const r = ROLES[role] as (typeof ROLES)[string];
   const structureOnly = role === "platform_admin" || role === "auditor";
@@ -821,6 +840,13 @@ function me(role: string): Me {
     seeded: true,
     persona: role,
     env: "dev",
+    profile: {
+      name: PROFILE_NAMES[role] ?? role,
+      jobTitle: PROFILE_TITLES[role] ?? "Consultant",
+      department: "Synthetic Group",
+      office: "Montreal office",
+      country: "Canada",
+    },
     describe: {
       see,
       do: can.length ? can : ["Read only"],

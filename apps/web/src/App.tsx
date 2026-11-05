@@ -1,70 +1,52 @@
 import { Route, Routes } from "react-router-dom";
 import { Shell } from "./components/Shell";
 import { Empty } from "./components/ui";
-import { Accounts } from "./views/Accounts";
-import { AccountWorkspace } from "./views/AccountWorkspace";
-import { Admin } from "./views/admin";
-import { Ask } from "./views/ask/Ask";
-import { Brain } from "./views/brain/Brain";
 import {
   AccessPage,
-  AgentsPage,
-  BrainHomeView,
+  ActivityPage,
+  BrainPage,
   CoachPage,
   Directory,
   FieldsPage,
   ImportPage,
   JournalPage,
-  PilotPage,
+  PageView,
+  TrashPage,
   VersionsPage,
 } from "./views/brains";
-import { GovernanceBoard } from "./views/GovernanceBoard";
-import { Governances } from "./views/Governances";
-import { MapPage } from "./views/MapPage";
-import { Personal } from "./views/Personal";
-import { Questions } from "./views/questions/Questions";
-import { Review } from "./views/Review";
-import { Routines } from "./views/routines/Routines";
+import { Home } from "./views/home/Home";
 import { SourceView } from "./views/SourceView";
-import { Today } from "./views/Today";
-import { Usage } from "./views/usage/Usage";
-import { WikiPage } from "./views/wiki/WikiPage";
+import { SearchPage } from "./views/search/Search";
+import { Settings } from "./views/settings/Settings";
+import { ProposalPage } from "./views/waiting/Proposal";
+import { Waiting } from "./views/waiting/Waiting";
 
 export function App() {
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Ask />} />
-        <Route path="today" element={<Today />} />
-        <Route path="brain" element={<Brain />} />
+        <Route index element={<Home />} />
+        <Route path="waiting" element={<Waiting />} />
+        <Route path="waiting/:id" element={<ProposalPage />} />
+        <Route path="search" element={<SearchPage />} />
         <Route path="brains" element={<Directory />} />
-        <Route path="brains/:id" element={<BrainHomeView />} />
+        <Route path="brains/:id" element={<BrainPage />} />
+        <Route path="brains/:id/pages/:pid" element={<PageView />} />
+        <Route path="brains/:id/pages/:pid/versions" element={<VersionsPage />} />
         <Route path="brains/:id/access" element={<AccessPage />} />
         <Route path="brains/:id/fields" element={<FieldsPage />} />
         <Route path="brains/:id/import" element={<ImportPage />} />
         <Route path="brains/:id/journal" element={<JournalPage />} />
         <Route path="brains/:id/coach" element={<CoachPage />} />
-        <Route path="brains/:id/pages/:pid/versions" element={<VersionsPage />} />
-        <Route path="settings/agents" element={<AgentsPage />} />
-        <Route path="settings/pilot" element={<PilotPage />} />
-        <Route path="questions" element={<Questions />} />
-        <Route path="routines" element={<Routines />} />
-        <Route path="usage" element={<Usage />} />
-        <Route path="map" element={<MapPage />} />
-        <Route path="accounts" element={<Accounts />} />
-        <Route path="accounts/:id" element={<AccountWorkspace />} />
-        <Route path="governances" element={<Governances />} />
-        <Route path="governances/:id" element={<GovernanceBoard />} />
-        <Route path="review" element={<Review />} />
-        <Route path="personal" element={<Personal />} />
+        <Route path="brains/:id/activity" element={<ActivityPage />} />
+        <Route path="brains/:id/trash" element={<TrashPage />} />
+        <Route path="settings/*" element={<Settings />} />
         <Route path="sources/:id" element={<SourceView />} />
-        <Route path="wiki/:ws" element={<WikiPage />} />
-        <Route path="admin" element={<Admin />} />
         <Route
           path="*"
           element={
-            <div className="page">
-              <Empty title="Page not found">Use the left rail to go back.</Empty>
+            <div className="page v4page">
+              <Empty title="Page not found">Use the sidebar to go back.</Empty>
             </div>
           }
         />

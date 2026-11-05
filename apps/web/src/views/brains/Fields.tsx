@@ -268,7 +268,7 @@ export function FieldsPage() {
   const fields = useApi(() => v3.fields(id), [id]);
   const { t } = useI18n();
   return (
-    <BrainFrame id={id} tab="fields">
+    <BrainFrame id={id} title={t("b3.tab.fields")}>
       {(b) => (
         <>
           <h3 className="sec-h">{t("b3.fld.title")}</h3>

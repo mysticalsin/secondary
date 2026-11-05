@@ -1,22 +1,20 @@
 import { ArrowUp, BookOpen, FilePlus2, Lock } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ApiError, api } from "../../api";
-import { ViewRenderer } from "../../genui/ViewRenderer";
+import { ApiError } from "../../api";
 import { type Key, useI18n } from "../../i18n";
 import { AnswerMd } from "../../lib/md";
 import { useReveal } from "../../lib/reveal";
 import { useApp } from "../../state";
-import type { ViewPlan } from "../../types";
 import { askStream, ux2 } from "../../uxv2/api";
 import type { AskCitation, AskUsage } from "../../uxv2/types";
+import { v3 } from "../brains/api";
 
 interface Run {
   question: string;
   status: "streaming" | "done" | "error";
   stage: string | null;
   citations: AskCitation[];
-  plan: ViewPlan | null;
   answer: { markdown: string; unknown: boolean } | null;
   usage: AskUsage | null;
   error: string | null;
@@ -40,7 +38,7 @@ const STAGE_KEY: Record<string, Key> = {
 };
 
 export function brainLink(c: { workspaceId: string; pageId: string }): string {
-  return `/brain?ws=${encodeURIComponent(c.workspaceId)}&page=${encodeURIComponent(c.pageId)}`;
+  return `/brains/${encodeURIComponent(c.workspaceId)}/pages/${encodeURIComponent(c.pageId)}`;
 }
 
 function Answer({ run, onRetry }: { run: Run; onRetry: () => void }) {
@@ -52,10 +50,9 @@ function Answer({ run, onRetry }: { run: Run; onRetry: () => void }) {
 
   const save = async () => {
     try {
-      await api.personalCreate({
+      await v3.pushPage("me", {
         title: run.question.slice(0, 120),
-        body: `${md}\n\n${run.citations.map((c) => `- ${c.title}`).join("\n")}`,
-        kind: "note",
+        markdown: `# ${run.question.slice(0, 120)}\n\n${md}\n\n${run.citations.map((c) => `- ${c.title}`).join("\n")}`,
       });
       setSaved(true);
       say(t("ask.saved"));
@@ -82,7 +79,7 @@ function Answer({ run, onRetry }: { run: Run; onRetry: () => void }) {
           <h3>{t("ask.unknown.title")}</h3>
           <p>{t("ask.unknown.lead")}</p>
           <div className="row" style={{ marginTop: 12 }}>
-            <Link className="btn" to="/personal?new=1">
+            <Link className="btn" to="/brains/me">
               <FilePlus2 size={16} aria-hidden /> {t("ask.unknown.capture")}
             </Link>
           </div>
@@ -118,11 +115,6 @@ function Answer({ run, onRetry }: { run: Run; onRetry: () => void }) {
               {c.title}
             </Link>
           ))}
-        </div>
-      ) : null}
-      {run.plan && !revealing ? (
-        <div className="cards assemble">
-          <ViewRenderer plan={run.plan} />
         </div>
       ) : null}
       {run.status === "done" && run.answer && !revealing ? (
@@ -199,7 +191,6 @@ export function Ask() {
         status: "streaming",
         stage: null,
         citations: [],
-        plan: null,
         answer: null,
         usage: null,
         error: null,
@@ -214,8 +205,6 @@ export function Ask() {
                 return { ...r, stage: ev.data.stage };
               case "citation":
                 return { ...r, citations: [...r.citations, ev.data] };
-              case "plan":
-                return { ...r, plan: ev.data };
               case "answer":
                 return { ...r, answer: ev.data };
               case "usage":

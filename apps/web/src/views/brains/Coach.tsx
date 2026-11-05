@@ -224,7 +224,7 @@ export function CoachPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
   return (
-    <BrainFrame id={id} tab="coach">
+    <BrainFrame id={id} title={t("b3.tab.coach")}>
       {(b) =>
         b.manages ? (
           <CoachLoader id={id} />

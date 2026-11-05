@@ -43,6 +43,18 @@ export type BrainRoot = "personal" | "company";
 
 export type QuestionKind = "ingest" | "contradiction" | "lint" | "review" | "release";
 
+/** A diff line. `change` numbers a run of added or removed lines, from 0 (API-CONTRACT v4). */
+export interface DiffLine {
+  type: "add" | "del" | "same";
+  text: string;
+  change?: number;
+}
+
+export interface SeenChanges {
+  revisionHash: string;
+  indexes: number[];
+}
+
 export interface QuestionSide {
   text: string;
   validFrom?: string;
@@ -68,6 +80,11 @@ export interface Question {
     approvals?: number;
     required?: number;
     revisionHash?: string;
+    /** Who wrote the proposal (a principal id). */
+    authorId?: string | null;
+    /** How many changes the diff has (wiki proposals). Approving needs every one seen. */
+    changeCount?: number;
+    pages?: { pageId: string; title: string; diff: DiffLine[] }[];
   } | null;
 }
 
