@@ -1,7 +1,8 @@
 // Named access to NDA accounts: a reason, an expiry, and a second person to approve.
 
 import { useState } from "react";
-import { Await, Chip, Empty } from "../../components/ui";
+import { Await, Chip, Empty, TableWrap } from "../../components/ui";
+import { useI18n } from "../../i18n";
 import { useApi } from "../../useApi";
 import { adm } from "./api";
 import { Changes } from "./Changes";
@@ -11,6 +12,7 @@ const inDays = (n: number): string =>
   new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
 
 export function NdaTab() {
+  const { t } = useI18n();
   const data = useApi(() => adm.nda(), []);
   const people = useApi(() => adm.principals(), []);
   const [account, setAccount] = useState("");
@@ -30,7 +32,7 @@ export function NdaTab() {
           reason,
           expiresAt: `${expiry}T23:59:59Z`,
         }),
-      "Proposed. A second person must approve before access starts.",
+      t("adm.nda.proposed"),
     );
     if (r) {
       setReason("");
@@ -43,26 +45,26 @@ export function NdaTab() {
     <div className="stack" style={{ gap: 24 }}>
       <section aria-labelledby="nda-h">
         <h3 id="nda-h" style={{ marginBottom: 8 }}>
-          Named NDA grants
+          {t("adm.nda.title")}
         </h3>
         <Await state={data} skeleton={2}>
           {(d) => (
             <div className="stack">
               {d.grants.length === 0 ? (
-                <p className="muted">No named grants.</p>
+                <p className="muted">{t("adm.nda.none")}</p>
               ) : (
-                <div className="tablewrap">
+                <TableWrap label={t("adm.nda.title")}>
                   <table className="t">
-                    <caption className="sr-only">Named NDA grants</caption>
+                    <caption className="sr-only">{t("adm.nda.title")}</caption>
                     <thead>
                       <tr>
-                        <th scope="col">Person</th>
-                        <th scope="col">Account</th>
-                        <th scope="col">Reason</th>
-                        <th scope="col">Expires</th>
-                        <th scope="col">State</th>
+                        <th scope="col">{t("adm.person")}</th>
+                        <th scope="col">{t("adm.account")}</th>
+                        <th scope="col">{t("adm.reason")}</th>
+                        <th scope="col">{t("adm.nda.col.expires")}</th>
+                        <th scope="col">{t("adm.nda.col.state")}</th>
                         <th scope="col">
-                          <span className="sr-only">Actions</span>
+                          <span className="sr-only">{t("adm.actions")}</span>
                         </th>
                       </tr>
                     </thead>
@@ -77,7 +79,7 @@ export function NdaTab() {
                           <td>{fmtTime(g.expiresAt)}</td>
                           <td>
                             <Chip tone={g.active ? "done" : "open"}>
-                              {g.active ? "active" : "expired"}
+                              {g.active ? t("adm.st.active") : t("adm.st.expired")}
                             </Chip>
                           </td>
                           <td>
@@ -86,7 +88,10 @@ export function NdaTab() {
                                 type="button"
                                 className="btn sm"
                                 disabled={revoking}
-                                aria-label={`Revoke ${g.email || g.principalId} on ${g.accountId}`}
+                                aria-label={t("adm.nda.revoke.aria", {
+                                  who: g.email || g.principalId,
+                                  account: g.accountId,
+                                })}
                                 onClick={async () => {
                                   if (
                                     await runRevoke(
@@ -95,13 +100,13 @@ export function NdaTab() {
                                           principalId: g.principalId,
                                           accountId: g.accountId,
                                         }),
-                                      "Grant revoked.",
+                                      t("adm.nda.revoked"),
                                     )
                                   )
                                     data.reload();
                                 }}
                               >
-                                Revoke
+                                {t("adm.nda.revoke")}
                               </button>
                             ) : null}
                           </td>
@@ -109,13 +114,11 @@ export function NdaTab() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableWrap>
               )}
               <Reason message={revokeError} />
               {d.accounts.length === 0 ? (
-                <Empty title="No NDA account to manage">
-                  Named grants are managed by the account's steward or a platform admin.
-                </Empty>
+                <Empty title={t("adm.nda.empty.title")}>{t("adm.nda.empty.body")}</Empty>
               ) : (
                 <form
                   className="card stack"
@@ -124,16 +127,16 @@ export function NdaTab() {
                     submit();
                   }}
                 >
-                  <h4>Grant access to an NDA account</h4>
+                  <h4>{t("adm.nda.form")}</h4>
                   <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-                    <Field id="nda-account" label="Account">
+                    <Field id="nda-account" label={t("adm.account")}>
                       <select
                         id="nda-account"
                         className="select"
                         value={account}
                         onChange={(e) => setAccount(e.target.value)}
                       >
-                        <option value="">Choose an account</option>
+                        <option value="">{t("adm.nda.choose")}</option>
                         {d.accounts.map((a) => (
                           <option key={a.id} value={a.id}>
                             {a.label}
@@ -141,14 +144,14 @@ export function NdaTab() {
                         ))}
                       </select>
                     </Field>
-                    <Field id="nda-person" label="Person">
+                    <Field id="nda-person" label={t("adm.person")}>
                       <select
                         id="nda-person"
                         className="select"
                         value={person}
                         onChange={(e) => setPerson(e.target.value)}
                       >
-                        <option value="">Choose a person</option>
+                        <option value="">{t("adm.choose.person")}</option>
                         {(people.data ?? []).map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.email}
@@ -156,7 +159,11 @@ export function NdaTab() {
                         ))}
                       </select>
                     </Field>
-                    <Field id="nda-expiry" label="Expires on" hint="At most one year ahead">
+                    <Field
+                      id="nda-expiry"
+                      label={t("adm.nda.expiry")}
+                      hint={t("adm.nda.expiry.hint")}
+                    >
                       <input
                         id="nda-expiry"
                         className="input"
@@ -166,7 +173,7 @@ export function NdaTab() {
                       />
                     </Field>
                   </div>
-                  <Field id="nda-reason" label="Reason">
+                  <Field id="nda-reason" label={t("adm.reason")}>
                     <input
                       id="nda-reason"
                       className="input"
@@ -182,7 +189,7 @@ export function NdaTab() {
                       className="btn primary"
                       disabled={busy || !account || !person || !reason.trim() || !expiry}
                     >
-                      Propose grant
+                      {t("adm.nda.propose")}
                     </button>
                   </div>
                 </form>
@@ -193,7 +200,7 @@ export function NdaTab() {
       </section>
       <Changes
         kinds={["nda_grant"]}
-        title="Grants waiting for approval"
+        title={t("adm.nda.changes")}
         refreshKey={tick}
         onChanged={() => {
           data.reload();

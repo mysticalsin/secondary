@@ -81,7 +81,10 @@
       "r2_buckets": [
         { "binding": "BLOBS", "bucket_name": "secondary-blobs-staging", "jurisdiction": "eu" }
       ],
-      "services": [{ "binding": "AUDIT", "service": "secondary-audit-staging" }],
+      "services": [
+        { "binding": "AUDIT", "service": "secondary-audit-staging" },
+        { "binding": "CONNECTOR", "service": "secondary-connector-staging" }
+      ],
       "vars": {
         "ENVIRONMENT": "staging",
         "ACCESS_TEAM_DOMAIN": "",
@@ -118,7 +121,10 @@
       "r2_buckets": [
         { "binding": "BLOBS", "bucket_name": "secondary-blobs-prod", "jurisdiction": "eu" }
       ],
-      "services": [{ "binding": "AUDIT", "service": "secondary-audit-prod" }],
+      "services": [
+        { "binding": "AUDIT", "service": "secondary-audit-prod" },
+        { "binding": "CONNECTOR", "service": "secondary-connector-prod" }
+      ],
       "vars": {
         "ENVIRONMENT": "prod",
         "ACCESS_TEAM_DOMAIN": "",

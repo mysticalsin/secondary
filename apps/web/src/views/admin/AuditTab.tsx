@@ -2,13 +2,15 @@
 // never content.
 
 import { useState } from "react";
-import { Await, Chip, fmtDate } from "../../components/ui";
+import { Await, Chip, fmtDate, TableWrap } from "../../components/ui";
+import { useI18n } from "../../i18n";
 import { whoIs } from "../../personas";
 import { useApi } from "../../useApi";
 import { adm } from "./api";
 import { Field } from "./shared";
 
 export function AuditTab() {
+  const { t, td } = useI18n();
   const [f, setF] = useState({ principal: "", action: "", from: "", to: "" });
   const [applied, setApplied] = useState(f);
   const rows = useApi(
@@ -25,8 +27,8 @@ export function AuditTab() {
     setF({ ...f, [k]: e.target.value });
   return (
     <section aria-labelledby="audit-h" className="stack">
-      <h3 id="audit-h">Audit receipts</h3>
-      <p className="muted">Who, what, where, result. No content.</p>
+      <h3 id="audit-h">{t("adm.audit.title")}</h3>
+      <p className="muted">{t("adm.audit.lead")}</p>
       <form
         className="row"
         style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}
@@ -35,7 +37,7 @@ export function AuditTab() {
           setApplied(f);
         }}
       >
-        <Field id="au-principal" label="Principal id">
+        <Field id="au-principal" label={t("adm.audit.principal")}>
           <input
             id="au-principal"
             className="input"
@@ -44,7 +46,7 @@ export function AuditTab() {
             onChange={set("principal")}
           />
         </Field>
-        <Field id="au-action" label="Action">
+        <Field id="au-action" label={t("adm.audit.action")}>
           <input
             id="au-action"
             className="input"
@@ -53,33 +55,33 @@ export function AuditTab() {
             onChange={set("action")}
           />
         </Field>
-        <Field id="au-from" label="From">
+        <Field id="au-from" label={t("adm.audit.from")}>
           <input id="au-from" className="input" type="date" value={f.from} onChange={set("from")} />
         </Field>
-        <Field id="au-to" label="To">
+        <Field id="au-to" label={t("adm.audit.to")}>
           <input id="au-to" className="input" type="date" value={f.to} onChange={set("to")} />
         </Field>
         <button type="submit" className="btn primary">
-          Apply filters
+          {t("adm.audit.apply")}
         </button>
       </form>
       <Await state={rows} skeleton={2}>
         {(d) =>
           d.length === 0 ? (
-            <p className="muted">No receipts match.</p>
+            <p className="muted">{t("adm.audit.empty")}</p>
           ) : (
-            <div className="tablewrap">
+            <TableWrap label={t("adm.audit.title")}>
               <table className="t">
-                <caption className="sr-only">Audit receipts</caption>
+                <caption className="sr-only">{t("adm.audit.title")}</caption>
                 <thead>
                   <tr>
-                    <th scope="col">Receipt</th>
-                    <th scope="col">When</th>
-                    <th scope="col">Actor</th>
-                    <th scope="col">Action</th>
-                    <th scope="col">Scope</th>
-                    <th scope="col">Result</th>
-                    <th scope="col">Reason</th>
+                    <th scope="col">{t("adm.audit.col.receipt")}</th>
+                    <th scope="col">{t("adm.audit.col.when")}</th>
+                    <th scope="col">{t("adm.audit.col.actor")}</th>
+                    <th scope="col">{t("adm.audit.action")}</th>
+                    <th scope="col">{t("adm.audit.col.scope")}</th>
+                    <th scope="col">{t("adm.audit.col.result")}</th>
+                    <th scope="col">{t("adm.reason")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -87,18 +89,20 @@ export function AuditTab() {
                     <tr key={r.id}>
                       <td className="num">{r.id}</td>
                       <td>{fmtDate(r.at)}</td>
-                      <td>{whoIs(r.actor)}</td>
+                      <td>{whoIs(r.actor, (rid, f) => td("role", rid, f))}</td>
                       <td>{r.action}</td>
                       <td>{r.scope}</td>
                       <td>
-                        <Chip tone={r.result === "allow" ? "done" : "risk"}>{r.result}</Chip>
+                        <Chip tone={r.result === "allow" ? "done" : "risk"}>
+                          {td("adm.res", r.result)}
+                        </Chip>
                       </td>
                       <td>{r.reason}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
           )
         }
       </Await>

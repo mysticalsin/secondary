@@ -234,8 +234,9 @@ describe("binding inventory", () => {
       "TENANT_DOMAINS",
     ]);
     expect(api.vars.DO_JURISDICTION).toBe("eu");
-    expect(api.vars.ACCESS_AUD).toBe("");
-    expect(api.vars.ACCESS_TEAM_DOMAIN).toBe("");
+    // The Access team domain and AUD tag are public identifiers (they appear in every Access JWT), not secrets.
+    expect(api.vars.ACCESS_AUD).toMatch(/^([0-9a-f]{64})?$/);
+    expect(api.vars.ACCESS_TEAM_DOMAIN).toMatch(/^([a-z0-9-]+\.cloudflareaccess\.com)?$/);
     expect(api.vars).not.toHaveProperty("SEED_TOKEN");
     expect(api.vars).not.toHaveProperty("DEV_AUTH_BYPASS_EMAIL");
     expect(api.assets.run_worker_first).toBe(true);

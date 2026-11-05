@@ -9,6 +9,7 @@ import { Governances } from "./views/Governances";
 import { MapPage } from "./views/MapPage";
 import { Personal } from "./views/Personal";
 import { Review } from "./views/Review";
+import { SourceView } from "./views/SourceView";
 import { Today } from "./views/Today";
 
 export function App() {
@@ -23,6 +24,7 @@ export function App() {
         <Route path="governances/:id" element={<GovernanceBoard />} />
         <Route path="review" element={<Review />} />
         <Route path="personal" element={<Personal />} />
+        <Route path="sources/:id" element={<SourceView />} />
         <Route path="admin" element={<Admin />} />
         <Route
           path="*"

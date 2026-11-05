@@ -221,7 +221,7 @@ export function clusterLayout(view: MapView): Layout {
   const leafVal = (n: MapNode) =>
     n.access === "locked" || !n.counts ? 6 : Math.max(2, n.counts.items);
   const toTree = (n: MapNode): Tree =>
-    n.children && n.children.length
+    n.children?.length
       ? { id: n.id, label: n.label, node: n, children: n.children.map(toTree) }
       : { id: n.id, label: n.label, node: n, value: leafVal(n) };
   const hubs = sortedHubs(view);

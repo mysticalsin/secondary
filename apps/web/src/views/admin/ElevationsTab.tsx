@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { Await, Chip } from "../../components/ui";
+import { useI18n } from "../../i18n";
 import { useApi } from "../../useApi";
 import { adm, type Elevation } from "./api";
 import { Field, fmtTime, Reason, useAct } from "./shared";
@@ -15,7 +16,16 @@ const TONE = {
   expired: "open",
 } as const;
 
+const STATUS_KEY = {
+  pending: "adm.st.pending",
+  active: "adm.st.active",
+  denied: "adm.st.denied",
+  ended: "adm.st.ended",
+  expired: "adm.st.expired",
+} as const;
+
 function Item({ e, onDone }: { e: Elevation; onDone: () => void }) {
+  const { t } = useI18n();
   const { busy, error, run } = useAct();
   const [denying, setDenying] = useState(false);
   const [note, setNote] = useState("");
@@ -25,13 +35,17 @@ function Item({ e, onDone }: { e: Elevation; onDone: () => void }) {
         <div>
           <strong>{e.email ?? e.principalId}</strong> · {e.hours} h
           <div className="muted" style={{ fontSize: 14 }}>
-            Asked {fmtTime(e.requestedAt)}
-            {e.status === "active" && e.until ? ` · ends ${fmtTime(e.until)}` : ""}
+            {t("adm.el.asked", { when: fmtTime(e.requestedAt) })}
+            {e.status === "active" && e.until
+              ? ` · ${t("adm.el.ends", { when: fmtTime(e.until) })}`
+              : ""}
           </div>
-          <div style={{ fontSize: 14 }}>Reason: {e.reason}</div>
-          {e.note ? <div style={{ fontSize: 14 }}>Note: {e.note}</div> : null}
+          <div style={{ fontSize: 14 }}>{t("adm.lbl.reason", { text: e.reason })}</div>
+          {e.note ? (
+            <div style={{ fontSize: 14 }}>{t("adm.lbl.note", { text: e.note })}</div>
+          ) : null}
         </div>
-        <Chip tone={TONE[e.status]}>{e.status}</Chip>
+        <Chip tone={TONE[e.status]}>{t(STATUS_KEY[e.status])}</Chip>
       </div>
       {e.canDecide || e.canEnd ? (
         <div className="stack" style={{ marginTop: 10 }}>
@@ -46,13 +60,13 @@ function Item({ e, onDone }: { e: Elevation; onDone: () => void }) {
                     if (
                       await run(
                         () => adm.decideElevation(e.id, "approve", ""),
-                        "Elevation approved.",
+                        t("adm.el.approved"),
                       )
                     )
                       onDone();
                   }}
                 >
-                  Approve
+                  {t("adm.approve")}
                 </button>
                 <button
                   type="button"
@@ -60,7 +74,7 @@ function Item({ e, onDone }: { e: Elevation; onDone: () => void }) {
                   disabled={busy}
                   onClick={() => setDenying(!denying)}
                 >
-                  Deny
+                  {t("adm.deny")}
                 </button>
               </>
             ) : null}
@@ -70,10 +84,10 @@ function Item({ e, onDone }: { e: Elevation; onDone: () => void }) {
                 className="btn sm"
                 disabled={busy}
                 onClick={async () => {
-                  if (await run(() => adm.endElevation(e.id), "Elevation ended.")) onDone();
+                  if (await run(() => adm.endElevation(e.id), t("adm.el.ended"))) onDone();
                 }}
               >
-                End now
+                {t("adm.el.end")}
               </button>
             ) : null}
           </div>
@@ -82,23 +96,23 @@ function Item({ e, onDone }: { e: Elevation; onDone: () => void }) {
               className="ask"
               onSubmit={async (ev) => {
                 ev.preventDefault();
-                if (await run(() => adm.decideElevation(e.id, "deny", note), "Elevation denied."))
+                if (await run(() => adm.decideElevation(e.id, "deny", note), t("adm.el.denied")))
                   onDone();
               }}
             >
               <label className="sr-only" htmlFor={`elv-deny-${e.id}`}>
-                Reason for denying
+                {t("adm.deny.label")}
               </label>
               <input
                 id={`elv-deny-${e.id}`}
                 className="input"
-                placeholder="Reason"
+                placeholder={t("adm.reason")}
                 maxLength={300}
                 value={note}
                 onChange={(x) => setNote(x.target.value)}
               />
               <button type="submit" className="btn danger sm" disabled={busy || !note.trim()}>
-                Confirm deny
+                {t("adm.deny.confirm")}
               </button>
             </form>
           ) : null}
@@ -110,6 +124,7 @@ function Item({ e, onDone }: { e: Elevation; onDone: () => void }) {
 }
 
 export function ElevationsTab() {
+  const { t, td, tn } = useI18n();
   const mine = useApi(() => adm.elevation(), []);
   const list = useApi(() => adm.elevations(), []);
   const [hours, setHours] = useState("2");
@@ -123,21 +138,19 @@ export function ElevationsTab() {
     <div className="stack" style={{ gap: 24 }}>
       <section aria-labelledby="elev-h">
         <h3 id="elev-h" style={{ marginBottom: 8 }}>
-          Elevate my access
+          {t("adm.el.title")}
         </h3>
         <Await state={mine} skeleton={1}>
           {(m) =>
             !m.eligible ? (
-              <p className="muted">
-                None of your roles can be elevated. Ask a platform admin to review your role.
-              </p>
+              <p className="muted">{t("adm.el.none")}</p>
             ) : m.active ? (
               <div className="callout attention" role="status">
-                Elevated until {fmtTime(m.active.until)}. Reason: {m.active.reason}
+                {t("adm.el.active", { when: fmtTime(m.active.until), reason: m.active.reason })}
               </div>
             ) : m.pending ? (
               <div className="callout" role="status">
-                Waiting for approval: {m.pending.hours} h, {m.pending.reason}
+                {t("adm.el.pending", { hours: m.pending.hours, reason: m.pending.reason })}
               </div>
             ) : (
               <form
@@ -147,9 +160,7 @@ export function ElevationsTab() {
                   if (
                     await run(
                       () => adm.requestElevation({ hours: Number(hours), reason }),
-                      m.eligible?.needsApproval
-                        ? "Request sent for approval."
-                        : "Elevation is active.",
+                      m.eligible?.needsApproval ? t("adm.el.sent") : t("adm.el.started"),
                     )
                   ) {
                     setReason("");
@@ -158,14 +169,16 @@ export function ElevationsTab() {
                 }}
               >
                 <p>
-                  Your role can unlock <strong>{m.eligible.actions.join(", ")}</strong> for up to{" "}
-                  <strong>{m.eligible.maxHours} hours</strong>.{" "}
-                  {m.eligible.needsApproval
-                    ? "A second admin must approve each request."
-                    : "It starts as soon as you ask, and every use is audited."}
+                  {t("adm.el.can")}{" "}
+                  <strong>{m.eligible.actions.map((a) => td("adm.act", a)).join(", ")}</strong>{" "}
+                  {t("adm.el.upto")}{" "}
+                  <strong>
+                    {tn(m.eligible.maxHours, "adm.el.hours.one", "adm.el.hours.other")}
+                  </strong>
+                  . {m.eligible.needsApproval ? t("adm.el.needs_approval") : t("adm.el.instant")}
                 </p>
                 <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-                  <Field id="elev-hours" label="Hours">
+                  <Field id="elev-hours" label={t("adm.el.hours")}>
                     <input
                       id="elev-hours"
                       className="input"
@@ -175,7 +188,7 @@ export function ElevationsTab() {
                       style={{ width: 90 }}
                     />
                   </Field>
-                  <Field id="elev-reason" label="Reason">
+                  <Field id="elev-reason" label={t("adm.reason")}>
                     <input
                       id="elev-reason"
                       className="input"
@@ -192,7 +205,7 @@ export function ElevationsTab() {
                     className="btn primary"
                     disabled={busy || !reason.trim() || !hours}
                   >
-                    {m.eligible.needsApproval ? "Request elevation" : "Elevate now"}
+                    {m.eligible.needsApproval ? t("adm.el.request") : t("adm.el.now")}
                   </button>
                 </div>
               </form>
@@ -202,12 +215,12 @@ export function ElevationsTab() {
       </section>
       <section aria-labelledby="elev-list-h">
         <h3 id="elev-list-h" style={{ marginBottom: 8 }}>
-          Requests and windows
+          {t("adm.el.list")}
         </h3>
         <Await state={list} skeleton={1}>
           {(rows) =>
             rows.length === 0 ? (
-              <p className="muted">No elevation requests yet.</p>
+              <p className="muted">{t("adm.el.empty")}</p>
             ) : (
               <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {rows.map((e) => (

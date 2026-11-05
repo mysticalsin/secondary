@@ -54,6 +54,7 @@ export function Today() {
   const review = useApi(() => api.review(), []);
   const map = useApi(() => api.map("departments"), []);
   const attention = useApi(() => api.attention(), []);
+  const accounts = useApi(() => api.accounts(), []);
   const activity = useApi(() => api.activity(), []);
   const roleId = me?.principal.roleIds[0];
   const role = roleId

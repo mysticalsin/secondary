@@ -26,6 +26,7 @@ import type {
   ReviewDetail,
   RevisionRow,
   SearchResult,
+  SourceRecordView,
   ViewPlan,
 } from "./types";
 import type { AiStatus, Brief, BriefRequest, BriefResponse } from "./views/brief/types";
@@ -135,6 +136,7 @@ export const api = {
   map: (lens: Lens) => request<MapView>("GET", `/v1/map?lens=${lens}`),
   node: (id: string) => request<NodeDetail>("GET", `/v1/nodes/${q(id)}`),
   search: (term: string) => request<{ results: SearchResult[] }>("GET", `/v1/search?q=${q(term)}`),
+  source: (id: string) => request<SourceRecordView>("GET", `/v1/sources/${q(id)}`),
   accounts: () => request<AccountCard[]>("GET", "/v1/accounts"),
   account: (id: string) => request<AccountDetail>("GET", `/v1/accounts/${q(id)}`),
   governances: () => request<GovernanceCard[]>("GET", "/v1/governances"),

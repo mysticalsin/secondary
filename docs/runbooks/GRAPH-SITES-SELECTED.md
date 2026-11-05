@@ -18,9 +18,9 @@ Worker: `workers/connector` (`secondary-connector-dev`). Synthetic data only unt
 2. Add the Microsoft Graph application permission `Sites.Selected` and grant admin consent.
 3. Create a client secret. Set it with `wrangler secret put GRAPH_CLIENT_SECRET` on `secondary-connector-dev`. Never put it in a file or chat.
 4. Set the vars `GRAPH_TENANT_ID` and `GRAPH_CLIENT_ID` in `workers/connector/wrangler.jsonc`.
-5. Create the queue: `wrangler queues create secondary-sync-dev`.
-6. Create one 32+ character random key and set it as `CONNECTOR_HMAC_KEY` on both `secondary-connector-dev` and `secondary-api-dev`.
-7. Deploy order (to verify): the api and the connector bind each other. Deploy the connector first without the `API` binding, deploy the api, then redeploy the connector with the binding.
+5. The queue (`secondary-sync-<env>`) is created by `scripts/deploy.sh` when missing. By hand: `wrangler queues create secondary-sync-dev`.
+6. `scripts/deploy.sh` generates one 32+ character `CONNECTOR_HMAC_KEY` and sets the same value on the connector and the api, only when missing. By hand: set one value on both. `GRAPH_CLIENT_SECRET` is never generated: set it with `wrangler secret put GRAPH_CLIENT_SECRET` in `workers/connector`.
+7. Deploy order: the api binds `CONNECTOR` and the connector binds `API`, so neither can be deployed first against a missing target. `scripts/deploy.sh <env>` handles it: audit, then a 503 placeholder worker under the connector's name (only when that worker does not exist yet), then the api (bound to the placeholder), then the real connector (bound to the real api), then mcp and ops. A re-run skips the placeholder. Not yet exercised against a live account: check the first deploy output.
 8. Grant each site (next section), register the source, then set `CONNECTOR_ENABLED` to `"true"`.
 
 ## Per-site grant

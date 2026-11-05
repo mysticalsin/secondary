@@ -3,12 +3,14 @@
 
 import { useState } from "react";
 import { Await, Chip, Empty } from "../../components/ui";
+import { useI18n } from "../../i18n";
 import { useApi } from "../../useApi";
 import { adm, type ScopeOption } from "./api";
 import { Changes } from "./Changes";
 import { Field, Reason, useAct } from "./shared";
 
 export function MembershipsTab() {
+  const { t, td } = useI18n();
   const scopes = useApi(() => adm.scopes(), []);
   const people = useApi(() => adm.principals(), []);
   const [key, setKey] = useState("");
@@ -31,7 +33,7 @@ export function MembershipsTab() {
           scope_id: s.id,
           subspace: s.subspace,
         }),
-      (x) => (x.applied ? "Membership updated." : "Proposed. A second person must approve."),
+      (x) => t(x.applied ? "adm.mem.updated" : "adm.mem.proposed"),
     );
     if (r) {
       setPerson("");
@@ -43,35 +45,33 @@ export function MembershipsTab() {
     <div className="stack" style={{ gap: 24 }}>
       <section aria-labelledby="mem-h">
         <h3 id="mem-h" style={{ marginBottom: 8 }}>
-          Members
+          {t("adm.mem.title")}
         </h3>
         <Await state={scopes} skeleton={1}>
           {(list) =>
             list.length === 0 ? (
-              <Empty title="No scope to manage">
-                Membership is managed by the steward of a space or by a platform admin.
-              </Empty>
+              <Empty title={t("adm.mem.none.title")}>{t("adm.mem.none.body")}</Empty>
             ) : (
               <div className="stack">
-                <Field id="mem-scope" label="Space">
+                <Field id="mem-scope" label={t("adm.mem.space")}>
                   <select
                     id="mem-scope"
                     className="select"
                     value={key}
                     onChange={(e) => setKey(e.target.value)}
                   >
-                    <option value="">Choose a space</option>
+                    <option value="">{t("adm.choose.space")}</option>
                     {list.map((s) => (
                       <option key={s.key} value={s.key}>
-                        {s.type}: {s.label}
-                        {s.restricted ? " (restricted)" : ""}
+                        {t("adm.mem.opt", { type: td("adm.scope", s.type), label: s.label })}
+                        {s.restricted ? ` ${t("adm.mem.restricted")}` : ""}
                       </option>
                     ))}
                   </select>
                 </Field>
                 {scope?.restricted ? (
                   <div className="callout attention" role="note">
-                    Restricted space. Every change waits for a second person to approve it.
+                    {t("adm.mem.callout")}
                   </div>
                 ) : null}
                 {scope ? (
@@ -80,7 +80,7 @@ export function MembershipsTab() {
                       m ? (
                         <>
                           {m.members.length === 0 ? (
-                            <p className="muted">No stored members yet.</p>
+                            <p className="muted">{t("adm.mem.empty")}</p>
                           ) : (
                             <ul
                               className="stack"
@@ -97,10 +97,10 @@ export function MembershipsTab() {
                                     type="button"
                                     className="btn sm"
                                     disabled={busy}
-                                    aria-label={`Remove ${x.email}`}
+                                    aria-label={t("adm.mem.remove.aria", { email: x.email })}
                                     onClick={() => change("remove", x.principalId, scope)}
                                   >
-                                    Remove
+                                    {t("adm.mem.remove")}
                                   </button>
                                 </li>
                               ))}
@@ -114,7 +114,7 @@ export function MembershipsTab() {
                             }}
                           >
                             <label className="sr-only" htmlFor="mem-person">
-                              Person to add
+                              {t("adm.mem.add.label")}
                             </label>
                             <select
                               id="mem-person"
@@ -122,7 +122,7 @@ export function MembershipsTab() {
                               value={person}
                               onChange={(e) => setPerson(e.target.value)}
                             >
-                              <option value="">Choose a person</option>
+                              <option value="">{t("adm.choose.person")}</option>
                               {(people.data ?? [])
                                 .filter((p) => !m.members.some((x) => x.principalId === p.id))
                                 .map((p) => (
@@ -136,9 +136,11 @@ export function MembershipsTab() {
                               className="btn primary"
                               disabled={busy || !person}
                             >
-                              {scope.restricted ? "Propose adding" : "Add member"}
+                              {scope.restricted ? t("adm.mem.propose") : t("adm.mem.add")}
                             </button>
-                            {scope.restricted ? <Chip tone="attn">two-person</Chip> : null}
+                            {scope.restricted ? (
+                              <Chip tone="attn">{t("adm.mem.twoperson")}</Chip>
+                            ) : null}
                           </form>
                         </>
                       ) : null
@@ -153,7 +155,7 @@ export function MembershipsTab() {
       </section>
       <Changes
         kinds={["member_add", "member_remove"]}
-        title="Membership changes"
+        title={t("adm.mem.changes")}
         refreshKey={tick}
         onChanged={() => setTick((t) => t + 1)}
       />

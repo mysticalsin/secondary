@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { type Key, useI18n } from "../i18n";
 import { flatten, sortedHubs } from "../map-layout";
 import type { Hub, MapNode, MapView } from "../types";
-import { Chip } from "./ui";
+import { Chip, TableWrap } from "./ui";
 
 const LIMIT = 60;
 
@@ -211,7 +211,7 @@ export function MapTable({
   const num = (v: number) => (v < 0 ? t("common.hidden") : String(v));
   return (
     <div>
-      <div className="tablewrap">
+      <TableWrap label={t("map.table.caption")}>
         <table className="t">
           <caption className="sr-only">{t("map.table.caption")}</caption>
           <thead>
@@ -256,7 +256,7 @@ export function MapTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
       {data.length > shown.length ? (
         <p style={{ marginTop: 12 }}>
           <button type="button" className="btn sm" onClick={() => setShowAll(true)}>

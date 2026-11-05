@@ -64,11 +64,43 @@ Open items and notes:
 - The Personal Brain workspaces are not wiped by a reseed (they are not part of the seed scopes).
 - Deploy: routes are optional placeholders in the three wrangler configs. At deploy set secrets (`INTERNAL_HMAC_KEY`, `SEED_TOKEN`, `AUDIT_KEY_API`, `AUDIT_KEY_MCP`, `AUDIT_KEY_READ`), Access team domain and aud on api and mcp, `MCP_PUBLIC_URL`, the KV id for `OAUTH_KV`, and keep `DO_JURISDICTION=eu`.
 
+## B2 integration, 2026-11-05 (Claude, integrator). Read this first
+
+State: `main` holds b2/ops, id, gov, conn, ai and ux (six `--no-ff` merges, in that order) plus the gap fixes below. Nothing pushed, nothing deployed, no Cloudflare resources. The per-workstream notes after this section are history: those branches are merged.
+
+Exact commands (`corepack pnpm`; put a `pnpm` shim on PATH that runs `corepack pnpm`; install unsandboxed):
+
+```sh
+corepack pnpm install --frozen-lockfile
+corepack pnpm build && corepack pnpm typecheck && corepack pnpm lint && corepack pnpm -r --no-bail test
+corepack pnpm e2e          # Playwright incl. axe, starts the stack via scripts/dev-all.mjs --no-build (needs apps/web built); global-setup reseeds and warms the service bindings
+corepack pnpm e2e:mcp ceo  # scripted MCP host against :8788
+```
+
+Totals at the last run: build, typecheck and `biome check .` clean (0 errors, 0 warnings). Tests: fixtures 23, contracts 91, policy 55, web 41, audit 8, connector 49, ops 6, api 340, mcp 76. Playwright 44 passed, axe on every view with no rule skipped.
+
+What the integration changed:
+- Conflict resolution: unions in `routes.ts`, `wrangler.jsonc`, `env.d.ts`, `types.ts`, `API-CONTRACT.md`; `AccountWorkspace.tsx` took the UX layout and re-added the AI "Prepare brief" buttons; TenantPolicy snapshots now also cover the identity (`principal_status`, `group_role_map`, `scim_*`) and `gov_*` tables, and erasure also clears the identity rows of the principal.
+- Policy consumes memberships: grant condition `membership: true` (see `docs/API-CONTRACT.md`, "Memberships reach the policy"). `head_bid`, `acme_lead`, `consultant` carry three such grants. Tenants seeded earlier keep their stored role bodies until reseeded (dev) or edited in the console. Approving an access request now changes what the requester sees (tested end to end, including the two-person path). A requester whose id is not in the directory (a dev persona under a non-seeded address) can be admitted through their own request only.
+- The drawer's "Request access" opens `RequestAccessForm` (governance API). Review events (contribute, request changes, approve, release, second approval needed) post content-free notices to the inbox (`workers/api/src/ux/notify.ts`, best effort). The web renders connector `source` search results (`/sources/:id`, text only).
+- Admin screens are translated FR/EN (`adm.*` keys, a test keeps both dictionaries equal). Tables scroll in a focusable labelled region (`TableWrap`), so the axe skip is gone.
+- The `workers/audit` typecheck passes with and without `.dev.vars` (the secrets are typed in `src/env.d.ts`).
+- Dev mock: covers prefs, drafts, attention, AI status (always not configured) and one synced file ("handbook"); everything else B2 answers 501 "Not part of the dev mock" (admin console, briefs, personal edit/history, records, review detail). Documented at the top of `apps/web/src/mock/index.ts`.
+- Deploy: `scripts/deploy.sh <env>` now creates the sync queue, deploys audit, then (first time only) a 503 placeholder worker under the connector's name, then api, connector, mcp, ops. That bridges the api/connector service-binding cycle. `CONNECTOR_HMAC_KEY` is shared by api and connector. The script never generates `GRAPH_CLIENT_SECRET`, `ENTRA_CLIENT_SECRET`, `SCIM_TOKEN` or `ANTHROPIC_API_KEY`. The connector has staging and prod env blocks, and the api binds the connector in every environment. Not run against a live account: the placeholder step and `wrangler deployments list --name` are unverified.
+- Local stack: `dev-all.mjs` blanks the Access team and AUD (wrangler.jsonc carries the deployed dev values, which broke the loopback sign-in and the MCP e2e), writes `AUDIT_KEY_ERASE` and `PSEUDONYM_KEY`, and raises `RATE_LIMIT_PER_MIN` to 6000 (all personas share one address and one counter). The vitest configs of api and mcp do the same for Access. The connector and ops workers are not part of the local stack.
+
+Open items and notes:
+- `workers/api/test/ops-rights.test.ts` failed twice in one run under load (an erased principal id still found in a workspace export) and passed on every other run. Not reproduced; check if it recurs.
+- Playwright right after a cold `wrangler dev` start can see the audit service binding not answering for a while; `e2e/global-setup.ts` now waits for the api and mcp bindings. It is a local registry artefact, not seen in unit tests.
+- The brief and PrepareBrief screens are still English only (outside the admin scope asked for).
+- Still not done: the Opus security review of B2, the updated threat model, SBOM wiring, the L1 to L6 items of the B1 review, the Entra, Graph and Anthropic values that need Tony or IT, and any live check of the connector, SCIM or AI against real services.
+
 ## B2 ID workstream (Entra OIDC, SCIM, sessions), 2026-11-05, branch `b2/id`
 
 State: committed on `b2/id`, not merged, nothing deployed. New code is `workers/api/src/auth/*` and `workers/api/src/scim/*`; touched `auth.ts` (cookie-session branch, inactive check), `tenant-policy.ts` (identity store delegation, mapped roles, `active`), `index.ts` (two mount lines), `types.ts`, `env.d.ts`, wrangler comments. Tests: `test/entra.test.ts`, `test/scim.test.ts`, helpers in `test/entra-helpers.ts` (fake Entra IdP). Runbook: `docs/runbooks/ENTRA-SETUP.md` (portal steps marked to verify).
 
 Open items: no admin route for the group to role table yet (GOV exposes `groupMapSet/List/Delete`); no UI for `/auth/providers` and sign-in/out (UX); the new vars are not in `wrangler.jsonc` `vars` (the pinned vars test stays as is; OPS adds them per environment); one tenant id only (single Entra tenant); groups overage is logged, not resolved through Graph; SCIM PUT is not implemented; manual grants stay dormant, not deleted, on deprovision.
+
 ## B2 CONN (branch b2/conn)
 
 - New `workers/connector`, `packages/contracts/src/source-record.ts`, api additions (`connector.ts`, Workspace `source_*` tables, `/v1/sources/:id`, search).

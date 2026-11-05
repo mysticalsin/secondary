@@ -9,8 +9,8 @@ mkdirSync(SCREENS, { recursive: true });
 
 const TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
-async function axe(page: Page, label: string, skip: string[] = []) {
-  const r = await new AxeBuilder({ page }).withTags(TAGS).disableRules(skip).analyze();
+async function axe(page: Page, label: string) {
+  const r = await new AxeBuilder({ page }).withTags(TAGS).analyze();
   const bad = r.violations.map(
     (v) =>
       `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(" | ")} :: ${v.nodes[0]?.any[0]?.message ?? ""}`,
@@ -54,8 +54,7 @@ test.describe("every view: axe, no horizontal overflow, screenshots", () => {
           () => document.documentElement.scrollWidth - window.innerWidth,
         );
         expect(over, "horizontal overflow in px").toBeLessThanOrEqual(0);
-        // The Admin table wrapper (owned by the governance workstream) scrolls without a focus stop.
-        await axe(page, `${name} ${wl}`, name === "admin" ? ["scrollable-region-focusable"] : []);
+        await axe(page, `${name} ${wl}`);
         await page.context().close();
       });
     }
@@ -274,7 +273,7 @@ test.describe("language, tour, keyboard", () => {
     for (const path of ["/map", "/accounts", "/governances", "/review", "/personal"]) {
       await page.goto(path);
       await settle(page);
-      const text = await page.locator("main").innerText();
+      const text = (await page.locator("main").allInnerTexts()).join("\n");
       expect(text, path).not.toMatch(/\b(Nothing|Loading|Search|Details|Locked|Save|Cancel)\b/);
     }
     await axe(page, "personal fr");

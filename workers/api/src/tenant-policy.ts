@@ -3,16 +3,16 @@
 // revocation epoch and the per-principal request counter. It holds no organisation content.
 
 import { DurableObject } from "cloudflare:workers";
-import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
-import { allOn, isSwitchName, SWITCHES, type SwitchName, type SwitchState } from "./switches.ts";
+import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
+import { GOV_METHODS, GovStore } from "./admin/store.ts";
 import {
   type GroupOp,
   IdentityStore,
   principalIdFor,
   type UserChange,
 } from "./auth/identity-store.ts";
-import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
-import { GOV_METHODS, GovStore } from "./admin/store.ts";
+import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
+import { allOn, isSwitchName, SWITCHES, type SwitchName, type SwitchState } from "./switches.ts";
 
 export type Membership = { scope_type: ScopeType; scope_id: string };
 export type TenantConfig = { tenantId: string; seed: number; personalOwners: string[] };
@@ -522,6 +522,8 @@ export class TenantPolicy extends DurableObject<Env> {
     this.sql.exec("INSERT OR IGNORE INTO revocation (id, epoch) VALUES (1, 0)");
     this.bump();
     return rows;
+  }
+
   // ---- identity: sessions, Entra group map, SCIM (see auth/identity-store.ts) ----
 
   loginStatePut(h: string, nonce: string, verifier: string, returnTo: string | null, now: number) {

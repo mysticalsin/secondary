@@ -2,7 +2,9 @@
 // committed wrangler files, so a drift (a shared bucket, a dev flag in prod) fails here.
 
 import { describe, expect, it } from "vitest";
+import deployRaw from "../../../scripts/deploy.sh?raw";
 import auditRaw from "../../audit/wrangler.jsonc?raw";
+import connectorRaw from "../../connector/wrangler.jsonc?raw";
 import mcpRaw from "../../mcp/wrangler.jsonc?raw";
 import opsRaw from "../../ops/wrangler.jsonc?raw";
 import apiRaw from "../wrangler.jsonc?raw";
@@ -32,6 +34,7 @@ const api = parseJsonc(apiRaw);
 const audit = parseJsonc(auditRaw);
 const mcp = parseJsonc(mcpRaw);
 const ops = parseJsonc(opsRaw);
+const connector = parseJsonc(connectorRaw);
 const ENVS = ["staging", "prod"] as const;
 const SECRET_NAMES = [
   "SEED_TOKEN",
@@ -44,6 +47,11 @@ const SECRET_NAMES = [
   "BACKUP_KEY",
   "OPS_ADMIN_KEY",
   "DEV_AUTH_BYPASS_EMAIL",
+  "CONNECTOR_HMAC_KEY",
+  "GRAPH_CLIENT_SECRET",
+  "ENTRA_CLIENT_SECRET",
+  "SCIM_TOKEN",
+  "ANTHROPIC_API_KEY",
 ];
 
 /** A flat, sorted list of every binding a worker config holds. */
@@ -68,6 +76,7 @@ describe("environments: api", () => {
         "ASSETS:assets",
         `AUDIT:service:secondary-audit-${e}`,
         `BLOBS:r2:secondary-blobs-${e}:eu`,
+        `CONNECTOR:service:secondary-connector-${e}`,
         "TENANT_POLICY:durable_object:TenantPolicy",
         "WORKSPACE:durable_object:Workspace",
       ]);
@@ -95,6 +104,55 @@ describe("environments: api", () => {
   it("staging keeps the dev access pattern: workers.dev on, restore allowed", () => {
     expect(api.env.staging.workers_dev).toBe(true);
     expect(api.env.staging.vars.RESTORE_ENABLED).toBe("yes");
+  });
+});
+
+describe("environments: connector", () => {
+  // The api and the connector bind each other: both sides must name the same environment.
+  const all = [["dev", connector], ...ENVS.map((e) => [e, connector.env[e]] as const)] as const;
+  for (const [e, c] of all) {
+    it(`${e}: own worker, queue, workflow and state; binds the api of the same environment`, () => {
+      expect(c.name).toBe(`secondary-connector-${e}`);
+      expect(c.services).toEqual([{ binding: "API", service: `secondary-api-${e}` }]);
+      expect(c.queues.producers).toEqual([{ binding: "SYNC_QUEUE", queue: `secondary-sync-${e}` }]);
+      expect(c.queues.consumers[0].queue).toBe(`secondary-sync-${e}`);
+      expect(c.workflows[0].name).toBe(`secondary-source-sync-${e}`);
+      expect(c.durable_objects.bindings).toEqual([
+        { name: "CONNECTOR_STATE", class_name: "ConnectorState" },
+      ]);
+      expect(c.migrations[0].new_sqlite_classes).toEqual(["ConnectorState"]);
+      // No public surface, EU state, and the kill switch starts closed.
+      expect(c.workers_dev).toBe(false);
+      expect(c.preview_urls).toBe(false);
+      expect(c.vars.ENVIRONMENT).toBe(e);
+      expect(c.vars.DO_JURISDICTION).toBe("eu");
+      expect(c.vars.CONNECTOR_ENABLED).toBe("false");
+      for (const k of SECRET_NAMES) expect(c.vars, k).not.toHaveProperty(k);
+    });
+  }
+
+  it("the connector's env vars match its dev set", () => {
+    for (const e of ENVS)
+      expect(Object.keys(connector.env[e].vars).sort()).toEqual(Object.keys(connector.vars).sort());
+  });
+
+  it("deploy.sh: queue first, placeholder before the api, real connector after it, one shared HMAC key", () => {
+    const at = (needle: string) => {
+      const i = deployRaw.indexOf(needle);
+      expect(i, needle).toBeGreaterThan(-1);
+      return i;
+    };
+    expect(at('wr queues create "$SYNC_QUEUE"')).toBeLessThan(at("\ndeploy audit"));
+    expect(at('ensure_placeholder "$CONNECTOR"')).toBeLessThan(at("\ndeploy api"));
+    expect(at("\ndeploy api")).toBeLessThan(at("\ndeploy connector"));
+    expect(at("\ndeploy connector")).toBeLessThan(at("\ndeploy mcp"));
+    expect(deployRaw).toContain("shared_secret CONNECTOR_HMAC_KEY api connector");
+    // The Graph secret belongs to a person: the script never generates it.
+    expect(deployRaw).not.toMatch(/(single|shared)_secret [^\n]*GRAPH_CLIENT_SECRET/);
+  });
+
+  it("dev: the api names the dev connector", () => {
+    expect(bindings(api)).toContain("CONNECTOR:service:secondary-connector-dev");
   });
 });
 

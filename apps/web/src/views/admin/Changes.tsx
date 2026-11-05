@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { Await, Chip } from "../../components/ui";
+import { useI18n } from "../../i18n";
 import { whoIs } from "../../personas";
 import { useApi } from "../../useApi";
 import { adm, type Change } from "./api";
@@ -15,6 +16,13 @@ const TONE = {
   rejected: "risk",
   withdrawn: "open",
   expired: "open",
+} as const;
+const STATUS_KEY = {
+  pending: "adm.st.pending",
+  applied: "adm.st.applied",
+  rejected: "adm.st.rejected",
+  withdrawn: "adm.st.withdrawn",
+  expired: "adm.st.expired",
 } as const;
 
 export function Changes({
@@ -28,6 +36,7 @@ export function Changes({
   refreshKey?: number;
   onChanged?: () => void;
 }) {
+  const { t, td } = useI18n();
   const list = useApi(() => adm.changes(), [refreshKey]);
   const { busy, error, run } = useAct();
   const [rejecting, setRejecting] = useState<string | null>(null);
@@ -47,27 +56,36 @@ export function Changes({
       <Await state={list} skeleton={2}>
         {(all) => {
           const rows = all.filter((c) => kinds.includes(c.kind));
-          if (rows.length === 0)
-            return <p className="muted">Nothing waiting and nothing recent.</p>;
+          if (rows.length === 0) return <p className="muted">{t("adm.chg.empty")}</p>;
           return (
             <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {rows.map((c) => (
                 <li className="card" key={c.id}>
                   <div className="row" style={{ justifyContent: "space-between", gap: 12 }}>
                     <div>
-                      <strong>{describeChange(c)}</strong>
+                      <strong>{describeChange(c, { t, td })}</strong>
                       <div className="muted" style={{ fontSize: 14 }}>
-                        Proposed by {c.proposedByEmail ?? whoIs(c.proposedBy)} ·{" "}
-                        {fmtTime(c.proposedAt)}
-                        {c.needsSecond ? " · second approver required" : ""}
-                        {c.status === "pending" ? ` · lapses ${fmtTime(c.expiresAt)}` : ""}
+                        {t("adm.chg.proposed", {
+                          who:
+                            c.proposedByEmail ??
+                            whoIs(c.proposedBy, (rid, f) => td("role", rid, f)),
+                          when: fmtTime(c.proposedAt),
+                        })}
+                        {c.needsSecond ? ` · ${t("adm.chg.second")}` : ""}
+                        {c.status === "pending"
+                          ? ` · ${t("adm.chg.lapses", { when: fmtTime(c.expiresAt) })}`
+                          : ""}
                       </div>
                       {c.kind === "nda_grant" && typeof c.payload.reason === "string" ? (
-                        <div style={{ fontSize: 14 }}>Reason: {c.payload.reason}</div>
+                        <div style={{ fontSize: 14 }}>
+                          {t("adm.lbl.reason", { text: c.payload.reason })}
+                        </div>
                       ) : null}
-                      {c.note ? <div style={{ fontSize: 14 }}>Note: {c.note}</div> : null}
+                      {c.note ? (
+                        <div style={{ fontSize: 14 }}>{t("adm.lbl.note", { text: c.note })}</div>
+                      ) : null}
                     </div>
-                    <Chip tone={TONE[c.status]}>{c.status}</Chip>
+                    <Chip tone={TONE[c.status]}>{t(STATUS_KEY[c.status])}</Chip>
                   </div>
                   {c.status === "pending" ? (
                     <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
@@ -78,16 +96,11 @@ export function Changes({
                             className="btn primary sm"
                             disabled={busy}
                             onClick={async () => {
-                              if (
-                                await run(
-                                  () => adm.approveChange(c.id),
-                                  "Change approved and applied.",
-                                )
-                              )
+                              if (await run(() => adm.approveChange(c.id), t("adm.chg.approved")))
                                 done();
                             }}
                           >
-                            Approve
+                            {t("adm.approve")}
                           </button>
                           <button
                             type="button"
@@ -95,7 +108,7 @@ export function Changes({
                             disabled={busy}
                             onClick={() => setRejecting(rejecting === c.id ? null : c.id)}
                           >
-                            Reject
+                            {t("adm.chg.reject")}
                           </button>
                         </>
                       ) : c.canWithdraw ? (
@@ -104,15 +117,15 @@ export function Changes({
                           className="btn sm"
                           disabled={busy}
                           onClick={async () => {
-                            if (await run(() => adm.withdrawChange(c.id), "Change withdrawn."))
+                            if (await run(() => adm.withdrawChange(c.id), t("adm.chg.withdrawn")))
                               done();
                           }}
                         >
-                          Withdraw
+                          {t("adm.chg.withdraw")}
                         </button>
                       ) : (
                         <span className="muted" style={{ fontSize: 14 }}>
-                          Waiting for someone else: you cannot decide your own proposal.
+                          {t("adm.chg.wait")}
                         </span>
                       )}
                     </div>
@@ -123,7 +136,7 @@ export function Changes({
                       style={{ marginTop: 10 }}
                       onSubmit={async (e) => {
                         e.preventDefault();
-                        if (await run(() => adm.rejectChange(c.id, note), "Change rejected.")) {
+                        if (await run(() => adm.rejectChange(c.id, note), t("adm.chg.rejected"))) {
                           setRejecting(null);
                           setNote("");
                           done();
@@ -131,12 +144,12 @@ export function Changes({
                       }}
                     >
                       <label className="sr-only" htmlFor={`rej-${c.id}`}>
-                        Reason for rejecting
+                        {t("adm.chg.reject.label")}
                       </label>
                       <input
                         id={`rej-${c.id}`}
                         className="input"
-                        placeholder="Reason for rejecting (the proposer sees it)"
+                        placeholder={t("adm.chg.reject.ph")}
                         value={note}
                         maxLength={300}
                         onChange={(e) => setNote(e.target.value)}
@@ -146,7 +159,7 @@ export function Changes({
                         className="btn danger sm"
                         disabled={busy || !note.trim()}
                       >
-                        Confirm reject
+                        {t("adm.chg.reject.confirm")}
                       </button>
                     </form>
                   ) : null}

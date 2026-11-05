@@ -3,7 +3,15 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { MapCanvas } from "../components/MapCanvas";
 import { StageBoard } from "../components/StageBoard";
-import { Await, Chip, fmtRev, PlaneBadge, statusTone, useStatus } from "../components/ui";
+import {
+  Await,
+  Chip,
+  fmtRev,
+  PlaneBadge,
+  statusTone,
+  TableWrap,
+  useStatus,
+} from "../components/ui";
 import { type Key, useI18n } from "../i18n";
 import { useApp } from "../state";
 import type { CalloutTemplate, Counts, Hub, Lens, MapNode } from "../types";
@@ -336,7 +344,7 @@ export function TableBlock({ props }: { props: P }) {
             })
           : rows;
         return (
-          <div className="tablewrap">
+          <TableWrap label={t("gen.table.caption", { name: nodeIdProp ?? String(props.lens) })}>
             <table className="t">
               <caption className="sr-only">
                 {t("gen.table.caption", { name: nodeIdProp ?? String(props.lens) })}
@@ -380,7 +388,7 @@ export function TableBlock({ props }: { props: P }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         );
       }}
     </Await>

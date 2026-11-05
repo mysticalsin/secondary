@@ -99,6 +99,7 @@ const SCOPE_KIND: Record<string, string> = {
 const BOOL_CONDITIONS = [
   "linked_to_bid",
   "member",
+  "membership",
   "metadata_only",
   "own_drafts",
   "self_approval",
@@ -250,7 +251,10 @@ export function buildRole(input: RoleInput, org: Org, base: Role | null): Good<R
 
 /** A grant that reaches restricted or account scopes, or administers the tenant. */
 export function isSensitiveGrant(g: Grant, org: Org): boolean {
-  if (g.scope_type === "account" || g.actions.includes("configure")) return true;
+  if (g.actions.includes("configure")) return true;
+  // Reaches only where a steward admitted the person; restricted memberships have their own two-person rule.
+  if (g.conditions.membership) return false;
+  if (g.scope_type === "account") return true;
   if (g.scope_type === "circle" || g.scope_type === "department") {
     if (g.scope_id === "*") return g.actions.includes("view_content");
     const n = org.nodes.get(g.scope_id);

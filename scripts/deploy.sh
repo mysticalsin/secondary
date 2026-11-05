@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy one environment: audit, api, mcp, ops. Usage: scripts/deploy.sh <dev|staging|prod>
+# Deploy one environment: audit, api, connector, mcp, ops. Usage: scripts/deploy.sh <dev|staging|prod>
 # Needs `wrangler login` (or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID) in the environment.
 # Prod needs CONFIRM_PROD=yes and BACKUP_KEY (from the key vault) in the environment.
 # Idempotent: resources and secrets are created only when missing. Secret values are generated in
@@ -38,6 +38,8 @@ API="secondary-api-$SFX"
 MCP="secondary-mcp-$SFX"
 AUDIT="secondary-audit-$SFX"
 OPS="secondary-ops-$SFX"
+CONNECTOR="secondary-connector-$SFX"
+SYNC_QUEUE="secondary-sync-$SFX"
 KV_TITLE="${MCP}-OAUTH_KV"
 
 # ---- build ----
@@ -88,16 +90,35 @@ else
   echo "==> wrote the OAUTH_KV id into workers/mcp/wrangler.jsonc (a namespace id, not a secret): commit that change"
 fi
 
-# ---- deploy: audit, api, mcp, ops (service bindings need the target to exist) ----
+# ---- queues (wrangler deploy does not create them; the Workflow is created by the connector deploy) ----
+if wr queues list 2>/dev/null | grep -Fq "$SYNC_QUEUE"; then
+  echo "==> queue $SYNC_QUEUE exists"
+else
+  echo "==> create queue $SYNC_QUEUE"
+  wr queues create "$SYNC_QUEUE"
+fi
+
+# ---- deploy: audit, api, connector, mcp, ops (service bindings need the target to exist) ----
+# The api binds CONNECTOR and the connector binds API, so neither can go first. A first deploy uploads
+# a 503 placeholder under the connector's name, then the api (which binds the placeholder), then the
+# real connector (which binds the real api). Later deploys skip the placeholder: the worker exists.
 deploy() {
   local w="$1" out
   echo "==> deploy $w ($TARGET)"
   out="$(in_worker "$w" deploy "${ENV_ARGS[@]}" 2>&1 | tee /dev/stderr)"
   DEPLOY_OUT="$out"
 }
+worker_exists() { in_worker api deployments list --name "$1" >/dev/null 2>&1; }
+ensure_placeholder() {
+  if worker_exists "$1"; then echo "==> worker $1 exists"; return; fi
+  echo "==> upload placeholder worker $1 (replaced by the real deploy below)"
+  in_worker api deploy --config "$ROOT/scripts/placeholder-worker/wrangler.jsonc" --name "$1"
+}
 deploy audit
+ensure_placeholder "$CONNECTOR"
 deploy api
 API_URL="$(printf '%s\n' "$DEPLOY_OUT" | grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' | head -n1 || true)"
+deploy connector
 deploy mcp
 MCP_URL="$(printf '%s\n' "$DEPLOY_OUT" | grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' | head -n1 || true)"
 deploy ops
@@ -132,6 +153,8 @@ shared_secret() { # name worker...
 }
 
 shared_secret INTERNAL_HMAC_KEY api mcp ops
+# Signs api -> connector and connector -> api calls: the same value on both.
+shared_secret CONNECTOR_HMAC_KEY api connector
 shared_secret AUDIT_KEY_API audit api
 shared_secret AUDIT_KEY_MCP audit mcp
 shared_secret AUDIT_KEY_READ audit api
@@ -152,6 +175,9 @@ fi
 
 echo
 echo "$TARGET deployed."
+echo "Secrets this script does not set, because a person must supply or read them (wrangler secret put <NAME> --name <worker>):"
+echo "  connector: GRAPH_CLIENT_SECRET   api: ENTRA_CLIENT_SECRET, SCIM_TOKEN, ANTHROPIC_API_KEY"
+echo "  Each feature stays off until its secret exists: Graph sync, Entra sign-in, SCIM, the AI processor."
 echo "  api: ${API_URL:-<see wrangler output above>}"
 echo "  mcp: ${MCP_URL:-<see wrangler output above>}"
 echo "Check: curl <api-url>/v1/ready should answer {\"ready\":true,...}."

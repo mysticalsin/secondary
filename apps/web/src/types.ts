@@ -131,6 +131,20 @@ export interface SearchResult {
   plane: Plane;
 }
 
+/** A file synced from SharePoint or OneDrive (GET /v1/sources/:id). */
+export interface SourceRecordView {
+  id: string;
+  title: string;
+  kind: "source";
+  plane: Plane;
+  webUrl: string | null;
+  mime: string | null;
+  size: number;
+  /** Text extract, only for UTF-8 text and Markdown files. */
+  body: string | null;
+  syncedAt: number;
+}
+
 export interface AccountCard {
   id: string;
   name: string;

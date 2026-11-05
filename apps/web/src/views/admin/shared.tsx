@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useState } from "react";
 import { ApiError } from "../../api";
 import { ErrorBox } from "../../components/ui";
+import { getLang, type I18n, translate } from "../../i18n";
 import { whoIs } from "../../personas";
 import { useApp } from "../../state";
 import type { Change } from "./api";
@@ -19,7 +20,13 @@ export function useAct() {
         if (done) say(typeof done === "function" ? done(r) : done);
         return r;
       } catch (e) {
-        setError(e instanceof ApiError ? e.reason : e instanceof Error ? e.message : "Failed.");
+        setError(
+          e instanceof ApiError
+            ? e.reason
+            : e instanceof Error
+              ? e.message
+              : translate(getLang(), "adm.act.failed"),
+        );
         return null;
       } finally {
         setBusy(false);
@@ -60,8 +67,8 @@ export function Field({
 
 export const fmtTime = (ms: number | null): string =>
   ms === null
-    ? "no expiry"
-    : new Intl.DateTimeFormat("en-CA", {
+    ? translate(getLang(), "adm.noexpiry")
+    : new Intl.DateTimeFormat(getLang() === "fr" ? "fr-CA" : "en-CA", {
         dateStyle: "medium",
         timeStyle: "short",
         timeZone: "America/Toronto",
@@ -74,22 +81,30 @@ export const fmtLeft = (secs: number): string => {
 };
 
 /** A short sentence for a change: what it does, to whom, where. Never content. */
-export function describeChange(c: Change): string {
+export function describeChange(c: Change, { t, td }: Pick<I18n, "t" | "td">): string {
   const p = c.payload;
-  const target = c.targetEmail ?? (typeof p.principalId === "string" ? whoIs(p.principalId) : "");
+  const target =
+    c.targetEmail ??
+    (typeof p.principalId === "string" ? whoIs(p.principalId, (rid, f) => td("role", rid, f)) : "");
   const where = c.scopeKey.replace(/^[a-z]+:/, "");
   switch (c.kind) {
     case "role_upsert": {
       const r = p.role as { label?: string } | undefined;
-      return `${p.create ? "Create" : "Edit"} role ${r?.label ?? where}`;
+      return t(p.create ? "adm.chg.role_create" : "adm.chg.role_edit", {
+        label: r?.label ?? where,
+      });
     }
     case "member_add":
-      return `Add ${target} to ${where}`;
+      return t("adm.chg.member_add", { who: target, where });
     case "member_remove":
-      return `Remove ${target} from ${where}`;
+      return t("adm.chg.member_remove", { who: target, where });
     case "nda_grant":
-      return `Named NDA grant for ${target} on ${String(p.accountId)} until ${fmtTime(Number(p.expiresAt))}`;
+      return t("adm.chg.nda_grant", {
+        who: target,
+        account: String(p.accountId),
+        until: fmtTime(Number(p.expiresAt)),
+      });
     default:
-      return `Revoke ${target} on ${where}`;
+      return t("adm.chg.nda_revoke", { who: target, where });
   }
 }

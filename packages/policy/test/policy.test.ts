@@ -209,6 +209,59 @@ describe("views never leak", () => {
     expect(admittedView(PERSONAS.acme_lead, org, ctx()).ids.has("a_acme:con:0")).toBe(true);
   });
 
+  it("an approved membership widens the view per the role's membership grants", () => {
+    const bare: Principal = { ...PERSONAS.consultant, id: "u_new", memberships: [] };
+    const viewOf = (p: Principal) => admittedView(p, org, ctx());
+    const without = viewOf(bare);
+    // Bid is a circle the consultant has no grant on: structure at most.
+    expect(without.nodes.get("c_bid")?.level ?? null).not.toBe("content");
+    const joined: Principal = {
+      ...bare,
+      memberships: [{ scope_type: "circle", scope_id: "c_bid" }],
+    };
+    expect(viewOf(joined).nodes.get("c_bid")?.level).toBe("content");
+    expect(canDo(joined, org, "c_bid", "contribute", ctx()).allowed).toBe(true);
+    // The role's membership grant says view, comment, contribute. Not edit, not release.
+    expect(canDo(joined, org, "c_bid", "edit", ctx()).allowed).toBe(false);
+    expect(canDo(joined, org, "c_bid", "approve_release", ctx()).allowed).toBe(false);
+    // A circle membership gives nothing in another circle.
+    expect(viewOf(joined).nodes.get("c_hr_pp")?.level ?? null).not.toBe("content");
+    // Removing the membership takes the access back.
+    expect(viewOf(bare).nodes.get("c_bid")?.level ?? null).not.toBe("content");
+  });
+
+  it("a membership widens nothing for a role without membership grants", () => {
+    const joined: Principal = {
+      ...PERSONAS.auditor,
+      id: "u_aud",
+      memberships: [{ scope_type: "circle", scope_id: "c_bid" }],
+    };
+    const base = admittedView(PERSONAS.auditor, org, ctx());
+    const widened = admittedView(joined, org, ctx());
+    expect(widened.nodes.get("c_bid")?.level).toBe(base.nodes.get("c_bid")?.level);
+    expect(widened.nodes.get("c_bid")?.level).not.toBe("content");
+  });
+
+  it("an account membership opens the account and Contacts, never an NDA account without a named grant", () => {
+    const bare: Principal = { ...PERSONAS.consultant, id: "u_new", memberships: [] };
+    const member = (id: string): Principal => ({
+      ...bare,
+      memberships: [{ scope_type: "account", scope_id: id }],
+    });
+    expect(admittedView(bare, org, ctx()).ids.has("a_acme:con:0")).toBe(false);
+    const v = admittedView(member("a_acme"), org, ctx());
+    expect(v.nodes.get("a_acme")?.level).toBe("content");
+    expect(v.ids.has("a_acme:con:0")).toBe(true);
+    // Calypso is NDA-hidden: membership alone changes nothing.
+    const c = admittedView(member("a_calypso"), org, ctx());
+    expect(c.ids.has("a_calypso:eng:0")).toBe(false);
+    expect(
+      admittedView(member("a_calypso"), org, ctx({ ndaGrants: ["a_calypso"] })).ids.has(
+        "a_calypso:eng:0",
+      ),
+    ).toBe(true);
+  });
+
   it("unknown roles and empty principals get an empty view", () => {
     const ghost: Principal = {
       id: "u_ghost",

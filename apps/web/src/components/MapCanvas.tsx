@@ -40,10 +40,10 @@ function wrap(label: string, max = 15): string[] {
   const lines: string[] = [];
   let cur = "";
   for (const w of words) {
-    if ((cur + " " + w).trim().length > max && cur) {
+    if (`${cur} ${w}`.trim().length > max && cur) {
       lines.push(cur);
       cur = w;
-    } else cur = (cur + " " + w).trim();
+    } else cur = `${cur} ${w}`.trim();
   }
   if (cur) lines.push(cur);
   if (lines.length > 2) {
@@ -385,7 +385,6 @@ export function MapCanvas({
             // Zoomed out on a big map, small leaves are plain dots: no title, no marks.
             if (lod && p.depth === 2 && !hit && !sel)
               return (
-                // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard users walk the nodes with the arrow keys
                 <circle
                   key={p.id}
                   cx={p.x}

@@ -3,6 +3,7 @@
 
 import { useSearchParams } from "react-router-dom";
 import { PageHead } from "../../components/ui";
+import { type Key, useI18n } from "../../i18n";
 import { useApp } from "../../state";
 import { AuditTab } from "./AuditTab";
 import { useAdminCaps } from "./api";
@@ -14,16 +15,17 @@ import { RolesTab } from "./RolesTab";
 import "./admin.css";
 
 const TABS = [
-  { key: "roles", label: "Roles", el: RolesTab },
-  { key: "memberships", label: "Memberships", el: MembershipsTab },
-  { key: "requests", label: "Requests", el: RequestsTab },
-  { key: "elevations", label: "Elevations", el: ElevationsTab },
-  { key: "nda", label: "NDA grants", el: NdaTab },
-  { key: "audit", label: "Audit", el: AuditTab },
-] as const;
+  { key: "roles", label: "adm.tab.roles", el: RolesTab },
+  { key: "memberships", label: "adm.tab.memberships", el: MembershipsTab },
+  { key: "requests", label: "adm.tab.requests", el: RequestsTab },
+  { key: "elevations", label: "adm.tab.elevations", el: ElevationsTab },
+  { key: "nda", label: "adm.tab.nda", el: NdaTab },
+  { key: "audit", label: "adm.tab.audit", el: AuditTab },
+] as const satisfies readonly { key: string; label: Key; el: unknown }[];
 
 export function Admin() {
   const { epoch } = useApp();
+  const { t } = useI18n();
   const caps = useAdminCaps();
   const [sp, setSp] = useSearchParams();
   const first = caps?.configure
@@ -34,32 +36,32 @@ export function Admin() {
         ? "audit"
         : "requests";
   const key = sp.get("tab") ?? first;
-  const tab = TABS.find((t) => t.key === key) ?? TABS[0];
+  const tab = TABS.find((x) => x.key === key) ?? TABS[0];
   const Body = tab.el;
   return (
     <div className="page stack" style={{ gap: 24 }}>
       <PageHead
-        eyebrow="Admin"
+        eyebrow={t("nav.admin")}
         title={
           <>
-            Who can do <em>what.</em>
+            {t("adm.title.a")} <em>{t("adm.title.b")}</em>
           </>
         }
-        lead="Roles are data. Changes are versioned and audited, and anything touching restricted scopes needs a second person."
+        lead={t("adm.lead")}
       />
-      <div className="tabs" role="tablist" aria-label="Admin sections">
-        {TABS.map((t) => (
+      <div className="tabs" role="tablist" aria-label={t("adm.tabs.label")}>
+        {TABS.map((tb) => (
           <button
-            key={t.key}
-            id={`adm-tab-${t.key}`}
+            key={tb.key}
+            id={`adm-tab-${tb.key}`}
             type="button"
             role="tab"
             className="tab"
-            aria-selected={tab.key === t.key}
+            aria-selected={tab.key === tb.key}
             aria-controls="adm-panel"
-            onClick={() => setSp({ tab: t.key })}
+            onClick={() => setSp({ tab: tb.key })}
           >
-            {t.label}
+            {t(tb.label)}
           </button>
         ))}
       </div>

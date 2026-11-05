@@ -38,6 +38,19 @@ export function statusTone(s: string): "open" | "progress" | "done" | "risk" | "
   return "open";
 }
 
+/**
+ * The horizontal scroll container for a table. A scroll region must be reachable by keyboard
+ * (axe: scrollable-region-focusable), so it is a focusable, named region.
+ */
+export function TableWrap({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region needs a keyboard stop
+    <div className="tablewrap" role="region" aria-label={label} tabIndex={0}>
+      {children}
+    </div>
+  );
+}
+
 export function Eyebrow({ children }: { children: ReactNode }) {
   return <div className="eyebrow">{children}</div>;
 }

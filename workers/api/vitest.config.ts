@@ -17,6 +17,9 @@ export default defineConfig({
           SEED_TOKEN: "test-seed-token",
           INTERNAL_HMAC_KEY: "test-internal-hmac-key-0123456789abcdef",
           CONNECTOR_HMAC_KEY: "test-connector-hmac-key-0123456789abcdef",
+          // wrangler.jsonc carries the dev Access team and AUD tag; tests run without Access.
+          ACCESS_TEAM_DOMAIN: "",
+          ACCESS_AUD: "",
           DO_JURISDICTION: "off",
           AUDIT_KEY_API: "test-audit-key-api-0123456789abcdef0123",
           AUDIT_KEY_READ: "test-audit-key-read-0123456789abcdef012",

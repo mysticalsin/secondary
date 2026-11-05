@@ -7,6 +7,7 @@ import { useFocusTrap } from "../lib/focus";
 import { useApp } from "../state";
 import type { Counts, NodeAction, NodeDetail } from "../types";
 import { useApi } from "../useApi";
+import { RequestAccessForm } from "../views/admin/RequestsTab";
 import { ActionForm, FORM_ACTIONS } from "./ActionForm";
 import { Await, Chip, fmtRev, PlaneBadge, statusTone, useStatus } from "./ui";
 
@@ -256,6 +257,8 @@ export function Drawer() {
   );
   const [fb, setFb] = useState<ActionFeedback | null>(null);
   const [formAction, setFormAction] = useState<"comment" | "edit" | "contribute" | null>(null);
+  // "Request access" goes to the governance console's steward queue, not to /v1/actions.
+  const [requesting, setRequesting] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Whatever had focus when the drawer opened gets it back when the drawer closes.
@@ -274,6 +277,7 @@ export function Drawer() {
   useEffect(() => {
     setFb(null);
     setFormAction(null);
+    setRequesting(false);
     closeRef.current?.focus();
   }, [drawerId]);
 
@@ -284,8 +288,15 @@ export function Drawer() {
       nav("/review");
       return;
     }
+    if (a.action === "request_access") {
+      setFb(null);
+      setFormAction(null);
+      setRequesting(true);
+      return;
+    }
     if (FORM_ACTIONS.includes(a.action)) {
       setFb(null);
+      setRequesting(false);
       setFormAction(a.action as "comment" | "edit" | "contribute");
       return;
     }
@@ -342,7 +353,19 @@ export function Drawer() {
             onAct={act}
             feedback={fb}
             form={
-              formAction ? (
+              requesting ? (
+                <RequestAccessForm
+                  nodeId={drawerId}
+                  label={d.node.label}
+                  onSent={() => {
+                    setRequesting(false);
+                    const text = t("dr.requested");
+                    setFb({ action: "request_access", ok: true, text });
+                    say(text);
+                  }}
+                  onCancel={() => setRequesting(false)}
+                />
+              ) : formAction ? (
                 <ActionForm
                   key={formAction}
                   action={formAction}

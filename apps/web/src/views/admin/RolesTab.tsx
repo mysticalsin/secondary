@@ -3,7 +3,8 @@
 
 import { X } from "lucide-react";
 import { useState } from "react";
-import { Await, Chip, Empty } from "../../components/ui";
+import { Await, Chip, Empty, TableWrap } from "../../components/ui";
+import { type Key, useI18n } from "../../i18n";
 import { whoIs } from "../../personas";
 import type { Action } from "../../types";
 import { useApi } from "../../useApi";
@@ -13,13 +14,14 @@ import { Field, fmtTime, Reason, useAct } from "./shared";
 
 const SCOPE_TYPES = ["global", "department", "circle", "account", "region"] as const;
 const BOOLS = [
-  ["linked_to_bid", "Only accounts linked to a bid"],
-  ["member", "Members only"],
-  ["metadata_only", "Metadata only (no content)"],
-  ["own_drafts", "Own drafts only"],
-  ["self_approval", "Self-approval allowed"],
-  ["assigned_queue", "Assigned queue only"],
-  ["not_contributor", "Never the contributor"],
+  "linked_to_bid",
+  "member",
+  "membership",
+  "metadata_only",
+  "own_drafts",
+  "self_approval",
+  "assigned_queue",
+  "not_contributor",
 ] as const;
 const ELEVATABLE: Action[] = ["comment", "contribute", "edit", "review"];
 
@@ -63,6 +65,7 @@ function RoleEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { t, td } = useI18n();
   const { busy, error, run } = useAct();
   const [id, setId] = useState("");
   const [label, setLabel] = useState(role?.label ?? "");
@@ -89,7 +92,7 @@ function RoleEditor({
     };
     const r = await run(
       () => adm.saveRole(role?.id ?? null, body),
-      (x) => (x.applied ? "Role saved." : "Saved as a proposal. A second admin must approve it."),
+      (x) => t(x.applied ? "adm.roles.saved" : "adm.roles.proposed"),
     );
     if (r) {
       onSaved();
@@ -108,23 +111,26 @@ function RoleEditor({
         onKeyDown={(e) => e.key === "Escape" && onClose()}
       >
         <div className="sheet-head">
-          <h3 id="role-ed-h">{role ? `Edit ${role.label}` : "New role"}</h3>
-          <button type="button" className="icon-btn" aria-label="Close" onClick={onClose}>
+          <h3 id="role-ed-h">
+            {role ? t("adm.roles.edit.title", { label: role.label }) : t("adm.roles.new")}
+          </h3>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("common.close")}
+            onClick={onClose}
+          >
             <X size={18} aria-hidden />
           </button>
         </div>
         <div className="sheet-body">
           {role?.sensitive ? (
             <div className="callout attention" role="note">
-              This role grants account or restricted scopes. Your edit waits for a second admin.
+              {t("adm.roles.sensitive")}
             </div>
           ) : null}
           {!role ? (
-            <Field
-              id="role-id"
-              label="Role id"
-              hint="3 to 32 lowercase letters, digits or underscores."
-            >
+            <Field id="role-id" label={t("adm.roles.id")} hint={t("adm.roles.id.hint")}>
               <input
                 id="role-id"
                 className="input"
@@ -133,7 +139,7 @@ function RoleEditor({
               />
             </Field>
           ) : null}
-          <Field id="role-label" label="Label">
+          <Field id="role-label" label={t("adm.roles.label")}>
             <input
               id="role-label"
               className="input"
@@ -142,7 +148,7 @@ function RoleEditor({
               onChange={(e) => setLabel(e.target.value)}
             />
           </Field>
-          <Field id="role-summary" label="Summary">
+          <Field id="role-summary" label={t("adm.roles.summary")}>
             <input
               id="role-summary"
               className="input"
@@ -153,12 +159,12 @@ function RoleEditor({
           </Field>
 
           <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
-            <legend className="eyebrow">Grants</legend>
+            <legend className="eyebrow">{t("adm.roles.grants")}</legend>
             {grants.map((g, i) => (
               // The list is edited in place, so the position is the identity.
               <div className="card" key={i}>
                 <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-                  <Field id={`g-type-${i}`} label="Scope type">
+                  <Field id={`g-type-${i}`} label={t("adm.roles.scope_type")}>
                     <select
                       id={`g-type-${i}`}
                       className="select"
@@ -170,12 +176,18 @@ function RoleEditor({
                         })
                       }
                     >
-                      {SCOPE_TYPES.map((t) => (
-                        <option key={t}>{t}</option>
+                      {SCOPE_TYPES.map((s) => (
+                        <option key={s} value={s}>
+                          {td("adm.scope", s)}
+                        </option>
                       ))}
                     </select>
                   </Field>
-                  <Field id={`g-id-${i}`} label="Scope id" hint="An id, or * for all of that type">
+                  <Field
+                    id={`g-id-${i}`}
+                    label={t("adm.roles.scope_id")}
+                    hint={t("adm.roles.scope_id.hint")}
+                  >
                     <input
                       id={`g-id-${i}`}
                       className="input"
@@ -188,13 +200,13 @@ function RoleEditor({
                     className="btn ghost sm"
                     onClick={() => setGrants((x) => x.filter((_, j) => j !== i))}
                   >
-                    Remove grant
+                    {t("adm.roles.remove_grant")}
                   </button>
                 </div>
                 <div
                   className="pills"
                   role="group"
-                  aria-label={`Actions for grant ${i + 1}`}
+                  aria-label={t("adm.roles.grant_actions", { n: i + 1 })}
                   style={{ marginTop: 8 }}
                 >
                   {ALL_ACTIONS.map((a) => (
@@ -205,14 +217,14 @@ function RoleEditor({
                       aria-pressed={g.actions.includes(a)}
                       onClick={() => patch(i, { actions: toggle(g.actions, a) })}
                     >
-                      {a.replace(/_/g, " ")}
+                      {td("adm.act", a, a.replace(/_/g, " "))}
                     </button>
                   ))}
                 </div>
                 <div
                   className="pills"
                   role="group"
-                  aria-label={`Conditions for grant ${i + 1}`}
+                  aria-label={t("adm.roles.grant_conditions", { n: i + 1 })}
                   style={{ marginTop: 8 }}
                 >
                   <button
@@ -221,9 +233,9 @@ function RoleEditor({
                     aria-pressed={g.nda}
                     onClick={() => patch(i, { nda: !g.nda })}
                   >
-                    NDA needs a named grant
+                    {t("adm.roles.cond.nda")}
                   </button>
-                  {BOOLS.map(([k, text]) => (
+                  {BOOLS.map((k) => (
                     <button
                       key={k}
                       type="button"
@@ -231,7 +243,7 @@ function RoleEditor({
                       aria-pressed={g.flags.includes(k)}
                       onClick={() => patch(i, { flags: toggle(g.flags, k) })}
                     >
-                      {text}
+                      {t(`adm.roles.cond.${k}` satisfies Key)}
                     </button>
                   ))}
                 </div>
@@ -254,14 +266,14 @@ function RoleEditor({
                   ])
                 }
               >
-                Add grant
+                {t("adm.roles.add_grant")}
               </button>
             </div>
           </fieldset>
 
           <fieldset className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
-            <legend className="eyebrow">Elevation (optional)</legend>
-            <Field id="el-hours" label="Longest window, in hours (1 to 24). Empty means none">
+            <legend className="eyebrow">{t("adm.roles.elev.legend")}</legend>
+            <Field id="el-hours" label={t("adm.roles.elev.hours")}>
               <input
                 id="el-hours"
                 className="input"
@@ -270,7 +282,7 @@ function RoleEditor({
                 onChange={(e) => setHours(e.target.value.replace(/\D/g, ""))}
               />
             </Field>
-            <div className="pills" role="group" aria-label="Actions elevation may unlock">
+            <div className="pills" role="group" aria-label={t("adm.roles.elev.actions")}>
               {ELEVATABLE.map((a) => (
                 <button
                   key={a}
@@ -279,7 +291,7 @@ function RoleEditor({
                   aria-pressed={elActions.includes(a)}
                   onClick={() => setElActions(toggle(elActions, a))}
                 >
-                  {a}
+                  {td("adm.act", a)}
                 </button>
               ))}
             </div>
@@ -290,14 +302,14 @@ function RoleEditor({
                 checked={approval}
                 onChange={(e) => setApproval(e.target.checked)}
               />
-              <span>A second admin must approve each elevation request for this role.</span>
+              <span>{t("adm.roles.elev.approval")}</span>
             </label>
           </fieldset>
           <Reason message={error} />
         </div>
         <div className="sheet-foot">
           <button type="button" className="btn ghost" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"
@@ -305,7 +317,7 @@ function RoleEditor({
             disabled={busy || !label.trim() || (!role && !id.trim())}
             onClick={save}
           >
-            {busy ? "Saving" : "Save role"}
+            {busy ? t("common.saving") : t("adm.roles.save")}
           </button>
         </div>
       </div>
@@ -314,6 +326,7 @@ function RoleEditor({
 }
 
 function History({ id }: { id: string }) {
+  const { t, td } = useI18n();
   const h = useApi(() => adm.roleHistory(id), [id]);
   return (
     <Await state={h} skeleton={1}>
@@ -321,9 +334,16 @@ function History({ id }: { id: string }) {
         <ol className="stack" style={{ margin: 0, paddingLeft: 18 }}>
           {rows.map((v) => (
             <li key={v.version}>
-              <strong>Version {v.version}</strong> · {fmtTime(v.at)} · proposed by{" "}
-              {v.proposedBy === "system" ? "the seed" : whoIs(v.proposedBy)}
-              {v.approvedBy ? `, approved by ${whoIs(v.approvedBy)}` : ""}
+              <strong>{t("adm.hist.version", { n: v.version })}</strong> · {fmtTime(v.at)} ·{" "}
+              {t("adm.hist.proposed", {
+                who:
+                  v.proposedBy === "system"
+                    ? t("adm.hist.seed")
+                    : whoIs(v.proposedBy, (rid, f) => td("role", rid, f)),
+              })}
+              {v.approvedBy
+                ? `, ${t("adm.hist.approved", { who: whoIs(v.approvedBy, (rid, f) => td("role", rid, f)) })}`
+                : ""}
             </li>
           ))}
         </ol>
@@ -333,6 +353,7 @@ function History({ id }: { id: string }) {
 }
 
 export function RolesTab() {
+  const { t, td } = useI18n();
   const roles = useApi(() => adm.roles(), []);
   const [editing, setEditing] = useState<GovRole | "new" | null>(null);
   const [history, setHistory] = useState<string | null>(null);
@@ -346,27 +367,27 @@ export function RolesTab() {
     <div className="stack" style={{ gap: 24 }}>
       <section aria-labelledby="roles-h">
         <div className="row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
-          <h3 id="roles-h">Roles and grants</h3>
+          <h3 id="roles-h">{t("adm.roles.title")}</h3>
           <button type="button" className="btn primary sm" onClick={() => setEditing("new")}>
-            New role
+            {t("adm.roles.new")}
           </button>
         </div>
         <Await state={roles} skeleton={3}>
           {(d) =>
             d.length === 0 ? (
-              <Empty title="No roles" />
+              <Empty title={t("adm.roles.none")} />
             ) : (
-              <div className="tablewrap">
+              <TableWrap label={t("adm.roles.caption")}>
                 <table className="t">
-                  <caption className="sr-only">Roles with version, members and grants</caption>
+                  <caption className="sr-only">{t("adm.roles.caption")}</caption>
                   <thead>
                     <tr>
-                      <th scope="col">Role</th>
-                      <th scope="col">Members</th>
-                      <th scope="col">Grants</th>
-                      <th scope="col">Elevation</th>
+                      <th scope="col">{t("adm.roles.col.role")}</th>
+                      <th scope="col">{t("adm.roles.col.members")}</th>
+                      <th scope="col">{t("adm.roles.col.grants")}</th>
+                      <th scope="col">{t("adm.roles.col.elevation")}</th>
                       <th scope="col">
-                        <span className="sr-only">Actions</span>
+                        <span className="sr-only">{t("adm.actions")}</span>
                       </th>
                     </tr>
                   </thead>
@@ -380,7 +401,7 @@ export function RolesTab() {
                           <div>{r.label}</div>
                           <div className="muted" style={{ fontWeight: 400, fontSize: 13 }}>
                             v{r.version}
-                            {r.sensitive ? " · two-person edits" : ""}
+                            {r.sensitive ? ` · ${t("adm.roles.twoperson")}` : ""}
                           </div>
                         </th>
                         <td className="num">{r.members}</td>
@@ -390,8 +411,11 @@ export function RolesTab() {
                               <li
                                 key={`${g.scope_type}-${g.scope_id}-${JSON.stringify(g.conditions)}`}
                               >
-                                {g.scope_type} {g.scope_id === "*" ? "(all)" : g.scope_id}:{" "}
-                                {g.actions.map((a) => a.replace(/_/g, " ")).join(", ")}
+                                {td("adm.scope", g.scope_type)}{" "}
+                                {g.scope_id === "*" ? t("adm.roles.all") : g.scope_id}:{" "}
+                                {g.actions
+                                  .map((a) => td("adm.act", a, a.replace(/_/g, " ")))
+                                  .join(", ")}
                                 {Object.keys(g.conditions).length ? (
                                   <span className="muted">
                                     {" "}
@@ -410,10 +434,12 @@ export function RolesTab() {
                           {r.elevation ? (
                             <>
                               {r.elevation.hours} h
-                              {r.elevation.approval ? <Chip tone="attn">approval</Chip> : null}
+                              {r.elevation.approval ? (
+                                <Chip tone="attn">{t("adm.roles.approval")}</Chip>
+                              ) : null}
                             </>
                           ) : (
-                            <span className="muted">none</span>
+                            <span className="muted">{t("adm.roles.noelev")}</span>
                           )}
                         </td>
                         <td>
@@ -421,19 +447,19 @@ export function RolesTab() {
                             <button
                               type="button"
                               className="btn sm"
-                              aria-label={`Edit ${r.label}`}
+                              aria-label={t("adm.roles.edit.aria", { label: r.label })}
                               onClick={() => setEditing(r)}
                             >
-                              Edit
+                              {t("common.edit")}
                             </button>
                             <button
                               type="button"
                               className="btn ghost sm"
                               aria-expanded={history === r.id}
-                              aria-label={`History of ${r.label}`}
+                              aria-label={t("adm.roles.history.aria", { label: r.label })}
                               onClick={() => setHistory(history === r.id ? null : r.id)}
                             >
-                              History
+                              {t("adm.roles.history")}
                             </button>
                           </div>
                           {history === r.id ? <History id={r.id} /> : null}
@@ -442,14 +468,14 @@ export function RolesTab() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TableWrap>
             )
           }
         </Await>
       </section>
       <Changes
         kinds={["role_upsert"]}
-        title="Role changes"
+        title={t("adm.roles.changes")}
         refreshKey={tick}
         onChanged={roles.reload}
       />

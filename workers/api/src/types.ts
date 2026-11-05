@@ -1,7 +1,7 @@
 import type { Ctx, Org, Principal, RoleId } from "@secondary/policy";
 import type { JWTVerifyGetKey } from "jose";
-import type { SwitchState } from "./switches.ts";
 import type { EntraDeps } from "./auth/oidc.ts";
+import type { SwitchState } from "./switches.ts";
 import type { TenantConfig } from "./tenant-policy.ts";
 
 export interface Session {

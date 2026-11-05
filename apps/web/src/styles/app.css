@@ -697,6 +697,12 @@ kbd {
   border: 1px solid var(--line);
   border-radius: var(--radius);
 }
+/* A scroll region is a keyboard stop. The ring sits inside, so overflow does not clip it. */
+.tablewrap:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
 table.t {
   border-collapse: collapse;
   width: 100%;
@@ -719,15 +725,6 @@ table.t th {
 }
 table.t tr:last-child td {
   border-bottom: 0;
-}
-table.t th button {
-  all: unset;
-  cursor: pointer;
-  font-weight: 700;
-}
-table.t th button:focus-visible {
-  outline: 2px solid var(--yellow);
-  outline-offset: 2px;
 }
 .linkbtn {
   all: unset;
@@ -774,6 +771,10 @@ table.t th button:focus-visible {
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
+.toolbar-search {
+  flex: 1;
+  max-width: 360px;
+}
 .worldstrip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -800,9 +801,6 @@ table.t th button:focus-visible {
   padding-left: 18px;
   color: var(--ink-2);
   font-size: 14.5px;
-}
-.seedo li + li {
-  margin-top: 4px;
 }
 .never {
   margin-top: var(--s3);
@@ -1382,7 +1380,7 @@ table.t th button:focus-visible {
 @media (max-width: 640px) {
   .toolbar .field {
     flex: 1 1 100%;
-    max-width: none !important;
+    max-width: none;
   }
   .body,
   .body.has-drawer {
@@ -1487,9 +1485,13 @@ table.t th button:focus-visible {
   *,
   *::before,
   *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every component rule */
     animation-duration: 0.001ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every component rule */
     animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every component rule */
     transition-duration: 0.001ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every component rule */
     scroll-behavior: auto !important;
   }
 }
@@ -1559,4 +1561,26 @@ table.t th button:focus-visible {
     bottom: 76px;
     width: auto;
   }
+}
+
+.src-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  max-width: 78ch;
+}
+
+/* Kept last: these selectors are more specific than the generic list and button rules above. */
+table.t th button {
+  all: unset;
+  cursor: pointer;
+  font-weight: 700;
+}
+table.t th button:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+.seedo li + li {
+  margin-top: 4px;
 }

@@ -29,9 +29,10 @@ test.describe("web app against the real API", () => {
   test("Platform admin sees structure only", async ({ browser }) => {
     const page = await asPersona(browser, "platform_admin");
     await page.goto("/admin");
-    await expect(page.getByText("Structure only.")).toBeVisible();
+    // The governance console: the admin holds configure, so Roles opens first.
+    await expect(page.getByRole("tab", { name: "Roles", selected: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Roles and grants" })).toBeVisible();
-    await expect(page.getByRole("rowheader", { name: /^CEO/ })).toBeVisible();
+    await expect(page.locator("table").getByText(/^CEO/).first()).toBeVisible();
     // Counts are hidden on the map for this role.
     const me = await api(page, "platform_admin", "/v1/map?lens=departments");
     expect(me.status).toBe(200);

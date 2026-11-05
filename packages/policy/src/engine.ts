@@ -81,14 +81,33 @@ function condOK(g: Grant, n: Matchable, p: Principal, nda: ReadonlySet<string>):
   // NDA accounts need a named grant for that account, and a grant that accepts it.
   if (n.nda && !(n.account && nda.has(n.account) && c.nda === "named_grant")) return false;
   if (c.linked_to_bid && !n.bid) return false;
+  // Membership-based grant: it applies only where the principal holds a membership of that scope.
+  if (c.membership && !isMemberOf(g, n, p)) return false;
   // Contacts subspace: members of that account only.
   if (n.contacts) {
     const member = p.memberships.some(
       (m) => m.scope_type === "account" && m.scope_id === n.account,
     );
-    if (!(c.member && g.scope_id === n.account && member)) return false;
+    const named = g.scope_id === n.account || (g.scope_id === "*" && !!c.membership);
+    if (!(c.member && named && member)) return false;
   }
   return true;
+}
+
+/** The node's scope id for a grant's scope type, when memberships can be held on that type. */
+function isMemberOf(g: Grant, n: Matchable, p: Principal): boolean {
+  const id =
+    g.scope_type === "department"
+      ? n.dept
+      : g.scope_type === "circle"
+        ? n.circle
+        : g.scope_type === "account"
+          ? n.account
+          : undefined;
+  return (
+    id !== undefined &&
+    p.memberships.some((m) => m.scope_type === g.scope_type && m.scope_id === id)
+  );
 }
 
 function levelFromGrants(
@@ -377,16 +396,24 @@ export function describe(principal: Principal, org: Org): Description {
       case "global":
         return "Company Global";
       case "department":
-        return id === "*" ? "all departments" : label(id);
+        return id === "*"
+          ? g.conditions.membership
+            ? "departments you are a member of"
+            : "all departments"
+          : label(id);
       case "circle":
-        return `${label(id)} (circle)`;
+        return id === "*" && g.conditions.membership
+          ? "circles you are a member of"
+          : `${label(id)} (circle)`;
       case "region":
         return id === "*" ? "all regions and countries" : label(id);
       case "account":
         return id === "*"
-          ? g.conditions.linked_to_bid
-            ? "accounts linked to bids"
-            : "all accounts, NDA only with a named grant"
+          ? g.conditions.membership
+            ? "accounts you are a member of (NDA only with a named grant)"
+            : g.conditions.linked_to_bid
+              ? "accounts linked to bids"
+              : "all accounts, NDA only with a named grant"
           : `Account: ${label(id)}`;
       default:
         return id;

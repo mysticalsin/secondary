@@ -7,6 +7,9 @@
 //   mcp   http://localhost:8788   /mcp, /authorize, /token, /register
 //   audit (service binding only)  port 8789 is bound locally for the dev registry, never used directly
 //
+// The connector and ops workers are not part of this stack (they need Graph and a backup bucket); the api's
+// CONNECTOR binding then resolves to nothing and source results stay hidden, which is the fail-closed default.
+//
 // Local-only secrets are generated once into .dev/secrets.json and written to each worker's .dev.vars
 // (both git-ignored). Flags: --seed (load the synthetic org after start), --no-build (skip the web build).
 
@@ -28,6 +31,8 @@ const names = [
   "AUDIT_KEY_API",
   "AUDIT_KEY_MCP",
   "AUDIT_KEY_READ",
+  "AUDIT_KEY_ERASE",
+  "PSEUDONYM_KEY",
 ];
 const secrets = existsSync(secretsPath) ? JSON.parse(readFileSync(secretsPath, "utf8")) : {};
 for (const n of names) secrets[n] ??= randomBytes(24).toString("hex");
@@ -44,13 +49,27 @@ writeFileSync(
     INTERNAL_HMAC_KEY: secrets.INTERNAL_HMAC_KEY,
     AUDIT_KEY_API: secrets.AUDIT_KEY_API,
     AUDIT_KEY_READ: secrets.AUDIT_KEY_READ,
+    AUDIT_KEY_ERASE: secrets.AUDIT_KEY_ERASE,
+    PSEUDONYM_KEY: secrets.PSEUDONYM_KEY,
     DEV_AUTH_BYPASS_EMAIL: "dev@example.invalid",
     DO_JURISDICTION: "off",
+    // wrangler.jsonc carries the deployed dev Access team and AUD tag. Locally there is no Access:
+    // empty values keep the loopback sign-in headers and the persona picker working.
+    ACCESS_TEAM_DOMAIN: "",
+    ACCESS_AUD: "",
+    // Every demo persona signs in under the same address, so they share one request counter. The
+    // deployed 600 a minute is for one person; a test run of all personas needs more room.
+    RATE_LIMIT_PER_MIN: "6000",
   }),
 );
 writeFileSync(
   join(root, "workers/mcp/.dev.vars"),
-  vars({ INTERNAL_HMAC_KEY: secrets.INTERNAL_HMAC_KEY, AUDIT_KEY_MCP: secrets.AUDIT_KEY_MCP }),
+  vars({
+    INTERNAL_HMAC_KEY: secrets.INTERNAL_HMAC_KEY,
+    AUDIT_KEY_MCP: secrets.AUDIT_KEY_MCP,
+    ACCESS_TEAM_DOMAIN: "",
+    ACCESS_AUD: "",
+  }),
 );
 writeFileSync(
   join(root, "workers/audit/.dev.vars"),
@@ -58,6 +77,7 @@ writeFileSync(
     AUDIT_KEY_API: secrets.AUDIT_KEY_API,
     AUDIT_KEY_MCP: secrets.AUDIT_KEY_MCP,
     AUDIT_KEY_READ: secrets.AUDIT_KEY_READ,
+    AUDIT_KEY_ERASE: secrets.AUDIT_KEY_ERASE,
   }),
 );
 

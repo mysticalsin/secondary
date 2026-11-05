@@ -691,9 +691,23 @@ describe("access requests", () => {
     const admin = await json(await get("platform_admin", "/notifications"));
     expect(admin.items.map((n: Loose) => n.kind)).toContain("access_request");
 
+    // Before the approval the department is locked: name only.
+    const before = await json(await as("consultant", `/v1/nodes/${node}`));
+    expect(before.node.access).toBe("locked");
+    const mapBefore = await json(await as("consultant", "/v1/map?lens=departments"));
+    expect(mapBefore.hubs.find((h: Loose) => h.id === node).access).toBe("locked");
+
     const ok = await post("platform_admin", `/access-requests/${id}/approve`, {});
     expect(ok.status).toBe(200);
     expect((await json(ok)).request.status).toBe("granted");
+    // The approval is real: the same person now sees the department in full and may comment.
+    const after = await json(await as("consultant", `/v1/nodes/${node}`));
+    expect(after.node.access).toBe("full");
+    const mapAfter = await json(await as("consultant", "/v1/map?lens=departments"));
+    expect(mapAfter.hubs.find((h: Loose) => h.id === node).access).toBe("full");
+    expect(after.node.access).toBe("full");
+    expect(before.items ?? []).toEqual([]);
+    expect(after.items.length).toBeGreaterThan(0);
     const mine = await json(await get("consultant", "/access-requests"));
     expect(mine[0].status).toBe("granted");
     const inbox = await json(await get("consultant", "/notifications"));
@@ -758,6 +772,9 @@ describe("access requests", () => {
       (await json(await get("consultant", "/access-requests", { now: t0 }))).at(0).status,
     ).toBe("approved");
 
+    // One approval is not access: the requester still cannot see the account or its Contacts.
+    expect((await as("consultant", "/v1/nodes/a_acme:con:0", { now: t0 })).status).toBe(404);
+
     // The same steward cannot be the second person.
     expect(
       (await post("acme_lead", `/changes/${out.change.id}/approve`, {}, { now: t0 })).status,
@@ -766,6 +783,9 @@ describe("access requests", () => {
     expect(done.status).toBe(200);
     const mine = await json(await get("consultant", "/access-requests", { now: t0 }));
     expect(mine[0].status).toBe("granted");
+    // End to end: only the second approval opened the account (and its Contacts) to the requester.
+    expect((await as("consultant", "/v1/nodes/a_acme", { now: t0 })).status).toBe(200);
+    expect((await as("consultant", "/v1/nodes/a_acme:con:0", { now: t0 })).status).toBe(200);
     expect(
       (await json(await get("consultant", "/notifications", { now: t0 }))).items.map(
         (n: Loose) => n.kind,

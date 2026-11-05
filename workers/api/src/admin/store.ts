@@ -318,6 +318,22 @@ export class GovStore {
       .map((r) => ({ id: s(r.id), email: s(r.email), roleIds: roles.get(s(r.id)) ?? [] }));
   }
 
+  /**
+   * A person who asked for access through the console has a signed-in identity even when the
+   * directory does not list it (a dev persona under a non-seeded address). Their own request is the
+   * proof, so approving it may add the membership. Nobody else is accepted this way.
+   */
+  private hasRequester(id: string): boolean {
+    return (
+      this.sql
+        .exec(
+          "SELECT 1 FROM gov_access_requests WHERE principal_id = ? AND status IN ('pending', 'approved') LIMIT 1",
+          id,
+        )
+        .toArray().length > 0
+    );
+  }
+
   private hasPrincipal(id: string): boolean {
     return this.sql.exec("SELECT 1 FROM principals WHERE id = ?", id).toArray().length > 0;
   }
@@ -532,7 +548,11 @@ export class GovStore {
     now: number,
   ): { ok: true; change: Change; applied: boolean } | Fail {
     const target = typeof a.payload.principalId === "string" ? a.payload.principalId : null;
-    if (a.kind !== "role_upsert" && (!target || !this.hasPrincipal(target)))
+    if (
+      a.kind !== "role_upsert" &&
+      (!target ||
+        !(this.hasPrincipal(target) || (a.kind === "member_add" && this.hasRequester(target))))
+    )
       return fail(404, "unknown_principal", "That person is not in this tenant's directory");
     const dup = this.sql
       .exec(
@@ -714,7 +734,12 @@ export class GovStore {
       case "member_add":
       case "member_remove": {
         const sc = p.scope as { type: string; id: string };
-        if (!this.hasPrincipal(p.principalId as string))
+        if (
+          !(
+            this.hasPrincipal(p.principalId as string) ||
+            (c.kind === "member_add" && this.hasRequester(p.principalId as string))
+          )
+        )
           return fail(404, "unknown_principal", "That person is no longer in the directory");
         if (c.kind === "member_add")
           this.sql.exec(

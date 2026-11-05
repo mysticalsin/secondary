@@ -4,22 +4,35 @@
 import { useState } from "react";
 import { api } from "../../api";
 import { Await, Chip } from "../../components/ui";
+import { useI18n } from "../../i18n";
 import { useApi } from "../../useApi";
 import { type AccessReq, adm } from "./api";
 import { Field, fmtTime, Reason, useAct } from "./shared";
 
 const TONE = { pending: "attn", approved: "progress", granted: "done", denied: "risk" } as const;
-const STATE_TEXT = {
-  pending: "Waiting for a steward",
-  approved: "Approved, waiting for a second approver",
-  granted: "Granted",
-  denied: "Denied",
+const STATE_KEY = {
+  pending: "adm.rs.pending",
+  approved: "adm.rs.approved",
+  granted: "adm.rs.granted",
+  denied: "adm.rs.denied",
 } as const;
 
 /** The request form. Also usable from a node drawer: pass `nodeId` to skip the picker. */
-export function RequestAccessForm({ nodeId, onSent }: { nodeId?: string; onSent?: () => void }) {
+export function RequestAccessForm({
+  nodeId,
+  label,
+  onSent,
+  onCancel,
+}: {
+  nodeId?: string;
+  /** Name of the node, when the form is opened from its drawer. */
+  label?: string;
+  onSent?: () => void;
+  onCancel?: () => void;
+}) {
+  const { t } = useI18n();
   const locked = useApi(async () => {
-    if (nodeId) return [{ id: nodeId, label: nodeId }];
+    if (nodeId) return [{ id: nodeId, label: label ?? nodeId }];
     const m = await api.map("departments");
     return m.hubs.filter((h) => h.access === "locked").map((h) => ({ id: h.id, label: h.label }));
   }, [nodeId]);
@@ -32,30 +45,28 @@ export function RequestAccessForm({ nodeId, onSent }: { nodeId?: string; onSent?
       className="card stack"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (
-          await run(() => adm.requestAccess(node, reason), "Request sent to the steward queue.")
-        ) {
+        if (await run(() => adm.requestAccess(node, reason), t("dr.requested"))) {
           setReason("");
           setNode(nodeId ?? "");
           onSent?.();
         }
       }}
     >
-      <h4>Request access to a locked space</h4>
+      <h4>{t("adm.req.form")}</h4>
       <Await state={locked} skeleton={1}>
         {(list) =>
           list.length === 0 ? (
-            <p className="muted">Nothing is locked for you right now.</p>
+            <p className="muted">{t("adm.req.nothing")}</p>
           ) : (
             <>
-              <Field id="req-node" label="Locked space">
+              <Field id="req-node" label={t("adm.req.space")}>
                 <select
                   id="req-node"
                   className="select"
                   value={node}
                   onChange={(e) => setNode(e.target.value)}
                 >
-                  <option value="">Choose a space</option>
+                  <option value="">{t("adm.choose.space")}</option>
                   {list.map((n) => (
                     <option key={n.id} value={n.id}>
                       {n.label}
@@ -63,11 +74,7 @@ export function RequestAccessForm({ nodeId, onSent }: { nodeId?: string; onSent?
                   ))}
                 </select>
               </Field>
-              <Field
-                id="req-reason"
-                label="Why do you need it?"
-                hint="The steward reads this. It is not copied to the audit log."
-              >
+              <Field id="req-reason" label={t("adm.req.why")} hint={t("adm.req.why.hint")}>
                 <input
                   id="req-reason"
                   className="input"
@@ -83,8 +90,13 @@ export function RequestAccessForm({ nodeId, onSent }: { nodeId?: string; onSent?
                   className="btn primary"
                   disabled={busy || !node || !reason.trim()}
                 >
-                  Send request
+                  {t("adm.req.send")}
                 </button>
+                {onCancel ? (
+                  <button type="button" className="btn ghost" onClick={onCancel}>
+                    {t("common.cancel")}
+                  </button>
+                ) : null}
               </div>
             </>
           )
@@ -95,6 +107,7 @@ export function RequestAccessForm({ nodeId, onSent }: { nodeId?: string; onSent?
 }
 
 function Row({ r, onDone, queue }: { r: AccessReq; onDone: () => void; queue: boolean }) {
+  const { t } = useI18n();
   const { busy, error, run } = useAct();
   const [denying, setDenying] = useState(false);
   const [note, setNote] = useState("");
@@ -107,10 +120,12 @@ function Row({ r, onDone, queue }: { r: AccessReq; onDone: () => void; queue: bo
             {queue ? `${r.requesterEmail ?? r.principalId} · ` : ""}
             {fmtTime(r.createdAt)}
           </div>
-          <div style={{ fontSize: 14 }}>Reason: {r.reason}</div>
-          {r.note ? <div style={{ fontSize: 14 }}>Steward note: {r.note}</div> : null}
+          <div style={{ fontSize: 14 }}>{t("adm.lbl.reason", { text: r.reason })}</div>
+          {r.note ? (
+            <div style={{ fontSize: 14 }}>{t("adm.req.steward_note", { text: r.note })}</div>
+          ) : null}
         </div>
-        <Chip tone={TONE[r.status]}>{STATE_TEXT[r.status]}</Chip>
+        <Chip tone={TONE[r.status]}>{t(STATE_KEY[r.status])}</Chip>
       </div>
       {queue && r.status === "pending" ? (
         r.canDecide ? (
@@ -123,15 +138,12 @@ function Row({ r, onDone, queue }: { r: AccessReq; onDone: () => void; queue: bo
                 onClick={async () => {
                   const x = await run(
                     () => adm.approveRequest(r.id),
-                    (o) =>
-                      o.applied
-                        ? "Access granted."
-                        : "Approved. A second person must confirm the membership.",
+                    (o) => t(o.applied ? "adm.req.granted" : "adm.req.approved"),
                   );
                   if (x) onDone();
                 }}
               >
-                Approve
+                {t("adm.approve")}
               </button>
               <button
                 type="button"
@@ -139,7 +151,7 @@ function Row({ r, onDone, queue }: { r: AccessReq; onDone: () => void; queue: bo
                 disabled={busy}
                 onClick={() => setDenying(!denying)}
               >
-                Deny
+                {t("adm.deny")}
               </button>
             </div>
             {denying ? (
@@ -147,22 +159,22 @@ function Row({ r, onDone, queue }: { r: AccessReq; onDone: () => void; queue: bo
                 className="ask"
                 onSubmit={async (e) => {
                   e.preventDefault();
-                  if (await run(() => adm.denyRequest(r.id, note), "Request denied.")) onDone();
+                  if (await run(() => adm.denyRequest(r.id, note), t("adm.req.denied"))) onDone();
                 }}
               >
                 <label className="sr-only" htmlFor={`deny-${r.id}`}>
-                  Reason for denying
+                  {t("adm.deny.label")}
                 </label>
                 <input
                   id={`deny-${r.id}`}
                   className="input"
-                  placeholder="Reason (the requester sees it)"
+                  placeholder={t("adm.req.deny.ph")}
                   maxLength={300}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                 />
                 <button type="submit" className="btn danger sm" disabled={busy || !note.trim()}>
-                  Confirm deny
+                  {t("adm.deny.confirm")}
                 </button>
               </form>
             ) : null}
@@ -170,7 +182,7 @@ function Row({ r, onDone, queue }: { r: AccessReq; onDone: () => void; queue: bo
           </div>
         ) : (
           <p className="muted" style={{ fontSize: 14, marginTop: 8 }}>
-            You cannot decide this one.
+            {t("adm.req.cannot")}
           </p>
         )
       ) : null}
@@ -179,6 +191,7 @@ function Row({ r, onDone, queue }: { r: AccessReq; onDone: () => void; queue: bo
 }
 
 export function RequestsTab() {
+  const { t } = useI18n();
   const mine = useApi(() => adm.accessRequests("mine"), []);
   const queue = useApi(() => adm.accessRequests("queue"), []);
   const both = () => {
@@ -190,12 +203,12 @@ export function RequestsTab() {
       <RequestAccessForm onSent={both} />
       <section aria-labelledby="myreq-h">
         <h3 id="myreq-h" style={{ marginBottom: 8 }}>
-          My requests
+          {t("adm.req.mine")}
         </h3>
         <Await state={mine} skeleton={1}>
           {(rows) =>
             rows.length === 0 ? (
-              <p className="muted">You have not asked for anything.</p>
+              <p className="muted">{t("adm.req.mine.empty")}</p>
             ) : (
               <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {rows.map((r) => (
@@ -208,12 +221,12 @@ export function RequestsTab() {
       </section>
       <section aria-labelledby="queue-h">
         <h3 id="queue-h" style={{ marginBottom: 8 }}>
-          Steward queue
+          {t("adm.req.queue")}
         </h3>
         <Await state={queue} skeleton={1}>
           {(rows) =>
             rows.length === 0 ? (
-              <p className="muted">No requests in your queue.</p>
+              <p className="muted">{t("adm.req.queue.empty")}</p>
             ) : (
               <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {rows.map((r) => (

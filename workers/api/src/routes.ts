@@ -36,6 +36,7 @@ import { detectSensitivity, type SensitivityFlag } from "./sensitivity.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
 import { uxRoutes } from "./ux/index.ts";
+import { notifyApproved, notifyChangesRequested, notifyContributed } from "./ux/notify.ts";
 import type { Fail, ItemRecord, UserValidated } from "./workspace.ts";
 
 export const VERSION = "0.1.0";
@@ -232,6 +233,7 @@ async function submitCandidate(c: C, view: AdmittedView, i: CandidateInput): Pro
     s.ctx.now,
   );
   if ("ok" in made) return failResponse(c, made);
+  await notifyContributed(c, i.targetNodeId, made.id, s.principal.id);
   return c.json(
     {
       ok: true,
@@ -876,22 +878,35 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       }
       case "review": {
         const r = await ws.review(nodeId, revision as number, s.principal.id, verdict, now);
-        return r.ok
-          ? c.json({ ok: true, receiptId: receipt.receiptId, revision: r.revision })
-          : rejected(r);
+        if (!r.ok) return rejected(r);
+        if (cand && verdict === "changes_requested")
+          await notifyChangesRequested(
+            c,
+            policyNode,
+            nodeId,
+            (await ws.get(nodeId))?.authorId ?? null,
+          );
+        return c.json({ ok: true, receiptId: receipt.receiptId, revision: r.revision });
       }
       case "approve_release": {
         const r = await ws.approve(nodeId, revision as number, s.principal.id, now);
-        return r.ok
-          ? c.json({
-              ok: true,
-              receiptId: receipt.receiptId,
-              released: r.released,
-              approvals: r.approvals,
-              required: r.required,
-              revision: r.revision,
-            })
-          : rejected(r);
+        if (!r.ok) return rejected(r);
+        if (cand)
+          await notifyApproved(
+            c,
+            policyNode,
+            nodeId,
+            (await ws.get(nodeId))?.authorId ?? null,
+            r.released,
+          );
+        return c.json({
+          ok: true,
+          receiptId: receipt.receiptId,
+          released: r.released,
+          approvals: r.approvals,
+          required: r.required,
+          revision: r.revision,
+        });
       }
       default:
         // request_access: the receipt is the record in B1; the steward notification comes with the outbox consumer.

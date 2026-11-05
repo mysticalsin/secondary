@@ -7,11 +7,11 @@ import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
+import { tenantOrg } from "./admin/client.ts";
 import { accessAllowed, entraEnabled } from "./auth/config.ts";
 import { emailFromSession } from "./auth/identity.ts";
 import { SESSION_COOKIE } from "./auth/limits.ts";
 import { isUnsafeMethod, sameOrigin } from "./auth/session.ts";
-import { tenantOrg } from "./admin/client.ts";
 import {
   HEADER_PRINCIPAL,
   HEADER_SIGNATURE,

@@ -8,6 +8,7 @@ import { viewOf } from "../auth.ts";
 import { parseCandidateId, scopeOfNode } from "../scope.ts";
 import { workspaceStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
+import { notifyChangesRequested } from "./notify.ts";
 import {
   audit,
   bad,
@@ -106,7 +107,7 @@ export function reviewRoutes(): Hono<AppEnv> {
 
   // Request changes on the exact revision, with the reason as a comment in the same step.
   r.post("/ux/review/:id/decision", async (c) => {
-    const { s, id, scope, stub } = await open(c);
+    const { s, id, scope, stub, item } = await open(c);
     const b = await readObject(c);
     const revision = revisionOf(b.revision);
     if (b.verdict !== "changes_requested" && b.verdict !== "accept") throw bad("invalid_verdict");
@@ -120,6 +121,8 @@ export function reviewRoutes(): Hono<AppEnv> {
     const res = await stub.review(id, revision, s.principal.id, b.verdict, s.ctx.now);
     if (!res.ok) return failResponse(c, res);
     if (t) await stub.comment(id, s.principal.id, t, s.ctx.now);
+    if (b.verdict === "changes_requested")
+      await notifyChangesRequested(c, policyNode, id, item.authorId);
     return c.json({ ok: true, revision: res.revision });
   });
 

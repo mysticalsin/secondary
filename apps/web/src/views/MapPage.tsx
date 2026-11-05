@@ -82,7 +82,7 @@ export function MapPage() {
         </div>
       </div>
       <div className="toolbar">
-        <div className="field" style={{ flex: 1, maxWidth: 360 }}>
+        <div className="field toolbar-search">
           <label htmlFor="mapq" className="sr-only">
             {t("map.find")}
           </label>
@@ -108,26 +108,22 @@ export function MapPage() {
         {(v) =>
           v.hubs.length === 0 ? (
             <Empty title={t("map.empty.title")}>{t("map.empty.body")}</Empty>
-          ) : (
+          ) : proj === "ring" || proj === "clusters" ? (
             <>
-              {proj === "ring" || proj === "clusters" ? (
-                <>
-                  <MapCanvas
-                    view={v}
-                    projection={proj}
-                    query={query}
-                    selectedId={drawerId}
-                    focusId={drawerId}
-                    onOpen={openNode}
-                  />
-                  <Legend />
-                </>
-              ) : proj === "list" ? (
-                <MapList view={v} query={query} onOpen={openNode} />
-              ) : (
-                <MapTable view={v} query={query} onOpen={openNode} />
-              )}
+              <MapCanvas
+                view={v}
+                projection={proj}
+                query={query}
+                selectedId={drawerId}
+                focusId={drawerId}
+                onOpen={openNode}
+              />
+              <Legend />
             </>
+          ) : proj === "list" ? (
+            <MapList view={v} query={query} onOpen={openNode} />
+          ) : (
+            <MapTable view={v} query={query} onOpen={openNode} />
           )
         }
       </Await>

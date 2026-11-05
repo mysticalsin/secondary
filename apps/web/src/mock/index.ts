@@ -1,4 +1,12 @@
 // Dev mock adapter. Loaded only when VITE_MOCK=1 (see src/api.ts). Synthetic data only.
+//
+// What the mock covers: the B1 reads and actions (map, nodes, search, accounts, governances, review
+// queue, Personal Brain list, create and contribute), GenUI plans, and small stand-ins for the B2
+// reads the shell needs on every page: prefs, drafts, attention, AI status (always "not
+// configured"), and one synced SharePoint file (search "handbook", then open it).
+// What it does not cover, and says so with a 501: the governance console (/v1/admin/*), briefs,
+// personal edit/history/restore, account records, and review detail. Use `pnpm dev:all -- --seed`
+// for those; the mock never pretends to enforce them.
 import { ApiError } from "../api";
 import type {
   AccountCard,
@@ -21,8 +29,25 @@ import type {
 } from "../types";
 import { STAGES } from "../types";
 import { ACCOUNTS, DEPARTMENTS, GOVERNANCES, hash, type Leaf, ORG, REGIONS, THEMES } from "./org";
-import { canDo, ROLES, roleLabel, roleOf, vis } from "./policy";
+import { canDo, ROLES, roleOf, vis } from "./policy";
 import { detectSensitivity } from "./sensitive";
+
+const notInMock = (method: string, p: string) =>
+  new ApiError(501, `Not part of the dev mock (${method} ${p}). Run the live stack for this.`);
+
+// One synced SharePoint file, so source search results can be tried without the connector.
+const MOCK_SOURCE = {
+  id: "src:sp_mock:0123456789abcdef01234567",
+  title: "Delivery handbook (SharePoint)",
+  kind: "source" as const,
+  plane: "TEAM_RESTRICTED" as const,
+  webUrl: "https://example.invalid/sites/delivery/handbook.md",
+  mime: "text/markdown",
+  size: 1536,
+  body: "# Delivery handbook\n\nSynthetic text for the mock. Hand over with an owner for every step.",
+  syncedAt: Date.UTC(2026, 10, 4),
+};
+let mockPrefs: { lang: "en" | "fr" | null; tourDone: boolean } = { lang: null, tourDone: false };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pick = <T>(arr: readonly T[], h: number): T => arr[h % arr.length] as T;
@@ -826,6 +851,25 @@ export async function handle(
     if (p === "/v1/map")
       return buildMap(role, (url.searchParams.get("lens") ?? "departments") as Lens);
     if (p.startsWith("/v1/nodes/")) return nodeDetail(role, decodeURIComponent(p.slice(10)));
+    if (p === "/v1/ai/status")
+      return {
+        state: "not_configured",
+        reason: "The AI processor is not part of the mock.",
+        processor: "Anthropic",
+        model: null,
+        region: "n/a",
+      };
+    if (p === "/v1/ux/prefs") return { ...mockPrefs };
+    if (p === "/v1/ux/drafts") return [];
+    if (p === "/v1/ux/attention") return { items: [] };
+    if (
+      p === `/v1/sources/${encodeURIComponent(MOCK_SOURCE.id)}` ||
+      p === `/v1/sources/${MOCK_SOURCE.id}`
+    ) {
+      const dept = ORG.nodes.get("c_delivery");
+      if (!dept || vis(role, dept) !== "full") throw new ApiError(404, "Not found.");
+      return { ...MOCK_SOURCE };
+    }
     if (p === "/v1/search") {
       const term = (url.searchParams.get("q") ?? "").toLowerCase().trim();
       if (!term) return { results: [] };
@@ -833,11 +877,26 @@ export async function handle(
         (n) => n.label.toLowerCase().includes(term) && vis(role, n) !== "hidden",
       );
       const rank = (n: Leaf) => (n.kind === "usecase" ? 1 : 0);
+      const delivery = ORG.nodes.get("c_delivery");
+      const src =
+        delivery && vis(role, delivery) === "full" && MOCK_SOURCE.title.toLowerCase().includes(term)
+          ? [
+              {
+                id: MOCK_SOURCE.id,
+                label: MOCK_SOURCE.title,
+                kind: "source",
+                plane: MOCK_SOURCE.plane,
+              },
+            ]
+          : [];
       return {
-        results: all
-          .sort((x, y) => rank(x) - rank(y))
-          .slice(0, 12)
-          .map((n) => ({ id: n.id, label: n.label, kind: n.kind, plane: n.plane })),
+        results: [
+          ...all
+            .sort((x, y) => rank(x) - rank(y))
+            .slice(0, 12)
+            .map((n) => ({ id: n.id, label: n.label, kind: n.kind, plane: n.plane })),
+          ...src,
+        ],
       };
     }
     if (p === "/v1/accounts") {
@@ -941,8 +1000,18 @@ export async function handle(
                   : "Department",
         }));
     }
-    throw new ApiError(404, `No mock for GET ${p}`);
+    throw notInMock("GET", p);
   }
+
+  if (p === "/v1/ux/prefs" && method === "PUT") {
+    mockPrefs = {
+      lang: b.lang === "en" || b.lang === "fr" ? b.lang : mockPrefs.lang,
+      tourDone: typeof b.tourDone === "boolean" ? b.tourDone : mockPrefs.tourDone,
+    };
+    return { ...mockPrefs };
+  }
+  if (p.startsWith("/v1/ux/drafts/") && (method === "PUT" || method === "DELETE"))
+    return { ok: true, at: new Date().toISOString() };
 
   if (p === "/v1/actions") {
     const nodeId = String(b.nodeId ?? "");
@@ -1076,5 +1145,5 @@ export async function handle(
   }
 
   if (p === "/v1/genui/plan") return plan(b as { prompt?: string; nodeId?: string });
-  throw new ApiError(404, `No mock for POST ${p}`);
+  throw notInMock(method, p);
 }

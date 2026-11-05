@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiError, getPersona, MOCK } from "../../api";
+import { getLang, translate } from "../../i18n";
 import type { Action, AdminGrant as Grant } from "../../types";
 
 export interface Elig {
@@ -142,11 +143,7 @@ export interface Saved {
 type Method = "GET" | "POST" | "PUT";
 
 async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
-  if (MOCK)
-    throw new ApiError(
-      501,
-      "The admin console needs the live API. It is not part of the mock data.",
-    );
+  if (MOCK) throw new ApiError(501, translate(getLang(), "adm.err.mock"));
   const headers: Record<string, string> = { Accept: "application/json" };
   const persona = getPersona();
   if (persona) headers["X-Demo-Persona"] = persona;
@@ -172,7 +169,10 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
     // The server's own reason, as written. Plain wording only when it sent none.
     throw new ApiError(
       res.status,
-      d.reason || (d.error ? d.error.replace(/_/g, " ") : `Request failed (${res.status})`),
+      d.reason ||
+        (d.error
+          ? d.error.replace(/_/g, " ")
+          : translate(getLang(), "err.failed", { status: res.status })),
       d as Record<string, unknown>,
     );
   }

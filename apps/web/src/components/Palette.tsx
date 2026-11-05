@@ -76,8 +76,10 @@ export function Palette() {
     const found = results.map<Entry>((r) => ({
       key: `n:${r.id}`,
       label: r.label,
-      hint: r.kind,
-      run: () => openNode(r.id),
+      hint: r.kind === "source" ? t("pal.source") : r.kind,
+      // A synced file has its own page: it is not a node of the map.
+      run: () =>
+        r.kind === "source" ? nav(`/sources/${encodeURIComponent(r.id)}`) : openNode(r.id),
     }));
     return [...views, ...found];
   }, [q, results, nav, openNode, t]);

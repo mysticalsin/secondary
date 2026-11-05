@@ -31,6 +31,21 @@ export const ROLE_ORDER = [
 
 export type RoleId = (typeof ROLE_ORDER)[number];
 
+/**
+ * What an approved membership gives. `membership` ties the grant to scopes where the person holds a
+ * membership (added by the governance console or an access request), so the role widens only as far
+ * as a steward admitted them. NDA accounts need a named grant as well as the membership.
+ */
+const MEMBER_GRANTS: Grant[] = [
+  G("department", "*", [...V, "comment", "contribute"], { membership: true }),
+  G("circle", "*", [...V, "comment", "contribute"], { membership: true }),
+  G("account", "*", [...V, "comment", "contribute"], {
+    membership: true,
+    member: true,
+    nda: "named_grant",
+  }),
+];
+
 const NDA_EXCL = ["personal_brain", "nda_without_grant"];
 
 /** The seven roles, as data. No role grants anything on a personal scope (see personal.ts). */
@@ -58,6 +73,7 @@ export const ROLES: Readonly<Record<RoleId, Role>> = {
       G("global", "core", [...V, "comment", "contribute"]),
       G("circle", "c_bid", STEWARD, { self_approval: false }),
       G("account", "*", [...V, "comment", "contribute"], { linked_to_bid: true }),
+      ...MEMBER_GRANTS,
     ],
     exclusions: NDA_EXCL,
     never: ["Approve their own contribution"],
@@ -72,6 +88,7 @@ export const ROLES: Readonly<Record<RoleId, Role>> = {
       G("account", "a_acme", [...V, "comment", "contribute", "edit", "review", "manage_members"], {
         member: true,
       }),
+      ...MEMBER_GRANTS,
     ],
     exclusions: NDA_EXCL,
     never: ["Global release without a distinct reviewer"],
@@ -84,6 +101,7 @@ export const ROLES: Readonly<Record<RoleId, Role>> = {
       G("global", "core", V),
       G("circle", "c_delivery", [...V, "comment", "contribute", "edit"], { own_drafts: true }),
       G("circle", "c_eng", [...V, "comment", "contribute", "edit"], { own_drafts: true }),
+      ...MEMBER_GRANTS,
     ],
     exclusions: NDA_EXCL,
     never: ["Review their own work"],
