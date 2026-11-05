@@ -926,8 +926,12 @@ table.t th button:focus-visible {
   border-radius: var(--radius);
   background: var(--panel);
 }
-.hubsec > .hubhead {
+.hubsec .hubhead {
   all: unset;
+  flex: 1;
+  appearance: none;
+  background: transparent;
+  color: var(--ink);
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -937,7 +941,7 @@ table.t th button:focus-visible {
   cursor: pointer;
   font-weight: 700;
 }
-.hubsec > .hubhead:focus-visible {
+.hubsec .hubhead:focus-visible {
   outline: 2px solid var(--yellow);
   outline-offset: -2px;
   border-radius: var(--radius);
@@ -1231,7 +1235,7 @@ table.t th button:focus-visible {
   max-height: 50vh;
   overflow-y: auto;
 }
-.palette li button {
+.palette li {
   all: unset;
   box-sizing: border-box;
   display: flex;
@@ -1242,12 +1246,13 @@ table.t th button:focus-visible {
   border-radius: 10px;
   cursor: pointer;
 }
-.palette li[aria-selected="true"] button,
-.palette li button:hover {
+.palette li[aria-selected="true"],
+.palette li:hover {
   background: var(--purple-bright);
 }
-.palette li button .k {
+.palette li .k {
   margin-left: auto;
+  color: var(--ink-2);
 }
 .toast {
   position: fixed;
@@ -1497,5 +1502,61 @@ table.t th button:focus-visible {
   }
   .lbl-short {
     display: inline;
+  }
+}
+
+/* B2 UX: language switch, tour, review thread, feedback quotes */
+.langsw {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.langsw button {
+  background: transparent;
+  color: var(--ink-2);
+  border: 0;
+  padding: 6px 10px;
+  min-width: 36px;
+  min-height: 32px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.langsw button[aria-pressed="true"] {
+  background: var(--purple-bright);
+  color: #fff;
+}
+.tour {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  width: min(380px, calc(100vw - 32px));
+  background: var(--panel-2);
+  border: 1px solid var(--lilac-4);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+.tour h3 {
+  margin: 6px 0;
+}
+.feedback {
+  margin: 6px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--yellow);
+  background: var(--panel);
+  white-space: pre-wrap;
+}
+.page ul.worldstrip {
+  list-style: none;
+}
+@media (max-width: 640px) {
+  .tour {
+    right: 16px;
+    left: 16px;
+    bottom: 76px;
+    width: auto;
   }
 }

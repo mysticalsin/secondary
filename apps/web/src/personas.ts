@@ -13,8 +13,11 @@ export const PERSONAS: { id: string; label: string }[] = [
  * Authors come back as principal ids: u_head_bid for a seeded persona, u_head_bid_<hash> for a dev
  * tester who picked that persona. Show the role label when the id names a persona.
  */
-export function whoIs(principalId: string): string {
+export function whoIs(
+  principalId: string,
+  label: (roleId: string, fallback: string) => string = (_id, f) => f,
+): string {
   const role = principalId.startsWith("u_") ? principalId.slice(2) : principalId;
   const hit = PERSONAS.find((p) => role === p.id || role.startsWith(`${p.id}_`));
-  return hit?.label ?? principalId;
+  return hit ? label(hit.id, hit.label) : principalId;
 }

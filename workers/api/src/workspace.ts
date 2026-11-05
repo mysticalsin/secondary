@@ -10,7 +10,7 @@ import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { personalKindOf } from "./personal-kind.ts";
 import type { SensitivityFlag } from "./sensitivity.ts";
 
-export type Origin = "seed" | "personal" | "candidate";
+export type Origin = "seed" | "personal" | "candidate" | "record";
 export type ReleaseTarget = "scope" | "global";
 export type UserValidated = { by: string; at: string; revision: number };
 
@@ -89,6 +89,14 @@ export type SourceItem = {
   eTag: string;
   syncedAt: number;
 };
+export type RevisionEntry = {
+  revision: number;
+  label: string;
+  body: string | null;
+  actorId: string | null;
+  at: number;
+};
+export type DecisionEntry = { actorId: string; kind: string; verdict: string | null; at: number };
 
 export type Comment = { id: number; itemId: string; authorId: string; text: string; at: number };
 
@@ -163,6 +171,9 @@ export class Workspace extends DurableObject<Env> {
           etag TEXT NOT NULL, synced_at INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS source_items_source ON source_items (source_id);
         CREATE VIRTUAL TABLE IF NOT EXISTS source_fts USING fts5(title, body, id UNINDEXED);
+        CREATE TABLE IF NOT EXISTS revisions (
+          item_id TEXT NOT NULL, revision INTEGER NOT NULL, label TEXT NOT NULL, body TEXT,
+          actor_id TEXT, at INTEGER NOT NULL, PRIMARY KEY (item_id, revision));
         CREATE TABLE IF NOT EXISTS outbox (
           id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, payload TEXT NOT NULL,
           created_at INTEGER NOT NULL, dispatched INTEGER NOT NULL DEFAULT 0);
@@ -184,6 +195,7 @@ export class Workspace extends DurableObject<Env> {
           "edits",
           "outbox",
           "contributions",
+          "revisions",
         ])
           this.sql.exec(`DELETE FROM ${t}`);
       for (const r of rows) {
@@ -440,10 +452,157 @@ export class Workspace extends DurableObject<Env> {
         now,
         now,
       );
+      this.snapshot(n.id, 1, n.label, n.body, n.authorId, now);
       if (n.origin === "candidate")
         this.outbox("candidate.created", { id: n.id, target: n.targetNode ?? null }, now);
     });
     return this.get(n.id) as ItemRecord;
+  }
+
+  // ---- revision history (B2 UX) ----
+
+  private snapshot(
+    id: string,
+    revision: number,
+    label: string,
+    body: string | null,
+    actor: string | null,
+    now: number,
+  ): void {
+    this.sql.exec(
+      `INSERT OR REPLACE INTO revisions (item_id, revision, label, body, actor_id, at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      id,
+      revision,
+      label,
+      body,
+      actor,
+      now,
+    );
+  }
+
+  /** Keep the state being replaced, so seeded items have a "before" the first time they change. */
+  private keepPrevious(rec: ItemRecord): void {
+    this.sql.exec(
+      `INSERT OR IGNORE INTO revisions (item_id, revision, label, body, actor_id, at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      rec.id,
+      rec.revision,
+      rec.label,
+      rec.body,
+      rec.authorId,
+      rec.updatedAt,
+    );
+  }
+
+  /** Every stored revision of an item, newest first. Seeded items have none until they are edited. */
+  history(id: string): RevisionEntry[] {
+    return this.sql
+      .exec("SELECT * FROM revisions WHERE item_id = ? ORDER BY revision DESC", id)
+      .toArray()
+      .map((r) => ({
+        revision: r.revision as number,
+        label: r.label as string,
+        body: (r.body as string | null) ?? null,
+        actorId: (r.actor_id as string | null) ?? null,
+        at: r.at as number,
+      }));
+  }
+
+  /**
+   * UX write path for owner items and account records: a new revision (with a snapshot) for a
+   * title, body, status or tag change. No author rules here, the API has already decided who may
+   * call it. The expected revision still guards against a stale tab.
+   */
+  update(
+    id: string,
+    expected: number,
+    patch: { title?: string; body?: string; status?: string; tags?: string[] },
+    now: number,
+    actorId: string,
+  ): EditResult {
+    const rec = this.load(id, expected);
+    if ("ok" in rec) return rec;
+    const label = patch.title ?? rec.label;
+    const body = patch.body ?? rec.body;
+    const status = patch.status ?? rec.status;
+    const tags = patch.tags ?? rec.tags;
+    const revision = rec.revision + 1;
+    this.ctx.storage.transactionSync(() => {
+      this.keepPrevious(rec);
+      this.sql.exec(
+        `UPDATE items SET label = ?, body = ?, status = ?, tags = ?, revision = ?, reviewed_by_2 = 0, updated_at = ?
+         WHERE id = ?`,
+        label,
+        body,
+        status,
+        JSON.stringify(tags),
+        revision,
+        now,
+        id,
+      );
+      this.snapshot(id, revision, label, body, actorId, now);
+      this.outbox("record.updated", { id, revision }, now);
+    });
+    return { ok: true, revision, status };
+  }
+
+  /**
+   * Working copies (drafts, preferences): replace in place, no revision. Never a candidate, never
+   * listed with the owner's notes (their own kind).
+   */
+  scratch(n: NewItem, now: number): ItemRecord {
+    this.ctx.storage.transactionSync(() => {
+      const had = this.sql.exec("SELECT 1 FROM items WHERE id = ?", n.id).toArray().length > 0;
+      if (had)
+        this.sql.exec(
+          "UPDATE items SET label = ?, body = ?, tags = ?, updated_at = ? WHERE id = ?",
+          n.label,
+          n.body,
+          JSON.stringify(n.tags ?? []),
+          now,
+          n.id,
+        );
+      else this.create(n, now);
+    });
+    return this.get(n.id) as ItemRecord;
+  }
+
+  /** Tags are metadata. Changing them is not a new revision. */
+  retag(id: string, tags: string[]): boolean {
+    const had = this.sql.exec("SELECT 1 FROM items WHERE id = ?", id).toArray().length > 0;
+    if (had) this.sql.exec("UPDATE items SET tags = ? WHERE id = ?", JSON.stringify(tags), id);
+    return had;
+  }
+
+  /** Delete one item and everything that hangs off it in this workspace. */
+  remove(id: string): boolean {
+    const had = this.sql.exec("SELECT 1 FROM items WHERE id = ?", id).toArray().length > 0;
+    if (!had) return false;
+    this.ctx.storage.transactionSync(() => {
+      for (const t of ["comments", "approvals", "edits", "contributions", "revisions"])
+        this.sql.exec(`DELETE FROM ${t} WHERE item_id = ?`, id);
+      this.sql.exec("DELETE FROM items_fts WHERE id = ?", id);
+      this.sql.exec("DELETE FROM items WHERE id = ?", id);
+    });
+    return true;
+  }
+
+  /** Reviewer decisions on one revision (request changes) and approvals, for the review thread. */
+  decisions(id: string, revision: number): DecisionEntry[] {
+    return this.sql
+      .exec(
+        "SELECT actor_id, kind, verdict, at FROM approvals WHERE item_id = ? AND revision = ? ORDER BY at",
+        id,
+        revision,
+      )
+      .toArray()
+      .map((r) => ({
+        actorId: r.actor_id as string,
+        kind: r.kind as string,
+        verdict: (r.verdict as string | null) ?? null,
+        at: r.at as number,
+      }));
   }
 
   private outbox(kind: string, payload: Record<string, unknown>, now: number): void {
@@ -558,6 +717,7 @@ export class Workspace extends DurableObject<Env> {
     const body = patch.body ?? rec.body;
     const revision = rec.revision + 1;
     this.ctx.storage.transactionSync(() => {
+      this.keepPrevious(rec);
       this.sql.exec(
         `UPDATE items SET label = ?, body = ?, status = ?, revision = ?, reviewed_by_2 = 0, updated_at = ?
          WHERE id = ?`,
@@ -576,6 +736,7 @@ export class Workspace extends DurableObject<Env> {
         now,
       );
       if (rec.origin === "seed") this.reindex(id, label);
+      this.snapshot(id, revision, label, body, actorId, now);
       this.outbox("item.edited", { id, revision }, now);
     });
     return { ok: true, revision, status };

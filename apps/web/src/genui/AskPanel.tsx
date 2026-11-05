@@ -2,16 +2,13 @@ import { Sparkles } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { ApiError, api } from "../api";
 import { ErrorBox } from "../components/ui";
+import { type Key, useI18n } from "../i18n";
 import { ViewRenderer } from "./ViewRenderer";
 
-const IDEAS = [
-  "Show AI use cases by governance",
-  "Summarise the Acme account",
-  "What is waiting for review?",
-  "Company map at a glance",
-];
+const IDEAS: Key[] = ["ask.idea.1", "ask.idea.2", "ask.idea.3", "ask.idea.4"];
 
 export function AskPanel() {
+  const { t } = useI18n();
   const [prompt, setPrompt] = useState("");
   const [plan, setPlan] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -25,7 +22,7 @@ export function AskPanel() {
       setPlan(await api.plan({ prompt: text.trim() }));
     } catch (e) {
       setPlan(null);
-      setError(e instanceof ApiError ? e.reason : "Could not build a view.");
+      setError(e instanceof ApiError ? e.reason : t("ask.failed"));
     } finally {
       setBusy(false);
     }
@@ -37,40 +34,40 @@ export function AskPanel() {
 
   return (
     <section className="card" aria-labelledby="ask-h">
-      <div className="eyebrow">Ask Secondary</div>
+      <div className="eyebrow">{t("ask.eyebrow")}</div>
       <h3 id="ask-h" style={{ margin: "4px 0 6px" }}>
-        Ask for a view
+        {t("ask.title")}
       </h3>
       <p className="muted" style={{ marginBottom: 12 }}>
-        Secondary builds the view from trusted blocks and fills them with what your role can see.
+        {t("ask.lead")}
       </p>
       <form className="ask" onSubmit={submit}>
         <label htmlFor="ask-input" className="sr-only">
-          What do you want to see
+          {t("ask.label")}
         </label>
         <input
           id="ask-input"
           className="input"
-          placeholder="For example: AI use cases by governance"
+          placeholder={t("ask.ph")}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
         <button type="submit" className="btn primary" disabled={busy || !prompt.trim()}>
-          <Sparkles size={16} aria-hidden /> {busy ? "Building" : "Build view"}
+          <Sparkles size={16} aria-hidden /> {busy ? t("ask.building") : t("ask.build")}
         </button>
       </form>
       <div className="pills" style={{ marginTop: 10 }}>
-        {IDEAS.map((i) => (
+        {IDEAS.map((k) => (
           <button
-            key={i}
+            key={k}
             type="button"
             className="pill"
             onClick={() => {
-              setPrompt(i);
-              void run(i);
+              setPrompt(t(k));
+              void run(t(k));
             }}
           >
-            {i}
+            {t(k)}
           </button>
         ))}
       </div>

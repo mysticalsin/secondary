@@ -5,26 +5,28 @@ import { api } from "../api";
 import { MapCanvas, type Projection } from "../components/MapCanvas";
 import { MapList, MapTable } from "../components/MapLists";
 import { Await, Empty, PageHead } from "../components/ui";
+import { type Key, useI18n } from "../i18n";
 import { flatten } from "../map-layout";
 import { useApp } from "../state";
 import type { Lens, MapView } from "../types";
 import { useApi } from "../useApi";
 
-const LENSES: [Lens, string][] = [
-  ["departments", "Departments"],
-  ["accounts", "Accounts"],
-  ["topics", "Topics"],
-  ["governances", "Governances"],
+const LENSES: [Lens, Key][] = [
+  ["departments", "map.lens.departments"],
+  ["accounts", "map.lens.accounts"],
+  ["topics", "map.lens.topics"],
+  ["governances", "map.lens.governances"],
 ];
 type Proj = Projection | "list" | "table";
-const PROJS: [Proj, string][] = [
-  ["ring", "Ring"],
-  ["clusters", "Clusters"],
-  ["list", "List"],
-  ["table", "Table"],
+const PROJS: [Proj, Key][] = [
+  ["ring", "map.proj.ring"],
+  ["clusters", "map.proj.clusters"],
+  ["list", "map.proj.list"],
+  ["table", "map.proj.table"],
 ];
 
 export function MapPage() {
+  const { t } = useI18n();
   const [sp, setSp] = useSearchParams();
   const { openNode, drawerId } = useApp();
   const lens = (LENSES.find((l) => l[0] === sp.get("lens"))?.[0] ?? "departments") as Lens;
@@ -42,16 +44,16 @@ export function MapPage() {
   return (
     <div className="page">
       <PageHead
-        eyebrow="Company map"
+        eyebrow={t("map.eyebrow")}
         title={
           <>
-            Where the knowledge <em>lives.</em>
+            {t("map.title.a")} <em>{t("map.title.b")}</em>
           </>
         }
-        lead="Only what your role admits is drawn. Locked scopes show their name and nothing else."
+        lead={t("map.lead")}
       />
       <div className="toolbar">
-        <div className="pills" role="group" aria-label="Lens">
+        <div className="pills" role="group" aria-label={t("map.lens")}>
           {LENSES.map(([id, label]) => (
             <button
               key={id}
@@ -60,12 +62,12 @@ export function MapPage() {
               aria-pressed={lens === id}
               onClick={() => set("lens", id)}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
         <span className="sp" />
-        <div className="pills" role="group" aria-label="Projection">
+        <div className="pills" role="group" aria-label={t("map.proj")}>
           {PROJS.map(([id, label]) => (
             <button
               key={id}
@@ -74,7 +76,7 @@ export function MapPage() {
               aria-pressed={proj === id}
               onClick={() => set("view", id)}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
@@ -82,7 +84,7 @@ export function MapPage() {
       <div className="toolbar">
         <div className="field" style={{ flex: 1, maxWidth: 360 }}>
           <label htmlFor="mapq" className="sr-only">
-            Find in this map
+            {t("map.find")}
           </label>
           <div style={{ position: "relative" }}>
             <Search
@@ -94,7 +96,7 @@ export function MapPage() {
               id="mapq"
               className="input"
               style={{ paddingLeft: 34, borderRadius: 999 }}
-              placeholder="Find in this map"
+              placeholder={t("map.find")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -105,9 +107,7 @@ export function MapPage() {
       <Await state={state} skeleton={4}>
         {(v) =>
           v.hubs.length === 0 ? (
-            <Empty title="Nothing in this lens for your role">
-              Switch lens, or ask a steward for access. Hidden scopes never appear as gaps.
-            </Empty>
+            <Empty title={t("map.empty.title")}>{t("map.empty.body")}</Empty>
           ) : (
             <>
               {proj === "ring" || proj === "clusters" ? (
@@ -136,6 +136,7 @@ export function MapPage() {
 }
 
 function MapMeta({ view, lens, selected }: { view: MapView; lens: Lens; selected: string | null }) {
+  const { t } = useI18n();
   const info = useMemo(() => {
     const hub = selected
       ? view.hubs.find(
@@ -146,10 +147,10 @@ function MapMeta({ view, lens, selected }: { view: MapView; lens: Lens; selected
       : undefined;
     return { n: view.hubs.length + flatten(view).length, hub: hub?.label };
   }, [view, selected]);
-  const label = LENSES.find((l) => l[0] === lens)?.[1] ?? lens;
+  const label = t(LENSES.find((l) => l[0] === lens)?.[1] ?? "map.lens.departments");
   return (
-    <nav className="crumbs" aria-label="Breadcrumb">
-      <span>Map</span>
+    <nav className="crumbs" aria-label={t("map.crumbs")}>
+      <span>{t("nav.map")}</span>
       <span aria-hidden>/</span>
       <span>{label}</span>
       {info.hub ? (
@@ -158,40 +159,41 @@ function MapMeta({ view, lens, selected }: { view: MapView; lens: Lens; selected
           <strong>{info.hub}</strong>
         </>
       ) : null}
-      <span className="muted">· {info.n} nodes in your view</span>
+      <span className="muted">· {t("map.nodes", { n: info.n })}</span>
     </nav>
   );
 }
 
 function Legend() {
+  const { t } = useI18n();
   return (
     <div className="legend" style={{ marginTop: 12 }}>
       <span>
         <i className="dotk" style={{ background: "#6600ae", border: "1px solid #b764ff" }} />
-        Hub
+        {t("map.lg.hub")}
       </span>
       <span>
         <i className="dotk" style={{ background: "#b764ff" }} />
-        Circle or group
+        {t("map.lg.circle")}
       </span>
       <span>
         <i className="dotk" style={{ background: "#e2c8ff" }} />
-        Topic or item
+        {t("map.lg.topic")}
       </span>
       <span>
         <i className="dotk" style={{ border: "2px solid #f8f060" }} />
-        Open decision or overdue
+        {t("map.lg.open")}
       </span>
       <span>
         <i className="dotk" style={{ border: "1.5px dashed #e2c8ff" }} />
-        Gap
+        {t("map.lg.gap")}
       </span>
       <span>
         <i className="dotk" style={{ background: "#4a3d58" }} />
-        Locked, name only
+        {t("map.lg.locked")}
       </span>
       <span aria-hidden style={{ color: "#f8f060" }}>
-        ★ Approved success story
+        ★ {t("map.lg.star")}
       </span>
     </div>
   );

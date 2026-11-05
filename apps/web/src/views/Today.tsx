@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Await, Chip, Eyebrow, fmtDate, fmtRev } from "../components/ui";
 import { AskPanel } from "../genui";
+import { getLang, useI18n } from "../i18n";
 import { PERSONAS } from "../personas";
 import { useApp } from "../state";
 import { useApi } from "../useApi";
@@ -26,72 +27,76 @@ function useNow(ms = 20000) {
   return now;
 }
 
+const loc = () => (getLang() === "fr" ? "fr-CA" : "en-GB");
+
 const timeIn = (d: Date, tz: string) =>
-  new Intl.DateTimeFormat("en-GB", {
+  new Intl.DateTimeFormat(loc(), {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
     timeZone: tz,
   }).format(d);
 
-function greeting(d: Date): string {
-  const h = Number(
+function hourToronto(d: Date): number {
+  return Number(
     new Intl.DateTimeFormat("en-GB", {
       hour: "2-digit",
       hour12: false,
       timeZone: "America/Toronto",
     }).format(d),
   );
-  return h < 12 ? "Good morning." : h < 18 ? "Good afternoon." : "Good evening.";
 }
 
 export function Today() {
   const { me, openNode } = useApp();
+  const { t, td, tn } = useI18n();
   const now = useNow();
   const review = useApi(() => api.review(), []);
   const map = useApi(() => api.map("departments"), []);
-  const accounts = useApi(() => api.accounts(), []);
+  const attention = useApi(() => api.attention(), []);
   const activity = useApi(() => api.activity(), []);
-  const role = me ? PERSONAS.find((p) => p.id === me.principal.roleIds[0])?.label : undefined;
+  const roleId = me?.principal.roleIds[0];
+  const role = roleId
+    ? td("role", roleId, PERSONAS.find((p) => p.id === roleId)?.label)
+    : undefined;
 
-  const date = new Intl.DateTimeFormat("en-CA", {
+  const date = new Intl.DateTimeFormat(getLang() === "fr" ? "fr-CA" : "en-CA", {
     weekday: "long",
     month: "long",
     day: "numeric",
     year: "numeric",
     timeZone: "America/Toronto",
   }).format(now);
+  const h = hourToronto(now);
+  const greeting = h < 12 ? t("today.morning") : h < 18 ? t("today.afternoon") : t("today.evening");
   const openHubs = (map.data?.hubs ?? [])
-    .filter((h) => h.counts && h.counts.open > 0)
+    .filter((x) => x.counts && x.counts.open > 0)
     .sort((a, b) => (b.counts?.open ?? 0) - (a.counts?.open ?? 0))
-    .slice(0, 4);
-  const openAccounts = (accounts.data ?? []).filter((a) => a.openItems > 0).slice(0, 3);
+    .slice(0, 3);
   const waiting = review.data ?? [];
-  const nothing =
-    !review.loading &&
-    !map.loading &&
-    !accounts.loading &&
-    waiting.length === 0 &&
-    openHubs.length === 0 &&
-    openAccounts.length === 0;
+  const items = attention.data?.items ?? [];
+  const settled = !review.loading && !map.loading && !attention.loading;
+  const nothing = settled && waiting.length === 0 && openHubs.length === 0 && items.length === 0;
 
   return (
     <div className="page stack" style={{ gap: 24 }}>
-      <section className="hero" aria-label="Today">
-        <Eyebrow>Toronto · {role ?? "Company Brain"}</Eyebrow>
-        <h2>{greeting(now)}</h2>
+      <section className="hero" aria-label={t("nav.today")}>
+        <Eyebrow>
+          {t("today.city")} · {role ?? t("shell.brain")}
+        </Eyebrow>
+        <h2>{greeting}</h2>
         <div className="clock">{timeIn(now, "America/Toronto")}</div>
         <p style={{ color: "var(--lilac-1)" }}>{date}</p>
       </section>
 
       <div className="grid cols-2">
         <section className="card" aria-labelledby="seedo-h">
-          <h3 id="seedo-h">What you can see and do</h3>
+          <h3 id="seedo-h">{t("today.seedo")}</h3>
           {me ? (
             <>
               <div className="seedo">
                 <div>
-                  <Eyebrow>See</Eyebrow>
+                  <Eyebrow>{t("today.see")}</Eyebrow>
                   <ul>
                     {me.describe.see.map((s) => (
                       <li key={s}>{s}</li>
@@ -99,7 +104,7 @@ export function Today() {
                   </ul>
                 </div>
                 <div>
-                  <Eyebrow>Do</Eyebrow>
+                  <Eyebrow>{t("today.do")}</Eyebrow>
                   <ul>
                     {me.describe.do.map((s) => (
                       <li key={s}>{s}</li>
@@ -108,70 +113,83 @@ export function Today() {
                 </div>
               </div>
               <div className="never">
-                <strong>Never:</strong> {me.describe.never.join(". ")}.
+                <strong>{t("today.never")}</strong> {me.describe.never.join(". ")}.
               </div>
             </>
           ) : (
-            <p className="muted">Loading your access summary.</p>
+            <p className="muted">{t("today.loadingaccess")}</p>
           )}
         </section>
 
         <section className="card" aria-labelledby="attn-h">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <h3 id="attn-h" style={{ marginBottom: 0 }}>
-              Needs attention
+              {t("today.attention")}
             </h3>
-            <Chip tone="attn">In your scope</Chip>
+            <Chip tone="attn">{t("today.inscope")}</Chip>
           </div>
           <div style={{ marginTop: 8 }}>
             {waiting.length > 0 ? (
               <div className="attn-row">
                 <div>
-                  <strong>{waiting.length}</strong>{" "}
-                  {waiting.length === 1 ? "review is" : "reviews are"} waiting for you
+                  {tn(waiting.length, "today.reviews.one", "today.reviews.other", {
+                    n: waiting.length,
+                  })}
                 </div>
                 <Link className="btn sm" to="/review">
-                  Open Review <ChevronRight size={14} aria-hidden />
+                  {t("today.openreview")} <ChevronRight size={14} aria-hidden />
                 </Link>
               </div>
             ) : null}
-            {openHubs.map((h) => (
-              <div className="attn-row" key={h.id}>
+            {items.slice(0, 6).map((it) => (
+              <div className="attn-row" key={it.id}>
                 <div>
-                  <strong>{h.counts?.open}</strong> open decisions or overdue items in {h.label}
+                  <strong>{it.title}</strong>
+                  <div className="muted" style={{ fontSize: 14 }}>
+                    {td("today.kind", it.kind)} · {it.accountName}
+                    {it.due ? ` · ${t("today.due", { date: fmtDate(it.due) })}` : ""}
+                  </div>
                 </div>
-                <button type="button" className="btn sm ghost" onClick={() => openNode(h.id)}>
-                  Details
+                <span className="row">
+                  {it.overdue ? <Chip tone="risk">{t("today.overdue")}</Chip> : null}
+                  <Link className="btn sm ghost" to={`/accounts/${it.accountId}`}>
+                    {t("today.workspace")}
+                  </Link>
+                </span>
+              </div>
+            ))}
+            {items.length > 6 ? (
+              <p className="muted" style={{ fontSize: 14, marginTop: 6 }}>
+                {t("today.more", { n: items.length - 6 })}
+              </p>
+            ) : null}
+            {openHubs.map((x) => (
+              <div className="attn-row" key={x.id}>
+                <div>{t("today.openin", { n: x.counts?.open ?? 0, name: x.label })}</div>
+                <button type="button" className="btn sm ghost" onClick={() => openNode(x.id)}>
+                  {t("common.details")}
                 </button>
               </div>
             ))}
-            {openAccounts.map((a) => (
-              <div className="attn-row" key={a.id}>
-                <div>
-                  <strong>{a.openItems}</strong> open items for {a.name}
-                </div>
-                <Link className="btn sm ghost" to={`/accounts/${a.id}`}>
-                  Workspace
-                </Link>
-              </div>
-            ))}
-            {nothing ? <p className="muted">Nothing needs you right now.</p> : null}
-            {review.error || map.error ? (
-              <p className="reason err">Some items could not load: {review.error ?? map.error}</p>
+            {nothing ? <p className="muted">{t("today.nothing")}</p> : null}
+            {review.error || map.error || attention.error ? (
+              <p className="reason err">
+                {t("today.partial", { why: review.error ?? map.error ?? attention.error ?? "" })}
+              </p>
             ) : null}
           </div>
         </section>
       </div>
 
       <section className="card" aria-labelledby="recent-h">
-        <h3 id="recent-h">Recent approved changes</h3>
+        <h3 id="recent-h">{t("today.recent")}</h3>
         {activity.error ? (
-          <p className="muted">The activity feed is not available yet.</p>
+          <p className="muted">{t("today.recent.unavailable")}</p>
         ) : (
           <Await state={activity} skeleton={2}>
             {(d) =>
               d.length === 0 ? (
-                <p className="muted">No approved changes in your scope yet.</p>
+                <p className="muted">{t("today.recent.none")}</p>
               ) : (
                 <div>
                   {d.map((e) => (
@@ -188,7 +206,7 @@ export function Today() {
                           {e.scopeLabel} · {fmtRev(e.revision)} · {fmtDate(e.at)}
                         </div>
                       </div>
-                      <Chip tone="done">Approved</Chip>
+                      <Chip tone="done">{t("status.approved")}</Chip>
                     </div>
                   ))}
                 </div>
@@ -202,18 +220,20 @@ export function Today() {
 
       <AskPanel />
 
-      <section aria-label="World strip">
-        <Eyebrow>Where the teams are</Eyebrow>
-        <div className="worldstrip" style={{ marginTop: 8 }}>
+      <section aria-labelledby="world-h">
+        <h3 id="world-h" className="eyebrow" style={{ fontWeight: 400 }}>
+          {t("today.world")}
+        </h3>
+        <ul className="worldstrip" style={{ marginTop: 8, listStyle: "none", padding: 0 }}>
           {WORLD.map(([city, tz]) => (
-            <div className="world" key={city}>
+            <li className="world" key={city}>
               <span className="muted" style={{ fontSize: 14 }}>
                 {city}
               </span>
               <b>{timeIn(now, tz)}</b>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
     </div>
   );

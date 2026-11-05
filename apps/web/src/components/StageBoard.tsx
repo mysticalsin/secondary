@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { STAGES, type Stage, type UseCase } from "../types";
 import { Chip, statusTone } from "./ui";
 
@@ -18,8 +19,9 @@ export function StageBoard({
   onOpen: (id: string) => void;
   limit?: number;
 }) {
+  const { t, td } = useI18n();
   return (
-    <div className="board" role="list" aria-label="Use cases by stage">
+    <div className="board" role="list" aria-label={t("gov.board.aria")}>
       {STAGES.map((s) => {
         const list = useCases.filter((u) => u.stage === s);
         const shown = limit ? list.slice(0, limit) : list;
@@ -33,7 +35,7 @@ export function StageBoard({
             style={{ ["--c" as string]: STAGE_COLOR[s] }}
           >
             <header>
-              <span id={id}>{s}</span>
+              <span id={id}>{td("stage", s, s)}</span>
               <span className="num muted">{list.length}</span>
             </header>
             <ul>
@@ -41,18 +43,20 @@ export function StageBoard({
                 <li key={u.id}>
                   <button type="button" className="ucard" onClick={() => onOpen(u.id)}>
                     <div>{u.title}</div>
-                    <Chip tone={statusTone(u.evidence)}>{u.evidence}</Chip>
+                    <Chip tone={statusTone(u.evidence)}>
+                      {td("status", u.evidence, u.evidence)}
+                    </Chip>
                   </button>
                 </li>
               ))}
               {list.length > shown.length ? (
                 <li className="muted" style={{ padding: "4px 6px", fontSize: 13 }}>
-                  and {list.length - shown.length} more
+                  {t("gov.board.more", { n: list.length - shown.length })}
                 </li>
               ) : null}
               {list.length === 0 ? (
                 <li className="muted" style={{ padding: 8, fontSize: 14 }}>
-                  None yet.
+                  {t("gov.board.none")}
                 </li>
               ) : null}
             </ul>

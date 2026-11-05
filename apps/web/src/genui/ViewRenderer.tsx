@@ -1,4 +1,5 @@
 import { Component, type ComponentType, type ReactNode } from "react";
+import { useT } from "../i18n";
 import type { CatalogType } from "../types";
 import {
   AccountSummary,
@@ -24,29 +25,34 @@ const REGISTRY: Record<CatalogType, ComponentType<{ props: P }>> = {
   Table: TableBlock,
 };
 
+function GuardMsg() {
+  const t = useT();
+  return (
+    <div className="errorbox" role="alert">
+      {t("gen.guard")}
+    </div>
+  );
+}
+
 class Guard extends Component<{ children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
   override render() {
-    if (this.state.failed)
-      return (
-        <div className="errorbox" role="alert">
-          This block could not be shown.
-        </div>
-      );
+    if (this.state.failed) return <GuardMsg />;
     return this.props.children;
   }
 }
 
 /** Renders a ViewPlan with the trusted catalog only. Each block fetches its own data as the viewer. */
 export function ViewRenderer({ plan }: { plan: unknown }) {
+  const t = useT();
   const clean = sanitizePlan(plan);
   if (!clean) {
     return (
       <div className="errorbox" role="alert">
-        The view plan was not valid, so nothing was drawn.
+        {t("gen.invalid")}
       </div>
     );
   }

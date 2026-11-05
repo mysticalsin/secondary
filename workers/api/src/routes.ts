@@ -35,6 +35,7 @@ import { seedTenant } from "./seed.ts";
 import { detectSensitivity, type SensitivityFlag } from "./sensitivity.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
+import { uxRoutes } from "./ux/index.ts";
 import type { Fail, ItemRecord, UserValidated } from "./workspace.ts";
 
 export const VERSION = "0.1.0";
@@ -287,6 +288,7 @@ const personalView = (
       }
     : {}),
   revision: r.revision,
+  tags: r.tags.filter((t) => t.startsWith("t:")).map((t) => t.slice(2)),
   status: r.status,
   // Always the server's scan of the current text. A scan done in the browser is never trusted.
   sensitivity_flags: detectSensitivity({ title: r.label, body: r.body }),
@@ -1030,6 +1032,8 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     });
     return c.json({ receipts });
   });
+
+  v1.route("/", uxRoutes(deps)); // B2 UX: edit, history, drafts, prefs, review detail, records
 
   v1.all("*", (c) => c.json({ error: "not_found" }, 404));
   return v1;

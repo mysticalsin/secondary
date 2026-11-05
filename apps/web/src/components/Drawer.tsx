@@ -2,11 +2,13 @@ import { ExternalLink, Lock, Sparkles, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api";
+import { useI18n } from "../i18n";
+import { useFocusTrap } from "../lib/focus";
 import { useApp } from "../state";
 import type { Counts, NodeAction, NodeDetail } from "../types";
 import { useApi } from "../useApi";
 import { ActionForm, FORM_ACTIONS } from "./ActionForm";
-import { Await, Chip, fmtRev, PlaneBadge, statusTone } from "./ui";
+import { Await, Chip, fmtRev, PlaneBadge, statusTone, useStatus } from "./ui";
 
 const GROUPS: NodeAction["group"][] = ["Collaborate", "Govern", "Admin"];
 
@@ -17,14 +19,15 @@ export interface ActionFeedback {
 }
 
 function CountsBlock({ counts }: { counts: Counts | null }) {
+  const { t } = useI18n();
   if (!counts) {
-    return <p className="muted">Counts are hidden for this scope.</p>;
+    return <p className="muted">{t("dr.counts.hidden")}</p>;
   }
   const cells: [string, number][] = [
-    ["Items", counts.items],
-    ["Topics or accounts", counts.topics],
-    ["Open", counts.open],
-    ["Gaps", counts.gaps],
+    [t("dr.counts.items"), counts.items],
+    [t("dr.counts.topics"), counts.topics],
+    [t("dr.counts.open"), counts.open],
+    [t("dr.counts.gaps"), counts.gaps],
   ];
   return (
     <div className="counts">
@@ -52,23 +55,21 @@ export function NodeDetailView({
   /** Inline input form for the action in progress (comment, edit, contribute). */
   form?: ReactNode;
 }) {
+  const { t, td } = useI18n();
+  const sl = useStatus();
   const { node } = detail;
   const locked = node.access === "locked";
   const ai = node.facts["AI processing"];
-  const askReason = !ai
-    ? "Ask this node is not available in this release."
-    : ai === "allowed"
-      ? "Ask this node is not available in this release."
-      : `AI processing is ${ai} for this account. Ask this node stays off.`;
+  const askReason = !ai || ai === "allowed" ? t("dr.ask.off") : t("dr.ask.ai", { state: sl(ai) });
   return (
     <div className="drawer-body">
       <div className="stack">
         <div className="row">
-          <span className="chip t-open">{node.kind}</span>
+          <span className="chip t-open">{td("nodekind", node.kind, node.kind)}</span>
           <PlaneBadge plane={node.plane} />
           {locked ? (
             <span className="chip t-risk">
-              <Lock size={12} aria-hidden /> Locked
+              <Lock size={12} aria-hidden /> {t("common.locked")}
             </span>
           ) : null}
           {node.badges
@@ -79,17 +80,13 @@ export function NodeDetailView({
               </span>
             ))}
         </div>
-        {locked ? (
-          <p className="muted">
-            You can see that this scope exists. Its content and counts stay hidden for your role.
-          </p>
-        ) : null}
+        {locked ? <p className="muted">{t("dr.locked.note")}</p> : null}
       </div>
 
       {!locked ? (
         <section aria-labelledby="dr-counts">
           <h4 id="dr-counts" className="eyebrow section-title">
-            Counts
+            {t("dr.counts")}
           </h4>
           <CountsBlock counts={node.counts} />
         </section>
@@ -98,12 +95,12 @@ export function NodeDetailView({
       {Object.keys(node.facts).length > 0 ? (
         <section aria-labelledby="dr-facts">
           <h4 id="dr-facts" className="eyebrow section-title">
-            Facts
+            {t("dr.facts")}
           </h4>
           <dl className="kv">
             {Object.entries(node.facts).map(([k, v]) => (
               <div key={k} style={{ display: "contents" }}>
-                <dt>{k}</dt>
+                <dt>{td("fact", k, k)}</dt>
                 <dd>{v}</dd>
               </div>
             ))}
@@ -113,7 +110,7 @@ export function NodeDetailView({
 
       <section aria-labelledby="dr-actions">
         <h4 id="dr-actions" className="eyebrow section-title">
-          Actions
+          {t("dr.actions")}
         </h4>
         {GROUPS.map((g) => {
           const list = detail.actions.filter((a) => a.group === g);
@@ -121,7 +118,7 @@ export function NodeDetailView({
           return (
             <div className="action-group" key={g}>
               <div className="muted" style={{ fontWeight: 700, fontSize: 14 }}>
-                {g}
+                {td("group", g, g)}
               </div>
               {list.map((a) => {
                 const rid = `reason-${a.action}`;
@@ -136,7 +133,7 @@ export function NodeDetailView({
                         aria-describedby={a.allowed ? undefined : rid}
                         onClick={() => onAct(a)}
                       >
-                        {a.label}
+                        {td("action", a.action, a.label)}
                       </button>
                     </div>
                     {!a.allowed ? (
@@ -161,7 +158,7 @@ export function NodeDetailView({
       {detail.comments && detail.comments.length > 0 ? (
         <section aria-labelledby="dr-comments">
           <h4 id="dr-comments" className="eyebrow section-title">
-            Comments
+            {t("dr.comments")}
           </h4>
           {detail.comments.map((c) => (
             <p className="itemrow" key={c.id}>
@@ -174,27 +171,29 @@ export function NodeDetailView({
       {detail.items.length > 0 ? (
         <section aria-labelledby="dr-items">
           <h4 id="dr-items" className="eyebrow section-title">
-            Top items
+            {t("dr.items")}
           </h4>
           {detail.items.map((it) => (
             <div className="itemrow" key={`${it.title}-${it.revision}`}>
               <strong>{it.title}</strong>
               <div className="meta">
-                <Chip tone={statusTone(it.evidence)}>Evidence: {it.evidence}</Chip>
+                <Chip tone={statusTone(it.evidence)}>
+                  {t("dr.evidence", { state: sl(it.evidence) })}
+                </Chip>
                 <span>{it.source}</span>
                 <span>{it.ownerRole}</span>
                 <span>{fmtRev(it.revision)}</span>
-                {it.reviewedBy2 ? <Chip tone="done">Two-person reviewed</Chip> : null}
+                {it.reviewedBy2 ? <Chip tone="done">{t("dr.twoperson")}</Chip> : null}
               </div>
               <div>
                 <button type="button" className="btn sm ghost" disabled aria-describedby="src-off">
-                  <ExternalLink size={14} aria-hidden /> Open in source
+                  <ExternalLink size={14} aria-hidden /> {t("dr.source")}
                 </button>
               </div>
             </div>
           ))}
           <p className="reason" id="src-off">
-            Open in source is disabled in dev.
+            {t("dr.source.off")}
           </p>
         </section>
       ) : null}
@@ -202,7 +201,7 @@ export function NodeDetailView({
       {detail.backlinks.length > 0 ? (
         <section aria-labelledby="dr-links">
           <h4 id="dr-links" className="eyebrow section-title">
-            Linked from
+            {t("dr.linked")}
           </h4>
           <ul className="linklist">
             {detail.backlinks.map((b) => (
@@ -221,10 +220,10 @@ export function NodeDetailView({
 
       <section aria-labelledby="dr-ask">
         <h4 id="dr-ask" className="eyebrow section-title">
-          Ask this node
+          {t("dr.ask")}
         </h4>
         <button type="button" className="btn sm ghost" disabled aria-describedby="ask-reason">
-          <Sparkles size={14} aria-hidden /> Ask this node
+          <Sparkles size={14} aria-hidden /> {t("dr.ask")}
         </button>
         <p className="reason" id="ask-reason" style={{ marginTop: 6 }}>
           {askReason}
@@ -236,6 +235,20 @@ export function NodeDetailView({
 
 export function Drawer() {
   const { drawerId, closeDrawer, openNode, say } = useApp();
+  const { t, td } = useI18n();
+  const boxRef = useRef<HTMLDivElement>(null);
+  // On a phone the drawer is a sheet over the page: keep focus inside it and give focus back on close.
+  const [sheet, setSheet] = useState(
+    () => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 900px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 900px)");
+    if (!mq) return;
+    const on = () => setSheet(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  useFocusTrap(boxRef, sheet && !!drawerId);
   const nav = useNavigate();
   const state = useApi(
     () => (drawerId ? api.node(drawerId) : Promise.reject(new Error("none"))),
@@ -244,6 +257,19 @@ export function Drawer() {
   const [fb, setFb] = useState<ActionFeedback | null>(null);
   const [formAction, setFormAction] = useState<"comment" | "edit" | "contribute" | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Whatever had focus when the drawer opened gets it back when the drawer closes.
+  const opener = useRef<Element | null>(null);
+  if (opener.current === null && typeof document !== "undefined")
+    opener.current = document.activeElement;
+  useEffect(
+    () => () => {
+      const el = opener.current;
+      if ((el instanceof HTMLElement || el instanceof SVGElement) && document.contains(el))
+        el.focus();
+    },
+    [],
+  );
 
   useEffect(() => {
     setFb(null);
@@ -265,32 +291,45 @@ export function Drawer() {
     }
     try {
       const res = await api.act({ nodeId: drawerId, action: a.action });
-      const text = `Done. Receipt ${res.receiptId}.`;
+      const text = t("dr.done", { receipt: res.receiptId });
       setFb({ action: a.action, ok: true, text });
-      say(`${a.label}: receipt ${res.receiptId}`);
+      say(t("dr.said", { label: td("action", a.action, a.label), receipt: res.receiptId }));
     } catch (e) {
       setFb({
         action: a.action,
         ok: false,
-        text: e instanceof ApiError ? e.reason : "The action failed.",
+        text: e instanceof ApiError ? e.reason : t("common.failed"),
       });
     }
   };
 
   return (
-    <aside className="drawer" aria-label="Details">
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the role is dialog on a phone and complementary beside the page
+    <div
+      className="drawer"
+      ref={boxRef}
+      aria-label={t("common.details")}
+      role={sheet ? "dialog" : "complementary"}
+      aria-modal={sheet ? true : undefined}
+    >
       <div className="drawer-grip" aria-hidden />
       <div className="drawer-head">
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="eyebrow">Details</div>
-          <h3>{state.data ? state.data.node.label : state.error ? "Not available" : "Loading"}</h3>
+          <div className="eyebrow">{t("common.details")}</div>
+          <h3>
+            {state.data
+              ? state.data.node.label
+              : state.error
+                ? t("dr.unavailable")
+                : t("common.loading")}
+          </h3>
         </div>
         <button
           ref={closeRef}
           type="button"
           className="icon-btn"
           onClick={closeDrawer}
-          aria-label="Close details"
+          aria-label={t("dr.close")}
         >
           <X size={18} aria-hidden />
         </button>
@@ -322,6 +361,6 @@ export function Drawer() {
           />
         )}
       </Await>
-    </aside>
+    </div>
   );
 }

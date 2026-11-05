@@ -10,13 +10,27 @@ export const shot = (name: string) => `${DIR}${name}.png`;
 export const PERSONA_KEY = "secondary.persona";
 
 /** A page whose app talks to the API as this dev persona (the same switch the header offers). */
-export async function asPersona(browser: Browser, persona: string): Promise<Page> {
-  const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
+export async function asPersona(
+  browser: Browser,
+  persona: string,
+  opts: { tour?: boolean; locale?: string; width?: number; height?: number } = {},
+): Promise<Page> {
+  const ctx = await browser.newContext({
+    viewport: { width: opts.width ?? 1360, height: opts.height ?? 860 },
+    reducedMotion: "reduce",
+    ...(opts.locale ? { locale: opts.locale } : {}),
+  });
   const page = await ctx.newPage();
   await page.addInitScript(
     ([k, v]) => window.localStorage.setItem(k as string, v as string),
     [PERSONA_KEY, persona],
   );
+  // The first-run tour stays out of the way unless a test asks for it.
+  await page.request.fetch("/v1/ux/prefs", {
+    method: "PUT",
+    headers: { "X-Demo-Persona": persona, "Content-Type": "application/json" },
+    data: JSON.stringify({ tourDone: !opts.tour, lang: null }),
+  });
   return page;
 }
 

@@ -1,20 +1,13 @@
 import { ShieldAlert } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { ApiError, api } from "../api";
+import { useI18n } from "../i18n";
 import { useApp } from "../state";
 import type { NodeDetail, PersonalFlag } from "../types";
 import { ErrorBox } from "./ui";
 
 type FormAction = "comment" | "edit" | "contribute";
 export const FORM_ACTIONS: readonly string[] = ["comment", "edit", "contribute"];
-
-const FLAG_LABEL: Record<PersonalFlag["type"], string> = {
-  email: "Email address",
-  phone: "Phone number",
-  health: "Health information",
-  family: "Family or private life",
-  hr: "HR or pay matter",
-};
 
 /**
  * Inline form for the drawer actions that need input: comment, edit and contribute. The API
@@ -34,6 +27,7 @@ export function ActionForm({
   onCancel: () => void;
 }) {
   const { me } = useApp();
+  const { t, td } = useI18n();
   const [title, setTitle] = useState(action === "edit" ? detail.node.label : "");
   const [text, setText] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -49,16 +43,16 @@ export function ActionForm({
     try {
       if (action === "comment") {
         const r = await api.act({ nodeId, action, payload: { text: text.trim() } });
-        onDone(`Comment added. Receipt ${r.receiptId}.`);
+        onDone(t("af.done.comment", { receipt: r.receiptId }));
       } else if (action === "edit") {
-        if (revision === undefined) throw new ApiError(409, "This node has no editable record.");
+        if (revision === undefined) throw new ApiError(409, t("af.noedit"));
         const r = await api.act({
           nodeId,
           action,
           revision,
           payload: { title: title.trim(), ...(text.trim() ? { body: text } : {}) },
         });
-        onDone(`Saved as revision ${r.revision ?? revision + 1}. Receipt ${r.receiptId}.`);
+        onDone(t("af.done.edit", { rev: r.revision ?? revision + 1, receipt: r.receiptId }));
       } else {
         const r = await api.act({
           nodeId,
@@ -74,14 +68,14 @@ export function ActionForm({
             acknowledged_flags: flags.map((f) => f.id),
           },
         });
-        onDone(`Sent to review. Receipt ${r.receiptId}.`);
+        onDone(t("af.done.contribute", { receipt: r.receiptId }));
       }
     } catch (x) {
       if (x instanceof ApiError && Array.isArray(x.body.sensitivity_flags)) {
         setFlags(x.body.sensitivity_flags as PersonalFlag[]);
         setConfirmed(false);
       }
-      setErr(x instanceof ApiError ? x.reason : "The action failed.");
+      setErr(x instanceof ApiError ? x.reason : t("common.failed"));
     } finally {
       setBusy(false);
     }
@@ -94,10 +88,14 @@ export function ActionForm({
     (action !== "contribute" || confirmed);
 
   return (
-    <form className="stack action-form" onSubmit={submit} aria-label={`${action} form`}>
+    <form
+      className="stack action-form"
+      onSubmit={submit}
+      aria-label={t(`af.form.${action}` as "af.form.comment")}
+    >
       {needsTitle ? (
         <div className="field">
-          <label htmlFor="af-title">Title</label>
+          <label htmlFor="af-title">{t("p.f.title")}</label>
           <input
             id="af-title"
             className="input"
@@ -108,7 +106,11 @@ export function ActionForm({
       ) : null}
       <div className="field">
         <label htmlFor="af-text">
-          {action === "comment" ? "Comment" : action === "edit" ? "New body (optional)" : "Body"}
+          {action === "comment"
+            ? t("af.f.comment")
+            : action === "edit"
+              ? t("af.f.edit")
+              : t("p.f.body")}
         </label>
         <textarea
           id="af-text"
@@ -124,7 +126,7 @@ export function ActionForm({
             <div className="flag" key={f.id}>
               <div className="row">
                 <ShieldAlert size={15} aria-hidden color="#ffb547" />
-                <strong>{FLAG_LABEL[f.type]}</strong>
+                <strong>{td("flagtype", f.type, f.type)}</strong>
               </div>
               <mark>{f.excerpt}</mark>
             </div>
@@ -139,26 +141,22 @@ export function ActionForm({
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
           />
-          <span>
-            {flags.length > 0
-              ? "I have read each flagged span and confirm this can be shared here."
-              : "I confirm this content can be shared here. It goes to review first."}
-          </span>
+          <span>{flags.length > 0 ? t("af.confirm.flags") : t("af.confirm")}</span>
         </label>
       ) : null}
       {err ? <ErrorBox message={err} /> : null}
       <div className="row">
         <button type="submit" className="btn primary sm" disabled={!ready}>
           {busy
-            ? "Sending"
+            ? t("common.sending")
             : action === "comment"
-              ? "Add comment"
+              ? t("af.add")
               : action === "edit"
-                ? "Save edit"
-                : "Send for review"}
+                ? t("af.save")
+                : t("cs.send")}
         </button>
         <button type="button" className="btn ghost sm" onClick={onCancel}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </form>
