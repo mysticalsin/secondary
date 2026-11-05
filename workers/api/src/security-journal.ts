@@ -53,7 +53,7 @@ export class SecurityJournal {
       reason: string;
       expiresAt: number | null;
       grantedBy: string;
-      approvedBy: string;
+      approvedBy: string | null;
       grantedAt: number;
     },
   ): void {
@@ -123,7 +123,7 @@ export class SecurityJournal {
               reason: string;
               expiresAt: number | null;
               grantedBy: string;
-              approvedBy: string;
+              approvedBy: string | null;
               grantedAt: number;
             };
             this.sql.exec(
