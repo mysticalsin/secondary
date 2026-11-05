@@ -24,6 +24,7 @@ import { seedTenant } from "./seed.ts";
 import { tenantStub } from "./stubs.ts";
 import type { ActAs } from "./tenant-policy.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
+import { ensureWikiSeed } from "./wiki/seed.ts";
 
 const TEAM_DOMAIN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const TENANT_ID = /^[a-z0-9_]{3,64}$/;
@@ -241,6 +242,8 @@ export const authenticate =
       await seedTenant(c.env, { tenantId, now }, false);
       s = await stub.session(sessionInput);
     }
+    // Dev only: the synthetic wiki, once per seed version (it is a no-op elsewhere and when done).
+    if (s.config && c.env.ENVIRONMENT === "dev") await ensureWikiSeed(c.env, tenantId, now);
     // Deprovisioned in the directory (SCIM): no identity source can sign this principal in.
     if (!s.active) return c.json({ error: "unauthorized" }, 401);
     if (s.limited) {

@@ -119,6 +119,11 @@ export function Reading({
       <p className="muted rd-meta">
         {t("brain.updated", { date: fmtDate(p.updatedAt), n: p.current })}
         {p.restricted ? <> {t("wiki.page.restricted", { n: p.restricted })}</> : null}
+        {p.origin === "seed" ? (
+          <span className="chip t-attn tl-chip" data-testid="seed-badge">
+            {t("brain.seed")}
+          </span>
+        ) : null}
       </p>
       <Markdown
         md={p.markdown.replace(/^#\s+.*\n+/, "")}

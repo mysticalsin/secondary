@@ -181,6 +181,8 @@ export class TenantPolicy extends DurableObject<Env> {
         this.sql.exec(`DELETE FROM ${t}`);
       this.govStore.reset(now);
       this.journal.clear();
+      // The workspaces are emptied by a reseed, so the wiki seed starts over too.
+      this.sql.exec("DELETE FROM config WHERE k IN ('seed_version', 'seed_claim')");
       this.sql.exec(
         "INSERT INTO config (k, v) VALUES ('tenant', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
         JSON.stringify(config),
@@ -220,6 +222,40 @@ export class TenantPolicy extends DurableObject<Env> {
   seedOnce(config: TenantConfig, principals: SeedPrincipal[], now: number): number | null {
     const done = this.sql.exec("SELECT 1 FROM config WHERE k = 'seeded_at'").toArray().length > 0;
     return done ? null : this.seed(config, principals, now);
+  }
+
+  /** The version of the dev wiki seed this tenant has completed (0 when none). */
+  seedVersion(): number {
+    const r = this.sql.exec("SELECT v FROM config WHERE k = 'seed_version'").toArray()[0];
+    return r ? Number(r.v) || 0 : 0;
+  }
+
+  /**
+   * Dev wiki seed: take the right to run version `version`. False when that version (or a newer one)
+   * is done, or another request holds an unexpired claim, so concurrent requests seed once. A claim
+   * that never completes expires after `leaseMs` and the next request tries again.
+   */
+  seedClaim(version: number, now: number, leaseMs = 120_000): boolean {
+    if (this.seedVersion() >= version) return false;
+    const r = this.sql.exec("SELECT v FROM config WHERE k = 'seed_claim'").toArray()[0];
+    if (r) {
+      const c = JSON.parse(r.v as string) as { version: number; at: number };
+      if (c.version >= version && now - c.at < leaseMs) return false;
+    }
+    this.sql.exec(
+      "INSERT INTO config (k, v) VALUES ('seed_claim', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+      JSON.stringify({ version, at: now }),
+    );
+    return true;
+  }
+
+  /** The claimed version finished: later requests skip it. */
+  seedDone(version: number): void {
+    this.sql.exec(
+      "INSERT INTO config (k, v) VALUES ('seed_version', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+      String(version),
+    );
+    this.sql.exec("DELETE FROM config WHERE k = 'seed_claim'");
   }
 
   /**

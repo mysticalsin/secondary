@@ -16,6 +16,12 @@ const q = encodeURIComponent;
 
 export const ux2 = {
   tree: (root: BrainRoot) => request<{ roots: TreeNode[] }>("GET", `/v1/brain/tree?root=${root}`),
+  /** Questions built from pages the caller can read, so each has an answer. */
+  suggestions: () =>
+    request<{ questions: { q: string; workspaceId: string; pageId: string }[] }>(
+      "GET",
+      "/v1/ask/suggestions",
+    ),
   questions: () => request<Question[]>("GET", "/v1/questions"),
   answer: (id: string, body: { action: string; revisionHash?: string; note?: string }) =>
     request<{ ok: boolean }>("POST", `/v1/questions/${q(id)}`, body),

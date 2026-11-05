@@ -50,6 +50,8 @@ export interface WikiPage {
   restricted: number;
   links: { id: string; title: string; local: boolean; broken?: boolean }[];
   uncited: number;
+  /** "seed" marks the dev-only synthetic pages. */
+  origin?: "human" | "seed";
   updatedAt: string;
 }
 

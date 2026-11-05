@@ -73,3 +73,13 @@ Each wiki also has an `index` (catalogue of pages with one-line summaries, used 
 - A query from a user without access to a cited source drops that citation.
 - Promote-to-global strips the account back-link and needs 2 approvers.
 - CEO, admin and auditor never see Personal Brain wikis.
+
+## Dev synthetic seed (2026-11-05)
+
+The dev environment (never staging or prod) builds a realistic synthetic brain per workspace so the Brain, Ask and the digest have something to read.
+
+- Raw records per workspace are plain data in `workers/api/src/wiki/seed-content.ts`: Company Global methods (bid playbook, pricing method, go or no-go criteria, delivery quality gates, AI usage policy, onboarding), pages per department and circle, and per fictional account a client overview, projects, an opportunity, bids, internal success stories, interactions, decisions, commitments, risks and restricted contact references. Each persona's Personal Brain gets three notes of its own. Nothing crosses a workspace.
+- The pages come from the ordinary ingest (deterministic extractor plus `seedPageDrafts`), accepted at once as `origin: seed` with `verified_by: seed:synthetic`. Pages and facts say so (`origin` on pages, frontmatter `synthetic`, a "Synthetic seed" badge in the reading pane).
+- `TenantPolicy` stores `seed_version`. When it is below `WIKI_SEED_VERSION` the next dev request runs the idempotent seed (a claim with a two minute lease stops concurrent runs). Existing records and pages are kept, and a page a person took over is never redrafted. `WIKI_SEED=off` turns it off (the test configuration does).
+- Contact records carry the tag `contacts`, so their gate is the account's `:con` node, not the account.
+

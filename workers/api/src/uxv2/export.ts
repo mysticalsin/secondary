@@ -136,6 +136,8 @@ export function exportRoutes(): Hono<AppEnv> {
             generated,
             verified: backing.length > 0 && backing.every((f) => f.verifiedBy !== null),
             status: x.p.status,
+            origin: x.p.origin,
+            ...(x.p.origin === "seed" ? { synthetic: "Synthetic seed (dev data)" } : {}),
             stale_after: new Date(x.p.updatedAt + freshness).toISOString().slice(0, 10),
           }) + body,
       });

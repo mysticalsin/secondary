@@ -6,7 +6,9 @@ export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 export const isWikiKind = (k: string): k is ProposalKind =>
   (PROPOSAL_KINDS as readonly string[]).includes(k);
 
-export type FactOrigin = "human" | "agent" | "connector";
+export type FactOrigin = "human" | "agent" | "connector" | "seed";
+/** Where a page came from. "seed" is the dev-only synthetic seed; a human edit makes it "human". */
+export type PageOrigin = "human" | "seed";
 
 export interface Fact {
   id: number;
@@ -84,6 +86,7 @@ export interface PageRow {
   summary: string;
   revision: number;
   status: "published" | "archived";
+  origin: PageOrigin;
   createdAt: number;
   updatedAt: number;
 }

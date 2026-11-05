@@ -60,6 +60,8 @@ interface Env {
   AI_TIMEOUT_MS?: string;
   /** Var. "off" stops wiki jobs from scheduling Durable Object alarms (jobs then run through POST /v1/wiki/:ws/run). */
   WIKI_ALARMS?: string;
+  /** Dev only: "off" stops the synthetic wiki seed (tests set it). */
+  WIKI_SEED?: string;
   /** Var. Wiki searches per person and minute (default 30), and wiki writes per person and minute (default 30). */
   WIKI_SEARCH_PER_MIN?: string;
   WIKI_WRITE_PER_MIN?: string;

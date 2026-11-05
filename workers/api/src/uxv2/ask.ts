@@ -26,7 +26,7 @@ import {
   type Readable,
   readableMany,
 } from "../wiki/routes.ts";
-import { citationsOf, claimLines, matchOfTokens, summaryOf, tokensOf } from "../wiki/text.ts";
+import { citationsOf, claimLines, matchOfTokens, summaryOf } from "../wiki/text.ts";
 import { recordUsage, savedFraction } from "./ledger.ts";
 import { resolveTarget, stubOf, type Target } from "./shared.ts";
 
@@ -34,6 +34,28 @@ const MAX_QUESTION = 500;
 const ASKS_PER_MIN = 30;
 const MAX_HIT_PAGES = 20;
 const MAX_LINES = 6;
+/** Pages the deterministic answer lists, and key points it adds under them. */
+const MAX_LISTED = 4;
+const MAX_KEY_POINTS = 4;
+
+/** Question words that say nothing about the topic. They are dropped unless nothing else is left. */
+const STOP = new Set(
+  "a an and any are at be by can did do does for from has have how i in is it its me my of on or our said say tell that the there this to us was we were what when where which who why will with you your about all".split(
+    " ",
+  ),
+);
+
+/** The words of a question that pick pages: lowercase words, question words removed. */
+export function askTokens(q: string): string[] {
+  const all = (
+    q
+      .normalize("NFKC")
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  ).filter((x) => x.length <= 40);
+  const content = all.filter((t) => !STOP.has(t));
+  return (content.length ? content : all).slice(0, 8);
+}
 
 const SYSTEM = `You answer a question from numbered evidence lines taken from a company knowledge base. You output one JSON object and nothing else.
 
@@ -61,7 +83,19 @@ const plain = (s: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
+interface PageHit {
+  ws: Target;
+  pageId: string;
+  title: string;
+  /** One line from the page, as this caller may read it. */
+  summary: string;
+  /** Sources of the page this caller may read. */
+  sourceIds: string[];
+}
+
 interface Retrieval {
+  /** The most relevant pages, best first: the index-first answer. */
+  hits: PageHit[];
   lines: Line[];
   /** Pages that contributed a supported line, in first-use order. */
   pages: { ws: Target; pageId: string; title: string }[];
@@ -93,6 +127,8 @@ async function retrieve(c: C, targets: Target[], tokens: string[]): Promise<Retr
   let index = 0;
   type Cand = {
     rank: number;
+    /** Question words in the title count most, then words anywhere in the page. */
+    score: number;
     ws: Target;
     pageId: string;
     title: string;
@@ -112,11 +148,30 @@ async function retrieve(c: C, targets: Target[], tokens: string[]): Promise<Retr
       if (r === undefined) continue;
       const hay = `${page.title}\n${f.text}`.toLowerCase();
       if (!tokens.some((t) => hay.includes(t))) continue;
-      cands.push({ rank: r, ws: p.t, pageId: page.id, title: page.title, text: f.text, ok });
+      const inTitle = tokens.filter((t) => page.title.toLowerCase().includes(t)).length;
+      const inPage = tokens.filter((t) => hay.includes(t)).length;
+      cands.push({
+        rank: r,
+        score: inTitle * 3 + inPage,
+        ws: p.t,
+        pageId: page.id,
+        title: page.title,
+        text: f.text,
+        ok,
+      });
     }
   });
-  cands.sort((a, b) => a.rank - b.rank || a.pageId.localeCompare(b.pageId));
+  // Each workspace ranks its own pages, and those ranks do not compare across workspaces, so the
+  // question's words decide first and the index rank only breaks ties.
+  cands.sort((a, b) => b.score - a.score || a.rank - b.rank || a.pageId.localeCompare(b.pageId));
   const lines: Line[] = [];
+  const hits: PageHit[] = cands.slice(0, MAX_LISTED).map((cand) => ({
+    ws: cand.ws,
+    pageId: cand.pageId,
+    title: cand.title,
+    summary: summaryOf(cand.text),
+    sourceIds: citationsOf(cand.text).filter((x) => cand.ok.has(x)),
+  }));
   const used = new Map<string, { ws: Target; pageId: string; title: string }>();
   let read = index;
   for (const cand of cands.slice(0, MAX_HIT_PAGES)) {
@@ -148,6 +203,7 @@ async function retrieve(c: C, targets: Target[], tokens: string[]): Promise<Retr
     }
   }
   return {
+    hits: hits.filter((h) => h.sourceIds.length > 0),
     lines: lines.slice(0, MAX_LINES),
     pages: [...used.values()],
     indexTokensRead: read,
@@ -164,7 +220,7 @@ export function askRoutes(deps: AppDeps): Hono<AppEnv> {
     const s = sess(c);
     const b = await readObject(c);
     const q = text(b.q, 1, MAX_QUESTION, "invalid_query");
-    const tokens = tokensOf(q);
+    const tokens = askTokens(q);
     if (!tokens.length) throw bad("invalid_query");
     let targets: Target[];
     if (b.scope === undefined || b.scope === null) {
@@ -215,7 +271,126 @@ export function askRoutes(deps: AppDeps): Hono<AppEnv> {
     });
   });
 
+  // Questions to start with, built from pages this caller can read, so each one has an answer.
+  r.get("/ask/suggestions", async (c) => {
+    const s = sess(c);
+    const view = viewOf(s);
+    const g = canGlobal(view);
+    const targets = admittedWikis(c).map(
+      (w): Target => ({
+        param: w.param,
+        nodeId: w.nodeId,
+        scope: w.scope,
+        label: w.label,
+        personal: w.scope.startsWith("personal:"),
+      }),
+    );
+    const per = await Promise.all(
+      targets.map(async (t) => {
+        const stub = stubOf(c, t.scope);
+        return { t, stub, pages: await stub.wikiPages() };
+      }),
+    );
+    const oks = await readableMany(
+      c,
+      per.map((p) => ({
+        w: { view, personal: p.t.personal, stub: p.stub },
+        ids: p.pages.flatMap((x) => citationsOf(x.markdown)),
+      })),
+    );
+    const found: { ws: Target; pageId: string; title: string; type: string }[] = [];
+    per.forEach((p, i) => {
+      const ok = oks[i] as Readable;
+      for (const page of p.pages) {
+        const cites = citationsOf(page.markdown);
+        if (!pageVisible(cites, ok)) continue;
+        // The page must say something this caller may read, or its question would have no answer.
+        if (!filterMarkdown(page.markdown, ok, g).text.trim()) continue;
+        found.push({ ws: p.t, pageId: page.id, title: page.title, type: page.type });
+      }
+    });
+    return c.json({ questions: suggestionsFrom(found) });
+  });
+
   return r;
+}
+
+const SUGGEST_ORDER = [
+  "method",
+  "offer",
+  "client",
+  "project",
+  "opportunity",
+  "bid",
+  "success_story",
+  "expertise",
+  "topic",
+  "interaction",
+  "decision_log",
+  "commitments",
+  "risk_register",
+  "glossary",
+];
+const SUGGEST_MAX = 5;
+
+/** One question per page, worded so the page's own title words pick it. Company pages before personal ones. */
+function suggestionsFrom(
+  pages: { ws: Target; pageId: string; title: string; type: string }[],
+): { q: string; workspaceId: string; pageId: string }[] {
+  const ask = (p: { ws: Target; title: string; type: string }): string | null => {
+    switch (p.type) {
+      case "method":
+        return `What is in the ${p.title}?`;
+      case "offer":
+        return `What does the ${p.title} include?`;
+      case "client":
+        return `Where does the ${p.title} relationship stand?`;
+      case "project":
+        return `What is the status of ${p.title}?`;
+      case "opportunity":
+        return `What is the next step on ${p.title}?`;
+      case "bid":
+        return `What is the plan for ${p.title}?`;
+      case "success_story":
+        return `What lesson came from ${p.title}?`;
+      case "expertise":
+        return `What does the ${p.title} offer?`;
+      case "topic":
+        return `What do we know about ${p.title}?`;
+      case "interaction":
+        return `What was decided in ${p.title}?`;
+      case "decision_log":
+        return `What is in the decision log of ${p.ws.label}?`;
+      case "commitments":
+        return `What are the open commitments for ${p.ws.label}?`;
+      case "risk_register":
+        return `What is in the risk register for ${p.ws.label}?`;
+      case "glossary":
+        return `What is in the ${p.title}?`;
+      default:
+        return null;
+    }
+  };
+  const sorted = [...pages].sort(
+    (a, b) =>
+      Number(a.ws.personal) - Number(b.ws.personal) ||
+      a.ws.label.localeCompare(b.ws.label) ||
+      a.title.localeCompare(b.title),
+  );
+  const out: { q: string; workspaceId: string; pageId: string }[] = [];
+  const perWs = new Map<string, number>();
+  for (const type of SUGGEST_ORDER) {
+    for (const p of sorted) {
+      if (p.type !== type || (perWs.get(p.ws.param) ?? 0) >= 2) continue;
+      const q = ask(p);
+      if (!q || out.some((x) => x.q === q)) continue;
+      out.push({ q, workspaceId: p.ws.param, pageId: p.pageId });
+      perWs.set(p.ws.param, (perWs.get(p.ws.param) ?? 0) + 1);
+      break;
+    }
+    if (out.length >= SUGGEST_MAX) break;
+  }
+  return out;
 }
 
 async function answer(
@@ -252,16 +427,45 @@ async function answer(
     return [...m.values()].map((e) => ({ ...e, sourceIds: [...e.sourceIds] }));
   };
 
-  if (!supported.length) {
+  if (!supported.length && !got.hits.length) {
     markdown = "The brain holds nothing you may read that answers this.";
     cited = [];
   } else {
-    // Deterministic answer: the supported lines, each marked with its page's citation number.
-    const pageOrder = byPage(supported.map((_, i) => i));
-    const num = new Map(pageOrder.map((p, i) => [`${p.ws.param}/${p.pageId}`, i + 1]));
-    markdown = supported
-      .map((l) => `- ${l.text} [${num.get(`${l.ws.param}/${l.pageId}`)}]`)
+    // Deterministic answer, index first: the most relevant pages with one line each, then the key
+    // points that rest on supported lines. Every item carries its page's citation number.
+    const pageOrder: { pageId: string; title: string; ws: Target; sourceIds: string[] }[] = [];
+    const key = (x: { ws: Target; pageId: string }) => `${x.ws.param}/${x.pageId}`;
+    const add = (x: { pageId: string; title: string; ws: Target; sourceIds: string[] }) => {
+      const at = pageOrder.findIndex((p) => key(p) === key(x));
+      if (at < 0) pageOrder.push({ ...x, sourceIds: [...new Set(x.sourceIds)] });
+      else
+        (pageOrder[at] as { sourceIds: string[] }).sourceIds = [
+          ...new Set([...(pageOrder[at] as { sourceIds: string[] }).sourceIds, ...x.sourceIds]),
+        ];
+    };
+    for (const h of got.hits) add(h);
+    for (const l of supported)
+      add({ pageId: l.pageId, title: l.page, ws: l.ws, sourceIds: l.sourceIds });
+    const num = new Map(pageOrder.map((p, i) => [key(p), i + 1]));
+    const listed = got.hits
+      .map((h) => {
+        // Two pages with one title (one per account) are told apart by their workspace.
+        const dup = got.hits.filter((x) => x.title === h.title).length > 1;
+        return `- **${h.title}**${dup ? ` (${h.ws.label})` : ""}${h.summary ? `: ${h.summary}` : ""} [${num.get(key(h))}]`;
+      })
       .join("\n");
+    const points = supported
+      .slice(0, MAX_KEY_POINTS)
+      .map((l) => `- ${l.text} [${num.get(key({ ws: l.ws, pageId: l.pageId }))}]`)
+      .join("\n");
+    markdown = [
+      got.hits.length
+        ? `The brain holds ${got.hits.length === 1 ? "this page" : "these pages"} on this:\n${listed}`
+        : "",
+      points ? `${got.hits.length ? "Key points:\n" : ""}${points}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     cited = pageOrder;
 
     const ai = await tryModel(c, deps, q, supported, view, send);
@@ -291,13 +495,13 @@ async function answer(
       workspaceId: p.ws.param,
       sourceIds: p.sourceIds,
     });
-  const top = got.pages[0];
+  const top = got.pages[0] ?? got.hits[0];
   const topNode = top && !top.ws.personal && view.nodes.has(top.ws.nodeId) ? top.ws.nodeId : null;
   send(
     "plan",
     (topNode ? planView(view, { nodeId: topNode }) : null) ?? planView(view, { prompt: q }),
   );
-  send("answer", { markdown, unknown: supported.length === 0 });
+  send("answer", { markdown, unknown: cited.length === 0 });
 
   const spent = model ? model.inputTokens + model.outputTokens : 0;
   await recordUsage(c.env, s.tenantId, s.principal.id, s.ctx.now, {

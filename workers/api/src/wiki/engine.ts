@@ -20,6 +20,7 @@ import {
   extractFacts,
   lintFindings,
   PAGE_ID,
+  seedPageDrafts,
   slug,
 } from "./text.ts";
 import {
@@ -95,6 +96,8 @@ export type JobContext = {
   sleep?: (ms: number) => Promise<void>;
   /** Run only these job kinds (on-demand lint or dream). */
   only?: ("ingest" | "lint" | "dream")[];
+  /** Dev seed: no model, page drafts from the records, accepted at once and marked as synthetic. */
+  seed?: boolean;
 };
 
 type Scope = {
@@ -375,7 +378,10 @@ async function ingest(
   let extracted = extractFacts(info);
   let pageDrafts: PageDraft[] = [];
   let note: string | null = null;
-  if (node.aiAllowed && !isPersonalScope(m.scopeId)) {
+  if (ctx.seed) {
+    method = "synthetic seed (deterministic extractor)";
+    pageDrafts = seedPageDrafts(info, await api.wikiPages());
+  } else if (node.aiAllowed && !isPersonalScope(m.scopeId)) {
     const r = await aiDraft(ctx, m, info, await api.wikiPages(), await aiSwitchOn(ctx, m));
     if (!r.ok && ctx.env.ENVIRONMENT !== "dev") {
       // AI is off or failed for real data: no model call and no stand-in. The deterministic extractor
@@ -426,7 +432,7 @@ async function ingest(
       sourceIds: [info.id],
       sourceHashes: { [info.id]: info.hash },
       confidence: f.confidence,
-      origin: info.kind === "source" ? "connector" : "agent",
+      origin: ctx.seed ? "seed" : info.kind === "source" ? "connector" : "agent",
       ...(f.excerpt ? { excerpt: f.excerpt } : {}),
     });
   }
@@ -448,7 +454,7 @@ async function ingest(
       kind: "wiki_ingest",
       title: `Ingest: ${info.title}`.slice(0, 200),
       rationale: `${newFacts.length} fact${newFacts.length === 1 ? "" : "s"} and ${pageDrafts.length} page draft${pageDrafts.length === 1 ? "" : "s"} from "${info.title}" by the ${method}.${note ? ` AI not used: ${note}.` : ""}`,
-      origin: "agent",
+      origin: ctx.seed ? "seed" : "agent",
       pages: pageDrafts,
       facts: newFacts,
       invalidate: [...invalidate].map(([factId, at]) => ({ factId, at })),
@@ -460,7 +466,7 @@ async function ingest(
     },
     actor,
     ctx.now,
-    { plane: node.plane, autoAccept: true },
+    { plane: node.plane, autoAccept: true, ...(ctx.seed ? { seed: true } : {}) },
   );
   await api.wikiSourceSeen(info.id, info.hash, info.title, gateNode, true, ctx.now);
   if (!("ok" in r) || !r.ok) return { triage: "failed" };

@@ -3,7 +3,15 @@
 // No I/O, no clock, no model: everything here is testable on its own.
 
 import { excludePersonalSegments, maskContacts } from "../ai/segments.ts";
-import type { Fact, Finding, PageRow, Proposal, WikiSchema } from "./types.ts";
+import type {
+  Fact,
+  Finding,
+  PageDraft,
+  PageRow,
+  Proposal,
+  SourceInfo,
+  WikiSchema,
+} from "./types.ts";
 
 // ---- hygiene ----
 
@@ -805,4 +813,82 @@ export function residualIdentifiers(text: string, identifiers: string[]): string
   if (REF_RE.test(text)) left.push("record or source id");
   REF_RE.lastIndex = 0;
   return [...new Set(left)];
+}
+
+// ---- dev seed: page drafts from raw records ----
+
+const bulletOf = /^\s*[-*]\s+/;
+const linkOnly = (line: string): boolean =>
+  !line
+    .replace(bulletOf, "")
+    .replace(/\[\[[^\]]+\]\]/g, "")
+    .replace(/[\s,;.()]+/g, "");
+
+/**
+ * The page a seed source stands for, drafted without a model. A record tagged `page:<type>` holds the
+ * page as Markdown; each claim bullet gets a citation to the record. A meeting record becomes an
+ * interaction page from its decisions, commitments and risks. A page a person has since taken over
+ * (origin "human") is never redrafted.
+ */
+export function seedPageDrafts(
+  info: Pick<SourceInfo, "id" | "title" | "body" | "tags" | "itemKind">,
+  pages: Pick<PageRow, "id" | "type" | "revision" | "origin">[],
+): PageDraft[] {
+  let type: string | null = null;
+  let title = info.title;
+  let markdown = "";
+  const tag = info.tags.find((t) => t.startsWith("page:"));
+  if (tag) {
+    type = tag.slice(5);
+    const lines = info.body.split("\n");
+    const h = lines.find((l) => /^#\s+/.test(l));
+    if (h) title = cleanText(h.replace(/^#\s+/, ""), 120) || info.title;
+    markdown = lines
+      .map((l) =>
+        bulletOf.test(l) && !linkOnly(l) && !citationsOf(l).length
+          ? `${l.trimEnd()} {src:${info.id}}`
+          : l,
+      )
+      .join("\n");
+  } else if (info.itemKind === "meeting_record") {
+    let j: Record<string, unknown> | null = null;
+    try {
+      const v: unknown = JSON.parse(info.body);
+      if (v && typeof v === "object" && !Array.isArray(v)) j = v as Record<string, unknown>;
+    } catch {
+      j = null;
+    }
+    if (!j) return [];
+    type = "interaction";
+    const list = (v: unknown): Record<string, unknown>[] =>
+      Array.isArray(v)
+        ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+        : [];
+    const part = (x: Record<string, unknown>, keys: string[]): string => {
+      const extra = keys
+        .filter((k) => typeof x[k] === "string" && x[k])
+        .map((k) => `${k} ${cleanText(x[k], 60)}`)
+        .join(", ");
+      return `- ${cleanText(x.title, 160)}${extra ? ` (${extra})` : ""} {src:${info.id}}`;
+    };
+    const out = [`# ${title}`, "", "## Summary"];
+    const when = typeof j.date === "string" ? `Held on ${j.date}. ` : "";
+    out.push(
+      `- ${when}${cleanText(j.notes, 300) || "Notes are in the raw record."} {src:${info.id}}`,
+    );
+    const sections: [string, Record<string, unknown>[], string[]][] = [
+      ["Decisions", list(j.decisions), ["status", "owner"]],
+      ["Commitments", list(j.commitments), ["owner", "due", "status"]],
+      ["Risks", list(j.risks), ["severity", "status"]],
+    ];
+    for (const [h2, items, keys] of sections)
+      if (items.length) out.push("", `## ${h2}`, ...items.slice(0, 10).map((x) => part(x, keys)));
+    markdown = out.join("\n");
+  }
+  if (!type || !markdown.trim()) return [];
+  const id = slug(title);
+  if (!PAGE_ID.test(id)) return [];
+  const cur = pages.find((p) => p.id === id);
+  if (cur && cur.origin !== "seed") return [];
+  return [{ pageId: id, type, title, baseRevision: cur?.revision ?? null, markdown }];
 }

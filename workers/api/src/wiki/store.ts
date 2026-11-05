@@ -30,8 +30,10 @@ import {
   type NewFact,
   nodeOfScope,
   type PageDraft,
+  type PageOrigin,
   type PageRow,
   type Proposal,
+  type SchemaType,
   type SourceInfo,
   type WikiSchema,
 } from "./types.ts";
@@ -51,6 +53,20 @@ export const INGEST_DEBOUNCE_MS = 10 * 60_000;
 /** A claimed job that never finishes is retried this many times, then given up (L-05). */
 const MAX_ATTEMPTS = 3;
 const DONE_JOB_KEEP_MS = 14 * DAY;
+/** Author of the synthetic raw records the dev seed writes. */
+export const SEED_ACTOR = "svc:seed";
+export type SeedDoc = {
+  id: string;
+  label: string;
+  kind: "record" | "meeting_record" | "personalitem";
+  status: string;
+  tags: string[];
+  body: string;
+  /** How many days before the seed the record is dated. */
+  ageDays: number;
+};
+/** Recorded as `verified_by` on what the dev seed accepted. */
+export const SEED_VERIFIER = "seed:synthetic";
 /** The service identity that signs what the wiki publishes on its own account (L-06). */
 export const serviceId = (scopeId: string): string => `svc:wiki:${scopeId}`;
 
@@ -67,6 +83,10 @@ export const WIKI_TABLES = [
   "wiki_findings",
   "wiki_promotions",
 ] as const;
+
+/** A record tagged "contacts" in an account is gated by the account's Contacts subspace, not the account. */
+const gateOfItem = (own: string, tagsJson: string): string =>
+  own.startsWith("a_") && tagsJson.includes('"contacts"') ? `${own}:con` : own;
 
 const hex8 = (): string =>
   [...crypto.getRandomValues(new Uint8Array(4))]
@@ -86,6 +106,8 @@ export type ProposeOpts = {
   autoAccept?: boolean;
   /** A person's proposal may cite only sources they can read (L-01). Agents omit it. */
   readable?: string[];
+  /** Dev seed only: apply at once, marked "Synthetic seed". Refused unless ENVIRONMENT is dev. */
+  seed?: boolean;
 };
 export type ProposeResult =
   | { ok: true; created: false; reason: string }
@@ -127,6 +149,7 @@ const rowPage = (r: Record<string, SqlStorageValue>): PageRow => ({
   summary: r.summary as string,
   revision: r.revision as number,
   status: r.status as "published" | "archived",
+  origin: (r.origin as string | undefined) === "seed" ? "seed" : "human",
   createdAt: r.created_at as number,
   updatedAt: r.updated_at as number,
 });
@@ -181,6 +204,14 @@ export abstract class WikiBase extends DurableObject<Env> {
       const cols = this.sql.exec("PRAGMA table_info(wiki_jobs)").toArray();
       if (!cols.some((c) => c.name === "attempts"))
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
+      // Pages made by the dev seed say so ("seed"); everything else is "human".
+      if (
+        !this.sql
+          .exec("PRAGMA table_info(wiki_pages)")
+          .toArray()
+          .some((c) => c.name === "origin")
+      )
+        this.sql.exec("ALTER TABLE wiki_pages ADD COLUMN origin TEXT NOT NULL DEFAULT 'human'");
     });
   }
 
@@ -222,6 +253,60 @@ export abstract class WikiBase extends DurableObject<Env> {
     await this.wikiTouch(tenantId, scopeId, now);
     for (const id of sourceIds.slice(0, 200))
       await this.wikiEnqueue("ingest", { sourceId: id }, now);
+  }
+
+  /**
+   * Dev seed for this workspace: create the synthetic raw records that are not here yet, extend the
+   * page types, and run the ingest for each through the deterministic path. Idempotent (an existing
+   * record or an unchanged source adds nothing) and it never touches what people wrote. Refuses
+   * anywhere but the dev environment.
+   */
+  async wikiSeedRun(
+    tenantId: string,
+    scopeId: string,
+    plane: string,
+    types: Record<string, SchemaType>,
+    docs: SeedDoc[],
+    now: number,
+  ): Promise<{ created: number; pages: number } | { refused: true }> {
+    if (this.env.ENVIRONMENT !== "dev") return { refused: true };
+    await this.wikiTouch(tenantId, scopeId, now);
+    const cur = this.wikiSchema();
+    this.wikiSetSchema({ ...cur, types: { ...types, ...cur.types } });
+    const personal = isPersonalScope(scopeId);
+    let created = 0;
+    for (const d of docs) {
+      if (!this.get(d.id)) {
+        const made = this.create(
+          {
+            id: d.id,
+            label: d.label,
+            kind: d.kind,
+            plane,
+            origin: personal ? "personal" : "record",
+            status: d.status,
+            authorId: personal ? scopeId.slice("personal:".length) : SEED_ACTOR,
+            body: d.body,
+            tags: d.tags,
+          },
+          now - d.ageDays * DAY,
+        );
+        if ("ok" in made) continue;
+        created++;
+      }
+      await this.wikiEnqueue("ingest", { sourceId: d.id }, now, now);
+    }
+    for (let round = 0; round < 60; round++) {
+      const ran = await runWikiJobs(this as unknown as WikiApi, {
+        env: this.env,
+        now,
+        dueAt: now + 1,
+        only: ["ingest"],
+        seed: true,
+      });
+      if (!ran.length) break;
+    }
+    return { created, pages: this.wikiPages().length };
   }
 
   wikiMeta(): {
@@ -316,7 +401,9 @@ export abstract class WikiBase extends DurableObject<Env> {
         itemKind: it.kind,
         updatedAt: it.updatedAt,
         gateNodeId:
-          it.kind === "candidate" ? (it.targetNode ?? nodeOfScope(scope)) : nodeOfScope(scope),
+          it.kind === "candidate"
+            ? (it.targetNode ?? nodeOfScope(scope))
+            : gateOfItem(nodeOfScope(scope), JSON.stringify(it.tags)),
       };
     }
     const s = this.sql.exec("SELECT * FROM source_items WHERE id = ?", id).toArray()[0];
@@ -346,7 +433,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     const out: { id: string; kind: "item" | "source"; title: string; gateNodeId: string }[] = [];
     for (const id of ids.slice(0, MAX_REFS)) {
       const it = this.sql
-        .exec("SELECT kind, label, status, target_node FROM items WHERE id = ?", id)
+        .exec("SELECT kind, label, status, target_node, tags FROM items WHERE id = ?", id)
         .toArray()[0];
       const kind = it?.kind as string | undefined;
       // Only a released candidate is a source, and its own target node gates it (L-02).
@@ -360,7 +447,10 @@ export abstract class WikiBase extends DurableObject<Env> {
           id,
           kind: "item",
           title: it.label as string,
-          gateNodeId: kind === "candidate" ? ((it.target_node as string | null) ?? own) : own,
+          gateNodeId:
+            kind === "candidate"
+              ? ((it.target_node as string | null) ?? own)
+              : gateOfItem(own, it.tags as string),
         });
       else {
         const s = this.sql
@@ -714,6 +804,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     actor: string | null,
     proposalId: string | null,
     now: number,
+    origin: PageOrigin = "human",
   ): boolean {
     const cur = this.pageById(p.id);
     const md = capLines(p.markdown.slice(0, MAX_PAGE_CHARS));
@@ -723,23 +814,25 @@ export abstract class WikiBase extends DurableObject<Env> {
     const summary = summaryOf(md);
     if (cur)
       this.sql.exec(
-        "UPDATE wiki_pages SET type = ?, title = ?, markdown = ?, summary = ?, revision = ?, status = 'published', updated_at = ? WHERE id = ?",
+        "UPDATE wiki_pages SET type = ?, title = ?, markdown = ?, summary = ?, revision = ?, status = 'published', origin = ?, updated_at = ? WHERE id = ?",
         p.type,
         p.title,
         md,
         summary,
         revision,
+        origin,
         now,
         p.id,
       );
     else
       this.sql.exec(
-        "INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 'published', ?, ?)",
+        "INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 'published', ?, ?, ?)",
         p.id,
         p.type,
         p.title,
         md,
         summary,
+        origin,
         now,
         now,
       );
@@ -997,6 +1090,13 @@ export abstract class WikiBase extends DurableObject<Env> {
       { id, sourceIds: titleSources.slice(0, 50) },
       now,
     );
+    // Dev seed: synthetic data accepted at once and marked as such. Never outside the dev environment.
+    if (opts.seed && p.origin === "seed" && this.env.ENVIRONMENT === "dev") {
+      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
+      this.applyProposal(p, authorId, SEED_VERIFIER, now, id);
+      this.wikiLogAppend(authorId, "seed.accepted", { id }, now);
+      return { ok: true, created: true, id, autoAccepted: true };
+    }
     if (opts.autoAccept && m.autoAccept && isPersonalScope(m.scopeId) && p.kind === "wiki_ingest") {
       this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
       this.applyProposal(p, authorId, null, now, id);
@@ -1092,6 +1192,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       );
 
     const edited = new Map(p.pages.filter((d) => d.edited).map((d) => [d.pageId, d]));
+    const origin: PageOrigin = p.origin === "seed" ? "seed" : "human";
     for (const d of p.pages) {
       if (GENERATED[d.type]) continue;
       if (
@@ -1100,6 +1201,7 @@ export abstract class WikiBase extends DurableObject<Env> {
           actor,
           proposalId,
           now,
+          origin,
         )
       )
         touched.push(d.pageId);
@@ -1130,7 +1232,13 @@ export abstract class WikiBase extends DurableObject<Env> {
         (cur ? emptyGenerated(type) : null);
       if (
         md !== null &&
-        this.savePage({ id: g.id, type, title: g.title, markdown: md }, actor, proposalId, now)
+        this.savePage(
+          { id: g.id, type, title: g.title, markdown: md },
+          actor,
+          proposalId,
+          now,
+          origin,
+        )
       )
         touched.push(g.id);
     }
@@ -1150,6 +1258,7 @@ export abstract class WikiBase extends DurableObject<Env> {
         actor,
         proposalId,
         now,
+        origin,
       )
     )
       touched.push("overview");

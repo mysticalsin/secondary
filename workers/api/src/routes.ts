@@ -42,6 +42,7 @@ import { uxv2Routes } from "./uxv2/index.ts";
 import { wikiNotify } from "./wiki/hooks.ts";
 import { proposalSources, wikiQueueRow } from "./wiki/review.ts";
 import { readableMany, sourcesReadable, wikiRoutes } from "./wiki/routes.ts";
+import { ensureWikiSeed } from "./wiki/seed.ts";
 import { isWikiKind } from "./wiki/types.ts";
 import type { Fail, ItemRecord, UserValidated } from "./workspace.ts";
 
@@ -438,7 +439,8 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       { tenantId, seed, emailDomain: domain, now: deps.now?.() ?? Date.now() },
       true,
     );
-    return c.json({ ok: true, ...summary });
+    const wiki = await ensureWikiSeed(c.env, tenantId, deps.now?.() ?? Date.now());
+    return c.json({ ok: true, ...summary, wiki });
   });
 
   v1.get("/me", (c) => {

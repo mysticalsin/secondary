@@ -31,6 +31,8 @@ export default defineConfig({
           DEV_AUTH_BYPASS_EMAIL: "dev@example.invalid",
           // Wiki jobs wait for POST /v1/wiki/:ws/run in tests; only the alarm test turns them on.
           WIKI_ALARMS: "off",
+          // The synthetic wiki seed is off by default so other tests start with empty wikis.
+          WIKI_SEED: "off",
           AUDIT_KEY_API: "test-audit-key-api-0123456789abcdef0123",
           AUDIT_KEY_READ: "test-audit-key-read-0123456789abcdef012",
           AUDIT_KEY_ERASE: "test-audit-key-erase-0123456789abcdef01",

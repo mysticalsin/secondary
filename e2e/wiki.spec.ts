@@ -35,7 +35,9 @@ test.describe("Living Wiki: ingest, review, page", () => {
     const page = await asPersona(browser, "head_bid");
     await page.goto("/wiki/c_bid");
     await settle(page);
-    await expect(page.getByText("No wiki pages yet")).toBeVisible();
+    // The dev seed already holds pages here, but nothing about this meeting.
+    await expect(page.getByRole("button", { name: "Record a meeting" })).toBeVisible();
+    await expect(page.getByText("Adopt fixed fee for phase 2")).toHaveCount(0);
     await page.getByRole("button", { name: "Record a meeting" }).click();
     await page.getByLabel("Meeting title").fill("Steering committee");
     await page.getByLabel("Date", { exact: true }).fill("2026-11-03");
@@ -50,7 +52,7 @@ test.describe("Living Wiki: ingest, review, page", () => {
     ).toBeVisible();
 
     // Nothing is published yet.
-    await expect(page.getByText("No wiki pages yet")).toBeVisible();
+    await expect(page.getByText("Adopt fixed fee for phase 2")).toHaveCount(0);
 
     // The diff is in the reviewer's queue, with its kind, and every added line names its source.
     await page.context().close();
@@ -92,7 +94,7 @@ test.describe("Living Wiki: ingest, review, page", () => {
     ).toBeVisible();
     await axe(rev, "wiki facts");
     await rev.getByRole("tab", { name: "Log" }).click();
-    await expect(rev.getByText("wiki_ingest.applied")).toBeVisible();
+    await expect(rev.getByText("wiki_ingest.applied").first()).toBeVisible();
     await rev.context().close();
   });
 
@@ -195,6 +197,29 @@ test.describe("Living Wiki: ingest, review, page", () => {
     );
     expect(over).toBeLessThanOrEqual(0);
     await axe(page, "wiki 400");
+    await page.context().close();
+  });
+
+  test("the dev brain is seeded: Ask suggests questions from readable pages and each one answers", async ({
+    browser,
+  }) => {
+    const page = await asPersona(browser, "head_bid");
+    await page.goto("/");
+    await settle(page);
+    const ideas = page.getByRole("list", { name: "Questions to start with" }).getByRole("button");
+    await expect(ideas.first()).toBeVisible();
+    const question = (await ideas.first().innerText()).trim();
+    await ideas.first().click();
+    await expect(page.getByTestId("answer")).toBeVisible();
+    await expect(page.getByTestId("unknown")).toHaveCount(0);
+    await expect(
+      page.getByRole("group", { name: "Sources" }).getByRole("link").first(),
+    ).toBeVisible();
+    expect(question.length).toBeGreaterThan(10);
+    // The Brain explorer holds synthetic pages, marked as such.
+    await page.goto("/brain?ws=core&page=bid-playbook");
+    await settle(page);
+    await expect(page.getByTestId("seed-badge")).toHaveText("Synthetic seed");
     await page.context().close();
   });
 });

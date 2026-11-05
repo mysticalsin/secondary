@@ -33,7 +33,9 @@ describe("Ask: streaming answer", () => {
   it("shows the stage while streaming, then the answer, citations as links to Brain, and the usage footer", async () => {
     wrap(<Ask />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "How do we run a project handover?" }));
+    await user.click(
+      await screen.findByRole("button", { name: "How do we run a project handover?" }),
+    );
     expect(await screen.findByTestId("stage")).toHaveTextContent("Reading the index");
     const answer = await screen.findByTestId("answer", {}, { timeout: 4000 });
     expect(answer).toHaveTextContent("Delivery handbook");
@@ -57,9 +59,9 @@ describe("Ask: streaming answer", () => {
     expect(screen.queryByRole("group", { name: "Sources" })).not.toBeInTheDocument();
   });
 
-  it("suggests questions for the role", () => {
+  it("suggests questions for the role", async () => {
     wrap(<Ask />);
-    expect(screen.getByRole("list", { name: "Questions to start with" })).toHaveTextContent(
+    expect(await screen.findByRole("list", { name: "Questions to start with" })).toHaveTextContent(
       "How do we run a project handover?",
     );
   });

@@ -1,5 +1,19 @@
 # HANDOFF
 
+## Dev wiki seed, role-aware suggestions, index-first answers (2026-11-05, Claude Opus, `main`, nothing pushed)
+
+Problem was live: the deployed dev brain had 0 wiki pages and Ask said "unknown" to its own suggestions.
+
+- Seed: `workers/api/src/wiki/seed-content.ts` (pure data per workspace: Company Global methods, department and circle pages, per account client, projects, opportunity, bids, internal success stories, interactions, decisions, commitments, risks, restricted contacts; three notes per persona's Personal Brain), `wiki/seed.ts` (`ensureWikiSeed`, `wikiSeedEnabled`), `Workspace.wikiSeedRun`. It goes through the ordinary ingest with `JobContext.seed` (deterministic extractor plus `seedPageDrafts` in `wiki/text.ts`), accepted at once as `origin: seed` (`verified_by seed:synthetic`; refused unless ENVIRONMENT is dev). Pages have an `origin` column (`seed` or `human`; a human edit makes it `human`), the page read returns it, export frontmatter has `origin` and `synthetic`, the reading pane shows "Synthetic seed". About 620 records and 730 pages in 69 workspaces, 2 s locally.
+- Versioning: `TenantPolicy` `seed_version` plus a claim with a 2 minute lease (`seedClaim`, `seedDone`); `WIKI_SEED_VERSION` in seed-content.ts. Dev only, run from the auth middleware and from `/v1/admin/seed`; a reseed resets it. A rerun creates only missing records, never redrafts a page a person owns. `WIKI_SEED=off` disables it (vitest sets it, so other suites still start empty).
+- Contacts: an item tagged `contacts` gates on `<account>:con` (`gateOfItem` in `wiki/store.ts`), so head of bid reads Acme but not its contact page.
+- Ask: `GET /v1/ask/suggestions` (questions only from pages the caller can read, each worded from the page title); the web Ask uses it and falls back to the fixed list only when the request fails (mock). Deterministic answer is index first: question words minus stop words, title weighted, a list of up to 4 pages with one line and citation, then key points; unknown only when nothing readable matches.
+- Tests: `workers/api/test/wiki-seed.test.ts` (18: pages per workspace, NDA, contacts and Personal Brain isolation, every persona's suggestions answer with citations, idempotent rerun, human pages kept, versioning, staging and prod never seed). e2e wiki spec no longer assumes an empty c_bid wiki and has a seeded-Ask test.
+- Gates: build, typecheck, `biome check .` clean. Tests fixtures 23, contracts 91, policy 57, web 62, audit 10, connector 53, ops 17, mcp 87, api 609. Playwright real stack 51 passed, mock suite 26 passed.
+- Not verified: the deployed dev tenant (behind Access, 302 from outside). Its first request after deploy runs the seed once (wait for it; if it is cut short the claim expires after 2 minutes and the next request resumes, since the run is idempotent).
+
+Updated: 2026-11-05. By: Claude (Opus).
+
 ## UX v2 integrated on `main` (2026-11-05, Claude, nothing pushed, dev redeployed)
 
 Merged `--no-ff`: `uxv2/api` (28e95e2), then `uxv2/web`. Worktrees `.worktrees/uxv2-*` removed (both clean). Design: `docs/DESIGN-UX-V2.md`; shapes: `docs/API-CONTRACT.md` "UX v2 endpoints".

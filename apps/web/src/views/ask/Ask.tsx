@@ -8,7 +8,7 @@ import { AnswerMd } from "../../lib/md";
 import { useReveal } from "../../lib/reveal";
 import { useApp } from "../../state";
 import type { ViewPlan } from "../../types";
-import { askStream } from "../../uxv2/api";
+import { askStream, ux2 } from "../../uxv2/api";
 import type { AskCitation, AskUsage } from "../../uxv2/types";
 
 interface Run {
@@ -163,7 +163,22 @@ export function Ask() {
   const { t } = useI18n();
   const { me } = useApp();
   const role = me?.principal.roleIds[0] ?? "";
-  const ideas = ROLE_IDEAS[role] ?? DEFAULT_IDEAS;
+  // Questions come from the pages this person can read, so each one has an answer. If the server
+  // cannot say (older server, mock), the role's fixed list stands in. A person who can read no
+  // page gets no suggestions rather than ones that would end in "unknown".
+  const [served, setServed] = useState<string[] | null | "failed">(null);
+  useEffect(() => {
+    let live = true;
+    ux2
+      .suggestions()
+      .then((r) => live && setServed(r.questions.map((x) => x.q)))
+      .catch(() => live && setServed("failed"));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const fixed = (ROLE_IDEAS[role] ?? DEFAULT_IDEAS).map((k) => t(k));
+  const ideas = served === null ? [] : served === "failed" ? fixed : served;
   const [text, setText] = useState("");
   const [run, setRun] = useState<Run | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -265,18 +280,18 @@ export function Ask() {
             <ArrowUp size={22} aria-hidden />
           </button>
         </form>
-        {!run ? (
+        {!run && ideas.length ? (
           <ul className="ideas" aria-label={t("ask2.ideas")}>
-            {ideas.map((k) => (
-              <li key={k}>
+            {ideas.map((q) => (
+              <li key={q}>
                 <button
                   type="button"
                   onClick={() => {
-                    setText(t(k));
-                    void ask(t(k));
+                    setText(q);
+                    void ask(q);
                   }}
                 >
-                  {t(k)}
+                  {q}
                 </button>
               </li>
             ))}

@@ -414,6 +414,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       current: page.current,
       markdown: linkText,
       summary: summaryOf(linkText),
+      origin: page.origin,
       citations: citeMap(ok, ids),
       restricted: f.dropped,
       links,
