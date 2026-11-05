@@ -42,7 +42,8 @@ export interface Role {
   grants: Grant[];
   exclusions: string[];
   never: string[];
-  elevation?: { actions: Action[]; hours: number };
+  /** `approval`: a second person (a configure holder) must approve a request before it starts. */
+  elevation?: { actions: Action[]; hours: number; approval?: boolean };
   breakGlass?: boolean;
 }
 

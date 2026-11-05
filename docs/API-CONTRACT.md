@@ -140,3 +140,16 @@ What `workers/api` must do:
 - **Release rules.** Whoever wrote or edited an item counts as its author, on every revision, for review and approve. Only the contributor edits a candidate (others comment or request changes). Knowledge reviewers hold `review` and `approve_release` on Company Global. A global release needs two distinct approvers, none of them the contributor or an editor. `own_drafts` means authored by the caller.
 - **MCP dev sign-in.** `X-Dev-Email` and `X-Dev-Persona` count only on a loopback host (localhost, 127.0.0.1) in dev with Access unset. Anywhere else `/authorize` answers 401 until the Access team domain and aud are configured.
 - **Web.** Planes in the UI use the policy names. `GET /v1/admin/roles` and `/v1/admin/audit` are bare arrays, so the web derives "structure only" from the viewer's roles (Platform admin, Auditor).
+
+## B2 GOV: governance console (`/v1/admin/*`, `workers/api/src/admin`)
+
+Roles are data in TenantPolicy (seeded from `packages/policy` roles, versioned with history). MCP can never reach these routes. Refusals are `{error, reason}` and the console shows `reason`. Every mutation writes a content-free receipt (`gov.<kind>.<propose|approve|reject|withdraw|apply>`, `gov.elev.*`, `gov.access.*`, `gov.audit.read`); free text stays in the Durable Object.
+
+- Roles: `GET /roles`, `GET /roles/:id/history`, `POST /roles`, `PUT /roles/:id` (configure holders only). An edit to a role that grants account or restricted scopes, or `configure`, is a pending change that a different configure holder approves. Others apply at once. A change that would leave nobody able to configure the tenant is refused.
+- Changes: `GET /changes`, `POST /changes/:id/approve|reject|withdraw`. The proposer can never decide. Pending changes lapse after 72 h.
+- Memberships: `GET /scopes`, `GET /principals`, `GET /memberships`, `POST /memberships {op, principalId, scope_type, scope_id, subspace?}`. A steward manages only scopes where a role of theirs holds `manage_members` (Head of Bid: the Bid circle). Restricted circles, accounts and Contacts need a second approver.
+- NDA: `GET /nda`, `POST /nda {principalId, accountId, reason, expiresAt}` (always two-person, at most one year), `POST /nda/revoke` (one person).
+- Elevation: `GET /elevation`, `GET /elevations`, `POST /elevations {hours, reason}`, `POST /elevations/:id/approve|deny|end`. Hours are capped by the role (`elevation.hours`); `elevation.approval` requires a different configure holder. Expiry is automatic.
+- Access requests: `POST /access-requests {nodeId, reason}`, `GET /access-requests?view=mine|queue`, `POST /access-requests/:id/approve|deny`. Approval adds the membership, through the two-person path for restricted scopes.
+- Inbox: `GET /notifications`, `POST /notifications/read`. Audit viewer: `GET /audit?principal&action&from&to&limit` (auditor or configure holder).
+- `GET /v1/admin/audit` rows gain `reason` and `revision`.

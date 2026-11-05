@@ -20,6 +20,7 @@ import {
 } from "@secondary/policy";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { adminRoutes } from "./admin/routes.ts";
 import { appendReceipt, fetchReceipts, newReceiptId, type Receipt } from "./audit.ts";
 import { authenticate, requireOrg, viewOf } from "./auth.ts";
 import { MAX_PROMPT, planView } from "./genui.ts";
@@ -356,6 +357,9 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.get("/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION }));
 
   v1.use("*", authenticate(deps));
+
+  // Governance console (B2 GOV): roles, memberships, requests, elevation, NDA grants, audit viewer.
+  v1.route("/admin", adminRoutes(deps));
 
   // Dev only. Needs BOTH a valid Access identity (this route sits behind `authenticate`) AND the
   // SEED_TOKEN secret, compared in constant time. Attempts are rate limited per signed-in user.

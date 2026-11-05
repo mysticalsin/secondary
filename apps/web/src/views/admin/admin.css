@@ -1,0 +1,25 @@
+.adm-bell {
+  position: relative;
+}
+.adm-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: min(360px, 90vw);
+  z-index: 40;
+}
+.adm-elev {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px var(--s4);
+  background: var(--yellow);
+  color: #140c1c;
+  font-weight: 700;
+}
+.adm-elev a {
+  color: #140c1c;
+  text-decoration: underline;
+  margin-left: auto;
+}

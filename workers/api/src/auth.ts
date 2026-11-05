@@ -7,6 +7,7 @@ import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
+import { tenantOrg } from "./admin/client.ts";
 import {
   HEADER_PRINCIPAL,
   HEADER_SIGNATURE,
@@ -202,7 +203,8 @@ export const authenticate =
       config: s.config,
       epoch: s.epoch,
       internal,
-      org: s.config ? getOrg(s.config) : null,
+      // Roles are data: the tenant's role table replaces the built-in roles (admin/client.ts).
+      org: s.config ? await tenantOrg(c.env, tenantId, getOrg(s.config), s.rolesVersion) : null,
     };
     c.set("session", session);
     await next();

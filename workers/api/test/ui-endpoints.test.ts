@@ -229,13 +229,15 @@ describe("admin", () => {
     await act("ceo", { nodeId: "core", action: "comment", payload: { text: "SECRET-78" } });
     const rows = await json(await as("platform_admin", "/v1/admin/audit"));
     expect(rows.length).toBeGreaterThan(1);
-    expect(rows[0]).toEqual({
+    expect(rows[0]).toMatchObject({
       id: expect.stringMatching(/^rcpt_/),
       at: expect.any(String),
       actor: expect.any(String),
       action: expect.any(String),
       scope: expect.any(String),
       result: expect.stringMatching(/allow|deny|rejected/),
+      // The console's audit viewer also shows the server's reason code (never content).
+      reason: expect.any(String),
     });
     expect(JSON.stringify(rows)).not.toContain("SECRET");
     for (const p of ["ceo", "head_bid", "consultant"])
