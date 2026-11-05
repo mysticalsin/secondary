@@ -14,6 +14,7 @@ import type { JobRow, ProposeOpts, ProposeResult } from "./store.ts";
 import {
   cleanText,
   dreamDrafts,
+  EXCERPT_MAX,
   type Extracted,
   extractFacts,
   lintFindings,
@@ -177,6 +178,24 @@ const ATTR = new Set(["status", "owner", "due", "severity"]);
 const KIND = new Set(["decision", "commitment", "risk"]);
 const AUTHORED = new Set(["topic", "method", "glossary", "stakeholders"]);
 
+/** The line of the source that shares the most words with the fact, so a reviewer can see what it rests on. */
+export function bestLine(source: string, fact: string): string {
+  const words = new Set(fact.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+  let best = "";
+  let score = 0;
+  for (const raw of source.split("\n").slice(0, 400)) {
+    const line = cleanText(raw, EXCERPT_MAX);
+    const n = (line.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).filter((w) =>
+      words.has(w),
+    ).length;
+    if (n > score) {
+      score = n;
+      best = line;
+    }
+  }
+  return best;
+}
+
 type AiDraft = { facts: Extracted[]; pages: PageDraft[]; newInfo: boolean };
 
 async function aiDraft(
@@ -253,6 +272,7 @@ async function aiDraft(
       object: value,
       validAt: at,
       confidence: 0.7,
+      excerpt: bestLine(text, `${title} ${value}`),
     });
   }
   const drafts: PageDraft[] = [];
@@ -400,6 +420,7 @@ async function ingest(
       sourceHashes: { [info.id]: info.hash },
       confidence: f.confidence,
       origin: info.kind === "source" ? "connector" : "agent",
+      ...(f.excerpt ? { excerpt: f.excerpt } : {}),
     });
   }
   const gateNode = info.gateNodeId;

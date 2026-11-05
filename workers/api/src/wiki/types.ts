@@ -36,6 +36,8 @@ export interface NewFact {
   sourceHashes: Record<string, string>;
   confidence: number;
   origin: FactOrigin;
+  /** The words of the source this fact was drawn from. Shown to the reviewer who can read that source (L-07). */
+  excerpt?: string;
 }
 
 export interface PageDraft {

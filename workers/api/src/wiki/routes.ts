@@ -677,8 +677,11 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       })),
       facts: v.facts.map((f) => {
         const readable = !f.sourceIds.length || sourcesReadable(f.sourceIds, ok);
+        // The excerpt is the source's own words: it follows the same rule as the fact text (L-07).
+        const { excerpt, ...bare } = f;
         return {
-          ...f,
+          ...bare,
+          ...(readable && excerpt ? { excerpt } : {}),
           subject: readable ? f.subject : RESTRICTED,
           object: readable ? f.object : RESTRICTED,
           sources: f.sourceIds

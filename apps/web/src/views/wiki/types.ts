@@ -132,6 +132,8 @@ export interface WikiProposal {
     invalidAt?: string | null;
     origin: string;
     sources: { id: string; title: string }[];
+    /** The source's own words this fact was drawn from, when the reader may see that source. */
+    excerpt?: string;
   }[];
   invalidate: { factId: number; at: string; subject: string; predicate: string; object: string }[];
   confirm: number[];

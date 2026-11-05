@@ -162,6 +162,8 @@ export type Extracted = {
   object: string;
   validAt: string;
   confidence: number;
+  /** The words of the source this fact came from, one cleaned line, shown next to the fact in review (L-07). */
+  excerpt?: string;
 };
 export type RawSource = {
   itemKind: string;
@@ -182,6 +184,8 @@ const DEFAULT_STATUS: Record<FactKind, string> = {
 };
 const ATTRS = ["status", "owner", "due", "severity"] as const;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** Longest source excerpt kept next to a fact. */
+export const EXCERPT_MAX = 240;
 const iso = (ms: number): string => new Date(ms).toISOString();
 const dayIso = (d: string): string => `${d}T00:00:00.000Z`;
 const subjectOf = (k: FactKind, title: string): string => `${k}: ${title}`;
@@ -197,6 +201,7 @@ function pushFact(
   title: string,
   attrs: Partial<Record<(typeof ATTRS)[number], unknown>>,
   validAt: string,
+  excerpt: string,
 ): void {
   const t = cleanText(title, 160);
   if (t.length < 3) return;
@@ -209,7 +214,14 @@ function pushFact(
     const v = cleanText(raw, 120);
     if (!v) continue;
     if (a === "due" && !DATE.test(v)) continue;
-    out.push({ subject: subjectOf(kind, t), predicate: a, object: v, validAt, confidence: 0.9 });
+    out.push({
+      subject: subjectOf(kind, t),
+      predicate: a,
+      object: v,
+      validAt,
+      confidence: 0.9,
+      excerpt: cleanText(excerpt, EXCERPT_MAX),
+    });
   }
 }
 
@@ -220,8 +232,20 @@ function fromJson(o: Record<string, unknown>, fallbackAt: string): Extracted[] {
     Array.isArray(v)
       ? v.slice(0, 30).filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
       : [];
+  const shown = (kind: string, x: Record<string, unknown>): string =>
+    `${kind}: ${Object.entries(x)
+      .filter(([, v]) => typeof v === "string" || typeof v === "number")
+      .map(([k, v]) => `${k} ${v}`)
+      .join(", ")}`;
   for (const d of list(o.decisions))
-    pushFact(out, "decision", d.title as string, { status: d.status, owner: d.owner }, date);
+    pushFact(
+      out,
+      "decision",
+      d.title as string,
+      { status: d.status, owner: d.owner },
+      date,
+      shown("decision", d),
+    );
   for (const c of list(o.commitments))
     pushFact(
       out,
@@ -229,9 +253,17 @@ function fromJson(o: Record<string, unknown>, fallbackAt: string): Extracted[] {
       c.title as string,
       { status: c.status, owner: c.owner, due: c.due },
       date,
+      shown("commitment", c),
     );
   for (const r of list(o.risks))
-    pushFact(out, "risk", r.title as string, { status: r.status, severity: r.severity }, date);
+    pushFact(
+      out,
+      "risk",
+      r.title as string,
+      { status: r.status, severity: r.severity },
+      date,
+      shown("risk", r),
+    );
   return out;
 }
 
@@ -261,7 +293,7 @@ function fromText(body: string, fallbackAt: string): Extracted[] {
         if (kv) attrs[(kv[1] as string).toLowerCase()] = kv[2] as string;
       }
     }
-    pushFact(out, kind, title, attrs, date);
+    pushFact(out, kind, title, attrs, date, line);
   }
   return out;
 }
@@ -281,7 +313,14 @@ export function extractFacts(s: RawSource): Extracted[] {
     const kind = section ? SECTION_KIND[section] : undefined;
     if (!kind) return [];
     const out: Extracted[] = [];
-    pushFact(out, kind, s.title, { status: s.status, owner: json?.ownerRole, due: json?.due }, at);
+    pushFact(
+      out,
+      kind,
+      s.title,
+      { status: s.status, owner: json?.ownerRole, due: json?.due },
+      at,
+      `${s.title} (record, status ${s.status})`,
+    );
     return out;
   }
   if (json) return fromJson(json, at);

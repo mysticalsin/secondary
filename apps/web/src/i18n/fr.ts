@@ -903,6 +903,7 @@ export const fr: Record<keyof typeof en, string> = {
   "wiki.prop.page.stale":
     "Cette page a changé après le brouillon. Rejetez-le et relancez le contrôle.",
   "wiki.prop.facts": "Nouveaux faits",
+  "wiki.prop.excerpt": "Extrait de la source",
   "wiki.prop.replaces": "Met fin à ces faits (ils restent dans l'historique)",
   "wiki.prop.also": "En plus",
   "wiki.prop.confirm": "Confirme {n} faits comme toujours vrais",

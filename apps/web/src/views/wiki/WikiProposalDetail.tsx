@@ -167,6 +167,12 @@ export function WikiProposalDetail({
                   {f.invalidAt ? ` > ${fmtDate(f.invalidAt)}` : ""}
                   {f.sources.length ? ` · ${f.sources.map((s) => s.title).join(", ")}` : ""}
                 </div>
+                {f.excerpt ? (
+                  <blockquote className="muted" style={{ fontSize: 14, margin: "4px 0 0" }}>
+                    <span className="visually-hidden">{t("wiki.prop.excerpt")}: </span>
+                    {f.excerpt}
+                  </blockquote>
+                ) : null}
               </li>
             ))}
           </ul>

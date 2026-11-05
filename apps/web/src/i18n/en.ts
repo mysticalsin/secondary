@@ -894,6 +894,7 @@ export const en = {
   "wiki.prop.page.edited": "Edited by a reviewer",
   "wiki.prop.page.stale": "This page changed after the draft. Reject this and run the check again.",
   "wiki.prop.facts": "New facts",
+  "wiki.prop.excerpt": "From the source",
   "wiki.prop.replaces": "Ends these facts (they stay in the history)",
   "wiki.prop.also": "Also",
   "wiki.prop.confirm": "Confirms {n} facts as still true",
