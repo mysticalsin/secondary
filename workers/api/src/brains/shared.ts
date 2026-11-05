@@ -12,7 +12,6 @@ import { type C, sess } from "../ux/util.ts";
 import { lineReadable, pageVisible, type Readable, readableMany } from "../wiki/routes.ts";
 import { citationsOf, GENERATED } from "../wiki/text.ts";
 import type { PageRow } from "../wiki/types.ts";
-import type { BrainConfig } from "./store.ts";
 import {
   computeHealth,
   defaultTemplate,
@@ -22,6 +21,7 @@ import {
   type TemplateId,
 } from "./model.ts";
 import type { Brain } from "./open.ts";
+import type { BrainConfig } from "./store.ts";
 
 export { lineReadable };
 
@@ -97,7 +97,9 @@ export async function seeBrains(c: C, brains: Brain[]): Promise<Seen[]> {
       freshnessDays,
       lint: findings,
       backlog,
-      expected: TEMPLATES[template].collections.map((x) => x.type).filter((t) => !SKIP_TYPES.has(t)),
+      expected: TEMPLATES[template].collections
+        .map((x) => x.type)
+        .filter((t) => !SKIP_TYPES.has(t)),
       skipTypes: SKIP_TYPES,
     });
     return {
@@ -117,7 +119,11 @@ export async function seeBrains(c: C, brains: Brain[]): Promise<Seen[]> {
 }
 
 /** Members and memberships of a brain, as a count. Personal is one, Global is the directory. */
-export async function readersOf(c: C, b: Brain, stored: { principalId: string }[]): Promise<number> {
+export async function readersOf(
+  c: C,
+  b: Brain,
+  stored: { principalId: string }[],
+): Promise<number> {
   const s = sess(c);
   if (b.personal) return 1;
   if (b.facts.type === "global")
@@ -125,7 +131,8 @@ export async function readersOf(c: C, b: Brain, stored: { principalId: string }[
   const kind = b.vn?.kind;
   const ids = new Set(stored.map((m) => m.principalId));
   if (kind === "circle" || kind === "department" || kind === "account")
-    for (const m of await govClient(c.env, s.tenantId).members(kind, b.nodeId)) ids.add(m.principalId);
+    for (const m of await govClient(c.env, s.tenantId).members(kind, b.nodeId))
+      ids.add(m.principalId);
   return ids.size;
 }
 
@@ -150,13 +157,13 @@ export async function cardOf(c: C, x: Seen): Promise<BrainCard> {
 }
 
 /** The wiki's own per-person limit helper, local: a Response is the refusal. */
-export async function rateLimit(
-  c: C,
-  key: string,
-  perMin: number,
-): Promise<Response | null> {
+export async function rateLimit(c: C, key: string, perMin: number): Promise<Response | null> {
   const s = sess(c);
-  const res = await tenantStub(c.env, s.tenantId).hit(`${key}:${s.principal.id}`, s.ctx.now, perMin);
+  const res = await tenantStub(c.env, s.tenantId).hit(
+    `${key}:${s.principal.id}`,
+    s.ctx.now,
+    perMin,
+  );
   if (!res.limited) return null;
   c.header("Retry-After", String(res.retryAfter));
   return c.json({ error: "rate_limited" }, 429);

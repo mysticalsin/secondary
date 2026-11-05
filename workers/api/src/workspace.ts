@@ -5,10 +5,10 @@
 // only addresses workspaces the caller's admitted view reaches. It does enforce the invariants
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
+import { BrainBase } from "./brains/store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { personalKindOf } from "./personal-kind.ts";
 import type { SensitivityFlag } from "./sensitivity.ts";
-import { BrainBase } from "./brains/store.ts";
 import { WIKI_TABLES, type WikiBase } from "./wiki/store.ts";
 import { isWikiKind } from "./wiki/types.ts";
 

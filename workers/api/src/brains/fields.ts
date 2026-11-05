@@ -6,12 +6,7 @@ import { roleAllows } from "@secondary/policy";
 import { humanIdsOf } from "../human.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import { type C, sess } from "../ux/util.ts";
-import {
-  type FieldDef,
-  fieldAppliesTo,
-  normaliseValue,
-  type Sensitivity,
-} from "./model.ts";
+import { type FieldDef, fieldAppliesTo, normaliseValue, type Sensitivity } from "./model.ts";
 import type { Brain } from "./open.ts";
 
 export type Purpose = "view" | "export" | "ai";
@@ -45,9 +40,14 @@ export async function fieldsFor(
   const s = sess(c);
   const values = new Map((await b.stub.brainFieldValues(page.id)).map((v) => [v.key, v]));
   const agent = s.internal !== null || purpose === "ai";
-  const mine = purpose === "view" && !agent ? new Set(await humanIdsOf(c.env, s)) : new Set<string>();
+  const mine =
+    purpose === "view" && !agent ? new Set(await humanIdsOf(c.env, s)) : new Set<string>();
   // A stored brain role only narrows: looked up when a confidential field makes it matter.
-  const needsRole = purpose === "view" && !agent && !b.personal && defs.some((f) => f.sensitivity === "confidential");
+  const needsRole =
+    purpose === "view" &&
+    !agent &&
+    !b.personal &&
+    defs.some((f) => f.sensitivity === "confidential");
   const role = needsRole ? await b.stub.brainRoleOf(await humanIdsOf(c.env, s)) : null;
   const canEdit = b.can.edit && roleAllows(role, "edit");
   const out: FieldOut[] = [];
@@ -95,9 +95,11 @@ export function checkWrite(
       writes.push({ key, value: null });
       continue;
     }
-    if (typeof raw !== "string") return { ok: false, status: 422, body: { error: "invalid_value", key } };
+    if (typeof raw !== "string")
+      return { ok: false, status: 422, body: { error: "invalid_value", key } };
     const v = normaliseValue(f, raw);
-    if (v === null || v === "") return { ok: false, status: 422, body: { error: "invalid_value", key } };
+    if (v === null || v === "")
+      return { ok: false, status: 422, body: { error: "invalid_value", key } };
     // Personal data about people is never stored in a shared brain.
     if (f.sensitivity === "personal" && !b.personal)
       return {

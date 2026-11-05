@@ -490,9 +490,7 @@ export function buildServer({ env, caller }: ServerDeps): McpServer {
           role: z.string().trim().max(60).optional(),
           accounts: coachList,
           recurring: coachList,
-          template: z
-            .enum(["personal", "team", "account", "bid", "practice", "global"])
-            .optional(),
+          template: z.enum(["personal", "team", "account", "bid", "practice", "global"]).optional(),
         }),
       }),
       annotations: draft,

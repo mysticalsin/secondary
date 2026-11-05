@@ -729,7 +729,10 @@ export abstract class WikiBase extends DurableObject<Env> {
       .map(rowPage);
   }
 
-  wikiPage(id: string, revision?: number): (PageRow & { current: number; hidden?: boolean }) | null {
+  wikiPage(
+    id: string,
+    revision?: number,
+  ): (PageRow & { current: number; hidden?: boolean }) | null {
     this.wikiSyncPromotions(Date.now());
     const p = this.pageById(id);
     if (!p) return null;
@@ -1666,12 +1669,12 @@ export abstract class WikiBase extends DurableObject<Env> {
       pages: this.wikiPages()
         .filter((p) => p.type !== "journal")
         .map(({ id, type, title, markdown, revision }) => ({
-        id,
-        type,
-        title,
-        markdown,
-        revision,
-      })),
+          id,
+          type,
+          title,
+          markdown,
+          revision,
+        })),
       facts,
       hashes: await this.wikiSourceHashes(ids),
       schema: this.wikiSchema(),

@@ -25,7 +25,11 @@ export const TEMPLATES: Record<TemplateId, Template> = {
   personal: {
     id: "personal",
     label: "Personal",
-    collections: [C("topic", "Topics"), C("method", "Methods", ["Summary", "Steps"]), C("glossary", "Glossary", ["Terms"])],
+    collections: [
+      C("topic", "Topics"),
+      C("method", "Methods", ["Summary", "Steps"]),
+      C("glossary", "Glossary", ["Terms"]),
+    ],
   },
   team: {
     id: "team",
@@ -88,7 +92,10 @@ export const isTemplateId = (v: unknown): v is TemplateId =>
 export const defaultTemplate = (t: BrainType): TemplateId =>
   t === "personal" ? "personal" : t === "global" ? "global" : t === "account" ? "account" : "team";
 
-export const schemaTypeOf = (c: Collection): SchemaType => ({ label: c.label, required: c.required });
+export const schemaTypeOf = (c: Collection): SchemaType => ({
+  label: c.label,
+  required: c.required,
+});
 
 // ---- business fields ----
 
@@ -112,7 +119,9 @@ export const MAX_FIELDS = 30;
 export const MAX_VALUE = 500;
 
 /** Validate a field schema from a request. Returns the clean list or a code. */
-export function parseFields(v: unknown): { ok: true; fields: FieldDef[] } | { ok: false; code: string } {
+export function parseFields(
+  v: unknown,
+): { ok: true; fields: FieldDef[] } | { ok: false; code: string } {
   if (!Array.isArray(v) || v.length > MAX_FIELDS) return { ok: false, code: "invalid_fields" };
   const seen = new Set<string>();
   const out: FieldDef[] = [];
@@ -171,7 +180,7 @@ export function normaliseValue(f: FieldDef, raw: string): string | null {
     case "number":
       return /^-?\d{1,15}(?:\.\d{1,6})?$/.test(v) ? v : null;
     case "date":
-      return /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : null;
+      return isCalendarDay(v) ? v : null;
     case "select":
       return f.options?.includes(v) ? v : null;
     case "email":
@@ -184,6 +193,13 @@ export function normaliseValue(f: FieldDef, raw: string): string | null {
       // No markup in a property: they are shown as plain text.
       return /[<>]/.test(v) ? null : v;
   }
+}
+
+/** A real calendar day in YYYY-MM-DD (2026-02-30 is not one). */
+export function isCalendarDay(v: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
 }
 
 export const fieldAppliesTo = (f: FieldDef, pageType: string): boolean =>
@@ -249,7 +265,13 @@ export function computeHealth(i: {
     freshness: { value: Math.round(freshPct), score: clamp(freshPct) },
     orphans: { value: orphans, score: orphanScore },
     backlog: i.backlog === null ? null : { value: i.backlog, score: clamp(100 - i.backlog * 5) },
-    coverage: { value: Math.round(covPct), score: clamp(covPct), have: want - missing.length, want, missing },
+    coverage: {
+      value: Math.round(covPct),
+      score: clamp(covPct),
+      have: want - missing.length,
+      want,
+      missing,
+    },
   };
   let total = 0;
   let weight = 0;

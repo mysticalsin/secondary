@@ -6,8 +6,8 @@ import { viewOf } from "../auth.ts";
 import { tenantStub } from "../stubs.ts";
 import { FLAG_KEYS } from "../tenant-policy.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
-import { isAdmin } from "../uxv2/shared.ts";
 import { audit, bad, type C, forbidden, notFound, readObject, sess, text } from "../ux/util.ts";
+import { isAdmin } from "../uxv2/shared.ts";
 import { cleanText } from "../wiki/text.ts";
 import { HOSTS, isHostId } from "./model.ts";
 
@@ -16,7 +16,9 @@ const EMAIL = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
 const COHORT_ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const iso = (ms: number): string => new Date(ms).toISOString();
 
-async function cohortInput(c: C): Promise<{ name: string; members: string[]; flags: Record<string, boolean> }> {
+async function cohortInput(
+  c: C,
+): Promise<{ name: string; members: string[]; flags: Record<string, boolean> }> {
   const b = await readObject(c);
   const name = cleanText(text(b.name, 1, 60, "invalid_name"), 60);
   if (!name) throw bad("invalid_name");
@@ -25,9 +27,11 @@ async function cohortInput(c: C): Promise<{ name: string; members: string[]; fla
   if (members.some((m) => !EMAIL.test(m) || m.length > 254)) throw bad("invalid_members");
   const flags: Record<string, boolean> = {};
   if (b.flags !== undefined) {
-    if (!b.flags || typeof b.flags !== "object" || Array.isArray(b.flags)) throw bad("invalid_flags");
+    if (!b.flags || typeof b.flags !== "object" || Array.isArray(b.flags))
+      throw bad("invalid_flags");
     for (const [k, v] of Object.entries(b.flags)) {
-      if (!(FLAG_KEYS as readonly string[]).includes(k) || typeof v !== "boolean") throw bad("invalid_flags");
+      if (!(FLAG_KEYS as readonly string[]).includes(k) || typeof v !== "boolean")
+        throw bad("invalid_flags");
       flags[k] = v;
     }
   }
@@ -83,9 +87,20 @@ export function agentRoutes(_deps: AppDeps): Hono<AppEnv> {
     const s = sess(c);
     const host = c.req.param("host");
     if (!isHostId(host)) throw notFound();
-    if (!(await audit(c, { action: "agent.revoke_host", nodeId: null, scopeId: null, revision: null })))
+    if (
+      !(await audit(c, {
+        action: "agent.revoke_host",
+        nodeId: null,
+        scopeId: null,
+        revision: null,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
-    const done = await tenantStub(c.env, s.tenantId).agentRevoke(s.principal.id, { host }, s.ctx.now);
+    const done = await tenantStub(c.env, s.tenantId).agentRevoke(
+      s.principal.id,
+      { host },
+      s.ctx.now,
+    );
     return c.json({ ok: true, revoked: done.length });
   });
 

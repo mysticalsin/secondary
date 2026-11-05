@@ -118,15 +118,20 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const card = await cardOf(c, x);
     const schema = await b.stub.wikiSchema();
     const counts = new Map<string, number>();
-    for (const p of x.visible) if (p.type !== "journal") counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
+    for (const p of x.visible)
+      if (p.type !== "journal") counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
     const expected = new Set(
       TEMPLATES[x.template].collections.map((t) => t.type).filter((t) => !SKIP_TYPES.has(t)),
     );
-    const types = new Set([...counts.keys(), ...expected]);
+    const own = Object.keys(schema.types).filter((t) => !SKIP_TYPES.has(t));
+    const types = new Set([...counts.keys(), ...expected, ...own]);
     const collections = [...types]
       .map((type) => ({
         type,
-        label: schema.types[type]?.label ?? TEMPLATES[x.template].collections.find((t) => t.type === type)?.label ?? type,
+        label:
+          schema.types[type]?.label ??
+          TEMPLATES[x.template].collections.find((t) => t.type === type)?.label ??
+          type,
         count: counts.get(type) ?? 0,
         expected: expected.has(type),
       }))
@@ -188,7 +193,14 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     if (!isTemplateId(body.template)) throw bad("invalid_template");
     const template: TemplateId = body.template;
     const s = sess(c);
-    if (!(await audit(c, { action: "brain.template", nodeId: b.nodeId, scopeId: b.scope, revision: null })))
+    if (
+      !(await audit(c, {
+        action: "brain.template",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     const added = await b.stub.brainSchemaAdd(TEMPLATES[template].collections);
     await b.stub.brainConfigSet({ template }, s.principal.id, s.ctx.now);
@@ -204,7 +216,12 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const config = await b.stub.brainConfig();
     const pub = publicationBound(b.facts);
     const every = everyoneBound(b.facts);
-    type MemberOut = { principalId: string; email: string; role: BrainRole; state: "active" | "pending" };
+    type MemberOut = {
+      principalId: string;
+      email: string;
+      role: BrainRole;
+      state: "active" | "pending";
+    };
     let members: MemberOut[] | null = null;
     if (b.can.manage && isShareable(b.facts)) {
       const tenant = tenantStub(c.env, s.tenantId);
@@ -265,10 +282,14 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const body = await readObject(c);
     const patch: { publication?: Publication; everyone?: Everyone } = {};
     if (body.publication !== undefined) {
-      if (body.publication !== "review" && body.publication !== "direct") throw bad("invalid_publication");
+      if (body.publication !== "review" && body.publication !== "direct")
+        throw bad("invalid_publication");
       const bound = publicationBound(b.facts);
       if (!bound.allowed.includes(body.publication))
-        return c.json({ error: "policy_bound", reason: bound.reason ?? "Not allowed for this brain" }, 422);
+        return c.json(
+          { error: "policy_bound", reason: bound.reason ?? "Not allowed for this brain" },
+          422,
+        );
       patch.publication = body.publication;
     }
     if (body.everyone !== undefined) {
@@ -276,12 +297,22 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
         throw bad("invalid_everyone");
       const bound = everyoneBound(b.facts);
       if (!bound.allowed.includes(body.everyone))
-        return c.json({ error: "policy_bound", reason: bound.reason ?? "Not allowed for this brain" }, 422);
+        return c.json(
+          { error: "policy_bound", reason: bound.reason ?? "Not allowed for this brain" },
+          422,
+        );
       patch.everyone = body.everyone;
     }
     if (!Object.keys(patch).length) throw bad("nothing_to_change");
     const s = sess(c);
-    if (!(await audit(c, { action: "brain.access", nodeId: b.nodeId, scopeId: b.scope, revision: null })))
+    if (
+      !(await audit(c, {
+        action: "brain.access",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     const next = await b.stub.brainConfigSet(patch, s.principal.id, s.ctx.now);
     return c.json({
@@ -295,7 +326,10 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const b = await needBrain(c, c.req.param("id"), "manage");
     if (b instanceof Response) return b;
     if (!isShareable(b.facts))
-      return c.json({ error: "personal_not_shareable", reason: "A Personal Brain is never shared" }, 422);
+      return c.json(
+        { error: "personal_not_shareable", reason: "A Personal Brain is never shared" },
+        422,
+      );
     const body = await readObject(c);
     if (!isBrainRole(body.role)) throw bad("invalid_role");
     const role: BrainRole = body.role;
@@ -306,7 +340,10 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const b = await needBrain(c, c.req.param("id"), "manage");
     if (b instanceof Response) return b;
     if (!isShareable(b.facts))
-      return c.json({ error: "personal_not_shareable", reason: "A Personal Brain is never shared" }, 422);
+      return c.json(
+        { error: "personal_not_shareable", reason: "A Personal Brain is never shared" },
+        422,
+      );
     return setMember(c, b, c.req.param("pid"), null);
   });
 
@@ -370,13 +407,17 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const limited = await rateLimit(c, "brain_coach", 20);
     if (limited) return limited;
     const body = await readObject(c);
-    const a = body.answers && typeof body.answers === "object" ? (body.answers as Record<string, unknown>) : {};
+    const a =
+      body.answers && typeof body.answers === "object"
+        ? (body.answers as Record<string, unknown>)
+        : {};
     const fallback = defaultTemplate(b.facts.type);
     let template: TemplateId = fallback;
     if (a.template !== undefined) {
       if (!isTemplateId(a.template) || a.template === "blank") throw bad("invalid_template");
       template = a.template;
-    } else if (typeof a.role === "string") template = templateForRole(cleanText(a.role, 60), fallback);
+    } else if (typeof a.role === "string")
+      template = templateForRole(cleanText(a.role, 60), fallback);
     const accounts = list(a.accounts);
     const recurring = list(a.recurring);
     const wanted: Collection[] = [...TEMPLATES[template].collections];
@@ -389,8 +430,17 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
         .replace(/[^a-z0-9]+/g, "_")
         .replace(/^_+|_+$/g, "")
         .slice(0, 40);
-      if (/^[a-z][a-z0-9_]*$/.test(type) && !wanted.some((x) => x.type === type) && !GENERATED[type] && type !== "journal")
-        wanted.push({ type, label: item.charAt(0).toUpperCase() + item.slice(1), required: ["Summary"] });
+      if (
+        /^[a-z][a-z0-9_]*$/.test(type) &&
+        !wanted.some((x) => x.type === type) &&
+        !GENERATED[type] &&
+        type !== "journal"
+      )
+        wanted.push({
+          type,
+          label: item.charAt(0).toUpperCase() + item.slice(1),
+          required: ["Summary"],
+        });
     }
     const schema = await b.stub.wikiSchema();
     const collections = wanted.map((x) => ({
@@ -400,7 +450,14 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const s = sess(c);
     const hash = (await sha256Hex(JSON.stringify([b.param, template, collections]))).slice(0, 32);
     const proposalId = `coach-${hash.slice(0, 12)}`;
-    if (!(await audit(c, { action: "brain.coach_propose", nodeId: b.nodeId, scopeId: b.scope, revision: null })))
+    if (
+      !(await audit(c, {
+        action: "brain.coach_propose",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     await b.stub.brainCoachSave(
       proposalId,
@@ -432,10 +489,20 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     const row = await b.stub.brainCoachGet(id, s.ctx.now);
     if (!row) throw notFound();
     if (row.hash !== hash)
-      return c.json({ error: "hash_mismatch", reason: "The proposal changed since you read it" }, 409);
+      return c.json(
+        { error: "hash_mismatch", reason: "The proposal changed since you read it" },
+        409,
+      );
     const plan = JSON.parse(row.body) as { template: TemplateId; collections: Collection[] };
     if (!isTemplateId(plan.template)) throw notFound();
-    if (!(await audit(c, { action: "brain.coach_apply", nodeId: b.nodeId, scopeId: b.scope, revision: null })))
+    if (
+      !(await audit(c, {
+        action: "brain.coach_apply",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     // Collections only: no page, no member. Never removes one.
     const created = await b.stub.brainSchemaAdd(plan.collections);
@@ -452,10 +519,16 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
  * on a restricted brain); a stored role only narrows. Changing a role of an existing member on a
  * restricted brain, or granting steward or owner there, needs a second person.
  */
-async function setMember(c: C, b: NonNullable<Awaited<ReturnType<typeof brainOf>>>, pid: string, role: BrainRole | null): Promise<Response> {
+async function setMember(
+  c: C,
+  b: NonNullable<Awaited<ReturnType<typeof brainOf>>>,
+  pid: string,
+  role: BrainRole | null,
+): Promise<Response> {
   const s = sess(c);
   if (!/^[A-Za-z0-9_.:@-]{1,128}$/.test(pid)) throw notFound();
-  if (pid === s.principal.id) return c.json({ error: "own_role", reason: "You cannot change your own role" }, 422);
+  if (pid === s.principal.id)
+    return c.json({ error: "own_role", reason: "You cannot change your own role" }, 422);
   const tenant = tenantStub(c.env, s.tenantId);
   if ((await tenant.emailOfPrincipal(pid)) === null) throw notFound();
   const kind = b.vn?.kind;
@@ -467,18 +540,34 @@ async function setMember(c: C, b: NonNullable<Awaited<ReturnType<typeof brainOf>
   const isMember = govMember || (await b.stub.brainMembers()).some((m) => m.principalId === pid);
   const restricted = isRestrictedBrain(b.facts);
   const heavy = role === "steward" || role === "owner";
-  const needsSecond = role !== null && isMember && (restricted || (heavy && b.facts.type === "global"));
+  const needsSecond =
+    role !== null && isMember && (restricted || (heavy && b.facts.type === "global"));
   if (needsSecond) {
     const key = `brainrole:${b.scope}:${pid}:${role}`;
     const step = await tenant.requestSecond(key, s.principal.id, s.ctx.now, s.principal.email);
     if (step === "same")
-      return c.json({ error: "same_person", reason: "A different person must confirm this change" }, 409);
+      return c.json(
+        { error: "same_person", reason: "A different person must confirm this change" },
+        409,
+      );
     if (step === "first") {
-      await audit(c, { action: "brain.role_request", nodeId: b.nodeId, scopeId: b.scope, revision: null });
+      await audit(c, {
+        action: "brain.role_request",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      });
       return c.json({ ok: true, status: "pending", member: { principalId: pid, role } }, 202);
     }
   }
-  if (!(await audit(c, { action: role ? "brain.member_set" : "brain.member_remove", nodeId: b.nodeId, scopeId: b.scope, revision: null })))
+  if (
+    !(await audit(c, {
+      action: role ? "brain.member_set" : "brain.member_remove",
+      nodeId: b.nodeId,
+      scopeId: b.scope,
+      revision: null,
+    }))
+  )
     return c.json({ error: "audit_unavailable" }, 503);
   await gov.remember(s.principal.id, s.principal.email);
 
@@ -489,7 +578,10 @@ async function setMember(c: C, b: NonNullable<Awaited<ReturnType<typeof brainOf>
     const d = scopeDescOf(requireOrg(s), kind, b.nodeId);
     if ("ok" in d) return c.json({ error: "invalid_scope" }, 422);
     if (!manageAuthority(b.view.roles, d))
-      return c.json({ error: "forbidden", reason: "Membership changes need the steward or a Platform admin" }, 403);
+      return c.json(
+        { error: "forbidden", reason: "Membership changes need the steward or a Platform admin" },
+        403,
+      );
     const wantMember = role !== null;
     if (wantMember !== govMember) {
       const made = await gov.propose(
@@ -511,6 +603,18 @@ async function setMember(c: C, b: NonNullable<Awaited<ReturnType<typeof brainOf>
   }
   if (role === null) {
     if (status === "applied") await b.stub.brainMemberRemove(pid, s.principal.id, s.ctx.now);
-  } else await b.stub.brainMemberSet(pid, role, status === "applied" ? "active" : "pending", s.principal.id, s.ctx.now);
-  return c.json({ ok: true, status, ...(changeId ? { changeId } : {}), member: { principalId: pid, role } });
+  } else
+    await b.stub.brainMemberSet(
+      pid,
+      role,
+      status === "applied" ? "active" : "pending",
+      s.principal.id,
+      s.ctx.now,
+    );
+  return c.json({
+    ok: true,
+    status,
+    ...(changeId ? { changeId } : {}),
+    member: { principalId: pid, role },
+  });
 }

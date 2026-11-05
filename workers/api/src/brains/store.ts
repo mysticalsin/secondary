@@ -9,14 +9,20 @@ import { BRAIN_ROLES } from "@secondary/policy";
 import { WikiBase } from "../wiki/store.ts";
 import { citationsOf, lineDiff } from "../wiki/text.ts";
 import { DEFAULT_SCHEMA, type SchemaType, type WikiSchema } from "../wiki/types.ts";
-import { type Collection, DAY, type FieldDef, schemaTypeOf, type TemplateId } from "./model.ts";
+import {
+  type Collection,
+  DAY,
+  type FieldDef,
+  isCalendarDay,
+  schemaTypeOf,
+  type TemplateId,
+} from "./model.ts";
 
 export type BrainFail = { ok: false; code: string; message: string };
 const fail = (code: string, message: string): BrainFail => ({ ok: false, code, message });
 
 export const JOURNAL_TYPE: SchemaType = { label: "Journal", required: [], generated: true };
 const JOURNAL_ID = /^journal-\d{4}-\d{2}-\d{2}$/;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SERVICE = "system:journal";
 const MAX_LOOKBACK_DAYS = 7;
 const SCHEMA_TYPE_KEY = /^[a-z][a-z0-9_]{0,40}$/;
@@ -119,11 +125,7 @@ export abstract class BrainBase extends WikiBase {
     };
   }
 
-  brainConfigSet(
-    patch: Partial<BrainConfig>,
-    actor: string,
-    now: number,
-  ): BrainConfig {
+  brainConfigSet(patch: Partial<BrainConfig>, actor: string, now: number): BrainConfig {
     if (patch.template) this.metaSet("brain_template", patch.template);
     if (patch.publication) this.metaSet("brain_publication", patch.publication);
     if (patch.everyone) this.metaSet("brain_everyone", patch.everyone);
@@ -166,7 +168,9 @@ export abstract class BrainBase extends WikiBase {
     if (!principalIds.length) return null;
     let best = -1;
     for (const id of principalIds.slice(0, 20)) {
-      const r = this.sql.exec("SELECT role FROM brain_members WHERE principal_id = ?", id).toArray()[0];
+      const r = this.sql
+        .exec("SELECT role FROM brain_members WHERE principal_id = ?", id)
+        .toArray()[0];
       if (r) best = Math.max(best, BRAIN_ROLES.indexOf(r.role as BrainRole));
     }
     return best < 0 ? null : (BRAIN_ROLES[best] as BrainRole);
@@ -215,7 +219,11 @@ export abstract class BrainBase extends WikiBase {
     for (const row of rows) {
       const id = row.page_id as string;
       const cur = this.sql
-        .exec("SELECT * FROM wiki_page_revisions WHERE page_id = ? AND revision = ?", id, row.rev as number)
+        .exec(
+          "SELECT * FROM wiki_page_revisions WHERE page_id = ? AND revision = ?",
+          id,
+          row.rev as number,
+        )
         .toArray()[0];
       const page = this.pageById(id);
       if (!cur || !page) continue;
@@ -244,7 +252,9 @@ export abstract class BrainBase extends WikiBase {
 
   // ---- business field values ----
 
-  brainFieldValues(pageId: string): { key: string; value: string; writtenBy: string; writtenAt: number }[] {
+  brainFieldValues(
+    pageId: string,
+  ): { key: string; value: string; writtenBy: string; writtenAt: number }[] {
     return this.sql
       .exec("SELECT * FROM brain_fields WHERE page_id = ? ORDER BY field_key", pageId)
       .toArray()
@@ -264,7 +274,11 @@ export abstract class BrainBase extends WikiBase {
   ): void {
     for (const w of writes) {
       if (w.value === null)
-        this.sql.exec("DELETE FROM brain_fields WHERE page_id = ? AND field_key = ?", pageId, w.key);
+        this.sql.exec(
+          "DELETE FROM brain_fields WHERE page_id = ? AND field_key = ?",
+          pageId,
+          w.key,
+        );
       else
         this.sql.exec(
           `INSERT INTO brain_fields (page_id, field_key, value, written_by, written_at) VALUES (?, ?, ?, ?, ?)
@@ -283,7 +297,9 @@ export abstract class BrainBase extends WikiBase {
   /** Every stored value of the brain, for the export (which keeps the harmless fields only). */
   brainAllFieldValues(): { pageId: string; key: string; value: string }[] {
     return this.sql
-      .exec("SELECT page_id, field_key, value FROM brain_fields ORDER BY page_id, field_key LIMIT 20000")
+      .exec(
+        "SELECT page_id, field_key, value FROM brain_fields ORDER BY page_id, field_key LIMIT 20000",
+      )
       .toArray()
       .map((r) => ({
         pageId: r.page_id as string,
@@ -341,7 +357,11 @@ export abstract class BrainBase extends WikiBase {
     const page = this.pageById(pageId);
     if (!page) return fail("not_found", "No such page");
     const row = this.sql
-      .exec("SELECT hidden_at FROM wiki_page_revisions WHERE page_id = ? AND revision = ?", pageId, revision)
+      .exec(
+        "SELECT hidden_at FROM wiki_page_revisions WHERE page_id = ? AND revision = ?",
+        pageId,
+        revision,
+      )
       .toArray()[0];
     if (!row) return fail("not_found", "No such version");
     if (hide && revision === page.revision)
@@ -356,7 +376,12 @@ export abstract class BrainBase extends WikiBase {
       pageId,
       revision,
     );
-    this.wikiLogAppend(actor, hide ? "version.hidden" : "version.restored", { pageId, revision }, now);
+    this.wikiLogAppend(
+      actor,
+      hide ? "version.hidden" : "version.restored",
+      { pageId, revision },
+      now,
+    );
     return { ok: true };
   }
 
@@ -379,10 +404,14 @@ export abstract class BrainBase extends WikiBase {
    * actor. A day with nothing in the log has no page. Deterministic: the same log gives the same page.
    */
   brainJournalRun(date: string, now: number): { pageId: string | null; created: boolean } {
-    if (!DATE.test(date) || Number.isNaN(Date.parse(date))) return { pageId: null, created: false };
+    if (!isCalendarDay(date)) return { pageId: null, created: false };
     const start = Date.parse(`${date}T00:00:00Z`);
     const rows = this.sql
-      .exec("SELECT kind, detail FROM wiki_log WHERE at >= ? AND at < ? ORDER BY id", start, start + DAY)
+      .exec(
+        "SELECT kind, detail FROM wiki_log WHERE at >= ? AND at < ? ORDER BY id",
+        start,
+        start + DAY,
+      )
       .toArray()
       .filter((r) => {
         const k = r.kind as string;
@@ -405,7 +434,9 @@ export abstract class BrainBase extends WikiBase {
       const d = detail(r.detail as string);
       if (kind === "wiki_ingest.proposed") n.filed++;
       else if (kind === "wiki_lint.proposed") {
-        const item = this.sql.exec("SELECT body FROM items WHERE id = ?", String(d.id)).toArray()[0];
+        const item = this.sql
+          .exec("SELECT body FROM items WHERE id = ?", String(d.id))
+          .toArray()[0];
         if (item && /"findingKey":"contra:/.test(String(item.body))) n.contradictions++;
       } else if (kind.endsWith(".applied")) {
         n.published++;
@@ -423,7 +454,9 @@ export abstract class BrainBase extends WikiBase {
       else if (kind === "proposal.edited") c.edited++;
     }
     const linked = [...touched]
-      .filter((id) => this.pageById(id)?.status === "published" && this.pageById(id)?.type !== "journal")
+      .filter(
+        (id) => this.pageById(id)?.status === "published" && this.pageById(id)?.type !== "journal",
+      )
       .sort()
       .slice(0, 30);
     const s = (k: number, one: string, many: string): string => `${k} ${k === 1 ? one : many}`;
@@ -501,7 +534,11 @@ export abstract class BrainBase extends WikiBase {
 
   brainCoachGet(id: string, now: number): CoachRow | null {
     const r = this.sql
-      .exec("SELECT * FROM brain_coach WHERE id = ? AND expires_at >= ? AND applied_at IS NULL", id, now)
+      .exec(
+        "SELECT * FROM brain_coach WHERE id = ? AND expires_at >= ? AND applied_at IS NULL",
+        id,
+        now,
+      )
       .toArray()[0];
     return r
       ? {

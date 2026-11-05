@@ -492,8 +492,7 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
     view.ctx,
     rec,
   );
-  if (!d.allowed)
-    return deny(c, wantsRelease ? "approve_release" : "review", id, scope, d.reason);
+  if (!d.allowed) return deny(c, wantsRelease ? "approve_release" : "review", id, scope, d.reason);
   if (!revisionHash)
     return c.json(
       { error: "revision_required", reason: "Name the revision you read: send revisionHash" },
@@ -570,9 +569,11 @@ export function questionRoutes(): Hono<AppEnv> {
     if (f) return f;
     const body = await readObject(c);
     const items = body.items;
-    if (!Array.isArray(items) || items.length < 1 || items.length > BATCH_MAX) throw bad("invalid_items");
+    if (!Array.isArray(items) || items.length < 1 || items.length > BATCH_MAX)
+      throw bad("invalid_items");
     const ids = new Set<string>();
-    const results: { id: string; ok: boolean; status: number; error?: string; reason?: string }[] = [];
+    const results: { id: string; ok: boolean; status: number; error?: string; reason?: string }[] =
+      [];
     for (const raw of items) {
       const it = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
       const id = typeof it?.id === "string" ? it.id : "";
@@ -602,7 +603,9 @@ export function questionRoutes(): Hono<AppEnv> {
     return c.json({ results, ok, failed: results.length - ok });
   });
 
-  r.post("/questions/:id", async (c) => resolveQuestion(c, c.req.param("id") ?? "", await readObject(c)));
+  r.post("/questions/:id", async (c) =>
+    resolveQuestion(c, c.req.param("id") ?? "", await readObject(c)),
+  );
 
   return r;
 }

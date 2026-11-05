@@ -4,11 +4,11 @@
 
 import {
   type AdmittedView,
-  effectivePublication,
   type BrainFacts,
   type BrainRole,
   brainTypeOf,
   canDoInView,
+  effectivePublication,
   isPersonalKind,
   personalRootId,
   roleAllows,
@@ -18,9 +18,9 @@ import { viewOf } from "../auth.ts";
 import { humanIdsOf } from "../human.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
+import type { FlagKey } from "../tenant-policy.ts";
 import { type C, NODE_ID, notFound, sess } from "../ux/util.ts";
 import { mayDecide } from "../wiki/review.ts";
-import type { FlagKey } from "../tenant-policy.ts";
 
 const WIKI_NODE_KINDS = new Set(["account", "circle", "department", "core"]);
 
@@ -48,17 +48,14 @@ export function admittedBrainParams(c: C): { param: string; vn: ViewNode | null 
   const view = viewOf(s);
   const out: { param: string; vn: ViewNode | null }[] = [{ param: "me", vn: null }];
   for (const vn of view.nodes.values()) {
-    if (!WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content" || isPersonalKind(vn.kind)) continue;
+    if (!WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content" || isPersonalKind(vn.kind))
+      continue;
     if (scopeOfNode(vn)) out.push({ param: vn.id, vn });
   }
   return out;
 }
 
-export async function brainOf(
-  c: C,
-  param: string,
-  humanIds?: string[],
-): Promise<Brain | null> {
+export async function brainOf(c: C, param: string, humanIds?: string[]): Promise<Brain | null> {
   const s = sess(c);
   const view = viewOf(s);
   let b: Omit<Brain, "can" | "role">;
@@ -118,7 +115,10 @@ export async function needBrain(c: C, param: string, need: Need): Promise<Brain 
   if (!b) throw notFound();
   if (need !== "read" && !b.can[need])
     return c.json(
-      { error: "forbidden", reason: `You cannot ${need === "manage" ? "manage" : need} this brain` },
+      {
+        error: "forbidden",
+        reason: `You cannot ${need === "manage" ? "manage" : need} this brain`,
+      },
       403,
     );
   await b.stub.wikiTouch(sess(c).tenantId, b.scope, sess(c).ctx.now);

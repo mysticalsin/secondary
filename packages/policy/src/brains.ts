@@ -87,7 +87,8 @@ export interface Bound<T extends string> {
 
 /** Publication mode. Account, restricted and Global brains force review. */
 export function publicationBound(b: BrainFacts): Bound<Publication> {
-  if (b.type === "personal") return { allowed: ["review", "direct"], default: "review", reason: null };
+  if (b.type === "personal")
+    return { allowed: ["review", "direct"], default: "review", reason: null };
   if (b.type === "global")
     return { allowed: ["review"], default: "review", reason: "Company Global always needs review" };
   if (isRestrictedBrain(b))
@@ -104,7 +105,11 @@ export function everyoneBound(b: BrainFacts): Bound<Everyone> {
   if (b.type === "personal")
     return { allowed: ["none"], default: "none", reason: "A Personal Brain is never shared" };
   if (b.type === "global")
-    return { allowed: ["reader"], default: "reader", reason: "Company Global is open to everyone to read" };
+    return {
+      allowed: ["reader"],
+      default: "reader",
+      reason: "Company Global is open to everyone to read",
+    };
   if (isRestrictedBrain(b))
     return {
       allowed: ["none"],

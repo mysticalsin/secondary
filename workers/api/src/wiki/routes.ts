@@ -16,8 +16,8 @@ import {
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
-import { directPublish } from "../brains/open.ts";
 import { fieldsFor } from "../brains/fields.ts";
+import { directPublish } from "../brains/open.ts";
 import { checkSourceAccess } from "../connector.ts";
 import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";

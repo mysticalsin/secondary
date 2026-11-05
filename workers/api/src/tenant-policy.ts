@@ -503,11 +503,18 @@ export class TenantPolicy extends DurableObject<Env> {
     create: boolean,
     now: number,
   ): "ok" | "not_found" | "too_many" {
-    const exists = this.sql.exec("SELECT 1 FROM pilot_cohorts WHERE id = ?", c.id).toArray().length > 0;
-    if (create && this.sql.exec("SELECT COUNT(*) AS n FROM pilot_cohorts").one().n as number >= MAX_COHORTS)
+    const exists =
+      this.sql.exec("SELECT 1 FROM pilot_cohorts WHERE id = ?", c.id).toArray().length > 0;
+    if (
+      create &&
+      (this.sql.exec("SELECT COUNT(*) AS n FROM pilot_cohorts").one().n as number) >= MAX_COHORTS
+    )
       return "too_many";
     if (!create && !exists) return "not_found";
-    const members = [...new Set(c.members.map((m) => m.trim().toLowerCase()))].slice(0, MAX_COHORT_MEMBERS);
+    const members = [...new Set(c.members.map((m) => m.trim().toLowerCase()))].slice(
+      0,
+      MAX_COHORT_MEMBERS,
+    );
     this.sql.exec(
       `INSERT INTO pilot_cohorts (id, name, members, flags, created_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, members = excluded.members, flags = excluded.flags`,
@@ -521,7 +528,9 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   pilotDelete(id: string): boolean {
-    return this.sql.exec("DELETE FROM pilot_cohorts WHERE id = ? RETURNING 1", id).toArray().length > 0;
+    return (
+      this.sql.exec("DELETE FROM pilot_cohorts WHERE id = ? RETURNING 1", id).toArray().length > 0
+    );
   }
 
   /** A person's name leaves every invite list (erasure). */
@@ -542,7 +551,8 @@ export class TenantPolicy extends DurableObject<Env> {
     const out = {} as Record<FlagKey, boolean>;
     for (const k of FLAG_KEYS) {
       const setBy = cohorts.filter((c) => Object.hasOwn(c.flags, k));
-      out[k] = setBy.length === 0 || setBy.some((c) => c.flags[k] === true && c.members.includes(e));
+      out[k] =
+        setBy.length === 0 || setBy.some((c) => c.flags[k] === true && c.members.includes(e));
     }
     return out;
   }
@@ -858,8 +868,9 @@ export class TenantPolicy extends DurableObject<Env> {
   /** Right to erasure for the directory: identity, roles, memberships, grants, elevations, counters. */
   erasePrincipal(principalId: string): number {
     const erasedEmail =
-      (this.sql.exec("SELECT lower(email) AS e FROM principals WHERE id = ?", principalId).toArray()[0]
-        ?.e as string | undefined) ??
+      (this.sql
+        .exec("SELECT lower(email) AS e FROM principals WHERE id = ?", principalId)
+        .toArray()[0]?.e as string | undefined) ??
       (this.sql
         .exec("SELECT email AS e FROM gov_identity WHERE principal_id = ?", principalId)
         .toArray()[0]?.e as string | undefined);

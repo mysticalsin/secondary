@@ -59,7 +59,10 @@ const baseName = (path: string): string => (path.split("/").pop() ?? path).repla
 
 function titleOf(meta: Record<string, string>, body: string, path: string): string {
   const h1 = /^#\s+(.+?)\s*#*\s*$/m.exec(body)?.[1];
-  const t = (meta.title || h1 || baseName(path)).replace(/\s+/g, " ").replace(/[{}[\]<>]/g, "").trim();
+  const t = (meta.title || h1 || baseName(path))
+    .replace(/\s+/g, " ")
+    .replace(/[{}[\]<>]/g, "")
+    .trim();
   return t.slice(0, MAX_TITLE);
 }
 
@@ -71,7 +74,8 @@ function finish(
   const skipped: Skipped[] = [];
   const used = new Set<string>();
   const byKey = new Map<string, string>();
-  const staged: { path: string; title: string; type: string | null; body: string; id: string }[] = [];
+  const staged: { path: string; title: string; type: string | null; body: string; id: string }[] =
+    [];
   for (const d of raw) {
     let base = slug(d.idHint && PAGE_ID.test(d.idHint) ? d.idHint : d.title);
     if (!PAGE_ID.test(base)) base = `page-${staged.length + 1}`;
@@ -86,13 +90,16 @@ function finish(
   const docs: ImportDoc[] = [];
   for (const d of staged) {
     let md = sanitizeMarkdown(d.body);
-    md = md.replace(new RegExp(`${LINK_OPEN}([^${LINK_CLOSE}]*)${LINK_CLOSE}`, "g"), (_m, x: string) => {
-      const bar = x.indexOf("|");
-      const key = bar < 0 ? x : x.slice(0, bar);
-      const label = (bar < 0 ? x : x.slice(bar + 1)).replace(/[{}[\]<>]/g, "").trim();
-      const to = byKey.get(linkKey(key));
-      return to && to !== d.id ? `[[${to}]]` : label;
-    });
+    md = md.replace(
+      new RegExp(`${LINK_OPEN}([^${LINK_CLOSE}]*)${LINK_CLOSE}`, "g"),
+      (_m, x: string) => {
+        const bar = x.indexOf("|");
+        const key = bar < 0 ? x : x.slice(0, bar);
+        const label = (bar < 0 ? x : x.slice(bar + 1)).replace(/[{}[\]<>]/g, "").trim();
+        const to = byKey.get(linkKey(key));
+        return to && to !== d.id ? `[[${to}]]` : label;
+      },
+    );
     if (!md.trim()) {
       skipped.push({ path: d.path, reason: "empty" });
       continue;
@@ -116,7 +123,10 @@ function markdownEntries(
   const skipped: Skipped[] = [];
   for (const e of entries) {
     if (isUnsafePath(e.path)) {
-      skipped.push({ path: e.path.slice(0, 120).replace(/[\u0000-\u001f]/g, "?"), reason: "unsafe_path" });
+      skipped.push({
+        path: e.path.slice(0, 120).replace(/\p{Cc}/gu, "?"),
+        reason: "unsafe_path",
+      });
       continue;
     }
     const why = keep(e.path);
@@ -142,13 +152,20 @@ export function parseOkf(entries: ZipEntry[]): Parsed {
   const raw = files.slice(0, MAX_PAGES).map((f) => {
     const { meta, body } = frontmatter(f.text);
     // Root-absolute links to other concept pages become cross-links when the page is in this import.
-    const linked = body.replace(/\[([^\]\n]*)\]\(\/([^)\s]+?)\.md\)/g, (_m, label: string, p: string) =>
-      `${LINK_OPEN}${(p.split("/").pop() ?? p)}|${label}${LINK_CLOSE}`,
+    const linked = body.replace(
+      /\[([^\]\n]*)\]\(\/([^)\s]+?)\.md\)/g,
+      (_m, label: string, p: string) =>
+        `${LINK_OPEN}${p.split("/").pop() ?? p}|${label}${LINK_CLOSE}`,
     );
     return {
       path: f.path,
       title: titleOf(meta, body, f.path),
-      type: meta.type ? meta.type.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 40) : null,
+      type: meta.type
+        ? meta.type
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, "_")
+            .slice(0, 40)
+        : null,
       body: linked,
       idHint: baseName(f.path),
     };
@@ -163,7 +180,8 @@ export function parseOkf(entries: ZipEntry[]): Parsed {
 export function parseObsidian(entries: ZipEntry[]): Parsed {
   const { files, skipped } = markdownEntries(entries, (p) => {
     const parts = p.split("/");
-    if (parts.some((s) => s === ".obsidian" || s === ".trash" || s.startsWith("."))) return "hidden";
+    if (parts.some((s) => s === ".obsidian" || s === ".trash" || s.startsWith(".")))
+      return "hidden";
     if (!/\.md$/i.test(p)) return "attachment";
     return null;
   });
@@ -171,8 +189,10 @@ export function parseObsidian(entries: ZipEntry[]): Parsed {
     const { meta, body } = frontmatter(f.text);
     const linked = body
       .replace(/%%[\s\S]*?%%/g, "")
-      .replace(/(?<!!)\[\[([^\]\n#^]*)(?:[#^][^\]\n|]*)?(?:\|([^\]\n]*))?\]\]/g, (_m, target: string, alias?: string) =>
-        `${LINK_OPEN}${target.trim()}|${(alias ?? target).trim()}${LINK_CLOSE}`,
+      .replace(
+        /(?<!!)\[\[([^\]\n#^]*)(?:[#^][^\]\n|]*)?(?:\|([^\]\n]*))?\]\]/g,
+        (_m, target: string, alias?: string) =>
+          `${LINK_OPEN}${target.trim()}|${(alias ?? target).trim()}${LINK_CLOSE}`,
       );
     return { path: f.path, title: titleOf(meta, body, f.path), type: null, body: linked };
   });
@@ -183,7 +203,13 @@ export function parseObsidian(entries: ZipEntry[]): Parsed {
 
 // ---- Outline export ----
 
-type PM = { type?: string; text?: string; content?: PM[]; attrs?: Record<string, unknown>; marks?: { type: string; attrs?: Record<string, unknown> }[] };
+type PM = {
+  type?: string;
+  text?: string;
+  content?: PM[];
+  attrs?: Record<string, unknown>;
+  marks?: { type: string; attrs?: Record<string, unknown> }[];
+};
 
 function pmInline(n: PM): string {
   if (n.type === "hard_break") return "\n";
@@ -245,12 +271,22 @@ const pmToMarkdown = (doc: PM): string => pmBlock(doc).join("\n").trim();
 function outlineDocs(json: unknown, path: string): { path: string; title: string; body: string }[] {
   const j = json as { documents?: unknown } | null;
   const list = j?.documents;
-  const docs = Array.isArray(list) ? list : list && typeof list === "object" ? Object.values(list) : [];
+  const docs = Array.isArray(list)
+    ? list
+    : list && typeof list === "object"
+      ? Object.values(list)
+      : [];
   const out: { path: string; title: string; body: string }[] = [];
   for (const d of docs) {
     if (!d || typeof d !== "object") continue;
     const x = d as { title?: unknown; text?: unknown; data?: unknown };
-    const title = typeof x.title === "string" ? x.title.replace(/[{}[\]<>]/g, "").trim().slice(0, MAX_TITLE) : "";
+    const title =
+      typeof x.title === "string"
+        ? x.title
+            .replace(/[{}[\]<>]/g, "")
+            .trim()
+            .slice(0, MAX_TITLE)
+        : "";
     const body =
       typeof x.text === "string"
         ? x.text

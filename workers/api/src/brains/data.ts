@@ -3,23 +3,23 @@
 import { roleAllows } from "@secondary/policy";
 import { Hono } from "hono";
 import { IMPORT_BODY_BYTES } from "../security.ts";
-import { classify } from "../uxv2/classifier.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, notFound, readObject, sess, text } from "../ux/util.ts";
+import { classify } from "../uxv2/classifier.ts";
 import { pageVisible, readableMany } from "../wiki/routes.ts";
 import { citationsOf, cleanText, GENERATED, PAGE_ID } from "../wiki/text.ts";
 import type { PageDraft, Proposal } from "../wiki/types.ts";
 import { checkWrite, fieldsFor } from "./fields.ts";
 import {
-  type ImportFormat,
   type ImportDoc,
+  type ImportFormat,
   isImportFormat,
   MAX_PAGES,
   parseObsidian,
   parseOkf,
   parseOutline,
 } from "./importers.ts";
-import { DAY, FIELD_TYPES, parseFields, SENSITIVITIES } from "./model.ts";
+import { DAY, FIELD_TYPES, isCalendarDay, parseFields, SENSITIVITIES } from "./model.ts";
 import { type Brain, needBrain, needFlag } from "./open.ts";
 import { rateLimit } from "./shared.ts";
 import { unzipGuarded, ZipError } from "./unzip.ts";
@@ -60,7 +60,14 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     const parsed = parseFields(body.fields);
     if (!parsed.ok) throw bad(parsed.code);
     const s = sess(c);
-    if (!(await audit(c, { action: "brain.fields_schema", nodeId: b.nodeId, scopeId: b.scope, revision: null })))
+    if (
+      !(await audit(c, {
+        action: "brain.fields_schema",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     await b.stub.brainConfigSet({ fields: parsed.fields }, s.principal.id, s.ctx.now);
     return c.json({ ok: true, fields: parsed.fields });
@@ -86,7 +93,14 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     const res = checkWrite(b, config.fields, page.type, body.values, ack);
     if (!res.ok) return c.json(res.body, res.status);
     const s = sess(c);
-    if (!(await audit(c, { action: "brain.fields_write", nodeId: b.nodeId, scopeId: b.scope, revision: page.revision })))
+    if (
+      !(await audit(c, {
+        action: "brain.fields_write",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: page.revision,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     await b.stub.brainFieldsWrite(page.id, res.writes, s.principal.id, s.ctx.now);
     return c.json({ ok: true, fields: await fieldsFor(c, b, page) });
@@ -130,7 +144,9 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
       const rev = Number(c.req.param("rev"));
       if (!Number.isInteger(rev) || rev < 1) throw bad("invalid_revision");
       const body = hide ? await readObject(c) : {};
-      const reason = hide ? cleanText(text(body.reason, 1, MAX_REASON, "invalid_reason"), MAX_REASON) : "";
+      const reason = hide
+        ? cleanText(text(body.reason, 1, MAX_REASON, "invalid_reason"), MAX_REASON)
+        : "";
       const s = sess(c);
       if (
         !(await audit(c, {
@@ -141,7 +157,14 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
         }))
       )
         return c.json({ error: "audit_unavailable" }, 503);
-      const res = await b.stub.brainSetHidden(page.id, rev, hide, s.principal.id, reason, s.ctx.now);
+      const res = await b.stub.brainSetHidden(
+        page.id,
+        rev,
+        hide,
+        s.principal.id,
+        reason,
+        s.ctx.now,
+      );
       if (!res.ok) {
         const status = res.code === "not_found" ? 404 : res.code === "current_revision" ? 422 : 409;
         return c.json({ error: res.code, reason: res.message }, status);
@@ -171,7 +194,9 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
 
     let parsed: ReturnType<typeof parseOkf>;
     try {
-      const isJson = (c.req.header("Content-Type") ?? "").toLowerCase().startsWith("application/json");
+      const isJson = (c.req.header("Content-Type") ?? "")
+        .toLowerCase()
+        .startsWith("application/json");
       if (format === "outline" && isJson)
         parsed = parseOutline({ json: new TextDecoder().decode(bytes) });
       else {
@@ -189,7 +214,12 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
       throw e;
     }
     if (
-      !(await audit(c, { action: "brain.import", nodeId: b.nodeId, scopeId: b.scope, revision: null }))
+      !(await audit(c, {
+        action: "brain.import",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
     return runImport(c, b, format, parsed);
@@ -215,10 +245,16 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     const raw = c.req.header("Content-Length") === "0" ? {} : await readObject(c).catch(() => ({}));
     const yesterday = new Date(s.ctx.now - DAY).toISOString().slice(0, 10);
     const date = typeof raw.date === "string" ? raw.date : yesterday;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)) || date < "2020-01-01")
-      throw bad("invalid_date");
+    if (!isCalendarDay(date) || date < "2020-01-01") throw bad("invalid_date");
     if (date > new Date(s.ctx.now).toISOString().slice(0, 10)) throw bad("invalid_date");
-    if (!(await audit(c, { action: "brain.journal_run", nodeId: b.nodeId, scopeId: b.scope, revision: null })))
+    if (
+      !(await audit(c, {
+        action: "brain.journal_run",
+        nodeId: b.nodeId,
+        scopeId: b.scope,
+        revision: null,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     const res = await b.stub.brainJournalRun(date, s.ctx.now);
     return c.json({ ok: true, pageId: res.pageId, created: res.created });
@@ -227,7 +263,12 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
   return r;
 }
 
-type ImportOut = { pageId: string; title: string; state: "published" | "draft"; proposalId?: string };
+type ImportOut = {
+  pageId: string;
+  title: string;
+  state: "published" | "draft";
+  proposalId?: string;
+};
 
 async function runImport(
   c: C,
@@ -237,14 +278,19 @@ async function runImport(
 ): Promise<Response> {
   const s = sess(c);
   const schema = await b.stub.wikiSchema();
-  const fallback = schema.types.topic ? "topic" : (Object.keys(schema.types).find((t) => !GENERATED[t] && t !== "journal") ?? "topic");
+  const fallback = schema.types.topic
+    ? "topic"
+    : (Object.keys(schema.types).find((t) => !GENERATED[t] && t !== "journal") ?? "topic");
   const skipped = [...parsed.skipped];
   const imported: ImportOut[] = [];
   let asked = 0;
   for (const d of parsed.docs.slice(0, MAX_PAGES)) {
     // Every page goes through the same classifier the routines use: personal passages come out,
     // contact details are masked, HR and mostly-personal pages are skipped.
-    const verdict = classify({ key: d.path, title: d.title, text: d.markdown }, { excludeNewsletters: false });
+    const verdict = classify(
+      { key: d.path, title: d.title, text: d.markdown },
+      { excludeNewsletters: false },
+    );
     if (verdict.verdict === "skip" || !verdict.kept.trim()) {
       skipped.push({ path: d.path, reason: verdict.reason });
       continue;
@@ -255,7 +301,11 @@ async function runImport(
       skipped.push({ path: d.path, reason: "reserved_page" });
       continue;
     }
-    const type = cur?.type ?? (d.type && schema.types[d.type] && !GENERATED[d.type] && d.type !== "journal" ? d.type : fallback);
+    const type =
+      cur?.type ??
+      (d.type && schema.types[d.type] && !GENERATED[d.type] && d.type !== "journal"
+        ? d.type
+        : fallback);
     const draft: PageDraft = {
       pageId: d.pageId,
       type,
