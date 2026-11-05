@@ -27,12 +27,24 @@ export type EvidenceSet = {
 
 const MAX_EXCERPT_CHARS = 3_000;
 
+/**
+ * The customer contract of the account that owns a node must say "allowed" (M-05). A region or country
+ * target walks into every account below it, so the check is per node, not per target. Nodes that
+ * belong to no account (global, department, circle) are not covered by a customer contract.
+ */
+export function ownerAllowsAi(view: AdmittedView, n: ViewNode): boolean {
+  const owner = n.kind === "account" ? n.id : n.account;
+  if (!owner) return true;
+  return view.nodes.get(owner)?.facts["AI use with client"] === "allowed";
+}
+
 /** Content-level leaves only. Unreleased drafts and candidates are not evidence unless the caller named them. */
-const usable = (n: ViewNode, named?: string): boolean =>
+const usable = (view: AdmittedView, n: ViewNode, named?: string): boolean =>
   n.level === "content" &&
   n.leaf !== null &&
   !n.contacts &&
   !isPersonalKind(n.kind) &&
+  ownerAllowsAi(view, n) &&
   (n.id === named || (n.leaf.status !== "draft" && n.leaf.status !== "candidate"));
 
 /** Content leaves below `rootId` (or `rootId` itself) in the admitted view. */
@@ -44,7 +56,7 @@ export function candidatesUnder(view: AdmittedView, rootId: string, named?: stri
     seen.add(id);
     const n = view.nodes.get(id);
     if (!n || isPersonalKind(n.kind)) return;
-    if (usable(n, named)) out.push(n);
+    if (usable(view, n, named)) out.push(n);
     for (const k of n.childIds) walk(k);
   };
   walk(rootId);

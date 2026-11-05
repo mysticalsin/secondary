@@ -1,3 +1,4 @@
+import type { AdmittedView } from "@secondary/policy";
 import { describe, expect, it } from "vitest";
 import segmentsRaw from "../../../packages/fixtures/sample/personal-segments.json?raw";
 import transcript1 from "../../../packages/fixtures/sample/transcripts/acct-acme/trn-0001.md?raw";
@@ -6,6 +7,7 @@ import { callModel, extractJson } from "../src/ai/anthropic.ts";
 import { gate } from "../src/ai/brief.ts";
 import { doBudget, reserve } from "../src/ai/budget.ts";
 import { aiState, DEFAULT_MODEL } from "../src/ai/config.ts";
+import { candidatesUnder } from "../src/ai/evidence.ts";
 import { buildUserPrompt, validateBrief } from "../src/ai/prompt.ts";
 import { excludePersonalSegments, maskContacts } from "../src/ai/segments.ts";
 import { testEnv } from "./helpers.ts";
@@ -304,5 +306,54 @@ describe("budget", () => {
     expect(results.filter((r) => r !== null)).toHaveLength(5);
     expect(await store.add(100, 500)).toBeNull();
     expect(await store.add(-250, Number.MAX_SAFE_INTEGER)).toBe(250);
+  });
+});
+
+describe("M-05: evidence respects each account's AI contract", () => {
+  const leaf = { type: "note", status: "released", evidence: "high", note: "", itemList: [] };
+  const node = (id: string, over: Record<string, unknown>) => ({
+    id,
+    label: id,
+    kind: "item",
+    plane: "TEAM_RESTRICTED",
+    parentId: null,
+    childIds: [] as string[],
+    level: "content",
+    access: "read",
+    facts: {},
+    leaf,
+    ...over,
+  });
+  const view = (() => {
+    const nodes = new Map<string, unknown>([
+      ["k_fr", node("k_fr", { kind: "country", leaf: null, childIds: ["a_ok", "a_no", "a_unk"] })],
+      [
+        "a_ok",
+        node("a_ok", {
+          kind: "account",
+          leaf: null,
+          facts: { "AI use with client": "allowed" },
+          childIds: ["i_ok"],
+        }),
+      ],
+      [
+        "a_no",
+        node("a_no", {
+          kind: "account",
+          leaf: null,
+          facts: { "AI use with client": "not allowed" },
+          childIds: ["i_no"],
+        }),
+      ],
+      ["a_unk", node("a_unk", { kind: "account", leaf: null, childIds: ["i_unk"] })],
+      ["i_ok", node("i_ok", { parentId: "a_ok", account: "a_ok" })],
+      ["i_no", node("i_no", { parentId: "a_no", account: "a_no" })],
+      ["i_unk", node("i_unk", { parentId: "a_unk", account: "a_unk" })],
+    ]);
+    return { nodes } as unknown as AdmittedView;
+  })();
+
+  it("a region target never collects evidence from accounts whose contract is not 'allowed'", () => {
+    expect(candidatesUnder(view, "k_fr").map((n) => n.id)).toEqual(["i_ok"]);
   });
 });
