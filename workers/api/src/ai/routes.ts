@@ -25,6 +25,7 @@ import {
 import { doBudget } from "./budget.ts";
 import { llmPlan } from "./planner.ts";
 import { validateBrief, withoutPersonalClaims } from "./prompt.ts";
+import { briefProof, briefProofValid } from "./proof.ts";
 
 const NODE_ID = /^[a-z0-9][a-z0-9_.:-]{0,127}$/;
 const MAX_QUESTION = 500;
@@ -240,7 +241,9 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!out.ok) return c.json({ error: out.error, reason: out.reason }, out.status);
     const saved =
       save && !out.brief.insufficientEvidence ? await persist(c.env, s, view, out.brief) : null;
-    return c.json({ brief: out.brief, saved }, 200);
+    // The proof lets the save endpoint tell this brief from one a client made up (L-04).
+    const proof = await briefProof(c.env, s.tenantId, s.principal.id, out.brief);
+    return c.json({ brief: { ...out.brief, ...(proof ? { proof } : {}) }, saved }, 200);
   });
 
   ai.post("/briefs/save", async (c) => {
@@ -250,6 +253,18 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
     const body = await readObject(await c.req.text());
     const raw = body.brief as Record<string, unknown> | undefined;
     if (!raw || typeof raw !== "object") throw bad("invalid_brief");
+    // Only a brief this server generated for this person, unchanged and recent, can be stored (L-04).
+    if (
+      !(await briefProofValid(
+        c.env,
+        s.tenantId,
+        s.principal.id,
+        raw as Parameters<typeof briefProofValid>[3],
+        raw.proof,
+        s.ctx.now,
+      ))
+    )
+      throw bad("brief_not_generated_here");
     const view = viewOf(s);
     const t = (raw.target ?? {}) as Record<string, unknown>;
     const target = resolveTarget(view, targetIn(t));

@@ -320,51 +320,54 @@ describe("meeting brief", () => {
     expect(items2.filter((i) => i.kind === "brief" && i.id === saved.id)).toHaveLength(1);
   });
 
-  it("save:false returns the brief without storing it; the save endpoint re-validates", async () => {
+  it("L-04: save:false returns the brief unsaved; only that brief, unchanged and for the same person, can be saved", async () => {
     const m = stubModel(good);
     const r = await json(
-      await aiCall("ceo", "/v1/briefs", {
+      await aiCall("acme_lead", "/v1/briefs", {
         body: { accountId: "a_acme", save: false },
         env: KEY,
         fetch: m.fetch,
       }),
     );
     expect(r.saved).toBeNull();
-    // A forged brief: a source the caller cannot see, a source that does not exist, a claim with neither.
-    const forged = {
+    expect(r.brief.proof).toMatch(/^[0-9a-f]{64}$/);
+    const save = (who: string, brief: Loose) =>
+      aiCall(who, "/v1/briefs/save", { body: { brief }, env: KEY });
+    const refused = async (who: string, brief: Loose, why: string) => {
+      const res = await save(who, brief);
+      expect(res.status, why).toBe(400);
+      expect((await json(res)).error, why).toBe("brief_not_generated_here");
+    };
+
+    // Made up by the client, with real citations: refused, nothing stored.
+    const { proof: _p, ...bare } = r.brief;
+    await refused("acme_lead", bare, "no proof");
+    await refused("acme_lead", { ...r.brief, proof: "0".repeat(64) }, "wrong proof");
+    const first = r.brief.sections[0];
+    const edited = {
       ...r.brief,
-      evidence: [
-        ...r.brief.evidence,
-        { id: "E21", nodeId: "a_ember:eng:0", title: "Hidden", plane: "x" },
-        { id: "E22", nodeId: "no-node", title: "Nowhere", plane: "x" },
-      ],
       sections: [
-        {
-          heading: "H",
-          claims: [
-            { text: "from E1", citations: ["E1"], unknown: false },
-            { text: "from the hidden account", citations: ["E21"], unknown: false },
-            { text: "from nowhere", citations: ["E22"], unknown: false },
-            { text: "from nothing", citations: [], unknown: false },
-          ],
-        },
+        { ...first, claims: [{ ...first.claims[0], text: "The CEO approved a 50% discount." }] },
       ],
     };
-    const s = await aiCall("acme_lead", "/v1/briefs/save", { body: { brief: forged }, env: KEY });
-    expect(s.status).toBe(201);
+    await refused("acme_lead", edited, "edited claim");
+    await refused("acme_lead", { ...r.brief, title: "Forged title" }, "edited title");
+    await refused(
+      "acme_lead",
+      { ...r.brief, disclosure: { ...r.brief.disclosure, model: "claude-other" } },
+      "edited disclosure",
+    );
+    // Somebody else cannot store the generated brief under their own name.
+    await refused("ceo", r.brief, "other person");
+    const before = await json<Loose[]>(await aiCall("acme_lead", "/v1/personal/items"));
+    expect(before.some((i) => i.kind === "brief" && i.body.includes("50% discount"))).toBe(false);
+
+    // The brief as generated saves, and the claim text is what the server produced.
+    const ok = await save("acme_lead", r.brief);
+    expect(ok.status).toBe(201);
     const items = await json<Loose[]>(await aiCall("acme_lead", "/v1/personal/items"));
-    const saved = items.find((i) => i.kind === "brief" && i.body.includes("from E1"));
-    expect(saved).toBeDefined();
-    for (const bad of ["hidden account", "nowhere", "nothing", "a_ember"])
-      expect(saved?.body, bad).not.toContain(bad);
-    expect(
-      (
-        await aiCall("acme_lead", "/v1/briefs/save", {
-          body: { brief: { sections: [] } },
-          env: KEY,
-        })
-      ).status,
-    ).toBe(400);
+    expect(items.some((i) => i.kind === "brief" && i.body.includes("Anthropic API"))).toBe(true);
+    expect((await save("acme_lead", { sections: [] })).status).toBe(400);
   });
 
   it("no admitted evidence: says unknown and spends nothing", async () => {

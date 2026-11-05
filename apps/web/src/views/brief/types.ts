@@ -41,6 +41,8 @@ export interface Brief {
     generatedAt: string;
     usage: { inputTokens: number; outputTokens: number };
   };
+  /** Returned by the server and sent back unchanged on save (L-04). */
+  proof?: string;
 }
 
 export interface BriefResponse {
