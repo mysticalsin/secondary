@@ -19,6 +19,8 @@ export default defineConfig({
           DO_JURISDICTION: "off",
           AUDIT_KEY_API: "test-audit-key-api-0123456789abcdef0123",
           AUDIT_KEY_READ: "test-audit-key-read-0123456789abcdef012",
+          AUDIT_KEY_ERASE: "test-audit-key-erase-0123456789abcdef01",
+          PSEUDONYM_KEY: "test-pseudonym-key-0123456789abcdef0123",
         },
         serviceBindings: {
           AUDIT: async (request: Request) => {
@@ -28,7 +30,9 @@ export default defineConfig({
             const need =
               url.pathname === "/receipts"
                 ? "test-audit-key-read-0123456789abcdef012"
-                : "test-audit-key-api-0123456789abcdef0123";
+                : url.pathname === "/pseudonymise"
+                  ? "test-audit-key-erase-0123456789abcdef01"
+                  : "test-audit-key-api-0123456789abcdef0123";
             if (key !== need) return Response.json({ error: "unauthorized" }, { status: 401 });
             if (url.pathname === "/append" && request.method === "POST") {
               // The real parser, so a receipt the audit worker would refuse fails here too.
@@ -37,14 +41,28 @@ export default defineConfig({
               receipts.push(parsed as unknown as Record<string, unknown>);
               return Response.json({ ok: true }, { status: 202 });
             }
+            if (url.pathname === "/pseudonymise" && request.method === "POST") {
+              const b = (await request.json()) as { tenant: string; from: string; to: string };
+              let n = 0;
+              for (const r of receipts)
+                if (r.tenantId === b.tenant && r.principalId === b.from) {
+                  r.principalId = b.to;
+                  n++;
+                }
+              return Response.json({ rewritten: n });
+            }
             if (url.pathname === "/receipts") {
               const principal = url.searchParams.get("principal");
               const tenant = url.searchParams.get("tenant");
               return Response.json({
-                receipts: receipts.filter(
-                  (r) =>
-                    (principal === null || r.principalId === principal) && r.tenantId === tenant,
-                ),
+                // Newest first and at most 200, like the real worker.
+                receipts: receipts
+                  .filter(
+                    (r) =>
+                      (principal === null || r.principalId === principal) && r.tenantId === tenant,
+                  )
+                  .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+                  .slice(0, 200),
               });
             }
             return Response.json({ error: "not_found" }, { status: 404 });

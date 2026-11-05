@@ -1,3 +1,15 @@
+# Secondary CI/CD. Stages: build_test (install, lint, typecheck, unit tests, e2e, build, SBOM and audit),
+# then deploy staging on main, then deploy prod behind a manual approval.
+#
+# One-time setup in Azure DevOps (nothing here can create it):
+#   1. Variable groups (Library), marked secret:
+#        secondary-staging  : CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID   (placeholders until Tony sets them)
+#        secondary-prod     : CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, BACKUP_KEY (from the key vault)
+#      Prefer a service connection to a secrets store once one exists; the group is the placeholder.
+#   2. Environments (Pipelines > Environments): `secondary-staging` (no checks) and `secondary-prod` with an
+#      Approvals check naming the approvers. That check is the manual approval gate for prod.
+#   3. Branch policy on main: this pipeline is a required build.
+
 trigger:
   branches:
     include: [main]
@@ -8,19 +20,111 @@ pr:
 pool:
   vmImage: ubuntu-latest
 
-steps:
-  - task: NodeTool@0
-    displayName: Use Node from .nvmrc
-    inputs:
-      versionSource: fromFile
-      versionFilePath: .nvmrc
-  - script: corepack enable
-    displayName: Enable pnpm
-  - script: pnpm install --frozen-lockfile
-    displayName: Install
-  - script: pnpm lint
-    displayName: Lint
-  - script: pnpm typecheck
-    displayName: Typecheck
-  - script: pnpm test
-    displayName: Test
+variables:
+  CYCLONEDX_CDXGEN_VERSION: "12.9.0"
+
+stages:
+  - stage: build_test
+    displayName: Build and test
+    jobs:
+      - job: ci
+        displayName: Install, lint, typecheck, test, e2e, build
+        timeoutInMinutes: 40
+        steps:
+          - task: NodeTool@0
+            displayName: Use Node from .nvmrc
+            inputs:
+              versionSource: fromFile
+              versionFilePath: .nvmrc
+          - script: corepack enable
+            displayName: Enable pnpm
+          - script: pnpm install --frozen-lockfile
+            displayName: Install
+          - script: pnpm lint
+            displayName: Lint
+          - script: pnpm typecheck
+            displayName: Typecheck
+          - script: pnpm test
+            displayName: Unit tests
+          - script: pnpm --filter @secondary/web build
+            displayName: Build web (needed by the e2e stack)
+          - script: pnpm exec playwright install --with-deps chromium
+            displayName: Install Playwright browser
+          - script: pnpm e2e
+            displayName: E2E (Playwright)
+          - script: pnpm build
+            displayName: Build (wrangler dry-run for every worker)
+          - script: |
+              mkdir -p sbom
+              pnpm licenses list --json > sbom/licenses.json
+            displayName: SBOM, licence inventory
+          - script: >
+              npx --yes @cyclonedx/cdxgen@$(CYCLONEDX_CDXGEN_VERSION)
+              -t pnpm -o sbom/bom.cdx.json --spec-version 1.6 .
+            displayName: SBOM, CycloneDX (pinned cdxgen)
+            continueOnError: true
+          - script: pnpm audit --audit-level high
+            displayName: Dependency audit (fails on high or critical)
+          - task: PublishPipelineArtifact@1
+            displayName: Publish SBOM
+            condition: always()
+            inputs:
+              targetPath: sbom
+              artifact: sbom
+
+  - stage: deploy_staging
+    displayName: Deploy staging
+    dependsOn: build_test
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+    variables:
+      - group: secondary-staging
+    jobs:
+      - deployment: staging
+        displayName: Staging
+        environment: secondary-staging
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: NodeTool@0
+                  inputs:
+                    versionSource: fromFile
+                    versionFilePath: .nvmrc
+                - script: corepack enable
+                  displayName: Enable pnpm
+                - script: scripts/deploy.sh staging
+                  displayName: Deploy staging
+                  env:
+                    CLOUDFLARE_API_TOKEN: $(CLOUDFLARE_API_TOKEN)
+                    CLOUDFLARE_ACCOUNT_ID: $(CLOUDFLARE_ACCOUNT_ID)
+
+  - stage: deploy_prod
+    displayName: Deploy prod (manual approval)
+    dependsOn: deploy_staging
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+    variables:
+      - group: secondary-prod
+    jobs:
+      # The Approvals check on the `secondary-prod` environment pauses this job until a named approver accepts.
+      - deployment: prod
+        displayName: Prod
+        environment: secondary-prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: NodeTool@0
+                  inputs:
+                    versionSource: fromFile
+                    versionFilePath: .nvmrc
+                - script: corepack enable
+                  displayName: Enable pnpm
+                - script: scripts/deploy.sh prod
+                  displayName: Deploy prod
+                  env:
+                    CONFIRM_PROD: "yes"
+                    CLOUDFLARE_API_TOKEN: $(CLOUDFLARE_API_TOKEN)
+                    CLOUDFLARE_ACCOUNT_ID: $(CLOUDFLARE_ACCOUNT_ID)
+                    BACKUP_KEY: $(BACKUP_KEY)

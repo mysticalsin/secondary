@@ -10,7 +10,27 @@
   "r2_buckets": [
     { "binding": "AUDIT_LOG", "bucket_name": "secondary-audit-dev", "jurisdiction": "eu" }
   ],
-  // Secrets (wrangler secret put ...): AUDIT_KEY_API, AUDIT_KEY_MCP, AUDIT_KEY_READ (each 32+ chars).
+  // Secrets (wrangler secret put ...): AUDIT_KEY_API, AUDIT_KEY_MCP, AUDIT_KEY_READ, AUDIT_KEY_ERASE (each 32+ chars).
   // No routes either: it is reached only through service bindings.
-  "vars": { "ENVIRONMENT": "dev" }
+  "vars": { "ENVIRONMENT": "dev" },
+  "env": {
+    "staging": {
+      "name": "secondary-audit-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "r2_buckets": [
+        { "binding": "AUDIT_LOG", "bucket_name": "secondary-audit-staging", "jurisdiction": "eu" }
+      ],
+      "vars": { "ENVIRONMENT": "staging" }
+    },
+    "prod": {
+      "name": "secondary-audit-prod",
+      "workers_dev": false,
+      "preview_urls": false,
+      "r2_buckets": [
+        { "binding": "AUDIT_LOG", "bucket_name": "secondary-audit-prod", "jurisdiction": "eu" }
+      ],
+      "vars": { "ENVIRONMENT": "prod" }
+    }
+  }
 }

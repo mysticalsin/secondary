@@ -15,6 +15,7 @@ export default defineConfig({
           ALLOWED_REDIRECT_HOSTS:
             "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt,localhost,127.0.0.1",
           MCP_PUBLIC_URL: "http://localhost",
+          SWITCH_CACHE_MS: "0",
         },
         serviceBindings: { API: apiStub, AUDIT: auditStub },
       },

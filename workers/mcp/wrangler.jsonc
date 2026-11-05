@@ -33,6 +33,51 @@
     "ACCESS_AUD": "feb4350db153fcca208d1e398e2f5660ab2abf50f3e1d366464addcda517dd89",
     // Redirect URI hosts allowed to receive authorization codes (B-05).
     "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt,localhost,127.0.0.1"
+  },
+  // Environments: each block is complete (wrangler does not inherit bindings or vars). Staging and prod
+  // have their own KV namespace and no loopback redirect hosts. MCP_PUBLIC_URL must be pinned per
+  // environment (it is the token audience); until it is set the worker answers 500 and nothing is served.
+  "env": {
+    "staging": {
+      "name": "secondary-mcp-staging",
+      "workers_dev": true,
+      "preview_urls": false,
+      // Own KV namespace. deploy.sh creates it and replaces the token below with its id.
+      "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "__KV_OAUTH_STAGING__" }],
+      "services": [
+        { "binding": "API", "service": "secondary-api-staging" },
+        { "binding": "AUDIT", "service": "secondary-audit-staging" }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
+        "MCP_PUBLIC_URL": "",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": "",
+        "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt"
+      }
+    },
+    "prod": {
+      "name": "secondary-mcp-prod",
+      // No workers.dev host in production. Placeholder route until the domain is chosen; a deploy fails on it on purpose.
+      "workers_dev": false,
+      "routes": [{ "pattern": "secondary-mcp.<your-domain>/*", "zone_name": "<your-domain>" }],
+      "preview_urls": false,
+      // Own KV namespace. deploy.sh creates it and replaces the token below with its id.
+      "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "__KV_OAUTH_PROD__" }],
+      "services": [
+        { "binding": "API", "service": "secondary-api-prod" },
+        { "binding": "AUDIT", "service": "secondary-audit-prod" }
+      ],
+      "vars": {
+        "ENVIRONMENT": "prod",
+        "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
+        "MCP_PUBLIC_URL": "",
+        "ACCESS_TEAM_DOMAIN": "",
+        "ACCESS_AUD": "",
+        "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt"
+      }
+    }
   }
   // Secrets (wrangler secret put ...): never in this file.
   //   INTERNAL_HMAC_KEY  shared with workers/api

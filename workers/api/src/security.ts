@@ -3,6 +3,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
+import { logEvent } from "../../../packages/contracts/src/log.ts";
 import type { AppEnv } from "./types.ts";
 
 export const MAX_BODY_BYTES = 32 * 1024;
@@ -73,16 +74,14 @@ export function onError(err: unknown, c: Context<AppEnv>): Response {
   const requestId = c.get("requestId") ?? crypto.randomUUID();
   // Our own HTTPExceptions carry a short error code as the message. Nothing else is echoed.
   if (err instanceof HTTPException) return c.json({ error: err.message || "error" }, err.status);
-  // Server-side log only: the client never sees the message or the stack.
-  console.error(
-    JSON.stringify({
-      requestId,
-      at: "onError",
-      error: err instanceof Error ? err.name : "unknown",
-      message: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined,
-    }),
-  );
+  // Server-side log only, through the structured logger: error class and a redacted, truncated message.
+  logEvent({
+    event: "error",
+    worker: "api",
+    requestId,
+    errorName: err instanceof Error ? err.name : "unknown",
+    reason: err instanceof Error ? err.message : String(err),
+  });
   return c.json({ error: "internal_error", requestId }, 500);
 }
 

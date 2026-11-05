@@ -3,6 +3,7 @@
 // with small synthetic payloads shaped like docs/API-CONTRACT.md. Synthetic data only.
 
 import { parseReceipt } from "../../../packages/contracts/src/audit-receipt.ts";
+import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
 import { type InternalPrincipal, verifyInternalRequest } from "../src/internal-auth.ts";
 
 export const TEST_HMAC_KEY = "test-only-internal-hmac-key-0123456789abcdef";
@@ -18,6 +19,7 @@ const calls: Call[] = [];
 export const TEST_AUDIT_KEY = "test-audit-key-mcp-0123456789abcdef0123";
 const audit: Record<string, unknown>[] = [];
 let auditDown = false;
+let mcpSwitchOn = true;
 
 const hub = (id: string, label: string, access: "full" | "partial" | "locked") => ({
   id,
@@ -155,6 +157,18 @@ export async function apiStub(request: Request): Promise<Response> {
   if (url.pathname === "/__calls") {
     if (request.method === "DELETE") calls.length = 0;
     return Response.json(calls);
+  }
+  // Kill switch state, as workers/api answers it to workers/mcp (signed with the ops scheme).
+  if (url.pathname === "/__switch") {
+    mcpSwitchOn = request.method !== "PUT";
+    return Response.json({ mcpSwitchOn });
+  }
+  if (url.pathname === "/v1/internal/ops/switches") {
+    if (!(await verifyOpsRequest(request, TEST_HMAC_KEY)))
+      return Response.json({ error: "unauthorized" }, { status: 401 });
+    return Response.json({
+      switches: { mcp: mcpSwitchOn, connector: true, ai: true, contribute: true },
+    });
   }
   const bodyText = await request.clone().text();
   const verified = await verifyInternalRequest(request, TEST_HMAC_KEY);

@@ -11,6 +11,7 @@ export default defineConfig({
           AUDIT_KEY_API: "test-audit-key-api-0123456789abcdef0123",
           AUDIT_KEY_MCP: "test-audit-key-mcp-0123456789abcdef0123",
           AUDIT_KEY_READ: "test-audit-key-read-0123456789abcdef012",
+          AUDIT_KEY_ERASE: "test-audit-key-erase-0123456789abcdef01",
         },
       },
     }),

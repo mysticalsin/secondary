@@ -1,5 +1,6 @@
 import type { Ctx, Org, Principal, RoleId } from "@secondary/policy";
 import type { JWTVerifyGetKey } from "jose";
+import type { SwitchState } from "./switches.ts";
 import type { TenantConfig } from "./tenant-policy.ts";
 
 export interface Session {
@@ -14,6 +15,8 @@ export interface Session {
   internal: { clientId: string; tool: string; scope: string[] } | null;
   /** null until the tenant is seeded. */
   org: Org | null;
+  /** Kill switches of the tenant (true = on). */
+  switches: SwitchState;
 }
 
 export type AppEnv = {

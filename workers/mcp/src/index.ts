@@ -10,17 +10,22 @@ import {
   publicBase,
   SCOPES,
 } from "./config.ts";
+import { mcpEnabled } from "./switch.ts";
 import { buildServer } from "./tools.ts";
 
 export { signInternalRequest, verifyInternalRequest } from "./internal-auth.ts";
 
 /** The protected resource: Streamable HTTP MCP at /mcp. OAuthProvider has already validated the token and its audience. */
 const mcpApi: ExportedHandlerWithFetch<Env> = {
-  fetch(request, env, rawCtx) {
+  async fetch(request, env, rawCtx) {
     const ctx = rawCtx as unknown as OAuthResourceContext<AuthProps>;
     const props = ctx.props;
     if (!props?.userId || !props.email || !ctx.auth.clientId) {
       return new Response("Forbidden", { status: 403 });
+    }
+    // Kill switch (central, in the API). Checked before any tool runs.
+    if (!(await mcpEnabled(env))) {
+      return Response.json({ error: "switched_off", switch: "mcp" }, { status: 503 });
     }
     const handler = createMcpHandler(
       () =>

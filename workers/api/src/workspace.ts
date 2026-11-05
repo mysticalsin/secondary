@@ -6,6 +6,8 @@
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
 import { DurableObject } from "cloudflare:workers";
+import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
+import { personalKindOf } from "./personal-kind.ts";
 import type { SensitivityFlag } from "./sensitivity.ts";
 
 export type Origin = "seed" | "personal" | "candidate";
@@ -92,6 +94,17 @@ export type ReviewResult = { ok: true; revision: number } | Fail;
 export type ApproveResult =
   | { ok: true; released: boolean; approvals: number; required: number; revision: number }
   | Fail;
+
+/** Tables that make up a Workspace snapshot. The search index is included so a restore matches the original. */
+const SNAPSHOT_TABLES = [
+  "items",
+  "items_fts",
+  "comments",
+  "approvals",
+  "edits",
+  "contributions",
+  "outbox",
+] as const;
 
 const requiredFor = (releaseTarget: string, plane: string): number =>
   releaseTarget === "global" || plane === "GLOBAL_NONPERSONAL" ? 2 : 1;
@@ -518,5 +531,142 @@ export class Workspace extends DurableObject<Env> {
       });
     }
     return { ok: true, released, approvals, required: rec.required, revision: rec.revision };
+  }
+
+  // ---- operations: snapshots, rights, retention ----
+
+  exportAll(): Snapshot {
+    return exportTables(this.sql, SNAPSHOT_TABLES);
+  }
+
+  /** Replace everything in this workspace from a snapshot. All or nothing. */
+  importAll(data: unknown): number {
+    return replaceTables(this.ctx.storage, SNAPSHOT_TABLES, data);
+  }
+
+  /** Everything a person authored here, for the data subject export. */
+  authoredBy(principalId: string): {
+    items: ItemRecord[];
+    comments: Comment[];
+    approvals: { itemId: string; revision: number; kind: string; at: number }[];
+    edits: { itemId: string; revision: number; at: number }[];
+  } {
+    return {
+      items: this.sql
+        .exec("SELECT * FROM items WHERE author_id = ? ORDER BY created_at, id", principalId)
+        .toArray()
+        .map((r) => this.record(r)),
+      comments: this.sql
+        .exec("SELECT * FROM comments WHERE author_id = ? ORDER BY id", principalId)
+        .toArray()
+        .map((r) => ({
+          id: r.id as number,
+          itemId: r.item_id as string,
+          authorId: r.author_id as string,
+          text: r.text as string,
+          at: r.at as number,
+        })),
+      approvals: this.sql
+        .exec(
+          "SELECT item_id, revision, kind, at FROM approvals WHERE actor_id = ? ORDER BY at",
+          principalId,
+        )
+        .toArray()
+        .map((r) => ({
+          itemId: r.item_id as string,
+          revision: r.revision as number,
+          kind: r.kind as string,
+          at: r.at as number,
+        })),
+      edits: this.sql
+        .exec("SELECT item_id, revision, at FROM edits WHERE actor_id = ? ORDER BY at", principalId)
+        .toArray()
+        .map((r) => ({
+          itemId: r.item_id as string,
+          revision: r.revision as number,
+          at: r.at as number,
+        })),
+    };
+  }
+
+  /**
+   * Replace a person's id with a pseudonym everywhere this workspace stores it, and drop the search
+   * index entries of the items they authored (seeded items stay indexed: they are not personal data).
+   */
+  pseudonymise(
+    from: string,
+    to: string,
+  ): { items: number; comments: number; approvals: number; edits: number } {
+    let out = { items: 0, comments: 0, approvals: 0, edits: 0 };
+    this.ctx.storage.transactionSync(() => {
+      for (const r of this.sql
+        .exec("SELECT id FROM items WHERE author_id = ? AND origin != 'seed'", from)
+        .toArray())
+        this.sql.exec("DELETE FROM items_fts WHERE id = ?", r.id as string);
+      const count = (t: string, col: string) =>
+        this.sql.exec(`SELECT COUNT(*) AS n FROM ${t} WHERE ${col} = ?`, from).one().n as number;
+      out = {
+        items: count("items", "author_id"),
+        comments: count("comments", "author_id"),
+        approvals: count("approvals", "actor_id"),
+        edits: count("edits", "actor_id"),
+      };
+      this.sql.exec("UPDATE items SET author_id = ? WHERE author_id = ?", to, from);
+      this.sql.exec("UPDATE comments SET author_id = ? WHERE author_id = ?", to, from);
+      this.sql.exec("UPDATE approvals SET actor_id = ? WHERE actor_id = ?", to, from);
+      this.sql.exec("UPDATE edits SET actor_id = ? WHERE actor_id = ?", to, from);
+      for (const r of this.sql
+        .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
+        .toArray()) {
+        const uv = JSON.parse(r.user_validated as string) as UserValidated;
+        if (uv.by === from)
+          this.sql.exec(
+            "UPDATE items SET user_validated = ? WHERE id = ?",
+            JSON.stringify({ ...uv, by: to }),
+            r.id as string,
+          );
+      }
+    });
+    return out;
+  }
+
+  /** Delete everything in this workspace (a person's Personal Brain). Returns the number of items removed. */
+  wipe(): number {
+    let n = 0;
+    this.ctx.storage.transactionSync(() => {
+      n = this.sql.exec("SELECT COUNT(*) AS n FROM items").one().n as number;
+      for (const t of SNAPSHOT_TABLES) this.sql.exec(`DELETE FROM ${t}`);
+    });
+    return n;
+  }
+
+  /**
+   * Retention: delete Personal Brain items of the given kinds that were last changed before the
+   * cutoff for their kind. `cutoffs` maps a kind (draft, brief) to a timestamp in ms.
+   */
+  purgeExpired(cutoffs: Record<string, number>): number {
+    let n = 0;
+    this.ctx.storage.transactionSync(() => {
+      const rows = this.sql
+        .exec("SELECT id, label, tags, updated_at FROM items WHERE kind = 'personalitem'")
+        .toArray();
+      for (const r of rows) {
+        const kind = personalKindOf(r.label as string, JSON.parse(r.tags as string) as string[]);
+        const cutoff = cutoffs[kind];
+        if (cutoff === undefined || (r.updated_at as number) >= cutoff) continue;
+        const id = r.id as string;
+        for (const [t, col] of [
+          ["items", "id"],
+          ["items_fts", "id"],
+          ["comments", "item_id"],
+          ["approvals", "item_id"],
+          ["edits", "item_id"],
+          ["contributions", "item_id"],
+        ] as const)
+          this.sql.exec(`DELETE FROM ${t} WHERE ${col} = ?`, id);
+        n++;
+      }
+    });
+    return n;
   }
 }
