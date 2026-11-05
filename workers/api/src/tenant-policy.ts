@@ -184,6 +184,26 @@ export class TenantPolicy extends DurableObject<Env> {
     };
   }
 
+  /** Fixed one-minute window counter for sensitive low-volume routes such as seeding. */
+  hit(key: string, now: number, limit: number): { limited: boolean; retryAfter: number } {
+    const window = Math.floor(now / WINDOW_MS);
+    const count = this.sql
+      .exec(
+        `INSERT INTO rate (principal_id, window, count) VALUES (?, ?, 1)
+         ON CONFLICT(principal_id) DO UPDATE SET
+           window = excluded.window,
+           count = CASE WHEN rate.window = excluded.window THEN rate.count + 1 ELSE 1 END
+         RETURNING count`,
+        key,
+        window,
+      )
+      .one().count as number;
+    return {
+      limited: count > limit,
+      retryAfter: Math.max(1, Math.ceil(((window + 1) * WINDOW_MS - now) / 1000)),
+    };
+  }
+
   /** Members per role, for the admin role list. */
   roleCounts(): Record<string, number> {
     const out: Record<string, number> = {};

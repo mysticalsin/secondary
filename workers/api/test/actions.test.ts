@@ -173,6 +173,74 @@ describe("approval rules", () => {
   });
 });
 
+describe("H1: edit-then-approve bypass", () => {
+  it("a steward cannot edit a colleague's candidate, and then cannot approve it by other means", async () => {
+    const created = await act("ceo", {
+      nodeId: "c_bid",
+      action: "contribute",
+      payload: { title: "Colleague's playbook", user_validated: validated("u_ceo") },
+    });
+    const { candidateId } = await json(created);
+    // head_bid is a steward of c_bid with edit and approve_release, yet may not rewrite it.
+    const edit = await act("head_bid", {
+      nodeId: candidateId,
+      action: "edit",
+      revision: 1,
+      payload: { body: "my own text" },
+    });
+    expect(edit.status).toBe(403);
+    expect((await json(edit)).reason).toMatch(/only the contributor/i);
+    // Stewards may still request changes.
+    expect(
+      (
+        await act("head_bid", {
+          nodeId: candidateId,
+          action: "review",
+          revision: 1,
+          payload: { verdict: "changes_requested" },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it("whoever edits an item counts as an author: edit then approve is denied, a second person works", async () => {
+    // head_bid is a steward of c_bid: edit is allowed on a seeded item, approval by the editor is not.
+    const map = (await json(await as("head_bid", "/v1/map?lens=departments"))) as {
+      hubs: { children: { id: string; children?: { id: string }[] }[] }[];
+    };
+    const ids = map.hubs
+      .flatMap((h) => h.children)
+      .flatMap((c) => (c.id === "c_bid" ? (c.children ?? []) : []))
+      .map((c) => c.id);
+    let target: string | null = null;
+    for (const id of ids) {
+      const d = await json(await as("head_bid", `/v1/nodes/${id}`));
+      const edit = d.actions?.find((a: { action: string }) => a.action === "edit");
+      if (d.record && !d.record.mine && edit?.allowed) {
+        target = id;
+        break;
+      }
+    }
+    expect(target, "a c_bid topic head_bid may edit").not.toBeNull();
+    const id = target as string;
+    const rev = await revisionOf("head_bid", id);
+    const edited = await act("head_bid", {
+      nodeId: id,
+      action: "edit",
+      revision: rev,
+      payload: { title: "Edited by the steward" },
+    });
+    expect(edited.status).toBe(200);
+    const approve = await act("head_bid", { nodeId: id, action: "approve_release", revision: rev + 1 });
+    expect(approve.status).toBe(403);
+    expect((await json(approve)).reason).toMatch(/wrote or edited/i);
+    const review = await act("head_bid", { nodeId: id, action: "review", revision: rev + 1 });
+    expect(review.status).toBe(403);
+    const second = await act("reviewer", { nodeId: id, action: "approve_release", revision: rev + 1 });
+    expect(second.status).toBe(200);
+  });
+});
+
 describe("edit, comment and revisions", () => {
   const NODE = "c_sales:account-planning";
 

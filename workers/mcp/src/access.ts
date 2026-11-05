@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
-import { isDev } from "./config.ts";
+import { isDev, LOOPBACK_HOSTS } from "./config.ts";
 
 export interface Identity {
   /** Opaque stable id (Access `sub`). */
@@ -41,6 +41,8 @@ export async function verifyAccessJwt(
     const { payload } = await jwtVerify(token, keysFor(teamDomain), {
       issuer: `https://${teamDomain}`,
       audience: aud,
+      algorithms: ["RS256"],
+      clockTolerance: 30,
     });
     const email = typeof payload.email === "string" ? payload.email.toLowerCase() : "";
     if (!payload.sub || !email) return null;
@@ -54,9 +56,11 @@ export async function verifyAccessJwt(
  * Who is at /authorize. Cloudflare Access sits in front of the path and sets `Cf-Access-Jwt-Assertion`;
  * we verify it again here (never trust the edge header unverified).
  *
- * Dev test mode: only when ENVIRONMENT=dev AND no Access team domain is configured, the headers
- * `X-Dev-Email` and optional `X-Dev-Persona` stand in for Access, so a scripted client or MCP
- * Inspector can run the flow locally. Both are ignored everywhere else.
+ * Dev test mode: only when ENVIRONMENT=dev, no Access team domain is configured AND the request
+ * host is loopback (localhost or 127.0.0.1), the headers `X-Dev-Email` and optional `X-Dev-Persona`
+ * stand in for Access, so a scripted client or MCP Inspector can run the flow locally. On any other
+ * host they are ignored, and an unconfigured Access means 401 (fail closed): a deployed dev worker
+ * is public, so a header is never an identity there.
  */
 export async function authenticate(request: Request, env: Env): Promise<Identity | null> {
   const team = (env.ACCESS_TEAM_DOMAIN ?? "").trim();
@@ -65,7 +69,7 @@ export async function authenticate(request: Request, env: Env): Promise<Identity
     const token = request.headers.get("cf-access-jwt-assertion");
     return token ? verifyAccessJwt(token, team, aud) : null;
   }
-  if (isDev(env) && !team) {
+  if (isDev(env) && !team && LOOPBACK_HOSTS.has(new URL(request.url).hostname)) {
     const email = request.headers.get("x-dev-email")?.trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+$/.test(email)) return null;
     const persona = request.headers.get("x-dev-persona")?.trim() || undefined;

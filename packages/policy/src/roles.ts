@@ -91,9 +91,14 @@ export const ROLES: Readonly<Record<RoleId, Role>> = {
   reviewer: {
     id: "reviewer",
     label: "Knowledge reviewer",
-    summary: "Reviews and approves items in the assigned queue. Exact-version approval only.",
+    summary:
+      "Reviews and approves items in the assigned queue, including Company Global releases (two distinct approvers). Exact-version approval only.",
     grants: [
-      G("global", "core", [...V, "comment"]),
+      // A Company Global release needs two distinct approvers, neither the contributor nor an editor.
+      G("global", "core", [...V, "comment", "review", "approve_release"], {
+        assigned_queue: true,
+        not_contributor: true,
+      }),
       G("circle", "c_bid", [...V, "review", "approve_release"], {
         assigned_queue: true,
         not_contributor: true,

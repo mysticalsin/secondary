@@ -1,21 +1,56 @@
-// Append-only audit log. Reachable only through the API worker's service binding:
+// Append-only audit log. Reachable only through service bindings:
 //  - wrangler.jsonc turns off workers.dev and preview URLs and declares no routes, so there is no public URL;
-//  - as defence in depth, any request that carries CF-Connecting-IP (set by the edge on public traffic,
-//    absent on service-binding calls) is refused.
+//  - every request must carry `X-Audit-Key`, a secret that only the bound workers hold. There are three
+//    keys: one append key per writer (api, mcp) and one read key (api only, for the Auditor views).
+//    The key decides the receipt `source`, so a writer cannot claim to be the other one, and the
+//    MCP worker, which faces the internet, holds no read key;
+//  - as defence in depth, a request that carries CF-Connecting-IP (public traffic) is refused.
 // Each receipt is written once as its own R2 object holding one JSON line, keyed by date and tenant.
 // Nothing here updates or deletes. Receipts hold who, what, where and the decision, never content.
 
 import { Hono } from "hono";
+import {
+  PRINCIPAL_ID,
+  parseReceipt,
+  type ReceiptSource,
+  TENANT_ID,
+} from "../../../packages/contracts/src/audit-receipt.ts";
 
-const app = new Hono<{ Bindings: Env }>();
 
 const MAX_BYTES = 4_096;
-const ID = /^[A-Za-z0-9_.:@-]{1,128}$/;
-const TENANT = /^[a-z0-9_]{3,64}$/;
-const DECISIONS = new Set(["allow", "deny", "rejected"]);
+
+/** Constant-time string comparison (length is not secret here, the content is). */
+function safeEqual(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a);
+  const y = new TextEncoder().encode(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return diff === 0;
+}
+
+type Role = { kind: "append"; source: ReceiptSource } | { kind: "read" };
+
+const app = new Hono<{ Bindings: Env; Variables: { role: Role } }>();
+
+function roleOf(c: { env: Env; req: { header: (n: string) => string | undefined } }): Role | null {
+  const given = c.req.header("X-Audit-Key") ?? "";
+  if (!given) return null;
+  const keys: [string | undefined, Role][] = [
+    [c.env.AUDIT_KEY_API, { kind: "append", source: "api" }],
+    [c.env.AUDIT_KEY_MCP, { kind: "append", source: "mcp" }],
+    [c.env.AUDIT_KEY_READ, { kind: "read" }],
+  ];
+  let found: Role | null = null;
+  // Compare against every configured key so timing does not reveal which one matched.
+  for (const [key, role] of keys) if (key && key.length >= 32 && safeEqual(given, key)) found = role;
+  return found;
+}
 
 app.use("*", async (c, next) => {
   if (c.req.header("CF-Connecting-IP")) return c.json({ error: "forbidden" }, 403);
+  const role = roleOf(c);
+  if (!role) return c.json({ error: "unauthorized" }, 401);
+  c.set("role", role);
   await next();
   c.header("Cache-Control", "no-store");
   c.header("X-Content-Type-Options", "nosniff");
@@ -23,63 +58,10 @@ app.use("*", async (c, next) => {
 
 const str = (v: unknown, re: RegExp): string | null =>
   typeof v === "string" && re.test(v) ? v : null;
-const nullable = (v: unknown, re: RegExp): string | null | undefined =>
-  v === null ? null : (str(v, re) ?? undefined);
-
-/** Picks exactly the allowed fields. Anything else in the body is dropped, so content cannot ride along. */
-function parseReceipt(v: unknown): Record<string, unknown> | null {
-  if (!v || typeof v !== "object") return null;
-  const o = v as Record<string, unknown>;
-  const receiptId = str(o.receiptId, /^rcpt_[0-9a-f-]{36}$/);
-  const tenantId = str(o.tenantId, TENANT);
-  const principalId = str(o.principalId, ID);
-  const action = str(o.action, /^[a-z_]{1,40}$/);
-  const nodeId = nullable(o.nodeId, ID);
-  const scopeId = nullable(o.scopeId, ID);
-  const requestId = nullable(o.requestId, /^[0-9a-f-]{36}$/);
-  const clientId = o.clientId === undefined ? null : nullable(o.clientId, ID);
-  const tool = o.tool === undefined ? null : nullable(o.tool, /^[A-Za-z0-9_.-]{1,60}$/);
-  const at = typeof o.at === "string" && Number.isFinite(Date.parse(o.at)) ? o.at : null;
-  const reason = typeof o.reason === "string" ? o.reason.slice(0, 300) : null;
-  const revision =
-    o.revision === null || (Number.isInteger(o.revision) && (o.revision as number) >= 0)
-      ? (o.revision as number | null)
-      : undefined;
-  const decision = typeof o.decision === "string" && DECISIONS.has(o.decision) ? o.decision : null;
-  if (
-    !receiptId ||
-    !tenantId ||
-    !principalId ||
-    !action ||
-    !at ||
-    reason === null ||
-    !decision ||
-    nodeId === undefined ||
-    scopeId === undefined ||
-    requestId === undefined ||
-    clientId === undefined ||
-    tool === undefined ||
-    revision === undefined
-  )
-    return null;
-  return {
-    receiptId,
-    at,
-    tenantId,
-    principalId,
-    action,
-    nodeId,
-    scopeId,
-    decision,
-    reason,
-    revision,
-    requestId,
-    clientId,
-    tool,
-  };
-}
 
 app.post("/append", async (c) => {
+  const role = c.get("role");
+  if (role.kind !== "append") return c.json({ error: "forbidden" }, 403);
   const raw = await c.req.text();
   if (raw.length > MAX_BYTES) return c.json({ error: "payload_too_large" }, 413);
   let parsed: unknown;
@@ -88,7 +70,7 @@ app.post("/append", async (c) => {
   } catch {
     return c.json({ error: "invalid_json" }, 400);
   }
-  const receipt = parseReceipt(parsed);
+  const receipt = parseReceipt(parsed, role.source);
   if (!receipt) return c.json({ error: "invalid_receipt" }, 400);
 
   const now = new Date();
@@ -106,10 +88,11 @@ app.post("/append", async (c) => {
 
 // The API only calls this for the Auditor role. Reading is scoped to one tenant and one principal.
 app.get("/receipts", async (c) => {
-  const tenant = str(c.req.query("tenant"), TENANT);
+  if (c.get("role").kind !== "read") return c.json({ error: "forbidden" }, 403);
+  const tenant = str(c.req.query("tenant"), TENANT_ID);
   const principalParam = c.req.query("principal");
   // No principal: the tenant's recent receipts (admin view). With one: that principal only.
-  const principal = principalParam === undefined ? null : str(principalParam, ID);
+  const principal = principalParam === undefined ? null : str(principalParam, PRINCIPAL_ID);
   if (!tenant || (principalParam !== undefined && !principal))
     return c.json({ error: "invalid_query" }, 400);
   const days = Math.min(Math.max(Number.parseInt(c.req.query("days") ?? "7", 10) || 7, 1), 30);

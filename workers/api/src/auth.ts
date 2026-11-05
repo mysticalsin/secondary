@@ -13,7 +13,7 @@ import {
   HEADER_TIMESTAMP,
   verifyInternalRequest,
 } from "./internal-auth.ts";
-import { getOrg, isRoleId, makeCtx, personaPrincipal } from "./org.ts";
+import { getOrg, isRoleId, makeCtx, personaId, personaPrincipal } from "./org.ts";
 import { tenantStub } from "./stubs.ts";
 import type { ActAs } from "./tenant-policy.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
@@ -177,7 +177,7 @@ export const authenticate =
     if (asked !== undefined) {
       if (!isRoleId(asked)) return c.json({ error: "unknown_persona" }, 400);
       persona = asked;
-      const p = personaPrincipal(asked, tenantId, email);
+      const p = personaPrincipal(asked, tenantId, email, await personaId(asked, email));
       actAs = { id: p.id, roleIds: p.roleIds, memberships: p.memberships };
     }
 

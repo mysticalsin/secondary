@@ -348,8 +348,9 @@ export function canDoInView(
     action === "edit" &&
     gs.length &&
     gs.every((g) => g.conditions.own_drafts) &&
-    !(node.leaf?.status === "draft" || author === principal.id)
+    author !== principal.id
   ) {
+    // M3: "own" means authored by the caller. A draft status does not make it theirs.
     return deny("Contributors edit their own drafts only");
   }
   return allow(elev && !gs.length ? "Granted by elevation (audited)" : `Granted on ${who}`);

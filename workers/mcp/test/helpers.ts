@@ -4,7 +4,7 @@ import worker from "../src/index.ts";
 // biome-ignore lint/suspicious/noExplicitAny: loosely typed JSON-RPC payloads in tests
 export type Loose = any;
 
-export const BASE = "https://mcp.test";
+export const BASE = "http://localhost";
 
 /** A copy of env with overrides. The OAuth helper object is per provider, so it must not be copied across. */
 export function envWith(overrides: Record<string, string>): Env {
@@ -180,6 +180,8 @@ export async function rpc(
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
         "mcp-protocol-version": "2025-06-18",
+        // The MCP SDK checks Host for loopback servers (DNS rebinding protection).
+        host: new URL(base).host,
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ jsonrpc: "2.0", id: rpcId++, method, params }),
@@ -209,11 +211,25 @@ export const callTool = (
   e: Env = env,
 ) => rpc(token, "tools/call", { name, arguments: args }, e);
 
+/**
+ * Receipts as the real audit parser stored them, shown in the event vocabulary the tests assert on
+ * (outcome, client_id, scope_ids, result_count, oauth_scopes, redirect_host, kind).
+ */
 export async function auditEvents(): Promise<Record<string, Loose>[]> {
-  return (await (await env.AUDIT.fetch("https://audit.internal/events")).json()) as Record<
-    string,
-    Loose
-  >[];
+  const receipts = (await (await env.AUDIT.fetch("https://audit.internal/events")).json()) as Loose[];
+  const outcome = { allow: "ok", deny: "denied", rejected: "error" } as const;
+  return receipts.map((r) => ({
+    ...r,
+    kind: r.tool ? "mcp.tool_call" : "mcp.oauth",
+    outcome: outcome[r.decision as keyof typeof outcome],
+    client_id: r.clientId,
+    scope_ids: r.scopeIds,
+    result_count: r.resultCount,
+    oauth_scopes: r.oauthScopes,
+    redirect_host: r.redirectHost,
+    who: r.principalId,
+    ...(r.reason === "" ? { reason: undefined } : {}),
+  }));
 }
 export const clearAudit = () =>
   env.AUDIT.fetch("https://audit.internal/events", { method: "DELETE" });

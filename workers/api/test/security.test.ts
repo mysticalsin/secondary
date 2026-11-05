@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import auditConfigRaw from "../../audit/wrangler.jsonc?raw";
+import mcpConfigRaw from "../../mcp/wrangler.jsonc?raw";
 import apiConfigRaw from "../wrangler.jsonc?raw";
 import { as, call, json, type Loose, seed } from "./helpers.ts";
 
@@ -245,5 +246,25 @@ describe("binding inventory", () => {
     expect(audit.preview_urls).toBe(false);
     for (const k of [...BINDING_SECTIONS, "services", "durable_objects", "assets"])
       expect(audit[k], k).toBeUndefined();
+  });
+});
+
+describe("M1: public surface of each worker (config)", () => {
+  it("api: workers_dev on behind Access, preview URLs off, no routes, no secrets as vars", () => {
+    const api = parseJsonc(apiConfigRaw);
+    expect(api.workers_dev).toBe(true);
+    expect(api.preview_urls).toBe(false);
+    expect(api.routes).toBeUndefined();
+    for (const k of ["SEED_TOKEN", "INTERNAL_HMAC_KEY", "AUDIT_KEY_API", "AUDIT_KEY_READ"])
+      expect(api.vars, k).not.toHaveProperty(k);
+  });
+
+  it("mcp: workers_dev on (hosts need discovery, /token, /register, /mcp), preview URLs off, no routes", () => {
+    const mcp = parseJsonc(mcpConfigRaw);
+    expect(mcp.workers_dev).toBe(true);
+    expect(mcp.preview_urls).toBe(false);
+    expect(mcp.routes).toBeUndefined();
+    for (const k of ["INTERNAL_HMAC_KEY", "AUDIT_KEY_MCP"])
+      expect(mcp.vars, k).not.toHaveProperty(k);
   });
 });

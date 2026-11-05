@@ -76,7 +76,7 @@ export type Comment = { id: number; itemId: string; authorId: string; text: stri
 
 export type Fail = {
   ok: false;
-  code: "not_found" | "conflict" | "self_approval" | "not_pending" | "already_done" | "exists";
+  code: "not_found" | "conflict" | "self_approval" | "not_author" | "not_pending" | "already_done" | "exists";
   message: string;
   currentRevision?: number;
 };
@@ -115,6 +115,9 @@ export class Workspace extends DurableObject<Env> {
           item_id TEXT NOT NULL, revision INTEGER NOT NULL, actor_id TEXT NOT NULL,
           kind TEXT NOT NULL, at INTEGER NOT NULL, verdict TEXT,
           PRIMARY KEY (item_id, revision, actor_id, kind));
+        CREATE TABLE IF NOT EXISTS edits (
+          item_id TEXT NOT NULL, revision INTEGER NOT NULL, actor_id TEXT NOT NULL, at INTEGER NOT NULL);
+        CREATE INDEX IF NOT EXISTS edits_item ON edits (item_id, actor_id);
         CREATE TABLE IF NOT EXISTS contributions (
           item_id TEXT NOT NULL, scope_id TEXT NOT NULL, candidate_id TEXT NOT NULL, at INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS contributions_item ON contributions (item_id);
@@ -131,7 +134,7 @@ export class Workspace extends DurableObject<Env> {
   seed(rows: SeedRow[], reset: boolean, now: number): number {
     this.ctx.storage.transactionSync(() => {
       if (reset)
-        for (const t of ["items", "items_fts", "comments", "approvals", "outbox", "contributions"])
+        for (const t of ["items", "items_fts", "comments", "approvals", "edits", "outbox", "contributions"])
           this.sql.exec(`DELETE FROM ${t}`);
       for (const r of rows) {
         this.sql.exec(
@@ -378,9 +381,18 @@ export class Workspace extends DurableObject<Env> {
     expectedPreviousRevision: number,
     patch: { title?: string; body?: string },
     now: number,
+    actorId: string,
   ): EditResult {
     const rec = this.load(id, expectedPreviousRevision);
     if ("ok" in rec) return rec;
+    // H1: only the contributor changes a candidate. Anyone else comments or requests changes, so a
+    // steward cannot rewrite a colleague's contribution and then release it.
+    if (rec.origin === "candidate" && rec.authorId !== actorId)
+      return {
+        ok: false,
+        code: "not_author",
+        message: "Only the contributor can edit a candidate. Comment or request changes instead.",
+      };
     // An approved item that changes goes back to review. Drafts and candidates keep their status.
     const status = rec.status === "approved" ? "candidate" : rec.status;
     const label = patch.title ?? rec.label;
@@ -397,10 +409,27 @@ export class Workspace extends DurableObject<Env> {
         now,
         id,
       );
+      this.sql.exec(
+        "INSERT INTO edits (item_id, revision, actor_id, at) VALUES (?, ?, ?, ?)",
+        id,
+        revision,
+        actorId,
+        now,
+      );
       if (rec.origin === "seed") this.reindex(id, label);
       this.outbox("item.edited", { id, revision }, now);
     });
     return { ok: true, revision, status };
+  }
+
+  /** The contributor and anyone who edited the item count as its authors, on every revision. */
+  private authored(rec: ItemRecord, actorId: string): boolean {
+    if (rec.authorId === actorId) return true;
+    return (
+      this.sql
+        .exec("SELECT 1 FROM edits WHERE item_id = ? AND actor_id = ? LIMIT 1", rec.id, actorId)
+        .toArray().length > 0
+    );
   }
 
   review(
@@ -412,11 +441,11 @@ export class Workspace extends DurableObject<Env> {
   ): ReviewResult {
     const rec = this.load(id, expected);
     if ("ok" in rec) return rec;
-    if (rec.authorId === actorId)
+    if (this.authored(rec, actorId))
       return {
         ok: false,
         code: "self_approval",
-        message: "You cannot review your own contribution",
+        message: "You wrote or edited this item, so you cannot review it",
       };
     if (rec.status !== "candidate")
       return { ok: false, code: "not_pending", message: "The item is not awaiting review" };
@@ -439,11 +468,12 @@ export class Workspace extends DurableObject<Env> {
   approve(id: string, expected: number, actorId: string, now: number): ApproveResult {
     const rec = this.load(id, expected);
     if ("ok" in rec) return rec;
-    if (rec.authorId === actorId)
+    if (this.authored(rec, actorId))
       return {
         ok: false,
         code: "self_approval",
-        message: "Self-approval blocked: a second person must approve this contribution",
+        message:
+          "Self-approval blocked: you wrote or edited this item, so a different person must approve it",
       };
     if (rec.status !== "candidate")
       return { ok: false, code: "not_pending", message: "The item is not awaiting release" };

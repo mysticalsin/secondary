@@ -108,6 +108,7 @@ export const as = (persona: string, path: string, o: CallOpts = {}) =>
 
 export async function seed(opts: { tenantId?: string; emailDomain?: string; seed?: number } = {}) {
   const res = await call("/v1/admin/seed", {
+    email: "seeder@example.invalid",
     body: opts,
     headers: { "X-Seed-Token": SEED_TOKEN },
     env: { TENANT_DOMAINS: JSON.stringify({ "beta.example.invalid": BETA }) },

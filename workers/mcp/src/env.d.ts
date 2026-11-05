@@ -3,12 +3,15 @@
 interface Env {
   /** Secret. HMAC key shared with workers/api for internal service auth (>= 32 chars). */
   INTERNAL_HMAC_KEY: string;
+  /** Secret (at least 32 characters). Append-only key for workers/audit. */
+  AUDIT_KEY_MCP?: string;
   /** Injected by OAuthProvider into the default handler. */
   OAUTH_PROVIDER: import("@cloudflare/workers-oauth-provider").OAuthHelpers;
 }
 declare namespace Cloudflare {
   interface Env {
     INTERNAL_HMAC_KEY: string;
+    AUDIT_KEY_MCP?: string;
     OAUTH_PROVIDER: import("@cloudflare/workers-oauth-provider").OAuthHelpers;
   }
 }

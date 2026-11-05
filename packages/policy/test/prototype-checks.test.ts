@@ -143,6 +143,14 @@ describe("prototype policy checks", () => {
     expect(can("reviewer", "c_bid:pricing-models", "approve_release").allowed).toBe(true);
   });
 
+  it("18b. Reviewer holds approve_release on Company Global, never on their own items", () => {
+    expect(can("reviewer", "core", "approve_release").allowed).toBe(true);
+    expect(can("reviewer", "core", "review").allowed).toBe(true);
+    // No other role gained a release right on global.
+    for (const r of ["ceo", "head_bid", "acme_lead", "consultant", "platform_admin", "auditor"] as const)
+      expect(can(r, "core", "approve_release").allowed, r).toBe(false);
+  });
+
   it("19. Contributor edits own drafts only", () => {
     expect(can("consultant", "c_delivery:quality-gates", "edit").allowed).toBe(true);
     const foreign = [...views.consultant.nodes.values()].find(
@@ -156,10 +164,23 @@ describe("prototype policy checks", () => {
       allowed: false,
       reason: "Contributors edit their own drafts only",
     });
+    // M3: someone else's draft is not theirs to edit, and an item they authored is.
     const draft = [...views.consultant.nodes.values()].find(
-      (n) => n.kind === "topic" && n.leaf?.status === "draft",
+      (n) =>
+        n.kind === "topic" &&
+        n.leaf?.status === "draft" &&
+        n.leaf?.authorId !== PERSONAS.consultant.id &&
+        n.access === "full",
     );
-    if (draft) expect(can("consultant", draft.id, "edit").allowed).toBe(true);
+    expect(draft).toBeDefined();
+    expect(can("consultant", draft?.id ?? "", "edit")).toEqual({
+      allowed: false,
+      reason: "Contributors edit their own drafts only",
+    });
+    const own = [...views.consultant.nodes.values()].find(
+      (n) => n.kind === "topic" && n.leaf?.authorId === PERSONAS.consultant.id,
+    );
+    if (own) expect(can("consultant", own.id, "edit").allowed).toBe(true);
   });
 
   it("20. Locked nodes: request_access allowed, other actions denied", () => {

@@ -33,7 +33,7 @@ describe("unauthenticated access and discovery", () => {
     const challenge = res.headers.get("www-authenticate") ?? "";
     expect(challenge).toMatch(/^Bearer /);
     expect(challenge).toContain(
-      'resource_metadata="https://mcp.test/.well-known/oauth-protected-resource/mcp"',
+      'resource_metadata="http://localhost/.well-known/oauth-protected-resource/mcp"',
     );
     expect(challenge).toContain('scope="secondary.read"');
   });
@@ -48,8 +48,8 @@ describe("unauthenticated access and discovery", () => {
     const res = await send(new Request(`${BASE}/.well-known/oauth-protected-resource/mcp`));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({
-      resource: "https://mcp.test/mcp",
-      authorization_servers: ["https://mcp.test"],
+      resource: "http://localhost/mcp",
+      authorization_servers: ["http://localhost"],
       scopes_supported: ["secondary.read"],
       bearer_methods_supported: ["header"],
     });
@@ -59,10 +59,10 @@ describe("unauthenticated access and discovery", () => {
     const res = await send(new Request(`${BASE}/.well-known/oauth-authorization-server`));
     const m = (await res.json()) as Record<string, unknown>;
     expect(m).toMatchObject({
-      issuer: "https://mcp.test",
-      authorization_endpoint: "https://mcp.test/authorize",
-      token_endpoint: "https://mcp.test/token",
-      registration_endpoint: "https://mcp.test/register",
+      issuer: "http://localhost",
+      authorization_endpoint: "http://localhost/authorize",
+      token_endpoint: "http://localhost/token",
+      registration_endpoint: "http://localhost/register",
       code_challenge_methods_supported: ["S256"],
       scopes_supported: ["secondary.read", "secondary.personal.write", "secondary.contribute"],
       client_id_metadata_document_supported: true,
@@ -77,13 +77,13 @@ describe("unauthenticated access and discovery", () => {
 
 describe("audience (RFC 8707) and no token passthrough", () => {
   it("rejects a token that was issued for a different resource", async () => {
-    const other = envWith({ MCP_PUBLIC_URL: "https://other.test" });
-    const t = await getToken({ e: other, base: "https://other.test" });
+    const other = envWith({ MCP_PUBLIC_URL: "http://127.0.0.1" });
+    const t = await getToken({ e: other, base: "http://127.0.0.1" });
     // valid at the issuing server...
-    expect((await rpc(t.token, "tools/list", {}, other, "https://other.test")).res.status).toBe(
+    expect((await rpc(t.token, "tools/list", {}, other, "http://127.0.0.1")).res.status).toBe(
       200,
     );
-    // ...but refused here: audience is https://other.test/mcp, not https://mcp.test/mcp.
+    // ...but refused here: audience is http://127.0.0.1/mcp, not http://localhost/mcp.
     const { res } = await rpc(t.token, "tools/list");
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toContain("invalid_token");

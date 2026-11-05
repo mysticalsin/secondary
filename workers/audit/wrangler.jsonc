@@ -10,5 +10,7 @@
   "r2_buckets": [
     { "binding": "AUDIT_LOG", "bucket_name": "secondary-audit-dev", "jurisdiction": "eu" }
   ],
+  // Secrets (wrangler secret put ...): AUDIT_KEY_API, AUDIT_KEY_MCP, AUDIT_KEY_READ (each 32+ chars).
+  // No routes either: it is reached only through service bindings.
   "vars": { "ENVIRONMENT": "dev" }
 }

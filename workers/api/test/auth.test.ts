@@ -195,9 +195,14 @@ describe("local dev bypass", () => {
 });
 
 describe("seed endpoint", () => {
+  const who = "seeder@example.invalid";
+  const t = (
+    headers: Record<string, string>,
+    env: Record<string, unknown> = {},
+    email: string | null = who,
+  ) => call("/v1/admin/seed", { body: {}, headers, env, ...(email ? { email } : {}) });
+
   it("needs the seed token (constant-time compare), and only in dev", async () => {
-    const t = (headers: Record<string, string>, env: Record<string, unknown> = {}) =>
-      call("/v1/admin/seed", { body: {}, headers, env });
     expect((await t({})).status).toBe(401);
     expect((await t({ "X-Seed-Token": "wrong" })).status).toBe(401);
     expect((await t({ "X-Seed-Token": `${SEED_TOKEN}x` })).status).toBe(401);
@@ -205,6 +210,30 @@ describe("seed endpoint", () => {
     expect((await t({ "X-Seed-Token": SEED_TOKEN }, { ENVIRONMENT: "prod" })).status).toBe(404);
     expect((await t({ "X-Seed-Token": SEED_TOKEN }, { SEED_TOKEN: undefined })).status).toBe(503);
     expect((await t({ "X-Seed-Token": "" }, { SEED_TOKEN: "" })).status).toBe(503);
+  });
+
+  it("M1: the token alone is not enough, a valid Access identity is required too", async () => {
+    // No Access JWT: 401 even with the right token.
+    expect((await t({ "X-Seed-Token": SEED_TOKEN }, {}, null)).status).toBe(401);
+    // A forged JWT: 401.
+    const forged = await call("/v1/admin/seed", {
+      body: {},
+      token: await sign(who, { signWithStranger: true }),
+      headers: { "X-Seed-Token": SEED_TOKEN },
+    });
+    expect(forged.status).toBe(401);
+    // Access identity without the token: 401.
+    expect((await t({})).status).toBe(401);
+  });
+
+  it("M1: attempts are rate limited per signed-in user", async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 12; i++)
+      statuses.push((await t({ "X-Seed-Token": "wrong" }, {}, "hammer@example.invalid")).status);
+    expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
+    expect(statuses.slice(10)).toEqual([429, 429]);
+    // Another user is not affected.
+    expect((await t({ "X-Seed-Token": "wrong" }, {}, "calm@example.invalid")).status).toBe(401);
   });
 
   it("a signed-in user without the token cannot seed", async () => {
@@ -216,5 +245,34 @@ describe("seed endpoint", () => {
     expect((await call("/v1/map", { email: "a@fresh.example.invalid", env })).status).toBe(503);
     const me = await json(await call("/v1/me", { email: "a@fresh.example.invalid", env }));
     expect(me.seeded).toBe(false);
+  });
+});
+
+describe("M2: personas are bound to the signed-in email", () => {
+  it("two testers with the same persona are two principals with separate Personal Brains", async () => {
+    const me = async (email: string) =>
+      json(await call("/v1/me", { email, persona: "consultant" })).then((m) => m.principal.id);
+    const a = await me("tester.a@example.invalid");
+    const b = await me("tester.b@example.invalid");
+    expect(a).toMatch(/^u_consultant_[0-9a-f]{10}$/);
+    expect(b).toMatch(/^u_consultant_[0-9a-f]{10}$/);
+    expect(a).not.toBe(b);
+    // The seeded persona address keeps the canonical id the synthetic items refer to.
+    expect(await me("consultant@example.invalid")).toBe("u_consultant");
+
+    const note = await call("/v1/personal/items", {
+      email: "tester.a@example.invalid",
+      persona: "consultant",
+      body: { title: "Mine alone", body: "private" },
+    });
+    expect(note.status).toBe(201);
+    const list = async (email: string) =>
+      json<{ title: string }[]>(
+        await call("/v1/personal/items", { email, persona: "consultant" }),
+      );
+    expect((await list("tester.a@example.invalid")).map((i) => i.title)).toContain("Mine alone");
+    expect((await list("tester.b@example.invalid")).map((i) => i.title)).not.toContain(
+      "Mine alone",
+    );
   });
 });

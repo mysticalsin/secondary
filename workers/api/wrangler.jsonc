@@ -4,6 +4,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
+  // M1: the workers.dev host stays on, and the whole host sits behind one Cloudflare Access app (created
+  // at deploy). The API also verifies the Access JWT itself and fails closed on every route except
+  // /v1/health. Preview URLs are off: they are separate hosts that no Access app would cover.
+  "workers_dev": true,
+  "preview_urls": false,
+  // Optional custom route. Not set in B1; the host is decided at deploy time. Placeholder:
+  //   "routes": [{ "pattern": "secondary-dev.<your-domain>/*", "zone_name": "<your-domain>" }]
   // Static SPA built by apps/web (run `pnpm --filter @secondary/web build` first).
   "assets": {
     "directory": "../../apps/web/dist",
@@ -41,6 +48,8 @@
     "DO_JURISDICTION": "eu"
   }
   // Secrets and local-only values, intentionally not set here (see .dev.vars.example):
+  //   AUDIT_KEY_API          secret (32+ chars). Appends receipts to workers/audit.
+  //   AUDIT_KEY_READ         secret (32+ chars). Reads receipts from workers/audit (Auditor views).
   //   INTERNAL_HMAC_KEY      secret, at least 32 characters. Shared with workers/mcp: verifies its signed calls (X-Secondary-*).
   //   SEED_TOKEN             secret. Required by POST /v1/admin/seed (dev only).
   //   DEV_AUTH_BYPASS_EMAIL  local-dev var. Honoured only when ENVIRONMENT is "dev" AND the request host is

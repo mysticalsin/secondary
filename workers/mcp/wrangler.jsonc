@@ -5,6 +5,14 @@
   "compatibility_date": "2026-10-01",
   // global_fetch_strictly_public: required for safe Client ID Metadata Document fetches (SSRF protection).
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // M1: workers.dev stays on because LLM hosts must reach the discovery documents, /register, /token and
+  // /mcp without Access. /authorize must require a valid Access JWT: the Access app covers that path and
+  // the worker verifies the JWT again (C1). Where Access is not configured /authorize answers 401,
+  // except on a loopback host in dev. Preview URLs are off: separate hosts that no Access app covers.
+  "workers_dev": true,
+  "preview_urls": false,
+  // Optional custom route. Not set in B1; the host is decided at deploy time. Placeholder:
+  //   "routes": [{ "pattern": "secondary-mcp-dev.<your-domain>/*", "zone_name": "<your-domain>" }]
   // OAuth provider state (clients, grants, token hashes). KV is NOT EU-restricted: it holds only token
   // hashes, opaque ids and grant metadata, plus props encrypted with a key only the token holder can unwrap.
   // No Secondary content is ever stored here. Add "id" when the namespace is created at deploy time.
@@ -15,14 +23,18 @@
   ],
   "vars": {
     "ENVIRONMENT": "dev",
+    // Tenant stamped on MCP audit receipts. Same value as workers/api.
+    "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
     // Canonical public origin, for example "https://secondary-mcp-dev.<account>.workers.dev". It is the token
     // audience (RFC 8707). Required outside dev; in dev an empty value falls back to the request origin.
     "MCP_PUBLIC_URL": "",
-    // Cloudflare Access in front of /authorize. Empty until Access is configured (dev test mode then applies).
+    // Cloudflare Access in front of /authorize. Empty until Access is configured: /authorize then answers 401, except dev test headers on a loopback host.
     "ACCESS_TEAM_DOMAIN": "",
     "ACCESS_AUD": "",
     // Redirect URI hosts allowed to receive authorization codes (B-05).
     "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt,localhost,127.0.0.1"
   }
-  // Secret (wrangler secret put INTERNAL_HMAC_KEY): never in this file.
+  // Secrets (wrangler secret put ...): never in this file.
+  //   INTERNAL_HMAC_KEY  shared with workers/api
+  //   AUDIT_KEY_MCP      append-only key for workers/audit (32+ chars)
 }

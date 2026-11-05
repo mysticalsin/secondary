@@ -132,6 +132,7 @@ function failResponse(c: C, f: Fail): Response {
         409,
       );
     case "self_approval":
+    case "not_author":
       return c.json({ error: "forbidden", reason: f.message }, 403);
     default:
       return c.json({ error: f.code, reason: f.message }, 409);
@@ -343,6 +344,8 @@ function governanceCards(view: AdmittedView) {
   });
 }
 
+const SEED_LIMIT_PER_MIN = 10;
+
 // ---- the router ----
 
 export function v1Routes(deps: AppDeps): Hono<AppEnv> {
@@ -352,11 +355,23 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   // Unauthenticated: liveness only, no data.
   v1.get("/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION }));
 
-  // Dev only, guarded by a shared secret instead of a signed-in user.
+  v1.use("*", authenticate(deps));
+
+  // Dev only. Needs BOTH a valid Access identity (this route sits behind `authenticate`) AND the
+  // SEED_TOKEN secret, compared in constant time. Attempts are rate limited per signed-in user.
   v1.post("/admin/seed", async (c) => {
     if (c.env.ENVIRONMENT !== "dev") throw notFound();
     const secret = c.env.SEED_TOKEN;
     if (!secret) return c.json({ error: "seed_disabled" }, 503);
+    const gate = await tenantStub(c.env, c.env.DEFAULT_TENANT_ID).hit(
+      `seed:${sess(c).principal.id}`,
+      deps.now?.() ?? Date.now(),
+      SEED_LIMIT_PER_MIN,
+    );
+    if (gate.limited) {
+      c.header("Retry-After", String(gate.retryAfter));
+      return c.json({ error: "rate_limited" }, 429);
+    }
     const given = c.req.header("X-Seed-Token") ?? "";
     if (!safeEqual(given, secret)) return c.json({ error: "unauthorized" }, 401);
 
@@ -407,7 +422,6 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     });
   });
 
-  v1.use("*", authenticate(deps));
 
   v1.get("/me", (c) => {
     const s = sess(c);
@@ -815,7 +829,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
         return c.json({ ok: true, receiptId: receipt.receiptId, commentId: m.id });
       }
       case "edit": {
-        const r = await ws.edit(nodeId, revision as number, patch, now);
+        const r = await ws.edit(nodeId, revision as number, patch, now, s.principal.id);
         return "ok" in r && r.ok
           ? c.json({
               ok: true,

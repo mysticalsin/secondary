@@ -20,7 +20,11 @@ const call = (path: string, init: RequestInit = {}, headers: Record<string, stri
   exports.default.fetch(
     new Request(`https://audit.internal${path}`, {
       ...init,
-      headers: { "Content-Type": "application/json", ...headers },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Audit-Key": path.startsWith("/receipts") ? env.AUDIT_KEY_READ : env.AUDIT_KEY_API,
+        ...headers,
+      },
     }),
   );
 
@@ -87,6 +91,34 @@ describe("audit worker", () => {
       receipts: unknown[];
     };
     expect(all.receipts.length).toBeGreaterThan(1);
+  });
+
+  it("needs a valid key on every route (M4)", async () => {
+    const r = receipt();
+    expect((await append(r, { "X-Audit-Key": "" })).status).toBe(401);
+    expect((await append(r, { "X-Audit-Key": "wrong-key-wrong-key-wrong-key-wrong-key" })).status).toBe(
+      401,
+    );
+    expect((await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": "" })).status).toBe(
+      401,
+    );
+  });
+
+  it("splits append and read keys, and stamps the source from the key", async () => {
+    // The MCP worker can append but never read.
+    const viaMcp = await append(receipt({ source: "api" }), { "X-Audit-Key": env.AUDIT_KEY_MCP });
+    expect(viaMcp.status).toBe(202);
+    const { key } = (await viaMcp.json()) as { key: string };
+    const stored = JSON.parse((await (await env.AUDIT_LOG.get(key))?.text()) as string);
+    expect(stored.source).toBe("mcp");
+    expect(
+      (await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": env.AUDIT_KEY_MCP })).status,
+    ).toBe(403);
+    expect(
+      (await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": env.AUDIT_KEY_API })).status,
+    ).toBe(403);
+    // The read key cannot write.
+    expect((await append(receipt(), { "X-Audit-Key": env.AUDIT_KEY_READ })).status).toBe(403);
   });
 
   it("has no update or delete route", async () => {

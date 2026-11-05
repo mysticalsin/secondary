@@ -2,6 +2,7 @@
 // The API stub verifies the internal HMAC exactly as workers/api must (shared helper), then answers
 // with small synthetic payloads shaped like docs/API-CONTRACT.md. Synthetic data only.
 
+import { parseReceipt } from "../../../packages/contracts/src/audit-receipt.ts";
 import { type InternalPrincipal, verifyInternalRequest } from "../src/internal-auth.ts";
 
 export const TEST_HMAC_KEY = "test-only-internal-hmac-key-0123456789abcdef";
@@ -14,6 +15,7 @@ interface Call {
   hasAuthorization: boolean;
 }
 const calls: Call[] = [];
+export const TEST_AUDIT_KEY = "test-audit-key-mcp-0123456789abcdef0123";
 const audit: Record<string, unknown>[] = [];
 let auditDown = false;
 
@@ -187,6 +189,12 @@ export async function auditStub(request: Request): Promise<Response> {
     return Response.json({ auditDown });
   }
   if (auditDown) return new Response("down", { status: 503 });
-  audit.push((await request.json()) as Record<string, unknown>);
+  // Behave like workers/audit: it needs the MCP append key and parses with the real shared parser,
+  // so a receipt it would refuse (400) is refused here too.
+  if (request.headers.get("x-audit-key") !== TEST_AUDIT_KEY)
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  const receipt = parseReceipt(await request.json(), "mcp");
+  if (!receipt) return Response.json({ error: "invalid_receipt" }, { status: 400 });
+  audit.push(receipt as unknown as Record<string, unknown>);
   return Response.json({ ok: true }, { status: 202 });
 }

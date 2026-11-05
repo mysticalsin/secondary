@@ -32,9 +32,28 @@ export function getOrg(config: TenantConfig): Org {
 export const isRoleId = (v: unknown): v is RoleId =>
   typeof v === "string" && (ROLE_ORDER as readonly string[]).includes(v);
 
+/**
+ * M2: a dev persona is bound to the signed-in email, so two testers who both pick "consultant" are
+ * two principals with separate Personal Brains. The seeded persona addresses (`<role>@...`) keep the
+ * canonical id `u_<role>`, because the synthetic items name those ids as their authors.
+ */
+export async function personaId(roleId: RoleId, email: string): Promise<string> {
+  const e = email.trim().toLowerCase();
+  if (e.split("@")[0] === roleId) return PERSONAS[roleId].id;
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e));
+  const h = Array.from(new Uint8Array(d).slice(0, 5), (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${PERSONAS[roleId].id}_${h}`;
+}
+
 /** The synthetic persona for a role, as a principal of the tenant, signed in as `email`. */
-export const personaPrincipal = (roleId: RoleId, tenantId: string, email: string): Principal => ({
+export const personaPrincipal = (
+  roleId: RoleId,
+  tenantId: string,
+  email: string,
+  id: string = PERSONAS[roleId].id,
+): Principal => ({
   ...PERSONAS[roleId],
+  id,
   tenantId,
   email,
   memberships: PERSONAS[roleId].memberships.map((m) => ({ ...m })),

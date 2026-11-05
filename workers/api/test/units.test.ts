@@ -187,7 +187,7 @@ describe("Workspace", () => {
       code: "already_done",
     });
     // An edit starts a new revision with no approvals: the earlier approval does not carry over.
-    expect(await w.edit("cand:c_bid:aaaaaaaa", 1, { title: "Draft v2" }, NOW)).toMatchObject({
+    expect(await w.edit("cand:c_bid:aaaaaaaa", 1, { title: "Draft v2" }, NOW, "u_author")).toMatchObject({
       ok: true,
       revision: 2,
     });
@@ -211,11 +211,70 @@ describe("Workspace", () => {
       reviewedBy2: true,
     });
     // Editing a released item sends it back to review.
-    expect(await w.edit("cand:c_bid:aaaaaaaa", 2, { body: "changed" }, NOW)).toMatchObject({
+    expect(await w.edit("cand:c_bid:aaaaaaaa", 2, { body: "changed" }, NOW, "u_author")).toMatchObject({
       ok: true,
       status: "candidate",
       revision: 3,
     });
+  });
+
+  it("H1: only the contributor edits a candidate, and an editor can never approve or review it", async () => {
+    const w = wsOf("tenant_unit", "ws_h1");
+    const id = "cand:c_bid:cccccccc";
+    await w.create(
+      {
+        id,
+        label: "x",
+        kind: "candidate",
+        plane: "TEAM_RESTRICTED",
+        origin: "candidate",
+        status: "candidate",
+        authorId: "u_author",
+        body: "b",
+        targetNode: "c_bid",
+      },
+      NOW,
+    );
+    // A steward cannot rewrite a colleague's candidate...
+    expect(await w.edit(id, 1, { body: "mine" }, NOW, "u_steward")).toMatchObject({
+      ok: false,
+      code: "not_author",
+    });
+    expect(await w.get(id)).toMatchObject({ revision: 1, body: "b" });
+    // ...but the contributor can, and then still cannot approve or review it.
+    expect(await w.edit(id, 1, { body: "b2" }, NOW, "u_author")).toMatchObject({ ok: true });
+    expect(await w.approve(id, 2, "u_author", NOW)).toMatchObject({ code: "self_approval" });
+    // A seeded item has no candidate rule, but whoever edits it counts as an author of it.
+    await w.seed(
+      [
+        {
+          id: "item_1",
+          label: "Seeded",
+          kind: "topic",
+          plane: "TEAM_RESTRICTED",
+          status: "approved",
+          revision: 1,
+          authorId: "u_other",
+          tags: [],
+          reviewedBy2: false,
+        },
+      ],
+      false,
+      NOW,
+    );
+    expect(await w.edit("item_1", 1, { title: "Seeded v2" }, NOW, "u_steward")).toMatchObject({
+      ok: true,
+      status: "candidate",
+    });
+    expect(await w.approve("item_1", 2, "u_steward", NOW)).toMatchObject({
+      ok: false,
+      code: "self_approval",
+    });
+    expect(await w.review("item_1", 2, "u_steward", "accept", NOW)).toMatchObject({
+      ok: false,
+      code: "self_approval",
+    });
+    expect(await w.approve("item_1", 2, "u_second", NOW)).toMatchObject({ ok: true });
   });
 
   it("writes an outbox row for contributions and releases", async () => {

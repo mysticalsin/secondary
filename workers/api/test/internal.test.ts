@@ -194,8 +194,8 @@ describe("internal service auth (workers/mcp to workers/api)", () => {
       body: { nodeId: "core", action: "comment", payload: { text: "x" } },
     });
     expect(act.status).toBe(403);
-    // The seed route has its own token and no Access path: internal headers do not open it.
-    expect((await internal("/v1/admin/seed", { body: {} })).status).toBe(401);
+    // Seeding needs an Access identity plus its own token: internal headers do not open it.
+    expect((await internal("/v1/admin/seed", { body: {} })).status).toBe(403);
     // Scopes.
     expect((await internal("/v1/map", { p: { scope: ["secondary.personal.write"] } })).status).toBe(
       403,
