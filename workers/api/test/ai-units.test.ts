@@ -3,8 +3,8 @@ import segmentsRaw from "../../../packages/fixtures/sample/personal-segments.jso
 import transcript1 from "../../../packages/fixtures/sample/transcripts/acct-acme/trn-0001.md?raw";
 import transcript2 from "../../../packages/fixtures/sample/transcripts/acct-acme/trn-0002.md?raw";
 import { callModel, extractJson } from "../src/ai/anthropic.ts";
-import { doBudget, reserve } from "../src/ai/budget.ts";
 import { gate } from "../src/ai/brief.ts";
+import { doBudget, reserve } from "../src/ai/budget.ts";
 import { aiState, DEFAULT_MODEL } from "../src/ai/config.ts";
 import { buildUserPrompt, validateBrief } from "../src/ai/prompt.ts";
 import { excludePersonalSegments, maskContacts } from "../src/ai/segments.ts";

@@ -186,9 +186,11 @@ describe("Users", () => {
   });
 
   it("renames, refuses a taken name, and signs the old login out", async () => {
-    const s = await signIn(makeIdp(), { email: mail() });
-    const email = (await json<Loose>(await meOf(s.cookie))).principal.email;
+    // Under SCIM a user signs in only once provisioned.
+    const email = mail();
     const u = await createUser(email);
+    const s = await signIn(makeIdp(), { email });
+    expect((await meOf(s.cookie)).status).toBe(200);
     const other = await createUser();
     expect(
       (await patch("Users", u.id, [{ op: "replace", path: "userName", value: other.userName }]))

@@ -6,6 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
 import { GOV_METHODS, GovStore } from "./admin/store.ts";
 import {
+  type EntraSubject,
   type GroupOp,
   IdentityStore,
   principalIdFor,
@@ -23,7 +24,18 @@ export type SeedPrincipal = {
   memberships: Membership[];
 };
 export type ActAs = { id: string; roleIds: string[]; memberships: Membership[] };
-export type SessionInput = { email: string; actAs: ActAs | null; now: number; limit: number };
+export type SessionInput = {
+  email: string;
+  actAs: ActAs | null;
+  now: number;
+  limit: number;
+  /** Which identity source signed the request in. */
+  via?: "entra" | "access" | "internal";
+  /** A directory (SCIM) manages this tenant: an unknown principal is not active (H-02). */
+  managed?: boolean;
+  /** This email is explicitly linked to its Access identity (ACCESS_LINKED_EMAILS). */
+  accessLinked?: boolean;
+};
 export type Session = {
   limited: boolean;
   /** Seconds until the request window resets (set when limited). */
@@ -245,21 +257,35 @@ export class TenantPolicy extends DurableObject<Env> {
         .toArray()
         .map((r) => ({ scope_type: r.scope_type as ScopeType, scope_id: r.scope_id as string }));
     }
-    const ndaGrants = this.sql
-      .exec(
-        "SELECT account_id FROM nda_grants WHERE principal_id = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY 1",
-        id,
-        input.now,
-      )
-      .toArray()
-      .map((r) => r.account_id as string);
-    const until = this.sql
-      .exec(
-        "SELECT MAX(until) AS u FROM elevations WHERE principal_id = ? AND until > ?",
-        id,
-        input.now,
-      )
-      .one().u as number | null;
+    // Grants and elevations load only for a principal that exists (M-10): a renamed or unknown email
+    // falls back to a derived id and must not inherit what an earlier holder of that id was given.
+    const known = !!row || !!input.actAs;
+    const ndaGrants = known
+      ? this.sql
+          .exec(
+            "SELECT account_id FROM nda_grants WHERE principal_id = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY 1",
+            id,
+            input.now,
+          )
+          .toArray()
+          .map((r) => r.account_id as string)
+      : [];
+    const until = known
+      ? (this.sql
+          .exec(
+            "SELECT MAX(until) AS u FROM elevations WHERE principal_id = ? AND until > ?",
+            id,
+            input.now,
+          )
+          .one().u as number | null)
+      : null;
+    // H-01: an Entra-bound principal is not reachable through another identity source by email alone.
+    const hijack =
+      !input.actAs &&
+      input.via !== undefined &&
+      input.via !== "entra" &&
+      !input.accessLinked &&
+      this.identity.subjectOfEmail(email) !== null;
 
     return {
       limited: count > input.limit,
@@ -270,7 +296,7 @@ export class TenantPolicy extends DurableObject<Env> {
       epoch: this.epoch(),
       config: this.getConfig(),
       switches: this.switchState(),
-      active: this.identity.isEmailActive(email),
+      active: !hijack && this.identity.isEmailActive(email, input.managed === true),
       rolesVersion: this.govStore.rolesVersion(),
     };
   }
@@ -532,8 +558,20 @@ export class TenantPolicy extends DurableObject<Env> {
   loginStateTake(h: string, now: number) {
     return this.identity.loginStateTake(h, now);
   }
-  sessionCreate(idHash: string, email: string, groups: string[], now: number) {
-    return this.identity.sessionCreate(idHash, email.trim().toLowerCase(), groups, now);
+  sessionCreate(
+    idHash: string,
+    who: EntraSubject,
+    groups: string[],
+    now: number,
+    managed: boolean,
+  ) {
+    return this.identity.sessionCreate(
+      idHash,
+      { ...who, email: who.email.trim().toLowerCase() },
+      groups,
+      now,
+      managed,
+    );
   }
   sessionValidate(idHash: string, now: number) {
     return this.identity.sessionValidate(idHash, now);

@@ -24,6 +24,10 @@ interface Env {
   SCIM_TOKEN?: string;
   /** Var. Tenant that owns the SCIM directory and pre-login state. Defaults to DEFAULT_TENANT_ID. */
   SCIM_TENANT_ID?: string;
+  /** Var. "yes" lets Entra B2B guests sign in. Default: guests are refused. */
+  ENTRA_ALLOW_GUESTS?: string;
+  /** Var. Comma separated emails whose Access/MCP identity may use an Entra-bound principal. */
+  ACCESS_LINKED_EMAILS?: string;
   /** Secret (at least 32 characters). Shared with workers/connector: signs calls in both directions. */
   CONNECTOR_HMAC_KEY?: string;
   /** Secret. Anthropic API key. Unset means the AI processor is off ("AI processor not configured"). */

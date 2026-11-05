@@ -34,8 +34,27 @@ const b64url = (buf: ArrayBuffer) =>
 const challengeOf = async (v: string) =>
   b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)));
 
+/** A stable GUID for a string, so each test user gets their own `oid` unless a test says otherwise. */
+export function oidFor(seedText: string): string {
+  const h = [0x811c9dc5, 0x01000193, 0xdeadbeef, 0x12345678];
+  for (let i = 0; i < seedText.length; i++) {
+    const k = i % 4;
+    h[k] = Math.imul((h[k] as number) ^ seedText.charCodeAt(i), 0x01000193) >>> 0;
+    h[(k + 1) % 4] = ((h[(k + 1) % 4] as number) + (h[k] as number)) >>> 0;
+  }
+  const hex = h.map((n) => n.toString(16).padStart(8, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 export interface Claims {
+  /** The UPN (`preferred_username`). */
   email?: string | null;
+  /** The `email` claim, which Entra does not guarantee to be verified. */
+  mail?: string;
+  /** Object id. Defaults to a GUID derived from `email`. */
+  oid?: string;
+  /** `acct` optional claim: 1 marks a guest. */
+  acct?: number;
   groups?: string[];
   tid?: string;
   iss?: string;
@@ -118,11 +137,13 @@ async function idToken(p: Pending): Promise<string> {
   const tid = c.tid ?? TENANT;
   const payload: Record<string, unknown> = {
     sub: "sub-test",
-    oid: "oid-test",
+    oid: c.oid ?? oidFor(c.email ?? "someone@example.invalid"),
     tid,
     ver: "2.0",
     nonce: c.nonce ?? p.nonce,
     ...(c.email === null ? {} : { preferred_username: c.email ?? "someone@example.invalid" }),
+    ...(c.mail ? { email: c.mail } : {}),
+    ...(c.acct !== undefined ? { acct: c.acct } : {}),
     ...(c.groups ? { groups: c.groups } : {}),
     ...(c.overage ? { _claim_names: { groups: "src1" } } : {}),
   };
@@ -160,7 +181,8 @@ export async function req(path: string, o: Req = {}): Promise<Response> {
       headers,
       ...(hasBody ? { body: typeof o.body === "string" ? o.body : JSON.stringify(o.body) } : {}),
     }),
-    testEnv({ ...ENTRA_ENV, SCIM_TOKEN, ...o.env }),
+    // SCIM_TOKEN is only on for /scim, so a test opts into a SCIM-managed tenant with `env`.
+    testEnv({ ...ENTRA_ENV, ...(path.startsWith("/scim") ? { SCIM_TOKEN } : {}), ...o.env }),
   );
 }
 

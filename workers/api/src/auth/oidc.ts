@@ -163,13 +163,31 @@ const defaultJwks = (uri: URL): JWTVerifyGetKey => {
 };
 
 export type EntraIdentity = {
+  /** Directory (tenant) id, lower case. */
+  tid: string;
+  /** Object id of the user in that directory: immutable. With `tid` it is the only identity key. */
+  oid: string;
+  /**
+   * A mutable attribute, never a key. The UPN (preferred_username) when the token has one, else the
+   * `email` claim, which Entra does not guarantee to be verified (nOAuth).
+   */
   email: string;
+  /** True when `email` came from the UPN, which only a directory admin can change. */
+  emailIsUpn: boolean;
+  /** B2B guest: `acct` = 1 or a `#EXT#` UPN. Refused unless ENTRA_ALLOW_GUESTS is set. */
+  guest: boolean;
   groups: string[];
   /** The token carried an overage marker: the groups claim was too large and is absent. */
   groupsOverage: boolean;
 };
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const mail = (v: unknown): string | null => {
+  const e = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return EMAIL.test(e) && e.length <= 254 ? e : null;
+};
 
 export async function verifyIdToken(
   idToken: string,
@@ -205,14 +223,24 @@ export async function verifyIdToken(
     throw new OidcError("nonce_mismatch");
   if (payload.ver !== undefined && payload.ver !== "2.0") throw new OidcError("token_version");
 
-  const raw = payload.email ?? payload.preferred_username;
-  const email = typeof raw === "string" ? raw.trim().toLowerCase() : "";
-  if (!EMAIL.test(email) || email.length > 254) throw new OidcError("no_email");
+  if (typeof payload.oid !== "string" || !GUID_RE.test(payload.oid)) throw new OidcError("no_oid");
+  const upn = mail(payload.preferred_username);
+  const email = upn ?? mail(payload.email);
+  if (!email) throw new OidcError("no_email");
+  const guest = String(payload.acct) === "1" || (upn?.includes("#ext#") ?? false);
 
   const claimNames = payload._claim_names as Record<string, unknown> | undefined;
   const groupsOverage = !!claimNames && typeof claimNames === "object" && "groups" in claimNames;
   const groups = Array.isArray(payload.groups)
     ? payload.groups.filter((g): g is string => typeof g === "string")
     : [];
-  return { email, groups, groupsOverage };
+  return {
+    tid: (payload.tid as string).toLowerCase(),
+    oid: payload.oid.toLowerCase(),
+    email,
+    emailIsUpn: upn !== null,
+    guest,
+    groups,
+    groupsOverage,
+  };
 }

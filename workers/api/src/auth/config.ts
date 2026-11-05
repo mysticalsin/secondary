@@ -33,3 +33,23 @@ export const directoryTenant = (env: Env): string | null => {
   const t = (env.SCIM_TENANT_ID?.trim() || env.DEFAULT_TENANT_ID || "").trim();
   return /^[a-z0-9_]{3,64}$/.test(t) ? t : null;
 };
+
+const SCIM_MIN_TOKEN = 32;
+/** SCIM is on (a long enough bearer token is set): the directory manages who may sign in (H-02). */
+export const scimConfigured = (env: Env): boolean =>
+  (env.SCIM_TOKEN ?? "").length >= SCIM_MIN_TOKEN;
+
+/** B2B guests are refused unless ENTRA_ALLOW_GUESTS is "yes" or "true" (H-01). */
+export const allowGuests = (env: Env): boolean =>
+  ["yes", "true"].includes((env.ENTRA_ALLOW_GUESTS ?? "").trim().toLowerCase());
+
+/**
+ * Emails whose Cloudflare Access (or MCP) identity may use the principal an Entra sign-in is bound
+ * to. Anything else is a different identity source and is refused: `ACCESS_LINKED_EMAILS` is the
+ * explicit link, a comma separated list.
+ */
+export const accessLinked = (env: Env, email: string): boolean =>
+  (env.ACCESS_LINKED_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .includes(email);

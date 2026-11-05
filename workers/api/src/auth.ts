@@ -8,7 +8,7 @@ import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import { createRemoteJWKSet, type JWTVerifyGetKey, jwtVerify } from "jose";
 import { tenantOrg } from "./admin/client.ts";
-import { accessAllowed, entraEnabled } from "./auth/config.ts";
+import { accessAllowed, accessLinked, entraEnabled, scimConfigured } from "./auth/config.ts";
 import { emailFromSession } from "./auth/identity.ts";
 import { SESSION_COOKIE } from "./auth/limits.ts";
 import { isUnsafeMethod, sameOrigin } from "./auth/session.ts";
@@ -138,7 +138,9 @@ export const authenticate =
     let internal: Session["internal"] = null;
     let internalPersona: string | undefined;
     let email: string | null = null;
+    let via: "entra" | "access" | "internal" = "access";
     if (internalPresent) {
+      via = "internal";
       if (c.req.header("CF-Connecting-IP") || c.req.header(HEADER_SIGNATURE) === undefined)
         return c.json({ error: "unauthorized" }, 401);
       const r = await verifyInternalRequest(c.req.raw, c.env.INTERNAL_HMAC_KEY, {
@@ -168,6 +170,7 @@ export const authenticate =
       const cookie = entraEnabled(c.env) ? getCookie(c, SESSION_COOKIE) : undefined;
       if (cookie) {
         email = await emailFromSession(cookie, c.env, now);
+        if (email) via = "entra";
         // CSRF: a session cookie is sent by the browser on its own, so a mutation must come from our origin.
         if (email && isUnsafeMethod(c.req.method) && !sameOrigin(c.req.raw))
           return c.json({ error: "forbidden" }, 403);
@@ -201,7 +204,15 @@ export const authenticate =
     }
 
     const stub = tenantStub(c.env, tenantId);
-    const sessionInput = { email, actAs, now, limit: rateLimit(c.env) };
+    const sessionInput = {
+      email,
+      actAs,
+      now,
+      limit: rateLimit(c.env),
+      via,
+      managed: scimConfigured(c.env),
+      accessLinked: accessLinked(c.env, email),
+    };
     let s = await stub.session(sessionInput);
     // Dev only, never anywhere else: load the synthetic org on the first authenticated request.
     if (!s.config && c.env.ENVIRONMENT === "dev") {

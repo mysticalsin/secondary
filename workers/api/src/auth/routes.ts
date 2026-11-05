@@ -7,7 +7,14 @@ import { tenantFor } from "../auth.ts";
 import { safeEqual } from "../security.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
-import { accessAllowed, directoryTenant, entraConfig, entraEnabled } from "./config.ts";
+import {
+  accessAllowed,
+  allowGuests,
+  directoryTenant,
+  entraConfig,
+  entraEnabled,
+  scimConfigured,
+} from "./config.ts";
 import { LOGIN_COOKIE, SESSION_COOKIE } from "./limits.ts";
 import {
   authorizeUrl,
@@ -124,16 +131,37 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "sign_in_failed" }, 401);
     }
     if (identity.groupsOverage) log("groups_overage");
+    // H-01: B2B guests come from other directories and can carry any mail attribute. Refused unless allowed.
+    if (identity.guest && !allowGuests(c.env)) {
+      log("guest_refused");
+      return c.json({ error: "guest_refused" }, 403);
+    }
 
-    const tenantId = tenantFor(identity.email, c.env);
+    // Guests (when allowed) are not routed by a mail domain they may have set themselves.
+    const tenantId = identity.guest ? dir : tenantFor(identity.email, c.env);
+    // M-09: SCIM writes go to the directory tenant, so a SCIM-managed sign-in must land there too.
+    if (scimConfigured(c.env) && tenantId !== dir) {
+      log("tenant_mismatch");
+      return c.json({ error: "account_disabled" }, 403);
+    }
     const value = newSessionValue(tenantId);
     const made = await tenantStub(c.env, tenantId).sessionCreate(
       await sha256Hex(value),
-      identity.email,
+      {
+        tid: identity.tid,
+        oid: identity.oid,
+        email: identity.email,
+        emailIsUpn: identity.emailIsUpn,
+        guest: identity.guest,
+      },
       identity.groups,
       now,
+      scimConfigured(c.env),
     );
-    if (!made.ok) return c.json({ error: "account_disabled" }, 403);
+    if (!made.ok) {
+      log(`signin_${made.reason}`);
+      return c.json({ error: "account_disabled" }, 403);
+    }
     setSessionCookie(c, value);
     return c.redirect(saved.returnTo ?? "/", 303);
   });

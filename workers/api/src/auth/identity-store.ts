@@ -2,7 +2,7 @@
 // and the SCIM directory. It is plain SQL over the Durable Object's own storage. TenantPolicy
 // constructs one and exposes thin RPC methods. Nothing here holds organisation content.
 
-import { ROLE_ORDER } from "@secondary/policy";
+import { ROLE_ORDER, ROLES } from "@secondary/policy";
 import {
   ABSOLUTE_MS,
   IDLE_MS,
@@ -19,6 +19,11 @@ export async function principalIdFor(email: string): Promise<string> {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email));
   return `u_${toHex(d).slice(0, 16)}`;
 }
+
+/** Roles that can configure the tenant. A directory group never confers them (M-11): they need the console. */
+const PRIVILEGED_ROLES: ReadonlySet<string> = new Set(
+  ROLE_ORDER.filter((r) => ROLES[r].grants.some((g) => g.actions.includes("configure"))),
+);
 
 /** Group ids are Entra object ids (GUIDs). They compare case-insensitively. */
 export const groupKey = (s: string): string => s.trim().toLowerCase();
@@ -63,6 +68,15 @@ export type GroupOp =
   | { kind: "name"; value: string }
   | { kind: "externalId"; value: string | null }
   | { kind: "add" | "remove" | "replace"; ids: string[] };
+/** What Entra says about the person. `tid:oid` is the key; the email is an attribute. */
+export type EntraSubject = {
+  tid: string;
+  oid: string;
+  email: string;
+  emailIsUpn: boolean;
+  guest: boolean;
+};
+export type SignInFail = "not_provisioned" | "identity_conflict";
 export type Fail = { ok: false; code: "not_found" | "uniqueness" | "invalid" };
 export type Ok<T> = { ok: true } & T;
 
@@ -107,6 +121,15 @@ export class IdentityStore {
       CREATE TABLE IF NOT EXISTS scim_group_members (
         group_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (group_id, user_id));
     `);
+    // H-01: an Entra principal is keyed by `tid:oid`. The email column is an attribute.
+    try {
+      this.sql.exec("ALTER TABLE principals ADD COLUMN subject TEXT");
+    } catch {
+      // The column exists already.
+    }
+    this.sql.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS principals_subject ON principals (subject) WHERE subject IS NOT NULL",
+    );
   }
 
   // ---- principals ----
@@ -130,10 +153,24 @@ export class IdentityStore {
     return r === undefined || r.active === 1;
   }
 
-  /** Active unless the directory (SCIM) says otherwise. An email that is not a principal is active. */
-  isEmailActive(email: string): boolean {
+  /** True when a directory (SCIM) manages this tenant: the token is set, or SCIM has provisioned anyone. */
+  isManaged(configured: boolean): boolean {
+    return configured || this.sql.exec("SELECT 1 FROM scim_users LIMIT 1").toArray().length > 0;
+  }
+
+  /**
+   * Active unless the directory (SCIM) says otherwise. An email that is not a principal is active
+   * only while no directory manages the tenant: under SCIM an unknown principal is not active (H-02).
+   */
+  isEmailActive(email: string, managed: boolean): boolean {
     const r = this.sql.exec("SELECT id FROM principals WHERE email = ?", email).toArray()[0];
-    return r === undefined || this.isActive(s(r.id));
+    return r === undefined ? !managed : this.isActive(s(r.id));
+  }
+
+  /** The Entra subject (`tid:oid`) a principal is bound to, or null for an email-keyed principal. */
+  subjectOfEmail(email: string): string | null {
+    const r = this.sql.exec("SELECT subject FROM principals WHERE email = ?", email).toArray()[0];
+    return r ? ((r.subject as string | null) ?? null) : null;
   }
 
   private setStatus(principalId: string, active: boolean, now: number): void {
@@ -163,6 +200,10 @@ export class IdentityStore {
    * A SCIM group is matched by its externalId (the Entra object id) and falls back to its own id.
    */
   mappedRoles(principalId: string): string[] {
+    return this.mappedRolesRaw(principalId).filter((r) => !PRIVILEGED_ROLES.has(r));
+  }
+
+  private mappedRolesRaw(principalId: string): string[] {
     return this.sql
       .exec(
         `SELECT DISTINCT role_id FROM group_role_map WHERE group_id IN (
@@ -192,6 +233,7 @@ export class IdentityStore {
   groupMapSet(groupId: string, roleId: string): number | null {
     const g = groupKey(groupId);
     if (!GROUP_KEY.test(g) || !(ROLE_ORDER as readonly string[]).includes(roleId)) return null;
+    if (PRIVILEGED_ROLES.has(roleId)) return null;
     this.sql.exec(
       `INSERT INTO group_role_map (group_id, role_id) VALUES (?, ?)
        ON CONFLICT(group_id) DO UPDATE SET role_id = excluded.role_id`,
@@ -253,14 +295,84 @@ export class IdentityStore {
 
   // ---- sessions ----
 
+  /**
+   * Resolves an Entra sign-in to a principal (H-01, H-02). The key is `tid:oid`, never the email.
+   *  1. A principal already bound to this subject wins.
+   *  2. Under a SCIM-managed tenant the user must be provisioned: SCIM `externalId` = oid. A SCIM
+   *     record without an externalId matches on its userName = UPN, then binds. Nobody else gets in.
+   *  3. Otherwise a new principal is made, or an email-keyed one is bound, but only for a member
+   *     whose UPN equals the stored email. A guest, or an `email` claim, never takes over a principal.
+   */
+  private async resolveEntra(w: EntraSubject, managed: boolean): Promise<string | SignInFail> {
+    const subject = `${w.tid}:${w.oid}`;
+    const bound = this.sql
+      .exec("SELECT id, email FROM principals WHERE subject = ?", subject)
+      .toArray()[0];
+    if (bound) {
+      const id = s(bound.id);
+      // The email is an attribute: follow a UPN change when the new one is free.
+      if (s(bound.email) !== w.email && w.emailIsUpn && !w.guest) {
+        const taken = this.sql
+          .exec("SELECT 1 FROM principals WHERE email = ? AND id <> ?", w.email, id)
+          .toArray().length;
+        if (!taken) this.sql.exec("UPDATE principals SET email = ? WHERE id = ?", w.email, id);
+      }
+      return id;
+    }
+    if (managed) {
+      const viaOid = this.sql
+        .exec("SELECT principal_id FROM scim_users WHERE lower(external_id) = ?", w.oid)
+        .toArray()[0];
+      const viaName =
+        viaOid || w.guest || !w.emailIsUpn
+          ? undefined
+          : this.sql
+              .exec(
+                "SELECT principal_id FROM scim_users WHERE external_id IS NULL AND user_name = ?",
+                w.email,
+              )
+              .toArray()[0];
+      const row = viaOid ?? viaName;
+      if (!row) return "not_provisioned";
+      const id = s(row.principal_id);
+      const cur = this.sql.exec("SELECT subject FROM principals WHERE id = ?", id).toArray()[0];
+      if (cur && cur.subject !== null) return "identity_conflict";
+      this.sql.exec("UPDATE principals SET subject = ? WHERE id = ?", subject, id);
+      return id;
+    }
+    const byEmail = this.sql
+      .exec("SELECT id, subject FROM principals WHERE email = ?", w.email)
+      .toArray()[0];
+    if (!byEmail) {
+      const id = await principalIdFor(subject);
+      this.sql.exec(
+        "INSERT INTO principals (id, email, subject) VALUES (?, ?, ?)",
+        id,
+        w.email,
+        subject,
+      );
+      return id;
+    }
+    if (byEmail.subject !== null || w.guest || !w.emailIsUpn) return "identity_conflict";
+    this.sql.exec("UPDATE principals SET subject = ? WHERE id = ?", subject, s(byEmail.id));
+    return s(byEmail.id);
+  }
+
   async sessionCreate(
     idHash: string,
-    email: string,
+    who: EntraSubject,
     groups: string[],
     now: number,
-  ): Promise<{ ok: true; principalId: string } | { ok: false; reason: "inactive" }> {
-    const principalId = await this.ensurePrincipal(email);
+    managedConfigured: boolean,
+  ): Promise<{ ok: true; principalId: string } | { ok: false; reason: SignInFail | "inactive" }> {
+    const resolved = await this.resolveEntra(who, this.isManaged(managedConfigured));
+    if (resolved === "not_provisioned" || resolved === "identity_conflict")
+      return { ok: false, reason: resolved };
+    const principalId = resolved;
     if (!this.isActive(principalId)) return { ok: false, reason: "inactive" };
+    const email = s(
+      this.sql.exec("SELECT email FROM principals WHERE id = ?", principalId).one().email,
+    );
     const keys = [...new Set(groups.map(groupKey).filter((g) => GROUP_KEY.test(g)))].slice(
       0,
       MAX_OIDC_GROUPS,
@@ -319,7 +431,9 @@ export class IdentityStore {
       return null;
     }
     this.sql.exec("UPDATE auth_sessions SET last_seen = ? WHERE id_hash = ?", now, idHash);
-    return { email: s(r.email), principalId };
+    // The principal's current email, not the one stored at login: a rename or UPN change follows (M-10).
+    const cur = this.sql.exec("SELECT email FROM principals WHERE id = ?", principalId).one();
+    return { email: s(cur.email), principalId };
   }
 
   sessionDelete(idHash: string): void {
