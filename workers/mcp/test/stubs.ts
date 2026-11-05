@@ -163,7 +163,7 @@ export async function apiStub(request: Request): Promise<Response> {
     mcpSwitchOn = request.method !== "PUT";
     return Response.json({ mcpSwitchOn });
   }
-  if (url.pathname === "/v1/internal/ops/switches") {
+  if (url.pathname === "/v1/internal/mcp/switches") {
     if (!(await verifyOpsRequest(request, TEST_HMAC_KEY)))
       return Response.json({ error: "unauthorized" }, { status: 401 });
     return Response.json({

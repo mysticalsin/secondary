@@ -11,7 +11,7 @@ export default defineConfig({
         serviceBindings: { API: async () => new Response("no api in this test", { status: 503 }) },
         bindings: {
           BACKUP_KEY: "test-backup-key-0123456789abcdef0123456",
-          INTERNAL_HMAC_KEY: "test-internal-hmac-key-0123456789abcdef",
+          OPS_HMAC_KEY: "test-ops-hmac-key-0123456789abcdef012345",
           OPS_ADMIN_KEY: "test-ops-admin-key-0123456789abcdef012",
         },
       },

@@ -39,6 +39,7 @@ const ENVS = ["staging", "prod"] as const;
 const SECRET_NAMES = [
   "SEED_TOKEN",
   "INTERNAL_HMAC_KEY",
+  "OPS_HMAC_KEY",
   "AUDIT_KEY_API",
   "AUDIT_KEY_MCP",
   "AUDIT_KEY_READ",
@@ -101,9 +102,10 @@ describe("environments: api", () => {
     expect(api.env.prod.vars.RESTORE_ENABLED).toBe("no");
   });
 
-  it("staging keeps the dev access pattern: workers.dev on, restore allowed", () => {
+  it("staging keeps the dev access pattern (workers.dev on) but restore is off by default (M-02)", () => {
     expect(api.env.staging.workers_dev).toBe(true);
-    expect(api.env.staging.vars.RESTORE_ENABLED).toBe("yes");
+    expect(api.env.staging.vars.RESTORE_ENABLED).toBe("no");
+    expect(api.vars.RESTORE_ENABLED).toBe("yes");
   });
 });
 
@@ -208,6 +210,21 @@ describe("environments: audit, mcp, ops", () => {
     expect(ops.env.prod.vars.RESTORE_ENABLED).toBe("no");
   });
 
+  it("M-02: ops staging and prod have restore off and carry the Access vars; only dev restores by default", () => {
+    expect(ops.vars.RESTORE_ENABLED).toBe("yes");
+    for (const e of ENVS) {
+      expect(ops.env[e].vars.RESTORE_ENABLED, e).toBe("no");
+      expect(ops.env[e].vars, e).toHaveProperty("ACCESS_TEAM_DOMAIN");
+      expect(ops.env[e].vars, e).toHaveProperty("ACCESS_AUD");
+    }
+  });
+
+  it("M-01: the ops key is shared with api and ops only, the MCP key with api and mcp only", () => {
+    expect(deployRaw).toMatch(/^shared_secret OPS_HMAC_KEY api ops$/m);
+    expect(deployRaw).toMatch(/^shared_secret INTERNAL_HMAC_KEY api mcp$/m);
+    expect(deployRaw).not.toMatch(/OPS_HMAC_KEY[^\n]*\bmcp\b/);
+  });
+
   it("no bucket, KV id, worker name or service is shared between environments", () => {
     const configs = [
       { c: api, kind: "api" },
@@ -254,6 +271,16 @@ describe("staging and prod run with every dev-only feature off", () => {
       expect(me.seeded).toBe(false);
       expect(me.principal.roleIds).toEqual([]);
       expect(me.env).toBe(e);
+    });
+
+    it(`${e}: M1: with Access and Entra unconfigured every route but health fails closed`, async () => {
+      const closed = { ENVIRONMENT: e, ACCESS_TEAM_DOMAIN: "", ACCESS_AUD: "" };
+      for (const path of ["/v1/me", "/v1/map?lens=departments", "/v1/admin/switches"])
+        expect(
+          (await call(path, { email: "someone@example.invalid", env: closed })).status,
+          path,
+        ).toBe(401);
+      expect((await call("/v1/health", { env: closed })).status).toBe(200);
     });
 
     it(`${e}: the dev seed endpoint does not exist`, async () => {

@@ -106,6 +106,49 @@ describe("auth and kill switch", () => {
     ).toBe(401);
   });
 
+  it("L-01: a signed request is accepted once; a replay, an unknown key id and a previous key behave", async () => {
+    const t = freshTenant();
+    const path = `/internal/sources?tenantId=${t}`;
+    const url = `${O}${path}`;
+    const headers = await signInternalRequest({
+      secret: KEY,
+      method: "GET",
+      url,
+      principal: apiPrincipal(),
+    });
+    const send = (h: Record<string, string>, e: Record<string, unknown> = {}) =>
+      createApp().fetch(new Request(url, { headers: h }), { ...env, ...e } as Env);
+    expect((await send(headers)).status).toBe(200);
+    expect((await send(headers)).status).toBe(401);
+    // A key id the verifier does not hold is refused.
+    const k9 = await signInternalRequest({
+      secret: KEY,
+      kid: "k9",
+      method: "GET",
+      url,
+      principal: apiPrincipal(),
+    });
+    expect((await send(k9)).status).toBe(401);
+    // Rotation: the sender moved to a new key (k2); the verifier keeps the old one as previous (k1... here k0).
+    const OLD = "old-connector-hmac-key-0123456789abcdef0";
+    const fromOld = await signInternalRequest({
+      secret: OLD,
+      kid: "k0",
+      method: "GET",
+      url,
+      principal: apiPrincipal(),
+    });
+    expect((await send(fromOld, { CONNECTOR_HMAC_KEY_PREVIOUS: OLD })).status).toBe(200);
+    const fromOld2 = await signInternalRequest({
+      secret: OLD,
+      kid: "k0",
+      method: "GET",
+      url,
+      principal: apiPrincipal(),
+    });
+    expect((await send(fromOld2)).status).toBe(401);
+  });
+
   it("the ACL check denies everything while the kill switch is off (default)", async () => {
     const t = freshTenant();
     const r = await signed("POST", "/internal/acl/check", {

@@ -10,7 +10,7 @@ import {
 import { createApp } from "../src/index.ts";
 import { ALPHA, as, json, type Loose, rawEnv, seed, tenantDo, testEnv, wsOf } from "./helpers.ts";
 
-const HMAC = (rawEnv as unknown as Env).INTERNAL_HMAC_KEY as string;
+const HMAC = (rawEnv as unknown as Env).OPS_HMAC_KEY as string;
 const BACKUP_KEY = "test-backup-key-0123456789abcdef0123456";
 
 const deps = (
@@ -24,7 +24,7 @@ const deps = (
       createApp().fetch(new Request(url, init), testEnv(apiEnv)),
   } as unknown as Fetcher,
   ENVIRONMENT: "staging",
-  INTERNAL_HMAC_KEY: HMAC,
+  OPS_HMAC_KEY: HMAC,
   BACKUP_KEY,
   RESTORE_ENABLED: "yes",
   ...over,

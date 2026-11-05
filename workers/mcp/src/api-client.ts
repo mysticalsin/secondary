@@ -48,7 +48,14 @@ export class ApiClient {
     };
     let headers: Record<string, string>;
     try {
-      headers = await signInternalRequest({ secret, method, url, body: payload, principal });
+      headers = await signInternalRequest({
+        secret,
+        kid: this.env.INTERNAL_HMAC_KID,
+        method,
+        url,
+        body: payload,
+        principal,
+      });
     } catch {
       return { ok: false, status: 503, error: "service_auth_unconfigured" };
     }

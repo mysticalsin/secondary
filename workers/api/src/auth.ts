@@ -19,6 +19,7 @@ import {
   verifyInternalRequest,
 } from "./internal-auth.ts";
 import { getOrg, isRoleId, makeCtx, personaId, personaPrincipal } from "./org.ts";
+import { internalKeys, replayStore } from "./replay.ts";
 import { seedTenant } from "./seed.ts";
 import { tenantStub } from "./stubs.ts";
 import type { ActAs } from "./tenant-policy.ts";
@@ -143,8 +144,10 @@ export const authenticate =
       via = "internal";
       if (c.req.header("CF-Connecting-IP") || c.req.header(HEADER_SIGNATURE) === undefined)
         return c.json({ error: "unauthorized" }, 401);
-      const r = await verifyInternalRequest(c.req.raw, c.env.INTERNAL_HMAC_KEY, {
+      const r = await verifyInternalRequest(c.req.raw, internalKeys(c.env), {
         now: Math.floor(now / 1000),
+        replay: replayStore(c.env, now),
+        channel: "mcp",
       });
       if (!r.ok) {
         console.warn(JSON.stringify({ at: "internal_auth", reason: r.reason }));

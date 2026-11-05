@@ -112,6 +112,7 @@ export class TenantPolicy extends DurableObject<Env> {
           name TEXT PRIMARY KEY, enabled INTEGER NOT NULL, changed_by TEXT NOT NULL, changed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS pending_ops (
           key TEXT PRIMARY KEY, requested_by TEXT NOT NULL, requested_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS nonces (key TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
       `);
       this.identity.init();
       // Governance console state (roles as data, changes, elevations, requests, inbox).
@@ -299,6 +300,23 @@ export class TenantPolicy extends DurableObject<Env> {
       active: !hijack && this.identity.isEmailActive(email, input.managed === true),
       rolesVersion: this.govStore.rolesVersion(),
     };
+  }
+
+  /**
+   * Replay cache for the signed service calls. True the first time a key is seen inside its TTL,
+   * false for a replay. Expired keys are dropped on every call, so the table holds about two minutes.
+   */
+  nonceFirst(key: string, now: number, ttlMs: number): boolean {
+    this.sql.exec("DELETE FROM nonces WHERE expires_at <= ?", now);
+    return (
+      this.sql
+        .exec(
+          "INSERT OR IGNORE INTO nonces (key, expires_at) VALUES (?, ?) RETURNING key",
+          key,
+          now + ttlMs,
+        )
+        .toArray().length === 1
+    );
   }
 
   /** Fixed one-minute window counter for sensitive low-volume routes such as seeding. */

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { authRoutes } from "./auth/routes.ts";
 import { connectorRoutes } from "./connector.ts";
 import { accessLog } from "./observe.ts";
-import { opsInternalRoutes } from "./ops-internal.ts";
+import { mcpInternalRoutes, opsInternalRoutes } from "./ops-internal.ts";
 import { v1Routes } from "./routes.ts";
 import { scimRoutes } from "./scim/routes.ts";
 import { onError, requestId, securityHeaders } from "./security.ts";
@@ -19,6 +19,7 @@ export function createApp(deps: AppDeps = {}): Hono<AppEnv> {
   app.onError(onError);
   // Signed machine calls (workers/ops, workers/mcp). Before v1 so they skip Access auth and the 32 KB body limit.
   app.route("/v1/internal/ops", opsInternalRoutes(deps));
+  app.route("/v1/internal/mcp", mcpInternalRoutes(deps));
   app.route("/v1", v1Routes(deps));
   app.route("/auth", authRoutes(deps));
   app.route("/scim/v2", scimRoutes(deps));

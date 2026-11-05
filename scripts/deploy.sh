@@ -152,7 +152,10 @@ shared_secret() { # name worker...
   unset value
 }
 
-shared_secret INTERNAL_HMAC_KEY api mcp ops
+# MCP -> api calls. The internet-facing MCP worker holds this key and no other signing key (M-01).
+shared_secret INTERNAL_HMAC_KEY api mcp
+# ops -> api calls (full export, restore, retention). Never given to mcp.
+shared_secret OPS_HMAC_KEY api ops
 # Signs api -> connector and connector -> api calls: the same value on both.
 shared_secret CONNECTOR_HMAC_KEY api connector
 shared_secret AUDIT_KEY_API audit api

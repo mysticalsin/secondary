@@ -90,7 +90,7 @@ describe("rights export", () => {
     expect(((await json(done)) as Loose).personalBrain).toBeTruthy();
     // The approval is consumed: the next request starts over.
     expect((await exportReq(SUBJECT, "platform_admin", ADMIN_B)).status).toBe(202);
-    const audit = await json(await as("auditor", "/v1/audit/receipts?principal=" + (await meId())));
+    const audit = await json(await as("auditor", `/v1/audit/receipts?principal=${await meId()}`));
     const reasons = (audit as Loose).receipts.map((r: Loose) => `${r.action}:${r.reason}`);
     expect(reasons.some((r: string) => r.startsWith("rights_export") && r.includes(pz))).toBe(true);
   });

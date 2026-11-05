@@ -19,7 +19,9 @@ export const CONNECTOR_PRINCIPAL: InternalPrincipal = {
   tool: "connector.sync",
 };
 
-export function apiSink(env: Pick<Env, "API" | "CONNECTOR_HMAC_KEY">): ApiSink {
+export function apiSink(
+  env: Pick<Env, "API" | "CONNECTOR_HMAC_KEY" | "CONNECTOR_HMAC_KID">,
+): ApiSink {
   const post = async (path: string, payload: unknown) => {
     const secret = env.CONNECTOR_HMAC_KEY;
     if (!secret) throw new Error("connector_key_missing");
@@ -27,6 +29,7 @@ export function apiSink(env: Pick<Env, "API" | "CONNECTOR_HMAC_KEY">): ApiSink {
     const url = `${ORIGIN}${path}`;
     const headers = await signInternalRequest({
       secret,
+      kid: env.CONNECTOR_HMAC_KID,
       method: "POST",
       url,
       body,

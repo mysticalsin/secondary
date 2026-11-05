@@ -31,6 +31,7 @@ export class ConnectorState extends DurableObject<Env> implements Store {
           drive_item_id TEXT NOT NULL, parent_id TEXT, gen INTEGER NOT NULL, json TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS records_source ON records (source_id, gen);
         CREATE INDEX IF NOT EXISTS records_parent ON records (source_id, parent_id);
+        CREATE TABLE IF NOT EXISTS nonces (key TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS acl (
           item_id TEXT NOT NULL, user_key TEXT NOT NULL, allowed INTEGER NOT NULL,
           checked_at INTEGER NOT NULL, PRIMARY KEY (item_id, user_key));
@@ -210,6 +211,20 @@ export class ConnectorState extends DurableObject<Env> implements Store {
 
   deleteAclFor(itemId: string): void {
     this.sql.exec("DELETE FROM acl WHERE item_id = ?", itemId);
+  }
+
+  /** Replay cache for the signed calls from the API: true the first time a key is seen inside its TTL. */
+  nonceFirst(key: string, now: number, ttlMs: number): boolean {
+    this.sql.exec("DELETE FROM nonces WHERE expires_at <= ?", now);
+    return (
+      this.sql
+        .exec(
+          "INSERT OR IGNORE INTO nonces (key, expires_at) VALUES (?, ?) RETURNING key",
+          key,
+          now + ttlMs,
+        )
+        .toArray().length === 1
+    );
   }
 }
 

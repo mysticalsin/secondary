@@ -80,6 +80,7 @@ corepack pnpm e2e:mcp ceo  # scripted MCP host against :8788
 Totals at the last run: build, typecheck and `biome check .` clean (0 errors, 0 warnings). Tests: fixtures 23, contracts 91, policy 55, web 41, audit 8, connector 49, ops 6, api 340, mcp 76. Playwright 44 passed, axe on every view with no rule skipped.
 
 What the integration changed:
+
 - Conflict resolution: unions in `routes.ts`, `wrangler.jsonc`, `env.d.ts`, `types.ts`, `API-CONTRACT.md`; `AccountWorkspace.tsx` took the UX layout and re-added the AI "Prepare brief" buttons; TenantPolicy snapshots now also cover the identity (`principal_status`, `group_role_map`, `scim_*`) and `gov_*` tables, and erasure also clears the identity rows of the principal.
 - Policy consumes memberships: grant condition `membership: true` (see `docs/API-CONTRACT.md`, "Memberships reach the policy"). `head_bid`, `acme_lead`, `consultant` carry three such grants. Tenants seeded earlier keep their stored role bodies until reseeded (dev) or edited in the console. Approving an access request now changes what the requester sees (tested end to end, including the two-person path). A requester whose id is not in the directory (a dev persona under a non-seeded address) can be admitted through their own request only.
 - The drawer's "Request access" opens `RequestAccessForm` (governance API). Review events (contribute, request changes, approve, release, second approval needed) post content-free notices to the inbox (`workers/api/src/ux/notify.ts`, best effort). The web renders connector `source` search results (`/sources/:id`, text only).
@@ -90,6 +91,7 @@ What the integration changed:
 - Local stack: `dev-all.mjs` blanks the Access team and AUD (wrangler.jsonc carries the deployed dev values, which broke the loopback sign-in and the MCP e2e), writes `AUDIT_KEY_ERASE` and `PSEUDONYM_KEY`, and raises `RATE_LIMIT_PER_MIN` to 6000 (all personas share one address and one counter). The vitest configs of api and mcp do the same for Access. The connector and ops workers are not part of the local stack.
 
 Open items and notes:
+
 - `workers/api/test/ops-rights.test.ts` failed twice in one run under load (an erased principal id still found in a workspace export) and passed on every other run. Not reproduced; check if it recurs.
 - Playwright right after a cold `wrangler dev` start can see the audit service binding not answering for a while; `e2e/global-setup.ts` now waits for the api and mcp bindings. It is a local registry artefact, not seen in unit tests.
 - The brief and PrepareBrief screens are still English only (outside the admin scope asked for).

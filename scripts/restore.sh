@@ -5,8 +5,10 @@
 #   scripts/restore.sh <env> dry-run <key>        decrypt and count rows, change nothing
 #   scripts/restore.sh <env> restore <key>        replace the Durable Object with the snapshot
 # Needs OPS_URL (the ops worker origin) and OPS_ADMIN_KEY in the environment; the key is never printed.
-# Restore works only where the ops and api workers have RESTORE_ENABLED=yes (dev and staging by default;
-# see docs/runbooks/RESTORE.md for the temporary prod switch).
+# Staging and prod put the ops worker behind Cloudflare Access: also set CF_ACCESS_CLIENT_ID and
+# CF_ACCESS_CLIENT_SECRET (an Access service token).
+# Restore works only where the ops and api workers have RESTORE_ENABLED=yes (dev by default; staging and
+# prod are "no" and are switched on for the duration of a restore, see docs/runbooks/RESTORE.md).
 set -euo pipefail
 set +x
 die() { echo "error: $*" >&2; exit 1; }
@@ -19,8 +21,20 @@ if [ "$ENVN" = "prod" ] && [ "$CMD" = "restore" ] && [ "${CONFIRM_PROD:-}" != "y
   die "restoring prod needs CONFIRM_PROD=yes"
 fi
 
+# Secrets go in a private header file, not on the command line, so `ps` never shows them (L-05).
+HDR="$(mktemp)"; trap 'rm -f "$HDR"' EXIT; chmod 600 "$HDR"
+{
+  echo "X-Ops-Key: ${OPS_ADMIN_KEY}"
+  echo "Content-Type: application/json"
+  if [ -n "${CF_ACCESS_CLIENT_ID:-}" ]; then
+    echo "CF-Access-Client-Id: ${CF_ACCESS_CLIENT_ID}"
+    echo "CF-Access-Client-Secret: ${CF_ACCESS_CLIENT_SECRET:-}"
+  fi
+} > "$HDR"
+if [ "$ENVN" != "dev" ] && [ -z "${CF_ACCESS_CLIENT_ID:-}" ]; then die "$ENVN is behind Cloudflare Access: set CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET"; fi
+
 call() { # method path [json]
-  local args=(-sS --fail-with-body -X "$1" -H "X-Ops-Key: ${OPS_ADMIN_KEY}" -H "Content-Type: application/json" "${OPS_URL%/}$2")
+  local args=(-sS --fail-with-body -X "$1" -H "@${HDR}" "${OPS_URL%/}$2")
   if [ -n "${3:-}" ]; then args+=(--data "$3"); fi
   curl "${args[@]}"; echo
 }

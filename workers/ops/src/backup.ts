@@ -13,7 +13,8 @@ export interface BackupDeps {
   BACKUPS: R2Bucket;
   API: Fetcher;
   ENVIRONMENT: string;
-  INTERNAL_HMAC_KEY: string | undefined;
+  OPS_HMAC_KEY: string | undefined;
+  OPS_HMAC_KID?: string | undefined;
   BACKUP_KEY: string | undefined;
   BACKUP_KEY_PREVIOUS?: string | undefined;
   BACKUP_RETENTION_DAYS?: string | undefined;
@@ -39,7 +40,8 @@ async function callApi(
 ): Promise<Response> {
   const url = `${API_ORIGIN}${pathAndQuery}`;
   const headers = await signOpsRequest({
-    secret: d.INTERNAL_HMAC_KEY ?? "",
+    secret: d.OPS_HMAC_KEY ?? "",
+    kid: d.OPS_HMAC_KID,
     method,
     url,
     ...(body !== undefined ? { body } : {}),
@@ -185,7 +187,8 @@ export type RestoreResult =
         | "not_found"
         | "cannot_decrypt"
         | "invalid_snapshot"
-        | "api_refused";
+        | "api_refused"
+        | "wrong_environment";
     };
 
 /** Decrypt one snapshot and replace the matching Durable Object with it. `dryRun` stops after decrypting. */
@@ -209,6 +212,8 @@ export async function restoreBackup(
   } catch {
     return { ok: false, error: "invalid_snapshot" };
   }
+  // L-05: a snapshot restores only into the environment that wrote it.
+  if (snap.meta.env !== d.ENVIRONMENT) return { ok: false, error: "wrong_environment" };
   const { tenant, kind, scope } = snap.meta as {
     tenant: string;
     kind: "tenant" | "workspace";

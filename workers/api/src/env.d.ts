@@ -4,6 +4,18 @@ interface Env {
   SEED_TOKEN?: string;
   /** Secret (at least 32 characters). Shared with workers/mcp to verify signed internal calls. */
   INTERNAL_HMAC_KEY?: string;
+  /** Vars. Key id of INTERNAL_HMAC_KEY (default k1) and, during a rotation, the previous key and its id (default k0). */
+  INTERNAL_HMAC_KID?: string;
+  INTERNAL_HMAC_KEY_PREVIOUS?: string;
+  INTERNAL_HMAC_KID_PREVIOUS?: string;
+  /** Secret (at least 32 characters). Shared with workers/ops only, never with the MCP worker. Signs the full export, restore and retention calls. */
+  OPS_HMAC_KEY?: string;
+  OPS_HMAC_KID?: string;
+  OPS_HMAC_KEY_PREVIOUS?: string;
+  OPS_HMAC_KID_PREVIOUS?: string;
+  CONNECTOR_HMAC_KID?: string;
+  CONNECTOR_HMAC_KEY_PREVIOUS?: string;
+  CONNECTOR_HMAC_KID_PREVIOUS?: string;
   /** Secrets (at least 32 characters). Authenticate this worker to workers/audit. */
   AUDIT_KEY_API?: string;
   AUDIT_KEY_READ?: string;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   base64urlEncode,
+  HEADER_KID,
+  HEADER_NONCE,
   HEADER_PRINCIPAL,
   HEADER_SIGNATURE,
   HEADER_TIMESTAMP,
@@ -72,7 +74,13 @@ describe("internal service auth", () => {
   });
 
   it("rejects missing headers", async () => {
-    for (const h of [HEADER_PRINCIPAL, HEADER_TIMESTAMP, HEADER_SIGNATURE]) {
+    for (const h of [
+      HEADER_PRINCIPAL,
+      HEADER_TIMESTAMP,
+      HEADER_SIGNATURE,
+      HEADER_KID,
+      HEADER_NONCE,
+    ]) {
       const s = await signed();
       delete s.headers[h];
       expect(await verify(req(s))).toEqual({ ok: false, reason: "missing_headers" });
@@ -82,7 +90,7 @@ describe("internal service auth", () => {
 
   it("rejects an unknown signature version and a malformed timestamp", async () => {
     const s = await signed();
-    s.headers[HEADER_SIGNATURE] = (s.headers[HEADER_SIGNATURE] as string).replace("v1=", "v2=");
+    s.headers[HEADER_SIGNATURE] = (s.headers[HEADER_SIGNATURE] as string).replace("v2=", "v1=");
     expect(await verify(req(s))).toEqual({ ok: false, reason: "bad_version" });
     const t = await signed();
     t.headers[HEADER_TIMESTAMP] = "12abc";
@@ -110,9 +118,9 @@ describe("internal service auth", () => {
       reason: "bad_signature",
     });
     const s = await signed();
-    s.headers[HEADER_SIGNATURE] = "v1=zz";
+    s.headers[HEADER_SIGNATURE] = "v2=zz";
     expect(await verify(req(s))).toEqual({ ok: false, reason: "bad_signature" });
-    s.headers[HEADER_SIGNATURE] = "v1=";
+    s.headers[HEADER_SIGNATURE] = "v2=";
     expect(await verify(req(s))).toEqual({ ok: false, reason: "bad_signature" });
   });
 
@@ -171,7 +179,10 @@ describe("internal service auth", () => {
       new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array())),
       (b) => b.toString(16).padStart(2, "0"),
     ).join("");
-    const data = ["v1", String(NOW), "GET", "/v1/me", empty, principalHeader].join("\n");
+    const nonce = "AAAAAAAAAAAAAAAAAAAAAA";
+    const data = ["v2", "k1", nonce, String(NOW), "GET", "/v1/me", empty, principalHeader].join(
+      "\n",
+    );
     const sig = Array.from(
       new Uint8Array(await crypto.subtle.sign("HMAC", secretKey, new TextEncoder().encode(data))),
       (b) => b.toString(16).padStart(2, "0"),
@@ -180,7 +191,9 @@ describe("internal service auth", () => {
       headers: {
         [HEADER_PRINCIPAL]: principalHeader,
         [HEADER_TIMESTAMP]: String(NOW),
-        [HEADER_SIGNATURE]: `v1=${sig}`,
+        [HEADER_KID]: "k1",
+        [HEADER_NONCE]: nonce,
+        [HEADER_SIGNATURE]: `v2=${sig}`,
       },
     });
     expect(await verify(r)).toEqual({ ok: false, reason: "bad_principal" });

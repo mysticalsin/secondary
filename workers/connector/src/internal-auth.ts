@@ -5,19 +5,34 @@
 // `signInternalRequest`, workers/api verifies with `verifyInternalRequest`. It only needs WebCrypto,
 // so it runs unchanged in workerd, Node and Vitest.
 //
-// Wire format (all three headers are required, names are lower-case, HTTP header names are case-insensitive):
+// Wire format (all five headers are required, names are lower-case, HTTP header names are case-insensitive):
 //   X-Secondary-Principal  base64url(JSON InternalPrincipal)
 //   X-Secondary-Timestamp  unix seconds, integer
-//   X-Secondary-Signature  "v1=" + lowercase hex HMAC-SHA256(secret, signingString)
-// signingString = ["v1", timestamp, METHOD, path+search, sha256hex(body), principalHeaderValue].join("\n")
-// The signature binds method, path, query, body and principal, so a captured header set cannot be reused for
-// another request. Timestamps older or newer than 60 s are rejected. There is no nonce: within the 60 s window
-// an identical request can be replayed by someone who can already call the service binding.
+//   X-Secondary-Key-Id     which key signed; the verifier holds a ring {kid: secret} so keys rotate with an overlap
+//   X-Secondary-Nonce      random; the verifier remembers it (ReplayStore) so a request is accepted once
+//   X-Secondary-Signature  "v2=" + lowercase hex HMAC-SHA256(secret, signingString)
+// signingString = ["v2", kid, nonce, timestamp, METHOD, path+search, sha256hex(body), principalHeaderValue].join("\n")
+// The signature binds method, path, query, body, principal, key id and nonce, so a captured header set cannot be
+// reused for another request. Timestamps older or newer than 60 s are rejected, and inside that window a nonce
+// is accepted once when the verifier passes a ReplayStore.
+
+import {
+  type KeyRing,
+  KID_PATTERN,
+  NONCE_PATTERN,
+  newNonce,
+  REPLAY_TTL_MS,
+  type ReplayStore,
+  ringOf,
+  signingKid,
+} from "../../../packages/contracts/src/signed-call.ts";
 
 export const HEADER_PRINCIPAL = "x-secondary-principal";
 export const HEADER_TIMESTAMP = "x-secondary-timestamp";
 export const HEADER_SIGNATURE = "x-secondary-signature";
-export const SIGNATURE_VERSION = "v1";
+export const HEADER_KID = "x-secondary-key-id";
+export const HEADER_NONCE = "x-secondary-nonce";
+export const SIGNATURE_VERSION = "v2";
 export const MAX_SKEW_SECONDS = 60;
 export const MIN_SECRET_LENGTH = 32;
 
@@ -45,6 +60,8 @@ export type InternalAuthFailure =
   | "bad_version"
   | "bad_timestamp"
   | "stale_timestamp"
+  | "unknown_kid"
+  | "replayed"
   | "bad_signature"
   | "bad_principal";
 
@@ -101,6 +118,8 @@ function pathAndQuery(url: string): string {
 }
 
 async function signingString(
+  kid: string,
+  nonce: string,
   timestamp: string,
   method: string,
   url: string,
@@ -109,6 +128,8 @@ async function signingString(
 ): Promise<string> {
   return [
     SIGNATURE_VERSION,
+    kid,
+    nonce,
     timestamp,
     method.toUpperCase(),
     pathAndQuery(url),
@@ -119,6 +140,8 @@ async function signingString(
 
 export interface SignInput {
   secret: string;
+  /** Key id of `secret`. Defaults to "k1". */
+  kid?: string;
   method: string;
   url: string;
   /** Exact request body bytes as sent. Omit for GET. */
@@ -134,13 +157,25 @@ export async function signInternalRequest(input: SignInput): Promise<Record<stri
   const timestamp = String(Math.floor(input.now ?? Date.now() / 1000));
   const principalHeader = base64urlEncode(enc.encode(JSON.stringify(input.principal)));
   const body = utf8(input.body ?? "");
-  const data = await signingString(timestamp, input.method, input.url, body, principalHeader);
+  const kid = signingKid(input.kid);
+  const nonce = newNonce();
+  const data = await signingString(
+    kid,
+    nonce,
+    timestamp,
+    input.method,
+    input.url,
+    body,
+    principalHeader,
+  );
   const sig = new Uint8Array(
     await crypto.subtle.sign("HMAC", await hmacKey(input.secret, "sign"), utf8(data)),
   );
   return {
     [HEADER_PRINCIPAL]: principalHeader,
     [HEADER_TIMESTAMP]: timestamp,
+    [HEADER_KID]: kid,
+    [HEADER_NONCE]: nonce,
     [HEADER_SIGNATURE]: `${SIGNATURE_VERSION}=${toHex(sig)}`,
   };
 }
@@ -149,6 +184,10 @@ export interface VerifyOptions {
   /** Unix seconds. Defaults to now. */
   now?: number;
   maxSkewSeconds?: number;
+  /** Remembers nonces. Every production caller passes one; without it a nonce is not checked. */
+  replay?: ReplayStore;
+  /** Names the channel inside the replay key (api, connector, ...). */
+  channel?: string;
 }
 
 function isPrincipal(p: unknown): p is InternalPrincipal {
@@ -175,14 +214,23 @@ function isPrincipal(p: unknown): p is InternalPrincipal {
  */
 export async function verifyInternalRequest(
   request: Request,
-  secret: string | undefined,
+  keys: string | KeyRing | undefined,
   options: VerifyOptions = {},
 ): Promise<InternalAuthResult> {
-  if (!secret || secret.length < MIN_SECRET_LENGTH) return { ok: false, reason: "no_secret" };
+  const ring = ringOf(keys);
+  if (!Object.values(ring).some((k) => k.length >= MIN_SECRET_LENGTH))
+    return { ok: false, reason: "no_secret" };
   const principalHeader = request.headers.get(HEADER_PRINCIPAL);
   const timestamp = request.headers.get(HEADER_TIMESTAMP);
   const signature = request.headers.get(HEADER_SIGNATURE);
-  if (!principalHeader || !timestamp || !signature) return { ok: false, reason: "missing_headers" };
+  const kid = request.headers.get(HEADER_KID);
+  const nonce = request.headers.get(HEADER_NONCE);
+  if (!principalHeader || !timestamp || !signature || !kid || !nonce)
+    return { ok: false, reason: "missing_headers" };
+  if (!KID_PATTERN.test(kid) || !NONCE_PATTERN.test(nonce))
+    return { ok: false, reason: "bad_signature" };
+  const secret = Object.hasOwn(ring, kid) ? ring[kid] : undefined;
+  if (!secret || secret.length < MIN_SECRET_LENGTH) return { ok: false, reason: "unknown_kid" };
 
   const prefix = `${SIGNATURE_VERSION}=`;
   if (!signature.startsWith(prefix)) return { ok: false, reason: "bad_version" };
@@ -196,7 +244,15 @@ export async function verifyInternalRequest(
   if (!sigBytes) return { ok: false, reason: "bad_signature" };
 
   const body = new Uint8Array(await request.clone().arrayBuffer()) as Uint8Array<ArrayBuffer>;
-  const data = await signingString(timestamp, request.method, request.url, body, principalHeader);
+  const data = await signingString(
+    kid,
+    nonce,
+    timestamp,
+    request.method,
+    request.url,
+    body,
+    principalHeader,
+  );
   const valid = await crypto.subtle.verify(
     "HMAC",
     await hmacKey(secret, "verify"),
@@ -204,6 +260,12 @@ export async function verifyInternalRequest(
     utf8(data),
   );
   if (!valid) return { ok: false, reason: "bad_signature" };
+  // Only a correctly signed request may spend a nonce, so strangers cannot fill the replay cache.
+  if (
+    options.replay &&
+    !(await options.replay.first(`${options.channel ?? "internal"}:${kid}:${nonce}`, REPLAY_TTL_MS))
+  )
+    return { ok: false, reason: "replayed" };
 
   const raw = base64urlDecode(principalHeader);
   if (!raw) return { ok: false, reason: "bad_principal" };

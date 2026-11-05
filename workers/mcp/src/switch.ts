@@ -16,8 +16,13 @@ export async function mcpEnabled(env: Env, now = Date.now()): Promise<boolean> {
   if (cached && now - cached.at < ttl) return cached.on;
   let on = true;
   try {
-    const url = `https://api.internal/v1/internal/ops/switches?tenant=${encodeURIComponent(env.DEFAULT_TENANT_ID)}`;
-    const headers = await signOpsRequest({ secret: env.INTERNAL_HMAC_KEY, method: "GET", url });
+    const url = `https://api.internal/v1/internal/mcp/switches?tenant=${encodeURIComponent(env.DEFAULT_TENANT_ID)}`;
+    const headers = await signOpsRequest({
+      secret: env.INTERNAL_HMAC_KEY,
+      kid: env.INTERNAL_HMAC_KID,
+      method: "GET",
+      url,
+    });
     const res = await env.API.fetch(url, { headers });
     if (res.ok)
       on = ((await res.json()) as { switches?: { mcp?: boolean } }).switches?.mcp !== false;

@@ -14,6 +14,7 @@ import {
   signInternalRequest,
   verifyInternalRequest,
 } from "./internal-auth.ts";
+import { connectorKeys, replayStore } from "./replay.ts";
 import { workspaceStub } from "./stubs.ts";
 import type { SourceItem } from "./workspace.ts";
 
@@ -60,7 +61,14 @@ export function connectorRoutes(): Hono<{ Bindings: Env }> {
   const r = new Hono<{ Bindings: Env }>();
 
   r.use("*", async (c, next) => {
-    const v = await verifyInternalRequest(c.req.raw, c.env.CONNECTOR_HMAC_KEY);
+    // Public traffic carries CF-Connecting-IP; a service binding does not (L-02).
+    if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
+    const at = Date.now();
+    const v = await verifyInternalRequest(c.req.raw, connectorKeys(c.env), {
+      now: Math.floor(at / 1000),
+      replay: replayStore(c.env, at),
+      channel: "connector-in",
+    });
     if (
       !v.ok ||
       v.principal.sub !== "secondary-connector" ||
@@ -168,7 +176,14 @@ export async function checkSourceAccess(
     };
     const url = "https://connector.internal/internal/acl/check";
     const body = JSON.stringify({ tenantId, itemIds });
-    const headers = await signInternalRequest({ secret, method: "POST", url, body, principal });
+    const headers = await signInternalRequest({
+      secret,
+      kid: env.CONNECTOR_HMAC_KID,
+      method: "POST",
+      url,
+      body,
+      principal,
+    });
     const res = await env.CONNECTOR.fetch(url, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },

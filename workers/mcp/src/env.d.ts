@@ -3,6 +3,8 @@
 interface Env {
   /** Secret. HMAC key shared with workers/api for internal service auth (>= 32 chars). */
   INTERNAL_HMAC_KEY: string;
+  /** Var. Key id of INTERNAL_HMAC_KEY (default k1). */
+  INTERNAL_HMAC_KID?: string;
   /** Secret (at least 32 characters). Append-only key for workers/audit. */
   AUDIT_KEY_MCP?: string;
   /** Test seam: how long the kill switch answer is cached, in ms. Default 5000. */
@@ -13,6 +15,7 @@ interface Env {
 declare namespace Cloudflare {
   interface Env {
     INTERNAL_HMAC_KEY: string;
+    INTERNAL_HMAC_KID?: string;
     AUDIT_KEY_MCP?: string;
     SWITCH_CACHE_MS?: string;
     OAUTH_PROVIDER: import("@cloudflare/workers-oauth-provider").OAuthHelpers;

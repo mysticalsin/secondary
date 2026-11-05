@@ -10,6 +10,7 @@
 // Cron (every 15 minutes) enqueues one message per enabled source; the queue starts a Workflow.
 
 import { Hono } from "hono";
+import { keyringFromEnv } from "../../../packages/contracts/src/signed-call.ts";
 import { checkAccess } from "./acl.ts";
 import { meetingWindow } from "./calendar.ts";
 import { graphFromEnv } from "./graph.ts";
@@ -21,6 +22,9 @@ import { aclDeps, isEnabled, log, syncDeps, tenantsOf } from "./runtime.ts";
 import { stateStub } from "./state.ts";
 import { purgeSource } from "./sync.ts";
 import type { SyncParams } from "./workflow.ts";
+
+/** The Durable Object that holds the replay cache for signed calls from the API (not a real tenant). */
+const REPLAY_TENANT = "_replay";
 
 export { ConnectorState } from "./state.ts";
 export { SourceSyncWorkflow } from "./workflow.ts";
@@ -43,7 +47,23 @@ export function createApp() {
   );
 
   app.use("/internal/*", async (c, next) => {
-    const r = await verifyInternalRequest(c.req.raw, c.env.CONNECTOR_HMAC_KEY);
+    const at = Date.now();
+    const r = await verifyInternalRequest(
+      c.req.raw,
+      keyringFromEnv(
+        c.env.CONNECTOR_HMAC_KEY,
+        c.env.CONNECTOR_HMAC_KID,
+        c.env.CONNECTOR_HMAC_KEY_PREVIOUS,
+        c.env.CONNECTOR_HMAC_KID_PREVIOUS,
+      ),
+      {
+        now: Math.floor(at / 1000),
+        channel: "connector-out",
+        replay: {
+          first: (key, ttlMs) => stateStub(c.env, REPLAY_TENANT).nonceFirst(key, at, ttlMs),
+        },
+      },
+    );
     if (!r.ok || !CALLERS.has(r.principal.client_id)) return c.json({ error: "unauthorized" }, 401);
     c.set("principal", { sub: r.principal.sub, email: r.principal.email });
     await next();

@@ -1,12 +1,16 @@
-// Calls from workers/ops (and workers/mcp for the kill switches) over service bindings. Every route
-// verifies an HMAC signed with INTERNAL_HMAC_KEY (packages/contracts/src/ops-auth.ts) and refuses
-// public traffic. No Access identity is involved: these are machine calls and carry no user data
-// beyond the snapshot they were asked for.
+// Calls from workers/ops over a service binding. Every route verifies an HMAC signed with OPS_HMAC_KEY
+// (packages/contracts/src/ops-auth.ts), a key the internet-facing MCP worker never holds (M-01), checks
+// the nonce against the replay cache, and refuses public traffic. No Access identity is involved: these
+// are machine calls and carry no user data beyond the snapshot they were asked for.
+//
+// workers/mcp has its own read-only route for the kill switch state: GET /v1/internal/mcp/switches,
+// signed with INTERNAL_HMAC_KEY. That key cannot reach anything under /v1/internal/ops.
 
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
 import { getOrg } from "./org.ts";
+import { internalKeys, opsKeys, replayStore } from "./replay.ts";
 import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps } from "./types.ts";
@@ -57,8 +61,11 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
   r.use("*", async (c, next) => {
     // Public traffic carries CF-Connecting-IP. A service binding does not.
     if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
-    const ok = await verifyOpsRequest(c.req.raw, c.env.INTERNAL_HMAC_KEY, {
-      now: Math.floor((deps.now?.() ?? Date.now()) / 1000),
+    const at = deps.now?.() ?? Date.now();
+    const ok = await verifyOpsRequest(c.req.raw, opsKeys(c.env), {
+      now: Math.floor(at / 1000),
+      replay: replayStore(c.env, at),
+      channel: "ops",
     });
     if (!ok) return c.json({ error: "unauthorized" }, 401);
     c.header("Cache-Control", "no-store");
@@ -144,16 +151,30 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     return c.json({ ok: true, scopes, purged });
   });
 
-  // Kill switch state for workers/mcp.
+  r.all("*", (c) => c.json({ error: "not_found" }, 404));
+  return r;
+}
+
+/** Read-only kill switch state for workers/mcp. Signed with INTERNAL_HMAC_KEY, which is all the MCP worker holds. */
+export function mcpInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
+  const r = new Hono<{ Bindings: Env }>();
   r.get("/switches", async (c) => {
+    if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
+    const at = deps.now?.() ?? Date.now();
+    const ok = await verifyOpsRequest(c.req.raw, internalKeys(c.env), {
+      now: Math.floor(at / 1000),
+      replay: replayStore(c.env, at),
+      channel: "mcp-switches",
+    });
+    if (!ok) return c.json({ error: "unauthorized" }, 401);
     const tenant = c.req.query("tenant") ?? "";
     if (!TENANT_ID.test(tenant)) return c.json({ error: "invalid_target" }, 400);
-    const s = await tenantStub(c.env, tenant).switchStatus(deps.now?.() ?? Date.now());
+    const s = await tenantStub(c.env, tenant).switchStatus(at);
+    c.header("Cache-Control", "no-store");
     return c.json({
       switches: Object.fromEntries(Object.entries(s.switches).map(([k, v]) => [k, v.enabled])),
     });
   });
-
   r.all("*", (c) => c.json({ error: "not_found" }, 404));
   return r;
 }

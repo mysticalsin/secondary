@@ -17,8 +17,8 @@ Tenants snapshotted are `DEFAULT_TENANT_ID` and every tenant named in `TENANT_DO
 Restore replaces the whole object with the snapshot, all or nothing. It also bumps the revocation epoch so every session is re-checked. Anything written after the snapshot is lost, so pick the right snapshot.
 
 1. Decide scope: one Workspace, one Personal Brain, or the TenantPolicy (directory, roles, grants, switches).
-2. Allow restore. Dev and staging have `RESTORE_ENABLED=yes` on both the ops and api workers. In prod it is `no`: set `RESTORE_ENABLED` to `yes` in the `env.prod.vars` of `workers/api/wrangler.jsonc` and `workers/ops/wrangler.jsonc` for the duration, deploy with the pipeline (approval applies), and set it back to `no` afterwards. Record both deploys in the incident log.
-3. Export `OPS_URL` and `OPS_ADMIN_KEY` (from the key vault). Never paste the key into chat or a file.
+2. Allow restore. Only dev has `RESTORE_ENABLED=yes` by default. Staging and prod are `no` on both the ops and api workers: set `RESTORE_ENABLED` to `yes` in the `env.staging.vars` or `env.prod.vars` of `workers/api/wrangler.jsonc` and `workers/ops/wrangler.jsonc` for the duration, deploy with the pipeline (approval applies in prod), and set it back to `no` afterwards. Record both deploys in the incident log.
+3. Export `OPS_URL` and `OPS_ADMIN_KEY` (from the key vault). In staging and prod the ops worker is behind Cloudflare Access: also export `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` (an Access service token). Never paste the keys into chat or a file.
 4. List: `scripts/restore.sh <env> list 2026-11-05/<tenant>/`
 5. Dry run (decrypts and counts rows, changes nothing): `scripts/restore.sh <env> dry-run <key>`
 6. Restore: `scripts/restore.sh <env> restore <key>` (prod also needs `CONFIRM_PROD=yes`). Restore the TenantPolicy before its Workspaces only if roles were damaged; they are independent.
@@ -33,6 +33,7 @@ On demand snapshot before a risky change: `scripts/restore.sh <env> backup`.
 |---|---|
 | `restore_disabled` | `RESTORE_ENABLED` is not `yes` on the ops worker |
 | `api_refused` | the API worker has restore off (its own flag), or the signature failed |
+| `wrong_environment` | the snapshot was written by another environment; a restore never crosses environments |
 | `cannot_decrypt` | wrong `BACKUP_KEY`, the object was renamed (the key name is authenticated), or it is corrupt. Try `BACKUP_KEY_PREVIOUS` after a rotation |
 | `invalid_snapshot` | the file is not a snapshot for this schema; nothing was changed |
 | `not_found` | the key does not exist; check `list` |
