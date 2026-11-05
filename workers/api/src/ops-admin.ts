@@ -29,7 +29,16 @@ const GATES: { name: SwitchName; match: (method: string, path: string) => boolea
     name: "contribute",
     match: (m, p) => m === "POST" && /^\/v1\/personal\/items\/[^/]+\/contribute$/.test(p),
   },
-  { name: "ai", match: (_m, p) => p === "/v1/genui/plan" || p.startsWith("/v1/ai/") },
+  // Every route that can reach the model: the planner, /v1/ai/*, and briefs (H-05). New AI routes
+  // (wiki ingest hooks) must be listed here AND call gate(env, switches.ai) in the handler.
+  {
+    name: "ai",
+    match: (_m, p) =>
+      p === "/v1/genui/plan" ||
+      p.startsWith("/v1/ai/") ||
+      p === "/v1/briefs" ||
+      p.startsWith("/v1/briefs/"),
+  },
   { name: "connector", match: (_m, p) => p.startsWith("/v1/connectors/") },
 ];
 

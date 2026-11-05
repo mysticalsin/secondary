@@ -155,8 +155,10 @@
   //   ENTRA_CLIENT_ID        Entra application (client) id, a GUID.
   //   SCIM_TENANT_ID         tenant that owns the SCIM directory. Defaults to DEFAULT_TENANT_ID.
   //   ANTHROPIC_API_KEY      secret. Anthropic API key for the AI processor. Unset means the feature is off.
-  //   AI_ENABLED / AI_MODEL / AI_DAILY_TOKEN_BUDGET / AI_TIMEOUT_MS  optional vars (kill switch "false", model id,
-  //                          tokens per tenant per day, timeout). Defaults live in src/ai/config.ts.
+  //   AI_ENABLED             var. AI is OFF unless this is "true". A key alone never turns it on (M-06).
+  //   AI_PROCESSOR_CONTRACT  var. Must be "approved" once the processor contract (DPA) is signed off. Required with AI_ENABLED.
+  //   AI_MODEL / AI_DAILY_TOKEN_BUDGET / AI_TIMEOUT_MS  optional vars (model id, tokens per tenant per day, timeout).
+  //                          Defaults live in src/ai/config.ts.
   //   DEV_AUTH_BYPASS_EMAIL  local-dev var. Honoured only when ENVIRONMENT is "dev" AND the request host is
   //                          localhost, 127.0.0.1 or [::1]. Put it in .dev.vars, never in this file.
 }

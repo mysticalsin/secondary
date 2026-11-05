@@ -48,7 +48,11 @@ export function stubModel(
   return { fetch: fetchStub, calls };
 }
 
-export const KEY = { ANTHROPIC_API_KEY: "sk-ant-test-not-a-real-key" };
+export const KEY = {
+  ANTHROPIC_API_KEY: "sk-ant-test-not-a-real-key",
+  AI_ENABLED: "true",
+  AI_PROCESSOR_CONTRACT: "approved",
+};
 
 export async function aiCall(
   persona: string,

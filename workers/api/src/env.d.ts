@@ -28,8 +28,10 @@ interface Env {
   CONNECTOR_HMAC_KEY?: string;
   /** Secret. Anthropic API key. Unset means the AI processor is off ("AI processor not configured"). */
   ANTHROPIC_API_KEY?: string;
-  /** Var. Kill switch: "false" (or 0, off, no) switches the AI processor off. Default on. */
+  /** Var. Explicit enable: the AI processor is off unless this is "true" (or yes, 1, on). */
   AI_ENABLED?: string;
+  /** Var. Must be exactly "approved" (the Anthropic processor contract is signed off) before any AI call. */
+  AI_PROCESSOR_CONTRACT?: string;
   /** Var. Model id. Default claude-sonnet-5-5. */
   AI_MODEL?: string;
   /** Var. Tokens per tenant per UTC day. Default 200000. */

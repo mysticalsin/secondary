@@ -5,7 +5,7 @@ import hostile3 from "../../../packages/fixtures/sample/docs/acct-delta/general/
 import segmentsRaw from "../../../packages/fixtures/sample/personal-segments.json?raw";
 import transcript1 from "../../../packages/fixtures/sample/transcripts/acct-acme/trn-0001.md?raw";
 import { aiCall, KEY, type ModelCall, stubModel } from "./ai-helpers.ts";
-import { ALPHA, BETA, json, type Loose, seed, withBeta, wsOf } from "./helpers.ts";
+import { ALPHA, as, BETA, json, type Loose, seed, withBeta, wsOf } from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -41,8 +41,10 @@ const good = () => ({
 describe("processor off states: no call is ever made", () => {
   it("no key: AI processor not configured", async () => {
     const m = stubModel();
+    const noKey = { AI_ENABLED: "true", AI_PROCESSOR_CONTRACT: "approved" };
     const r = await aiCall("acme_lead", "/v1/briefs", {
       body: { accountId: "a_acme" },
+      env: noKey,
       fetch: m.fetch,
     });
     expect(r.status).toBe(503);
@@ -51,7 +53,7 @@ describe("processor off states: no call is ever made", () => {
       reason: "AI processor not configured",
     });
     expect(m.calls).toHaveLength(0);
-    const s = await json(await aiCall("acme_lead", "/v1/ai/status"));
+    const s = await json(await aiCall("acme_lead", "/v1/ai/status", { env: noKey }));
     expect(s).toMatchObject({ state: "not_configured", model: null });
     expect(JSON.stringify(s)).not.toContain("sk-");
   });
@@ -85,6 +87,90 @@ describe("processor off states: no call is ever made", () => {
       processor: "Anthropic API",
     });
     expect(s.region).toContain("processing location per Anthropic terms");
+  });
+});
+
+/** Both explicit flags the processor needs (M-06). Spelled out here so the tests do not depend on KEY. */
+const ON = {
+  ANTHROPIC_API_KEY: "sk-ant-test-not-a-real-key",
+  AI_ENABLED: "true",
+  AI_PROCESSOR_CONTRACT: "approved",
+};
+
+describe("M-06: AI needs an explicit enable and an approved processor contract", () => {
+  it.each([
+    ["only a key", { ANTHROPIC_API_KEY: ON.ANTHROPIC_API_KEY }, "ai_disabled"],
+    [
+      "key and enable, no contract flag",
+      { ANTHROPIC_API_KEY: ON.ANTHROPIC_API_KEY, AI_ENABLED: "true" },
+      "ai_not_configured",
+    ],
+    [
+      "key and enable, contract flag is not 'approved'",
+      { ...ON, AI_PROCESSOR_CONTRACT: "signed" },
+      "ai_not_configured",
+    ],
+    [
+      "contract, no enable",
+      { ANTHROPIC_API_KEY: ON.ANTHROPIC_API_KEY, AI_PROCESSOR_CONTRACT: "approved" },
+      "ai_disabled",
+    ],
+  ])("%s: refused and no model call", async (_name, env, error) => {
+    const m = stubModel();
+    const r = await aiCall("acme_lead", "/v1/briefs", {
+      body: { accountId: "a_acme" },
+      env,
+      fetch: m.fetch,
+    });
+    expect(r.status).toBe(503);
+    expect((await json(r)).error).toBe(error);
+    expect(m.calls).toHaveLength(0);
+    const st = await json(await aiCall("acme_lead", "/v1/ai/status", { env }));
+    expect(st.state).not.toBe("ready");
+  });
+
+  it("the planner never calls the model without both flags", async () => {
+    const m = stubModel();
+    const r = await aiCall("ceo", "/v1/genui/plan", {
+      body: { prompt: "show me the Acme account" },
+      env: { ANTHROPIC_API_KEY: ON.ANTHROPIC_API_KEY },
+      fetch: m.fetch,
+    });
+    expect(r.status).toBe(200);
+    expect(m.calls).toHaveLength(0);
+  });
+
+  it("both flags and a key make it ready", async () => {
+    const st = await json(await aiCall("acme_lead", "/v1/ai/status", { env: ON }));
+    expect(st.state).toBe("ready");
+  });
+});
+
+describe("H-05: the ai kill switch covers briefs", () => {
+  const sw = (enabled: boolean) =>
+    as("platform_admin", "/v1/admin/switches", { body: { switch: "ai", enabled } });
+
+  it("/v1/briefs and /v1/briefs/save answer 503 switched_off and send nothing to the model", async () => {
+    expect((await sw(false)).status).toBe(200);
+    try {
+      const m = stubModel(() => good());
+      const brief = await aiCall("acme_lead", "/v1/briefs", {
+        body: { accountId: "a_acme" },
+        env: ON,
+        fetch: m.fetch,
+      });
+      expect(brief.status).toBe(503);
+      expect(await json(brief)).toEqual({ error: "switched_off", switch: "ai" });
+      const save = await aiCall("acme_lead", "/v1/briefs/save", {
+        body: { brief: { target: { accountId: "a_acme" } } },
+        env: ON,
+        fetch: m.fetch,
+      });
+      expect(save.status).toBe(503);
+      expect(m.calls).toHaveLength(0);
+    } finally {
+      await sw(true);
+    }
   });
 });
 

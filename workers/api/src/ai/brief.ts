@@ -48,14 +48,32 @@ export type AiGate =
   | { ok: true; apiKey: string; model: string; dailyBudget: number; timeoutMs: number }
   | Refusal;
 
-export function gate(env: AiEnv): AiGate {
+/**
+ * The one gate every AI path goes through (briefs, planner, any ingest hook). `switchOn` is the
+ * tenant's `ai` kill switch: pass `session.switches.ai`. Off means no call, whatever the env says.
+ */
+export function gate(env: AiEnv, switchOn = true): AiGate {
+  if (!switchOn)
+    return {
+      ok: false,
+      status: 503,
+      error: "ai_disabled",
+      reason: "AI processing is switched off",
+    };
   const s = aiState(env);
   if (s.state === "disabled")
     return {
       ok: false,
       status: 503,
       error: "ai_disabled",
-      reason: "AI processing is switched off",
+      reason: "AI processing is not enabled",
+    };
+  if (s.state === "contract_missing")
+    return {
+      ok: false,
+      status: 503,
+      error: "ai_not_configured",
+      reason: "AI processor contract not approved",
     };
   if (s.state === "not_configured")
     return {

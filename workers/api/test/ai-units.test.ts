@@ -4,6 +4,7 @@ import transcript1 from "../../../packages/fixtures/sample/transcripts/acct-acme
 import transcript2 from "../../../packages/fixtures/sample/transcripts/acct-acme/trn-0002.md?raw";
 import { callModel, extractJson } from "../src/ai/anthropic.ts";
 import { doBudget, reserve } from "../src/ai/budget.ts";
+import { gate } from "../src/ai/brief.ts";
 import { aiState, DEFAULT_MODEL } from "../src/ai/config.ts";
 import { buildUserPrompt, validateBrief } from "../src/ai/prompt.ts";
 import { excludePersonalSegments, maskContacts } from "../src/ai/segments.ts";
@@ -17,23 +18,39 @@ const labelled = (id: string) =>
   fixture.transcripts.find((t) => t.transcript_id === id)?.segments ?? [];
 
 describe("config", () => {
-  it("is off without a key, off with the kill switch, ready otherwise", () => {
-    expect(aiState({}).state).toBe("not_configured");
-    expect(aiState({ ANTHROPIC_API_KEY: "  " }).state).toBe("not_configured");
+  const on = { AI_ENABLED: "true", AI_PROCESSOR_CONTRACT: "approved" };
+  it("is ready only with an explicit enable, an approved contract and a key", () => {
+    expect(aiState({}).state).toBe("disabled");
+    expect(aiState({ ANTHROPIC_API_KEY: "k" }).state).toBe("disabled");
     expect(aiState({ ANTHROPIC_API_KEY: "k", AI_ENABLED: "false" }).state).toBe("disabled");
     expect(aiState({ ANTHROPIC_API_KEY: "k", AI_ENABLED: "OFF" }).state).toBe("disabled");
-    const s = aiState({ ANTHROPIC_API_KEY: "k" });
+    expect(aiState({ ANTHROPIC_API_KEY: "k", AI_ENABLED: "true" }).state).toBe("contract_missing");
+    expect(
+      aiState({ ANTHROPIC_API_KEY: "k", AI_ENABLED: "true", AI_PROCESSOR_CONTRACT: "signed" })
+        .state,
+    ).toBe("contract_missing");
+    expect(aiState({ ...on }).state).toBe("not_configured");
+    expect(aiState({ ...on, ANTHROPIC_API_KEY: "  " }).state).toBe("not_configured");
+    const s = aiState({ ...on, ANTHROPIC_API_KEY: "k" });
     expect(s.state === "ready" && s.model).toBe(DEFAULT_MODEL);
     expect(DEFAULT_MODEL).toBe("claude-sonnet-5-5");
     const t = aiState({
+      ...on,
       ANTHROPIC_API_KEY: "k",
       AI_MODEL: "claude-opus-5-5",
       AI_DAILY_TOKEN_BUDGET: "50",
     });
     expect(t.state === "ready" && [t.model, t.dailyBudget]).toEqual(["claude-opus-5-5", 50]);
     // A malformed model var falls back instead of reaching the API.
-    const u = aiState({ ANTHROPIC_API_KEY: "k", AI_MODEL: "x; drop" });
+    const u = aiState({ ...on, ANTHROPIC_API_KEY: "k", AI_MODEL: "x; drop" });
     expect(u.state === "ready" && u.model).toBe(DEFAULT_MODEL);
+  });
+
+  it("gate() refuses when the kill switch is off, whatever the env says", () => {
+    const env = { ...on, ANTHROPIC_API_KEY: "k" };
+    expect(gate(env).ok).toBe(true);
+    expect(gate(env, true).ok).toBe(true);
+    expect(gate(env, false)).toMatchObject({ ok: false, error: "ai_disabled", status: 503 });
   });
 });
 

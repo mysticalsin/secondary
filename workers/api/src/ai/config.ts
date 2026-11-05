@@ -17,8 +17,10 @@ export const LIMITS = {
 /** The AI-specific names that are not in wrangler.jsonc. `AI_MODEL` is a var, the key is a secret. */
 export interface AiEnv {
   ANTHROPIC_API_KEY?: string;
-  /** Kill switch. Anything other than an explicit off value leaves the feature on. */
+  /** Explicit enable. AI is off unless this is "true" (or yes, 1, on). */
   AI_ENABLED?: string;
+  /** Must be exactly "approved": the processor contract (DPA) for the Anthropic API is signed off. */
+  AI_PROCESSOR_CONTRACT?: string;
   AI_MODEL?: string;
   /** Tokens per tenant per UTC day. */
   AI_DAILY_TOKEN_BUDGET?: string;
@@ -28,6 +30,7 @@ export interface AiEnv {
 export type AiState =
   | { state: "disabled" }
   | { state: "not_configured" }
+  | { state: "contract_missing" }
   | {
       state: "ready";
       apiKey: string;
@@ -36,7 +39,7 @@ export type AiState =
       timeoutMs: number;
     };
 
-const OFF = new Set(["0", "false", "off", "no", "disabled"]);
+const ON = new Set(["1", "true", "on", "yes"]);
 
 const posInt = (v: string | undefined, fallback: number): number => {
   const n = Number(v);
@@ -44,7 +47,11 @@ const posInt = (v: string | undefined, fallback: number): number => {
 };
 
 export function aiState(env: AiEnv): AiState {
-  if (OFF.has((env.AI_ENABLED ?? "").trim().toLowerCase())) return { state: "disabled" };
+  // Fail closed (M-06): a key alone never switches AI on. It needs an explicit enable and an approved
+  // processor contract before any text leaves the system.
+  if (!ON.has((env.AI_ENABLED ?? "").trim().toLowerCase())) return { state: "disabled" };
+  if ((env.AI_PROCESSOR_CONTRACT ?? "").trim().toLowerCase() !== "approved")
+    return { state: "contract_missing" };
   const apiKey = (env.ANTHROPIC_API_KEY ?? "").trim();
   if (!apiKey) return { state: "not_configured" };
   const model = (env.AI_MODEL ?? "").trim();
