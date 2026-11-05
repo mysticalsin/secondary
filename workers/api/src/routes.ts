@@ -38,6 +38,7 @@ import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
 import { uxRoutes } from "./ux/index.ts";
 import { notifyApproved, notifyChangesRequested, notifyContributed } from "./ux/notify.ts";
+import { uxv2Routes } from "./uxv2/index.ts";
 import { wikiNotify } from "./wiki/hooks.ts";
 import { proposalSources, wikiQueueRow } from "./wiki/review.ts";
 import { readableMany, sourcesReadable, wikiRoutes } from "./wiki/routes.ts";
@@ -1155,6 +1156,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
 
   v1.route("/", wikiRoutes(deps, { submitCandidate, parseUserValidated })); // B3 Living Wiki
   v1.route("/", uxRoutes(deps)); // B2 UX: edit, history, drafts, prefs, review detail, records
+  v1.route("/", uxv2Routes(deps)); // UX v2: ask, brain tree and export, questions, routines, usage, digest
 
   v1.all("*", (c) => c.json({ error: "not_found" }, 404));
   return v1;
