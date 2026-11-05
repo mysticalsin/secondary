@@ -8,6 +8,9 @@ import { parseReceipt } from "../../packages/contracts/src/audit-receipt.ts";
 const receipts: Record<string, unknown>[] = [];
 
 export default defineConfig({
+  // The AUDIT stand-in above is one in-memory list shared by every test file. Files run one at a time so
+  // receipts written by another file never appear in the middle of the rights-erase assertions.
+  test: { fileParallelism: false },
   plugins: [
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
