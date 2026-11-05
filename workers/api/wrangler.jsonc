@@ -35,9 +35,9 @@
   "vars": {
     "ENVIRONMENT": "dev",
     // Cloudflare Access team domain, e.g. "<team>.cloudflareaccess.com". Empty until Access is configured.
-    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_TEAM_DOMAIN": "tony-walteur.cloudflareaccess.com",
     // Cloudflare Access application AUD tag used to verify the JWT. Empty until Access is configured.
-    "ACCESS_AUD": "",
+    "ACCESS_AUD": "0efbc36f4d84025cc095efdc94f9891dbf90a7d718f5c4e0c2837a7aae0a8974",
     // Tenant for emails whose domain is not in TENANT_DOMAINS.
     "DEFAULT_TENANT_ID": "tenant_mantu_synthetic",
     // JSON object mapping an email domain to a tenant id, e.g. {"example.invalid":"tenant_mantu_synthetic"}.

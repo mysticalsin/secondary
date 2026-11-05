@@ -29,8 +29,8 @@
     // audience (RFC 8707). Required outside dev; in dev an empty value falls back to the request origin.
     "MCP_PUBLIC_URL": "",
     // Cloudflare Access in front of /authorize. Empty until Access is configured: /authorize then answers 401, except dev test headers on a loopback host.
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": "",
+    "ACCESS_TEAM_DOMAIN": "tony-walteur.cloudflareaccess.com",
+    "ACCESS_AUD": "feb4350db153fcca208d1e398e2f5660ab2abf50f3e1d366464addcda517dd89",
     // Redirect URI hosts allowed to receive authorization codes (B-05).
     "ALLOWED_REDIRECT_HOSTS": "claude.ai,claude.com,chatgpt.com,chat.openai.com,dust.tt,eu.dust.tt,localhost,127.0.0.1"
   }
