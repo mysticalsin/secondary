@@ -39,7 +39,7 @@ export function hubAsNode(h: Hub): MapNode {
     id: h.id,
     label: h.label,
     kind: h.kind,
-    plane: "GLOBAL",
+    plane: "GLOBAL_NONPERSONAL",
     access: h.access,
     counts: h.counts,
     freshnessDays: null,
@@ -199,8 +199,8 @@ export function ringLayout(view: MapView): Layout {
       bands.push({
         label: g,
         path,
-        lx: Math.cos(mid) * (bandIn - 16),
-        ly: Math.sin(mid) * (bandIn - 16),
+        lx: Math.cos(mid) * (bandIn - 44),
+        ly: Math.sin(mid) * (bandIn - 44),
       });
     }
     i = j + 1;

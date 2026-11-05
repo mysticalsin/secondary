@@ -76,7 +76,14 @@ export type Comment = { id: number; itemId: string; authorId: string; text: stri
 
 export type Fail = {
   ok: false;
-  code: "not_found" | "conflict" | "self_approval" | "not_author" | "not_pending" | "already_done" | "exists";
+  code:
+    | "not_found"
+    | "conflict"
+    | "self_approval"
+    | "not_author"
+    | "not_pending"
+    | "already_done"
+    | "exists";
   message: string;
   currentRevision?: number;
 };
@@ -134,7 +141,15 @@ export class Workspace extends DurableObject<Env> {
   seed(rows: SeedRow[], reset: boolean, now: number): number {
     this.ctx.storage.transactionSync(() => {
       if (reset)
-        for (const t of ["items", "items_fts", "comments", "approvals", "edits", "outbox", "contributions"])
+        for (const t of [
+          "items",
+          "items_fts",
+          "comments",
+          "approvals",
+          "edits",
+          "outbox",
+          "contributions",
+        ])
           this.sql.exec(`DELETE FROM ${t}`);
       for (const r of rows) {
         this.sql.exec(

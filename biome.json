@@ -8,6 +8,9 @@
       "!**/.wrangler",
       "!**/worker-configuration.d.ts",
       "!prototypes",
+      "!.worktrees",
+      "!**/.vitest",
+      "!**/generated",
       "!docs",
       "!pnpm-lock.yaml"
     ]

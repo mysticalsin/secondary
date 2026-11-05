@@ -422,7 +422,6 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     });
   });
 
-
   v1.get("/me", (c) => {
     const s = sess(c);
     const roles = s.org ? viewOf(s).roles : [];

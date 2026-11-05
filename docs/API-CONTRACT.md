@@ -44,7 +44,7 @@ Every response is JSON with `Cache-Control: no-store`. Auth comes from the Cloud
 | GET/POST | /v1/personal/items | owner-only Personal Brain items |
 | POST | /v1/personal/items/:id/contribute | `{targetScopeId}` creates a candidate in review |
 | POST | /v1/genui/plan | `{prompt?, nodeId?}` returns a ViewPlan validated against `view-plan.schema.json` |
-| POST | /v1/admin/seed | dev only, needs header `X-Seed-Token` = secret `SEED_TOKEN`. Loads fixtures into the DOs |
+| POST | /v1/admin/seed | dev only. Needs a valid Access identity AND header `X-Seed-Token` = secret `SEED_TOKEN` (constant-time compare, 10 attempts per minute per user). Loads fixtures into the DOs |
 
 ```ts
 MapView = { lens, viewerScopeHash, core:{id,label,topicCount}, hubs: Hub[], links: Link[] }
@@ -130,3 +130,13 @@ What `workers/api` must do:
 5. Request and response shapes `workers/mcp` assumes beyond this contract: `POST /v1/personal/items` body `{kind:"note", title, body}`; `GET /v1/accounts/:id` returns `{label?, sections:[{title|label, count?, items?:[{title}]}]}`; `GET /v1/governances` returns `{governances:[{id,label,stages: {name:count} | [{stage,count}]}]}` or the bare array; `GET /v1/review` returns `{candidates:[...]}` or an array. The MCP resolver is tolerant, but the API owner should confirm.
 
 `workers/mcp` audit receipts (service binding `AUDIT`, `POST /append`, JSON): `{at, source:"secondary-mcp", kind:"mcp.tool_call"|"mcp.oauth", action, who, client_id, oauth_scopes, scope_ids, result_count, outcome:"ok"|"denied"|"error", reason?, redirect_host?}`. Identity and counts only, never content. The audit worker owner maps it to `audit-event.schema.json`.
+
+## Integration notes (B1 integrator, after the security review)
+
+- **Audit receipt contract.** One shape for all writers: `packages/contracts/src/audit-receipt.ts` (`Receipt`, `parseReceipt`, `newReceiptId`). `workers/api` sends the base fields. `workers/mcp` sends the same shape with `scopeIds`, `resultCount`, `oauthScopes` and `redirectHost` filled (tenant `DEFAULT_TENANT_ID`, principal `who` or `anonymous`, URL client ids hashed to `h_<16 hex>`). `workers/audit` parses with the shared parser and stamps `source` (`api` or `mcp`) from the caller's key, never from the body. This supersedes the earlier `{source:"secondary-mcp", kind, outcome, ...}` event.
+- **Audit worker keys.** Every request needs `X-Audit-Key`. Secrets: `AUDIT_KEY_API` and `AUDIT_KEY_MCP` (append only), `AUDIT_KEY_READ` (read, held by `workers/api` only). Each is at least 32 characters. The MCP worker, which faces the internet, cannot read receipts.
+- **Seed.** Needs both a valid Access identity (on localhost in dev, `DEV_AUTH_BYPASS_EMAIL`) and `SEED_TOKEN`.
+- **Dev personas.** `X-Demo-Persona` binds to the signed-in email. A seeded persona address (`<role>@...`) keeps the id `u_<role>`. Any other email gets `u_<role>_<10 hex of sha256(email)>`, so two testers with the same persona have separate Personal Brains and separate approver identities.
+- **Release rules.** Whoever wrote or edited an item counts as its author, on every revision, for review and approve. Only the contributor edits a candidate (others comment or request changes). Knowledge reviewers hold `review` and `approve_release` on Company Global. A global release needs two distinct approvers, none of them the contributor or an editor. `own_drafts` means authored by the caller.
+- **MCP dev sign-in.** `X-Dev-Email` and `X-Dev-Persona` count only on a loopback host (localhost, 127.0.0.1) in dev with Access unset. Anywhere else `/authorize` answers 401 until the Access team domain and aud are configured.
+- **Web.** Planes in the UI use the policy names. `GET /v1/admin/roles` and `/v1/admin/audit` are bare arrays, so the web derives "structure only" from the viewer's roles (Platform admin, Auditor).

@@ -6,6 +6,7 @@ import type {
   AdminRole,
   AuditReceipt,
   Candidate,
+  ContributeResult,
   ContributeTarget,
   GovernanceCard,
   GovernanceDetail,
@@ -42,12 +43,36 @@ export function setPersona(id: string | null): void {
 export class ApiError extends Error {
   status: number;
   reason: string;
-  constructor(status: number, reason: string) {
+  /** The parsed error body, for flows that need more than the reason (for example sensitivity flags). */
+  body: Record<string, unknown>;
+  constructor(status: number, reason: string, body: Record<string, unknown> = {}) {
     super(reason);
     this.name = "ApiError";
     this.status = status;
     this.reason = reason;
+    this.body = body;
   }
+}
+
+// The API answers `{error, reason?}`. Errors without a reason get plain wording here.
+const ERROR_TEXT: Record<string, string> = {
+  not_found: "Not found, or outside your view.",
+  revision_conflict: "This changed since you opened it. Reload and review the new revision.",
+  sensitivity_flags_pending: "Some spans are flagged. Acknowledge each one to continue.",
+  user_validation_required: "Confirm what you are sharing, then send again.",
+  seed_disabled: "Seeding is disabled.",
+  audit_unavailable: "The audit service is not answering, so nothing was changed.",
+  rate_limited: "Too many requests. Wait a moment.",
+  not_supported: "Not available in this release.",
+};
+
+function reasonOf(status: number, data: unknown): string {
+  if (data && typeof data === "object") {
+    const d = data as { reason?: unknown; error?: unknown };
+    if (typeof d.reason === "string" && d.reason) return d.reason;
+    if (typeof d.error === "string") return ERROR_TEXT[d.error] ?? d.error.replace(/_/g, " ");
+  }
+  return `Request failed (${status})`;
 }
 
 type Method = "GET" | "POST";
@@ -77,11 +102,8 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
     data = null;
   }
   if (!res.ok) {
-    const reason =
-      data && typeof data === "object" && "reason" in data
-        ? String((data as { reason: unknown }).reason)
-        : `Request failed (${res.status})`;
-    throw new ApiError(res.status, reason);
+    const body = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+    throw new ApiError(res.status, reasonOf(res.status, data), body);
   }
   return data as T;
 }
@@ -93,40 +115,33 @@ export const api = {
   map: (lens: Lens) => request<MapView>("GET", `/v1/map?lens=${lens}`),
   node: (id: string) => request<NodeDetail>("GET", `/v1/nodes/${q(id)}`),
   search: (term: string) => request<{ results: SearchResult[] }>("GET", `/v1/search?q=${q(term)}`),
-  accounts: () => request<{ accounts: AccountCard[] }>("GET", "/v1/accounts"),
+  accounts: () => request<AccountCard[]>("GET", "/v1/accounts"),
   account: (id: string) => request<AccountDetail>("GET", `/v1/accounts/${q(id)}`),
-  governances: () => request<{ governances: GovernanceCard[] }>("GET", "/v1/governances"),
+  governances: () => request<GovernanceCard[]>("GET", "/v1/governances"),
   governance: (id: string) => request<GovernanceDetail>("GET", `/v1/governances/${q(id)}`),
-  review: () => request<{ candidates: Candidate[] }>("GET", "/v1/review"),
-  activity: () => request<{ entries: ActivityEntry[] }>("GET", "/v1/activity"),
+  review: () => request<Candidate[]>("GET", "/v1/review"),
+  activity: () => request<ActivityEntry[]>("GET", "/v1/activity"),
+  /** `revision` is the integer the server compares against; it never comes from client state alone. */
   act: (body: {
     nodeId: string;
     action: string;
-    revision?: string;
+    revision?: number;
     payload?: Record<string, unknown>;
   }) => request<ActionResult>("POST", "/v1/actions", body),
-  personalList: () => request<{ items: PersonalItem[] }>("GET", "/v1/personal/items"),
-  personalSave: (item: { id?: string; title: string; body: string; kind: string }) =>
-    request<{ item: PersonalItem }>("POST", "/v1/personal/items", item),
-  contribute: (id: string, targetScopeId: string) =>
-    request<{ ok: boolean; candidateId: string; receiptId: string }>(
-      "POST",
-      `/v1/personal/items/${q(id)}/contribute`,
-      { targetScopeId },
-    ),
-  contributeTargets: async (): Promise<ContributeTarget[]> => {
-    const view = await request<MapView>("GET", "/v1/map?lens=departments");
-    return view.hubs
-      .filter((h) => h.access !== "locked")
-      .flatMap((h) =>
-        h.children
-          .filter((c) => c.access !== "locked")
-          .map((c) => ({ id: c.id, label: c.label, group: h.label })),
-      );
-  },
+  personalList: () => request<PersonalItem[]>("GET", "/v1/personal/items"),
+  personalCreate: (item: { title: string; body: string; kind: string }) =>
+    request<PersonalItem>("POST", "/v1/personal/items", item),
+  contribute: (
+    id: string,
+    body: {
+      targetScopeId: string;
+      user_validated: { by: string; at: string; revision: number };
+      acknowledged_flags: string[];
+    },
+  ) => request<ContributeResult>("POST", `/v1/personal/items/${q(id)}/contribute`, body),
+  contributeTargets: () => request<ContributeTarget[]>("GET", "/v1/personal/targets"),
   plan: (body: { prompt?: string; nodeId?: string }) =>
     request<ViewPlan>("POST", "/v1/genui/plan", body),
-  adminRoles: () =>
-    request<{ roles: AdminRole[]; structureOnly: boolean }>("GET", "/v1/admin/roles"),
-  adminAudit: () => request<{ receipts: AuditReceipt[] }>("GET", "/v1/admin/audit"),
+  adminRoles: () => request<AdminRole[]>("GET", "/v1/admin/roles"),
+  adminAudit: () => request<AuditReceipt[]>("GET", "/v1/admin/audit"),
 };

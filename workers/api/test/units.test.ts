@@ -187,7 +187,9 @@ describe("Workspace", () => {
       code: "already_done",
     });
     // An edit starts a new revision with no approvals: the earlier approval does not carry over.
-    expect(await w.edit("cand:c_bid:aaaaaaaa", 1, { title: "Draft v2" }, NOW, "u_author")).toMatchObject({
+    expect(
+      await w.edit("cand:c_bid:aaaaaaaa", 1, { title: "Draft v2" }, NOW, "u_author"),
+    ).toMatchObject({
       ok: true,
       revision: 2,
     });
@@ -211,7 +213,9 @@ describe("Workspace", () => {
       reviewedBy2: true,
     });
     // Editing a released item sends it back to review.
-    expect(await w.edit("cand:c_bid:aaaaaaaa", 2, { body: "changed" }, NOW, "u_author")).toMatchObject({
+    expect(
+      await w.edit("cand:c_bid:aaaaaaaa", 2, { body: "changed" }, NOW, "u_author"),
+    ).toMatchObject({
       ok: true,
       status: "candidate",
       revision: 3,

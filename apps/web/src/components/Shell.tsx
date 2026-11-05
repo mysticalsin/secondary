@@ -24,7 +24,7 @@ export function Shell() {
   const loc = useLocation();
   const queue = useApi(() => api.review(), []);
   const dev = me?.env === "dev";
-  const pending = queue.data?.candidates.length ?? 0;
+  const pending = queue.data?.length ?? 0;
   const canAdmin = !!me?.capabilities?.configure;
   const personaId = me?.persona ?? getPersona() ?? "";
   const roleLabel = me

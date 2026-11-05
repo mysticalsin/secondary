@@ -9,9 +9,11 @@ describe("GenUI renderer", () => {
     title: "Test view",
     components: [
       { type: "Hologram", props: { note: "unknown" } },
-      { type: "Callout", props: { text: "Visible callout", tone: "info" } },
+      { type: "Callout", props: { template: "empty", tone: "info" } },
       { type: "NodeCard", props: {} },
-      { type: "Callout", props: { text: "Second callout", tone: "attention" } },
+      { type: "Callout", props: { template: "gap", tone: "warning" } },
+      { type: "Callout", props: { template: "free_text_not_a_template" } },
+      { type: "NodeCard", props: { nodeId: "c_bid", extra: "not in the schema" } },
     ],
   };
 
@@ -27,8 +29,8 @@ describe("GenUI renderer", () => {
 
   it("renders only catalog components", () => {
     render(<ViewRenderer plan={plan} />);
-    expect(screen.getByText("Visible callout")).toBeInTheDocument();
-    expect(screen.getByText("Second callout")).toBeInTheDocument();
+    expect(screen.getByText(/Nothing to show here yet/)).toBeInTheDocument();
+    expect(screen.getByText(/knowledge gap/i)).toBeInTheDocument();
     expect(screen.queryByText(/unknown/i)).not.toBeInTheDocument();
     expect(screen.getAllByRole("note")).toHaveLength(2);
   });
@@ -38,16 +40,24 @@ describe("GenUI renderer", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/not valid/i);
   });
 
-  it("renders callout text as text, not markup", () => {
+  it("a callout shows fixed text chosen by key, never plan text", () => {
     render(
       <ViewRenderer
         plan={{
           version: 1,
           title: "x",
-          components: [{ type: "Callout", props: { text: "<img src=x onerror=alert(1)>" } }],
+          components: [
+            {
+              type: "Callout",
+              props: { template: "no_access", text: "<img src=x onerror=alert(1)>" },
+            },
+            { type: "Callout", props: { template: "no_access" } },
+          ],
         }}
       />,
     );
-    expect(screen.getByText("<img src=x onerror=alert(1)>")).toBeInTheDocument();
+    // The first carries a key outside the schema, so it is dropped. The second shows the fixed text.
+    expect(screen.getAllByRole("note")).toHaveLength(1);
+    expect(screen.queryByText(/onerror/)).not.toBeInTheDocument();
   });
 });

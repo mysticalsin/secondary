@@ -1,20 +1,31 @@
 import { ShieldAlert, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api";
-import { scanSensitive } from "../sensitive";
-import type { ContributeTarget, PersonalItem } from "../types";
+import { useApp } from "../state";
+import type { ContributeTarget, PersonalFlag, PersonalItem } from "../types";
 import { ErrorBox } from "./ui";
 
-function context(text: string, index: number, len: number) {
-  return {
-    before: text.slice(Math.max(0, index - 28), index).replace(/\n/g, " "),
-    after: text.slice(index + len, index + len + 28).replace(/\n/g, " "),
-  };
-}
+const FLAG_LABEL: Record<PersonalFlag["type"], string> = {
+  email: "Email address",
+  phone: "Phone number",
+  health: "Health information",
+  family: "Family or private life",
+  hr: "HR or pay matter",
+};
+
+const FLAG_REASON: Record<PersonalFlag["type"], string> = {
+  email: "Contact detail. Personal or client.",
+  phone: "Contact detail. Personal or client.",
+  health: "Health matters stay in your Personal Brain.",
+  family: "Private life stays in your Personal Brain.",
+  hr: "HR and pay matters stay out of shared scopes.",
+};
 
 /**
- * Pre-share validation sheet (R-111). The author sees every flagged span and must tick an
- * explicit confirmation before the contribution can be sent. The server re-validates anyway.
+ * Pre-share validation sheet (R-110, R-111). The flags are the server's own scan of the saved note
+ * (never a browser scan). The author sees every flagged span and must tick an explicit confirmation.
+ * The send names the person, the time and the exact revision, and acknowledges each flag by id.
+ * The server re-checks all of it.
  */
 export function ContributeSheet({
   item,
@@ -32,9 +43,9 @@ export function ContributeSheet({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const first = useRef<HTMLSelectElement>(null);
+  const { me } = useApp();
 
-  const text = `${item.title}\n${item.body}`;
-  const flags = useMemo(() => scanSensitive(text), [text]);
+  const flags = item.sensitivity_flags;
   const targetLabel = targets?.find((t) => t.id === target)?.label;
 
   useEffect(() => {
@@ -60,7 +71,15 @@ export function ContributeSheet({
     setBusy(true);
     setErr(null);
     try {
-      const r = await api.contribute(item.id, target);
+      const r = await api.contribute(item.id, {
+        targetScopeId: target,
+        user_validated: {
+          by: me?.principal.id ?? "",
+          at: new Date().toISOString(),
+          revision: item.revision,
+        },
+        acknowledged_flags: flags.map((f) => f.id),
+      });
       onDone({ candidateId: r.candidateId, receiptId: r.receiptId, scope: targetLabel ?? target });
     } catch (e) {
       setErr(e instanceof ApiError ? e.reason : "The contribution failed.");
@@ -69,7 +88,7 @@ export function ContributeSheet({
     }
   };
 
-  const canSend = !!target && confirmed && !busy;
+  const canSend = !!target && confirmed && !busy && !!me;
 
   return (
     <div className="overlay center" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -134,25 +153,21 @@ export function ContributeSheet({
                   <strong>{flags.length}</strong> {flags.length === 1 ? "span is" : "spans are"}{" "}
                   flagged. Edit the note first if they should not leave your Personal Brain.
                 </p>
-                {flags.map((f) => {
-                  const ctx = context(text, f.index, f.span.length);
-                  return (
-                    <div className="flag" key={`${f.index}-${f.kind}`}>
-                      <div className="row">
-                        <ShieldAlert size={15} aria-hidden color="#ffb547" />
-                        <strong>{f.kind}</strong>
-                      </div>
-                      <div style={{ overflowWrap: "anywhere" }}>
-                        <span className="muted">…{ctx.before}</span>
-                        <mark>{f.span}</mark>
-                        <span className="muted">{ctx.after}…</span>
-                      </div>
-                      <div className="muted" style={{ fontSize: 14 }}>
-                        {f.reason}
-                      </div>
+                {flags.map((f) => (
+                  <div className="flag" key={f.id}>
+                    <div className="row">
+                      <ShieldAlert size={15} aria-hidden color="#ffb547" />
+                      <strong>{FLAG_LABEL[f.type]}</strong>
+                      <span className="muted">in the {f.field}</span>
                     </div>
-                  );
-                })}
+                    <div style={{ overflowWrap: "anywhere" }}>
+                      <mark>{f.excerpt}</mark>
+                    </div>
+                    <div className="muted" style={{ fontSize: 14 }}>
+                      {FLAG_REASON[f.type]}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>

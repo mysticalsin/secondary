@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { Await, Chip, Eyebrow, fmtDate } from "../components/ui";
+import { Await, Chip, Eyebrow, fmtDate, fmtRev } from "../components/ui";
 import { AskPanel } from "../genui";
 import { PERSONAS } from "../personas";
 import { useApp } from "../state";
@@ -64,8 +64,8 @@ export function Today() {
     .filter((h) => h.counts && h.counts.open > 0)
     .sort((a, b) => (b.counts?.open ?? 0) - (a.counts?.open ?? 0))
     .slice(0, 4);
-  const openAccounts = (accounts.data?.accounts ?? []).filter((a) => a.openItems > 0).slice(0, 3);
-  const waiting = review.data?.candidates ?? [];
+  const openAccounts = (accounts.data ?? []).filter((a) => a.openItems > 0).slice(0, 3);
+  const waiting = review.data ?? [];
   const nothing =
     !review.loading &&
     !map.loading &&
@@ -169,11 +169,11 @@ export function Today() {
         ) : (
           <Await state={activity} skeleton={2}>
             {(d) =>
-              d.entries.length === 0 ? (
+              d.length === 0 ? (
                 <p className="muted">No approved changes in your scope yet.</p>
               ) : (
                 <div>
-                  {d.entries.map((e) => (
+                  {d.map((e) => (
                     <div className="attn-row" key={e.id}>
                       <div>
                         <button
@@ -184,7 +184,7 @@ export function Today() {
                           {e.title}
                         </button>
                         <div className="muted" style={{ fontSize: 14 }}>
-                          {e.scopeLabel} · {e.revision} · {fmtDate(e.at)}
+                          {e.scopeLabel} · {fmtRev(e.revision)} · {fmtDate(e.at)}
                         </div>
                       </div>
                       <Chip tone="done">Approved</Chip>

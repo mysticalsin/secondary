@@ -216,7 +216,9 @@ export const callTool = (
  * (outcome, client_id, scope_ids, result_count, oauth_scopes, redirect_host, kind).
  */
 export async function auditEvents(): Promise<Record<string, Loose>[]> {
-  const receipts = (await (await env.AUDIT.fetch("https://audit.internal/events")).json()) as Loose[];
+  const receipts = (await (
+    await env.AUDIT.fetch("https://audit.internal/events")
+  ).json()) as Loose[];
   const outcome = { allow: "ok", deny: "denied", rejected: "error" } as const;
   return receipts.map((r) => ({
     ...r,

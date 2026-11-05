@@ -1,6 +1,9 @@
 import { Fragment } from "react";
 import { api } from "../api";
 import { Await, Chip, Eyebrow, fmtDate, PageHead } from "../components/ui";
+import { whoIs } from "../personas";
+import { useApp } from "../state";
+import { STRUCTURE_ONLY_ROLES } from "../types";
 import { useApi } from "../useApi";
 
 const cond = (c: Record<string, unknown>) =>
@@ -11,7 +14,9 @@ const cond = (c: Record<string, unknown>) =>
         .join(", ");
 
 export function Admin() {
+  const { me } = useApp();
   const roles = useApi(() => api.adminRoles(), []);
+  const structureOnly = !!me?.principal.roleIds.some((r) => STRUCTURE_ONLY_ROLES.includes(r));
   const audit = useApi(() => api.adminAudit(), []);
   return (
     <div className="page stack" style={{ gap: 24 }}>
@@ -27,7 +32,7 @@ export function Admin() {
       <Await state={roles} skeleton={3}>
         {(d) => (
           <>
-            {d.structureOnly ? (
+            {structureOnly ? (
               <div className="callout attention" role="note">
                 <div>
                   <strong>Structure only.</strong> The platform admin sees roles, scopes and
@@ -54,7 +59,7 @@ export function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {d.roles.map((r) => (
+                    {d.map((r) => (
                       <Fragment key={r.id}>
                         {r.grants.map((g, i) => (
                           <tr key={`${r.id}-${g.scope_type}-${g.scope_id}`}>
@@ -127,15 +132,15 @@ export function Admin() {
                     </tr>
                   </thead>
                   <tbody>
-                    {d.receipts.map((r) => (
+                    {d.map((r) => (
                       <tr key={r.id}>
                         <td className="num">{r.id}</td>
                         <td>{fmtDate(r.at)}</td>
-                        <td>{r.actor}</td>
+                        <td>{whoIs(r.actor)}</td>
                         <td>{r.action.replace(/_/g, " ")}</td>
                         <td>{r.scope}</td>
                         <td>
-                          <Chip tone={r.result === "ok" ? "done" : "risk"}>{r.result}</Chip>
+                          <Chip tone={r.result === "allow" ? "done" : "risk"}>{r.result}</Chip>
                         </td>
                       </tr>
                     ))}

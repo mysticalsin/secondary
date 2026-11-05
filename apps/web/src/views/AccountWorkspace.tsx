@@ -2,7 +2,7 @@ import { ArrowLeft, Lock } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
-import { Await, Chip, Empty, PlaneBadge, statusTone } from "../components/ui";
+import { Await, Chip, Empty, fmtRev, PlaneBadge, statusTone } from "../components/ui";
 import type { AccountRecord } from "../types";
 import { useApi } from "../useApi";
 
@@ -79,15 +79,9 @@ export function AccountWorkspace() {
                 <p>
                   {d.account.country} · {d.account.region} · {d.account.sector}
                 </p>
-                {d.members ? (
-                  <p className="muted" style={{ fontSize: 14 }}>
-                    Members: {d.members.join(", ")}
-                  </p>
-                ) : (
-                  <p className="muted" style={{ fontSize: 14 }}>
-                    Member list is visible to members only.
-                  </p>
-                )}
+                <p className="muted" style={{ fontSize: 14 }}>
+                  Contacts are visible to account members only.
+                </p>
               </header>
               <div className="tabs" role="tablist" aria-label="Account sections" onKeyDown={onKey}>
                 {d.sections.map((s) => (
@@ -117,7 +111,7 @@ export function AccountWorkspace() {
                           <strong>{r.title}</strong>
                           <span className="row">
                             <Chip tone={statusTone(r.status)}>{r.status}</Chip>
-                            <span className="muted">{r.revision}</span>
+                            <span className="muted">{fmtRev(r.revision)}</span>
                           </span>
                         </div>
                         {r.note ? (

@@ -21,7 +21,12 @@ async function authorizeAt(base: string, headers: Record<string, string>) {
   const { challenge } = await pkce();
   return send(
     new Request(
-      authorizeUrl({ clientId: body.client_id as string, scope: "secondary.read", challenge, base }),
+      authorizeUrl({
+        clientId: body.client_id as string,
+        scope: "secondary.read",
+        challenge,
+        base,
+      }),
       { headers },
     ),
     e,

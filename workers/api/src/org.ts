@@ -41,7 +41,9 @@ export async function personaId(roleId: RoleId, email: string): Promise<string> 
   const e = email.trim().toLowerCase();
   if (e.split("@")[0] === roleId) return PERSONAS[roleId].id;
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e));
-  const h = Array.from(new Uint8Array(d).slice(0, 5), (b) => b.toString(16).padStart(2, "0")).join("");
+  const h = Array.from(new Uint8Array(d).slice(0, 5), (b) => b.toString(16).padStart(2, "0")).join(
+    "",
+  );
   return `${PERSONAS[roleId].id}_${h}`;
 }
 

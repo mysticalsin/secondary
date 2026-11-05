@@ -25,7 +25,10 @@ export default defineConfig({
             const url = new URL(request.url);
             // The real audit worker refuses calls without its keys; so does this stand-in.
             const key = request.headers.get("X-Audit-Key");
-            const need = url.pathname === "/receipts" ? "test-audit-key-read-0123456789abcdef012" : "test-audit-key-api-0123456789abcdef0123";
+            const need =
+              url.pathname === "/receipts"
+                ? "test-audit-key-read-0123456789abcdef012"
+                : "test-audit-key-api-0123456789abcdef0123";
             if (key !== need) return Response.json({ error: "unauthorized" }, { status: 401 });
             if (url.pathname === "/append" && request.method === "POST") {
               // The real parser, so a receipt the audit worker would refuse fails here too.

@@ -80,9 +80,7 @@ describe("audience (RFC 8707) and no token passthrough", () => {
     const other = envWith({ MCP_PUBLIC_URL: "http://127.0.0.1" });
     const t = await getToken({ e: other, base: "http://127.0.0.1" });
     // valid at the issuing server...
-    expect((await rpc(t.token, "tools/list", {}, other, "http://127.0.0.1")).res.status).toBe(
-      200,
-    );
+    expect((await rpc(t.token, "tools/list", {}, other, "http://127.0.0.1")).res.status).toBe(200);
     // ...but refused here: audience is http://127.0.0.1/mcp, not http://localhost/mcp.
     const { res } = await rpc(t.token, "tools/list");
     expect(res.status).toBe(401);

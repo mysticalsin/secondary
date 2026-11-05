@@ -96,9 +96,9 @@ describe("audit worker", () => {
   it("needs a valid key on every route (M4)", async () => {
     const r = receipt();
     expect((await append(r, { "X-Audit-Key": "" })).status).toBe(401);
-    expect((await append(r, { "X-Audit-Key": "wrong-key-wrong-key-wrong-key-wrong-key" })).status).toBe(
-      401,
-    );
+    expect(
+      (await append(r, { "X-Audit-Key": "wrong-key-wrong-key-wrong-key-wrong-key" })).status,
+    ).toBe(401);
     expect((await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": "" })).status).toBe(
       401,
     );
@@ -112,10 +112,12 @@ describe("audit worker", () => {
     const stored = JSON.parse((await (await env.AUDIT_LOG.get(key))?.text()) as string);
     expect(stored.source).toBe("mcp");
     expect(
-      (await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": env.AUDIT_KEY_MCP })).status,
+      (await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": env.AUDIT_KEY_MCP }))
+        .status,
     ).toBe(403);
     expect(
-      (await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": env.AUDIT_KEY_API })).status,
+      (await call("/receipts?tenant=tenant_alpha", {}, { "X-Audit-Key": env.AUDIT_KEY_API }))
+        .status,
     ).toBe(403);
     // The read key cannot write.
     expect((await append(receipt(), { "X-Audit-Key": env.AUDIT_KEY_READ })).status).toBe(403);

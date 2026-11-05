@@ -39,14 +39,14 @@ export function Governances() {
       />
       <Await state={state} skeleton={4}>
         {(d) => {
-          const total = d.governances.reduce((s, g) => s + g.useCases, 0);
+          const total = d.reduce((s, g) => s + g.useCases, 0);
           return (
             <>
               <p className="muted" style={{ marginBottom: 12 }}>
                 {total} use cases visible to you.
               </p>
               <ul className="grid auto" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-                {d.governances.map((g) => {
+                {d.map((g) => {
                   const locked = g.useCases === 0;
                   return (
                     <li key={g.id}>

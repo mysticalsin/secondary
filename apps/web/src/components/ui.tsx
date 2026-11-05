@@ -3,12 +3,16 @@ import type { Plane } from "../types";
 import type { Async } from "../useApi";
 
 const PLANE_LABEL: Record<Plane, string> = {
-  GLOBAL: "Global",
-  DEPARTMENT: "Department",
-  TEAM: "Team",
+  GLOBAL_NONPERSONAL: "Global",
+  TEAM_RESTRICTED: "Team restricted",
   ACCOUNT_RESTRICTED: "Account restricted",
-  PERSONAL: "Personal",
+  PERSONAL_HOSTED: "Personal",
 };
+
+/** Revisions are integers on the wire. People read them as r3. */
+export function fmtRev(v: string | number): string {
+  return `r${v}`;
+}
 
 export function PlaneBadge({ plane }: { plane: Plane }) {
   return <span className={`chip plane-${plane}`}>{PLANE_LABEL[plane] ?? plane}</span>;

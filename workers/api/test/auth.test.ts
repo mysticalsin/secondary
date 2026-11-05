@@ -267,9 +267,7 @@ describe("M2: personas are bound to the signed-in email", () => {
     });
     expect(note.status).toBe(201);
     const list = async (email: string) =>
-      json<{ title: string }[]>(
-        await call("/v1/personal/items", { email, persona: "consultant" }),
-      );
+      json<{ title: string }[]>(await call("/v1/personal/items", { email, persona: "consultant" }));
     expect((await list("tester.a@example.invalid")).map((i) => i.title)).toContain("Mine alone");
     expect((await list("tester.b@example.invalid")).map((i) => i.title)).not.toContain(
       "Mine alone",

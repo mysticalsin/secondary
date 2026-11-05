@@ -1,11 +1,12 @@
 import { ExternalLink, Lock, Sparkles, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api";
 import { useApp } from "../state";
 import type { Counts, NodeAction, NodeDetail } from "../types";
 import { useApi } from "../useApi";
-import { Await, Chip, PlaneBadge, statusTone } from "./ui";
+import { ActionForm, FORM_ACTIONS } from "./ActionForm";
+import { Await, Chip, fmtRev, PlaneBadge, statusTone } from "./ui";
 
 const GROUPS: NodeAction["group"][] = ["Collaborate", "Govern", "Admin"];
 
@@ -42,11 +43,14 @@ export function NodeDetailView({
   onOpen,
   onAct,
   feedback,
+  form,
 }: {
   detail: NodeDetail;
   onOpen: (id: string) => void;
   onAct: (a: NodeAction) => void;
   feedback?: ActionFeedback | null;
+  /** Inline input form for the action in progress (comment, edit, contribute). */
+  form?: ReactNode;
 }) {
   const { node } = detail;
   const locked = node.access === "locked";
@@ -151,7 +155,21 @@ export function NodeDetailView({
             </div>
           );
         })}
+        {form}
       </section>
+
+      {detail.comments && detail.comments.length > 0 ? (
+        <section aria-labelledby="dr-comments">
+          <h4 id="dr-comments" className="eyebrow section-title">
+            Comments
+          </h4>
+          {detail.comments.map((c) => (
+            <p className="itemrow" key={c.id}>
+              {c.text}
+            </p>
+          ))}
+        </section>
+      ) : null}
 
       {detail.items.length > 0 ? (
         <section aria-labelledby="dr-items">
@@ -165,7 +183,7 @@ export function NodeDetailView({
                 <Chip tone={statusTone(it.evidence)}>Evidence: {it.evidence}</Chip>
                 <span>{it.source}</span>
                 <span>{it.ownerRole}</span>
-                <span>{it.revision}</span>
+                <span>{fmtRev(it.revision)}</span>
                 {it.reviewedBy2 ? <Chip tone="done">Two-person reviewed</Chip> : null}
               </div>
               <div>
@@ -224,10 +242,12 @@ export function Drawer() {
     [drawerId],
   );
   const [fb, setFb] = useState<ActionFeedback | null>(null);
+  const [formAction, setFormAction] = useState<"comment" | "edit" | "contribute" | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setFb(null);
+    setFormAction(null);
     closeRef.current?.focus();
   }, [drawerId]);
 
@@ -236,6 +256,11 @@ export function Drawer() {
   const act = async (a: NodeAction) => {
     if (a.action === "review" || a.action === "approve_release") {
       nav("/review");
+      return;
+    }
+    if (FORM_ACTIONS.includes(a.action)) {
+      setFb(null);
+      setFormAction(a.action as "comment" | "edit" | "contribute");
       return;
     }
     try {
@@ -271,7 +296,31 @@ export function Drawer() {
         </button>
       </div>
       <Await state={state}>
-        {(d) => <NodeDetailView detail={d} onOpen={openNode} onAct={act} feedback={fb} />}
+        {(d) => (
+          <NodeDetailView
+            detail={d}
+            onOpen={openNode}
+            onAct={act}
+            feedback={fb}
+            form={
+              formAction ? (
+                <ActionForm
+                  key={formAction}
+                  action={formAction}
+                  nodeId={drawerId}
+                  detail={d}
+                  onCancel={() => setFormAction(null)}
+                  onDone={(text) => {
+                    setFormAction(null);
+                    setFb({ action: formAction, ok: true, text });
+                    say(text);
+                    state.reload();
+                  }}
+                />
+              ) : null
+            }
+          />
+        )}
       </Await>
     </aside>
   );

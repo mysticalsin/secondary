@@ -88,6 +88,8 @@ export function MapCanvas({
   const [xf, setXf] = useState<Xf>(FIT);
   const [drag, setDrag] = useState(false);
   const boxRef = useRef<HTMLDivElement>(null);
+  // Rendered size of the panel. The viewBox follows it, so the ring fills the panel at any size.
+  const [size, setSize] = useState<{ w: number; h: number }>({ w: 800, h: 560 });
   const moved = useRef(0);
   const last = useRef<{ x: number; y: number } | null>(null);
   const xfRef = useRef(xf);
@@ -95,12 +97,39 @@ export function MapCanvas({
 
   useEffect(() => setXf(FIT), [layout]);
 
-  const scale = useCallback(() => {
+  useEffect(() => {
     const el = boxRef.current;
-    if (!el) return 1;
-    const r = el.getBoundingClientRect();
-    return Math.min(r.width, r.height) / (2 * layout.extent);
-  }, [layout.extent]);
+    if (!el) return;
+    const measure = () => {
+      // clientWidth and clientHeight exclude the border, so they match the svg's own box.
+      const w = el.clientWidth;
+      const h = el.clientHeight;
+      if (w > 0 && h > 0) setSize((c) => (c.w === w && c.h === h ? c : { w, h }));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Fit: the content's half-extents (about the origin, plus padding) fill the panel on the tighter axis.
+  const fit = useMemo(() => {
+    const PAD = 36;
+    let hx = layout.coreR + PAD;
+    let hy = layout.coreR + PAD;
+    for (const p of layout.items) {
+      hx = Math.max(hx, Math.abs(p.x) + p.r + PAD);
+      hy = Math.max(hy, Math.abs(p.y) + p.r + PAD);
+    }
+    const s = Math.min(size.w / (2 * hx), size.h / (2 * hy));
+    return { s, vw: size.w / s, vh: size.h / s };
+  }, [layout, size]);
+
+  const scale = useCallback(() => fit.s, [fit.s]);
 
   useEffect(() => {
     const el = boxRef.current;
@@ -135,10 +164,10 @@ export function MapCanvas({
       tx = p.x + Math.cos(p.angle) * out;
       ty = p.y + Math.sin(p.angle) * out;
     } else {
-      k = clamp((layout.extent * 0.8) / Math.max(p.r, 1), 1.2, 6);
+      k = clamp((Math.min(fit.vw, fit.vh) * 0.4) / Math.max(p.r, 1), 1.2, 6);
     }
     setXf({ k, x: -tx * k, y: -ty * k });
-  }, [focusId, layout, projection, compact]);
+  }, [focusId, layout, projection, compact, fit.vw, fit.vh]);
 
   const q = query.trim().toLowerCase();
   const matches = useMemo(() => {
@@ -148,7 +177,8 @@ export function MapCanvas({
 
   const depth1Count = useMemo(() => layout.items.filter((p) => p.depth === 1).length, [layout]);
   const k = compact ? 1 : xf.k;
-  const fs = (base: number) => base / Math.sqrt(Math.max(k, 0.8));
+  // Label size in SVG units for a target rendered size in CSS pixels (constant on screen at any zoom).
+  const px = (cssPx: number) => cssPx / (fit.s * k);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (compact) return;
@@ -188,7 +218,6 @@ export function MapCanvas({
     e.preventDefault();
   };
 
-  const ex = layout.extent;
   const link = view.links[0];
   const la = link ? layout.byId.get(link.from) : undefined;
   const lb = link ? layout.byId.get(link.to) : undefined;
@@ -207,7 +236,7 @@ export function MapCanvas({
       onKeyDown={onKeyDown}
     >
       <svg
-        viewBox={`${-ex} ${-ex} ${2 * ex} ${2 * ex}`}
+        viewBox={`${-fit.vw / 2} ${-fit.vh / 2} ${fit.vw} ${fit.vh}`}
         preserveAspectRatio="xMidYMid meet"
         role="img"
         aria-label="Company map"
@@ -223,7 +252,7 @@ export function MapCanvas({
                     x={b.lx}
                     y={b.ly}
                     textAnchor="middle"
-                    fontSize={fs(10)}
+                    fontSize={px(12)}
                   >
                     {b.label}
                   </text>
@@ -247,18 +276,22 @@ export function MapCanvas({
                 <text
                   className="svg-label"
                   textAnchor="middle"
-                  y="-2"
-                  fontSize="11"
+                  y={-px(2)}
+                  fontSize={px(14)}
                   fontWeight="700"
                   style={{ stroke: "none" }}
                 >
-                  {view.core.label}
+                  {wrap(view.core.label, 12).map((ln, i) => (
+                    <tspan key={ln} x="0" dy={i === 0 ? 0 : px(16)}>
+                      {ln}
+                    </tspan>
+                  ))}
                 </text>
                 <text
                   className="svg-label"
                   textAnchor="middle"
-                  y="13"
-                  fontSize="10"
+                  y={px(wrap(view.core.label, 12).length * 16 - 2)}
+                  fontSize={px(12)}
                   style={{ stroke: "none", fill: "#e2c8ff" }}
                 >
                   {view.core.topicCount} topics
@@ -291,12 +324,12 @@ export function MapCanvas({
               (p.depth === 2 && k >= 3);
             const lines = wrap(p.label, p.depth === 0 ? 15 : 22);
             const hubRing = p.isHub && projection === "ring";
-            const lx = hubRing ? -Math.cos(p.angle) * (p.r + 18) : 0;
+            const lx = hubRing ? -Math.cos(p.angle) * (p.r + px(24)) : 0;
             const ly = hubRing
-              ? -Math.sin(p.angle) * (p.r + 18)
+              ? -Math.sin(p.angle) * (p.r + px(24))
               : p.depth === 0
-                ? -p.r + fs(14)
-                : p.r + fs(12);
+                ? -p.r + px(14)
+                : p.r + px(12);
             const summary =
               p.node.counts && !locked
                 ? `${p.label}. ${p.node.counts.items} items, ${p.node.counts.open} open.`
@@ -352,19 +385,11 @@ export function MapCanvas({
                     textAnchor="middle"
                     x={lx}
                     y={ly}
-                    fontSize={fs(
-                      p.depth === 0
-                        ? projection === "clusters"
-                          ? clamp(p.r / 6, 11.5, 22)
-                          : 11.5
-                        : p.depth === 1
-                          ? 10
-                          : 9,
-                    )}
+                    fontSize={px(p.depth === 0 ? 14 : 12)}
                     fontWeight={p.depth === 0 ? 700 : 400}
                   >
                     {lines.map((ln, i) => (
-                      <tspan key={ln} x={lx} dy={i === 0 ? 0 : fs(12)}>
+                      <tspan key={ln} x={lx} dy={i === 0 ? 0 : px(p.depth === 0 ? 16 : 14)}>
                         {ln}
                       </tspan>
                     ))}

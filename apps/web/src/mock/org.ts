@@ -471,13 +471,13 @@ function build(): Org {
   const itemsOfTheme = new Map<string, Leaf[]>();
   const accountsOfCountry = new Map<string, Leaf[]>();
 
-  add(leaf("core", "Company Global", "core", "GLOBAL", { items: 120 }));
+  add(leaf("core", "Company Global", "core", "GLOBAL_NONPERSONAL", { items: 120 }));
   for (const [did, dl, group, circles] of DEPARTMENTS) {
-    add(leaf(did, dl, "department", "DEPARTMENT", { dept: did, group }));
+    add(leaf(did, dl, "department", "TEAM_RESTRICTED", { dept: did, group }));
     const cl: Leaf[] = [];
     for (const [cid, cl_, restricted, topics] of circles) {
       const c = add(
-        leaf(cid, cl_, "circle", restricted ? "ACCOUNT_RESTRICTED" : "TEAM", {
+        leaf(cid, cl_, "circle", restricted ? "ACCOUNT_RESTRICTED" : "TEAM_RESTRICTED", {
           dept: did,
           circle: cid,
           restricted: !!restricted,
@@ -490,13 +490,19 @@ function build(): Org {
         cid,
         topics.map((t) =>
           add(
-            leaf(`t_${cid}_${slug(t)}`, t, "topic", restricted ? "ACCOUNT_RESTRICTED" : "TEAM", {
-              dept: did,
-              circle: cid,
-              restricted: !!restricted,
-              parent: cid,
-              group,
-            }),
+            leaf(
+              `t_${cid}_${slug(t)}`,
+              t,
+              "topic",
+              restricted ? "ACCOUNT_RESTRICTED" : "TEAM_RESTRICTED",
+              {
+                dept: did,
+                circle: cid,
+                restricted: !!restricted,
+                parent: cid,
+                group,
+              },
+            ),
           ),
         ),
       );
@@ -504,7 +510,7 @@ function build(): Org {
     circlesOfDept.set(did, cl);
   }
   for (const [gid, gl, group, n] of GOVERNANCES) {
-    add(leaf(gid, gl, "governance", "GLOBAL", { gov: gid, group, items: n }));
+    add(leaf(gid, gl, "governance", "GLOBAL_NONPERSONAL", { gov: gid, group, items: n }));
     const list: Leaf[] = [];
     for (let i = 0; i < n; i++) {
       const id = `uc_${gid.slice(2)}_${String(i + 1).padStart(3, "0")}`;
@@ -520,16 +526,24 @@ function build(): Org {
         }
       }
       const title = `${pick(UC_TITLES, h >>> 3)} ${String.fromCharCode(65 + ((h >>> 11) % 6))}${(i % 9) + 1}`;
-      list.push(add(leaf(id, title, "usecase", "GLOBAL", { gov: gid, stage, parent: gid, group })));
+      list.push(
+        add(
+          leaf(id, title, "usecase", "GLOBAL_NONPERSONAL", { gov: gid, stage, parent: gid, group }),
+        ),
+      );
     }
     useCasesOfGov.set(gid, list);
   }
   for (const [tid, tl, items] of THEMES) {
-    add(leaf(tid, tl, "theme", "GLOBAL"));
+    add(leaf(tid, tl, "theme", "GLOBAL_NONPERSONAL"));
     itemsOfTheme.set(
       tid,
       items.map((it) =>
-        add(leaf(`ti_${tid.slice(3)}_${slug(it)}`, it, "themeitem", "GLOBAL", { parent: tid })),
+        add(
+          leaf(`ti_${tid.slice(3)}_${slug(it)}`, it, "themeitem", "GLOBAL_NONPERSONAL", {
+            parent: tid,
+          }),
+        ),
       ),
     );
   }

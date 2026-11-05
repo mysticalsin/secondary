@@ -38,12 +38,12 @@ The validator is generated: `pnpm --filter @secondary/mcp gen:validator` (ajv st
 - Client allowlist (`ALLOWED_REDIRECT_HOSTS`): checked at registration, at `/authorize` and again at approval. https only, plain http only for `localhost` and `127.0.0.1`. Anything else is refused and audited (`register.rejected`, `authorize.rejected`). An empty list denies everything.
 - KV (`OAUTH_KV`) holds OAuth provider state. KV is not EU-restricted. It stores hashed tokens, client records, grant metadata (opaque Access `sub`, client id) and grant props encrypted with a key only the token holder can unwrap. No Secondary content is stored. A test reads every KV entry and asserts no plaintext token, email or note text.
 - Audit: every tool call writes a receipt through the `AUDIT` binding (who as opaque id, client id, tool, ids, result count, outcome; never content). If the audit write fails the tool returns `audit_unavailable` and no data.
-- Dev test mode: only when `ENVIRONMENT=dev` and `ACCESS_TEAM_DOMAIN` is empty, `X-Dev-Email` (and optional `X-Dev-Persona`) stand in for Access at `/authorize`. Ignored otherwise (tested). Outside dev, `MCP_PUBLIC_URL` must be set or every request fails with 500.
+- Dev test mode: only when `ENVIRONMENT=dev`, `ACCESS_TEAM_DOMAIN` is empty AND the request host is `localhost` or `127.0.0.1`, `X-Dev-Email` (and optional `X-Dev-Persona`) stand in for Access at `/authorize`. On any other host the headers are ignored and `/authorize` answers 401 until Access is configured (tested; a deployed dev worker is public). Outside dev, `MCP_PUBLIC_URL` must be set or every request fails with 500.
 - No CORS: hosts call server to server.
 
 ## Configuration
 
-`wrangler.jsonc` vars: `ENVIRONMENT`, `MCP_PUBLIC_URL` (canonical origin, required outside dev), `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `ALLOWED_REDIRECT_HOSTS`. Secret: `INTERNAL_HMAC_KEY` (same value on `workers/api`; never in a file). Bindings: `OAUTH_KV`, service bindings `API` (`secondary-api-dev`) and `AUDIT` (`secondary-audit-dev`). The KV namespace has no `id` yet: it is created at deploy time, not before. The compatibility flag `global_fetch_strictly_public` is required for safe Client ID Metadata Document fetches.
+`wrangler.jsonc` vars: `ENVIRONMENT`, `MCP_PUBLIC_URL` (canonical origin, required outside dev), `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `ALLOWED_REDIRECT_HOSTS`. Secrets: `INTERNAL_HMAC_KEY` (same value on `workers/api`) and `AUDIT_KEY_MCP` (append-only key for `workers/audit`); never in a file. Bindings: `OAUTH_KV`, service bindings `API` (`secondary-api-dev`) and `AUDIT` (`secondary-audit-dev`). The KV namespace has no `id` yet: it is created at deploy time, not before. The compatibility flag `global_fetch_strictly_public` is required for safe Client ID Metadata Document fetches.
 
 ## Run and test
 
@@ -54,7 +54,7 @@ corepack pnpm --filter @secondary/mcp typecheck
 corepack pnpm --filter @secondary/mcp build       # wrangler deploy --dry-run
 ```
 
-Local run: put `INTERNAL_HMAC_KEY=<32+ chars>` in `workers/mcp/.dev.vars` (git-ignored) and run `wrangler dev` together with the API and audit workers (`wrangler dev -c workers/mcp/wrangler.jsonc -c workers/api/wrangler.jsonc -c workers/audit/wrangler.jsonc`). Point MCP Inspector (or any client) at `http://localhost:8787/mcp`. At `/authorize` send `X-Dev-Email: someone@example.invalid` (for example with a header-injecting browser extension, or script the code flow with PKCE). Dynamic registration with `http://localhost:<port>/...` redirect URIs is allowed.
+Local run: `corepack pnpm dev:all` from the repo root starts audit, api and mcp with working service bindings and generates the local secrets (see the root README). Point MCP Inspector (or any client) at `http://localhost:8788/mcp`; `corepack pnpm e2e:mcp` runs a scripted host against it. At `/authorize` send `X-Dev-Email: someone@example.invalid` (for example with a header-injecting browser extension, or script the code flow with PKCE). Dynamic registration with `http://localhost:<port>/...` redirect URIs is allowed.
 
 ## Add it to a host
 

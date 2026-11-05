@@ -13,3 +13,4 @@ packages/fixtures/out/
 .wrangler/
 worker-configuration.d.ts
 .worktrees/
+.dev/

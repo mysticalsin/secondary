@@ -1,10 +1,23 @@
 import { ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ApiError, api } from "../api";
-import { Chip, Empty, ErrorBox, Eyebrow, fmtDate, PageHead, PlaneBadge } from "../components/ui";
+import {
+  Chip,
+  Empty,
+  ErrorBox,
+  Eyebrow,
+  fmtDate,
+  fmtRev,
+  PageHead,
+  PlaneBadge,
+} from "../components/ui";
+import { whoIs } from "../personas";
 import { useApp } from "../state";
 import type { Candidate } from "../types";
 import { useApi } from "../useApi";
+
+/** Candidate ids look like cand:<targetNodeId>:<8 hex>. The node to open is the target. */
+const targetOf = (id: string) => /^cand:(.+):[0-9a-f]{8}$/.exec(id)?.[1] ?? id;
 
 export function CandidateDetail({ c, onDone }: { c: Candidate; onDone: (msg: string) => void }) {
   const { openNode } = useApp();
@@ -19,22 +32,38 @@ export function CandidateDetail({ c, onDone }: { c: Candidate; onDone: (msg: str
     setErr(null);
   }, [c.id, c.revision]);
 
+  // The verdict is recorded against the exact revision. The reviewer's text goes in as a comment on
+  // the candidate, best effort: a role that may review but not comment still records the verdict.
+  const requestChanges = async () => {
+    const res = await api.act({
+      nodeId: c.nodeId,
+      action: "review",
+      revision: Number(c.revision),
+      payload: { verdict: "changes_requested" },
+    });
+    try {
+      await api.act({ nodeId: c.nodeId, action: "comment", payload: { text: comment.trim() } });
+    } catch {
+      /* the verdict stands without the comment */
+    }
+    return res;
+  };
+
   const run = async (kind: "approve" | "changes") => {
     setBusy(true);
     setErr(null);
     try {
       const res =
         kind === "approve"
-          ? await api.act({ nodeId: c.nodeId, action: "approve_release", revision: c.revision })
-          : await api.act({
+          ? await api.act({
               nodeId: c.nodeId,
-              action: "review",
-              revision: c.revision,
-              payload: { decision: "request_changes", comment: comment.trim() },
-            });
+              action: "approve_release",
+              revision: Number(c.revision),
+            })
+          : await requestChanges();
       onDone(
         kind === "approve"
-          ? `Approved ${c.revision}. Receipt ${res.receiptId}.`
+          ? `Approved ${fmtRev(c.revision)}. Receipt ${res.receiptId}.`
           : `Changes requested. Receipt ${res.receiptId}.`,
       );
     } catch (e) {
@@ -56,23 +85,23 @@ export function CandidateDetail({ c, onDone }: { c: Candidate; onDone: (msg: str
           {c.title}
         </h3>
         <p className="muted">
-          By {c.author} · submitted {fmtDate(c.submittedAt)} ·{" "}
-          <button type="button" className="linkbtn" onClick={() => openNode(c.nodeId)}>
+          By {whoIs(c.author)} · submitted {fmtDate(c.submittedAt)} ·{" "}
+          <button type="button" className="linkbtn" onClick={() => openNode(targetOf(c.nodeId))}>
             Open node
           </button>
         </p>
       </div>
 
       <div className="exact">
-        <strong>Exact revision {c.revision}.</strong>{" "}
-        {c.previousRevision ? `Compared with ${c.previousRevision}. ` : "First revision. "}
+        <strong>Exact revision {fmtRev(c.revision)}.</strong>{" "}
+        {c.previousRevision ? `Compared with ${fmtRev(c.previousRevision)}. ` : "First revision. "}
         Your decision applies to this revision only. If the author changes it, you review again.
       </div>
 
       <section aria-labelledby="diff-h">
         <Eyebrow>
           {c.previousRevision
-            ? `Changes from ${c.previousRevision} to ${c.revision}`
+            ? `Changes from ${fmtRev(c.previousRevision)} to ${fmtRev(c.revision)}`
             : "Proposed content"}
         </Eyebrow>
         <div
@@ -152,7 +181,7 @@ export function CandidateDetail({ c, onDone }: { c: Candidate; onDone: (msg: str
             aria-describedby={c.approve.allowed ? undefined : "approve-why"}
             onClick={() => run("approve")}
           >
-            Approve {c.revision}
+            Approve {fmtRev(c.revision)}
           </button>
           <button
             type="button"
@@ -207,7 +236,7 @@ export function Review() {
   const state = useApi(() => api.review(), []);
   const { say } = useApp();
   const [sel, setSel] = useState<string | null>(null);
-  const list = state.data?.candidates ?? [];
+  const list = state.data ?? [];
   const current = list.find((c) => c.id === sel) ?? list[0];
 
   return (
@@ -244,7 +273,7 @@ export function Review() {
                 >
                   <strong>{c.title}</strong>
                   <span className="muted" style={{ fontSize: 14 }}>
-                    {c.scopeLabel} · {c.revision} · {c.author}
+                    {c.scopeLabel} · {fmtRev(c.revision)} · {whoIs(c.author)}
                   </span>
                   <span className="row">
                     {c.flags.length > 0 ? <Chip tone="attn">{c.flags.length} flagged</Chip> : null}

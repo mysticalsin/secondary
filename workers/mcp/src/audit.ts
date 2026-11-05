@@ -41,7 +41,10 @@ export async function toReceipt(env: Env, event: AuditEvent, now = new Date()): 
     at: now.toISOString(),
     tenantId: env.DEFAULT_TENANT_ID,
     principalId: event.who ? await receiptId(event.who) : "anonymous",
-    action: event.action.toLowerCase().replace(/[^a-z_.]/g, "_").slice(0, 40),
+    action: event.action
+      .toLowerCase()
+      .replace(/[^a-z_.]/g, "_")
+      .slice(0, 40),
     nodeId: null,
     scopeId: null,
     decision: DECISION[event.outcome],
@@ -52,7 +55,9 @@ export async function toReceipt(env: Env, event: AuditEvent, now = new Date()): 
     tool: event.kind === "mcp.tool_call" ? event.action.slice(0, 60) : null,
     scopeIds: (event.scope_ids ?? []).filter((s) => ID.test(s)).slice(0, 20),
     resultCount: event.result_count ?? null,
-    oauthScopes: (event.oauth_scopes ?? []).filter((s) => /^[a-z][a-z0-9_.]{0,59}$/.test(s)).slice(0, 20),
+    oauthScopes: (event.oauth_scopes ?? [])
+      .filter((s) => /^[a-z][a-z0-9_.]{0,59}$/.test(s))
+      .slice(0, 20),
     redirectHost: event.redirect_host ? event.redirect_host.toLowerCase().slice(0, 255) : null,
     source: "mcp",
   };

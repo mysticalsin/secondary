@@ -560,19 +560,16 @@ kbd {
 .chip.t-attn {
   color: var(--yellow);
 }
-.chip.plane-GLOBAL {
+.chip.plane-GLOBAL_NONPERSONAL {
   color: var(--plane-global);
 }
-.chip.plane-DEPARTMENT {
-  color: var(--plane-department);
-}
-.chip.plane-TEAM {
+.chip.plane-TEAM_RESTRICTED {
   color: var(--plane-team);
 }
 .chip.plane-ACCOUNT_RESTRICTED {
   color: var(--plane-account);
 }
-.chip.plane-PERSONAL {
+.chip.plane-PERSONAL_HOSTED {
   color: var(--st-done);
 }
 .tabs {

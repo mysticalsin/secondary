@@ -8,7 +8,7 @@ import { useApi } from "../useApi";
 export function Accounts() {
   const state = useApi(() => api.accounts(), []);
   const [f, setF] = useState({ region: "", country: "", sector: "", status: "", q: "" });
-  const all = state.data?.accounts ?? [];
+  const all = state.data ?? [];
   const opts = useMemo(() => {
     const u = (k: "region" | "country" | "sector" | "status") =>
       [...new Set(all.map((a) => a[k]))].sort();

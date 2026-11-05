@@ -32,3 +32,32 @@ Updated: 2026-11-04. By: Claude (Sonnet). Tasks G0.7 and G0.8 of the roadmap.
 - pnpm is not on PATH: use `corepack pnpm` (run install unsandboxed). Worker tests use `@cloudflare/vitest-plugin` (successor of vitest-pool-workers, whose bundled workerd rejects the current compat date); the AUDIT service binding is stubbed in `workers/api/vitest.config.ts`.
 - Worker typecheck runs `wrangler types` first (generated `worker-configuration.d.ts` is gitignored). `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are empty until Access is configured.
 - Nothing deployed, no Cloudflare resources created.
+
+## B1 integration, 2026-11-05 (Claude, integrator)
+
+State: `main` holds policy, api, mcp and web merged, security review fixes applied, web wired to the real API, local multi-worker stack and Playwright e2e working. Nothing pushed, nothing deployed, no Cloudflare resources.
+
+Exact commands (use `corepack pnpm`; install unsandboxed; scripts call `pnpm`, so put a `pnpm` shim that runs `corepack pnpm` on PATH):
+
+```sh
+corepack pnpm install
+corepack pnpm build && corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test
+corepack pnpm dev:all -- --seed        # api :8787 (web + /v1), mcp :8788, audit via binding; secrets in .dev/secrets.json
+corepack pnpm e2e                      # Playwright (chromium: pnpm exec playwright install chromium); starts the stack if :8787 is down
+corepack pnpm e2e:mcp [persona]        # scripted MCP host against :8788
+corepack pnpm --filter @secondary/web dev:mock   # web with mock data
+```
+
+What changed beyond the three merges:
+- Web: plane names are the policy names, lists are bare arrays, revisions are integers (shown as r3), `/v1/personal/targets`, contribute sends `user_validated` and acknowledges the server's flags (the browser scan is gone), review verdict is `changes_requested`, drawer has comment, edit and contribute forms, GenUI follows `view-plan.schema.json` (Callout uses `template`). Saved personal notes are read-only (the API has no update). Mock mode mirrors the same shapes.
+- Map ring: labels at least 12 px rendered (hubs 14 px bold), the ring is fitted to the panel and refits on resize.
+- Security review: C1, H1, H2, M1 to M4 fixed with regression tests (see `docs/API-CONTRACT.md`, "Integration notes"). Reviewer holds approve_release on Company Global (two distinct approvers).
+- MCP and API wiring verified live: binding `API` (secondary-api-dev) and signed internal calls work, `INTERNAL_HMAC_KEY` is shared, audit keys are per caller.
+- `workers/mcp/package.json` declares `@modelcontextprotocol/sdk` (optional peer of `agents`, tests failed without it).
+
+Open items and notes:
+- L1 to L6 of the review are not done (key id for HMAC rotation, redirect allowlist by path, rate limits on /register /token, search over-fetch, `DO_JURISDICTION=off` only on loopback).
+- M3 second half (pass the live Workspace record into item-level decisions) is not done; `own_drafts` now needs author == caller.
+- With the seeded personas only the Knowledge reviewer holds approve on Company Global, so a global release needs a second approver from another scope or a new persona.
+- The Personal Brain workspaces are not wiped by a reseed (they are not part of the seed scopes).
+- Deploy: routes are optional placeholders in the three wrangler configs. At deploy set secrets (`INTERNAL_HMAC_KEY`, `SEED_TOKEN`, `AUDIT_KEY_API`, `AUDIT_KEY_MCP`, `AUDIT_KEY_READ`), Access team domain and aud on api and mcp, `MCP_PUBLIC_URL`, the KV id for `OAUTH_KV`, and keep `DO_JURISDICTION=eu`.

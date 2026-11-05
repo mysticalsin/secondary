@@ -1,54 +1,80 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { api } from "../api";
 import { ContributeSheet } from "../components/ContributeSheet";
-import { scanSensitive } from "../sensitive";
+import { detectSensitivity } from "../mock/sensitive";
+import { AppProvider } from "../state";
 import type { PersonalItem } from "../types";
 
-const item: PersonalItem = {
-  id: "p_head_bid_1",
-  kind: "note",
+const draft = {
   title: "Retail renewal points",
-  updatedAt: "2026-11-03T18:20:00Z",
-  body: "Saved EUR 120,000 per year, under NDA. Contact: sample.contact@example.invalid",
+  body: "Escalate to the family office. Contact: sample.contact@example.invalid",
 };
 
+function itemOf(over: Partial<PersonalItem> = {}): PersonalItem {
+  return {
+    id: "p_1",
+    kind: "note",
+    updatedAt: "2026-11-03T18:20:00Z",
+    revision: 1,
+    status: "draft",
+    sensitivity_flags: detectSensitivity(draft),
+    ...draft,
+    ...over,
+  };
+}
+
+const renderSheet = (item: PersonalItem, onDone = vi.fn()) =>
+  render(
+    <AppProvider>
+      <ContributeSheet item={item} onClose={vi.fn()} onDone={onDone} />
+    </AppProvider>,
+  );
+
 describe("Contribute to Company", () => {
-  it("flags sensitive spans before sharing", () => {
-    const kinds = scanSensitive(`${item.title}\n${item.body}`).map((f) => f.kind);
-    expect(kinds).toEqual(
-      expect.arrayContaining(["Amount", "Confidentiality marker", "Email address"]),
-    );
+  it("shows the server's flags (id, type, excerpt) before sharing", () => {
+    renderSheet(itemOf());
+    expect(screen.getByText("sample.contact@example.invalid")).toBeInTheDocument();
+    expect(screen.getByText("Email address")).toBeInTheDocument();
+    expect(screen.getByText("Family or private life")).toBeInTheDocument();
   });
 
-  it("shows flagged spans and requires the confirm checkbox before sending", async () => {
+  it("requires a scope and the confirmation, and sends the validation with each flag acknowledged", async () => {
     const user = userEvent.setup();
     const onDone = vi.fn();
-    render(<ContributeSheet item={item} onClose={vi.fn()} onDone={onDone} />);
-
-    expect(screen.getByText("sample.contact@example.invalid")).toBeInTheDocument();
-    expect(screen.getByText("EUR 120,000")).toBeInTheDocument();
+    const created = await api.personalCreate({ ...draft, kind: "note" });
+    const spy = vi.spyOn(api, "contribute");
+    renderSheet(created, onDone);
 
     const send = screen.getByRole("button", { name: "Send for review" });
     expect(send).toBeDisabled();
-
     const select = await screen.findByLabelText("Company scope");
     await waitFor(() => expect(select).toBeEnabled());
-    await user.selectOptions(select, "c_bid");
+    const options = Array.from((select as HTMLSelectElement).options).filter((o) => o.value);
+    expect(options.length).toBeGreaterThan(0);
+    await user.selectOptions(select, options[0]?.value as string);
     expect(send).toBeDisabled();
 
     const box = screen.getByRole("checkbox");
-    expect(box).not.toBeChecked();
     await user.click(box);
-    expect(send).toBeEnabled();
-
+    await waitFor(() => expect(send).toBeEnabled());
     await user.click(box);
     expect(send).toBeDisabled();
+    await user.click(box);
+
+    await user.click(send);
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const [, body] = spy.mock.calls[0] ?? [];
+    expect(body?.acknowledged_flags).toEqual(created.sensitivity_flags.map((f) => f.id));
+    expect(body?.user_validated).toMatchObject({ revision: created.revision });
+    expect(body?.user_validated.by).toMatch(/^u_/);
+    expect(Number.isNaN(Date.parse(body?.user_validated.at ?? ""))).toBe(false);
   });
 
   it("does not send without a scope, even when confirmed", async () => {
     const user = userEvent.setup();
-    render(<ContributeSheet item={item} onClose={vi.fn()} onDone={vi.fn()} />);
+    renderSheet(itemOf());
     await user.click(screen.getByRole("checkbox"));
     expect(screen.getByRole("button", { name: "Send for review" })).toBeDisabled();
   });

@@ -147,7 +147,14 @@ describe("prototype policy checks", () => {
     expect(can("reviewer", "core", "approve_release").allowed).toBe(true);
     expect(can("reviewer", "core", "review").allowed).toBe(true);
     // No other role gained a release right on global.
-    for (const r of ["ceo", "head_bid", "acme_lead", "consultant", "platform_admin", "auditor"] as const)
+    for (const r of [
+      "ceo",
+      "head_bid",
+      "acme_lead",
+      "consultant",
+      "platform_admin",
+      "auditor",
+    ] as const)
       expect(can(r, "core", "approve_release").allowed, r).toBe(false);
   });
 

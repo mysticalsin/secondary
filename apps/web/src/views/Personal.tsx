@@ -20,7 +20,7 @@ export function Personal() {
   const [sp, setSp] = useSearchParams();
   const state = useApi(() => api.personalList(), []);
   const [selId, setSelId] = useState<string | "new" | null>(sp.get("new") ? "new" : null);
-  const items = state.data?.items ?? [];
+  const items = state.data ?? [];
   const current =
     selId === "new" ? null : (items.find((i) => i.id === selId) ?? (selId ? undefined : items[0]));
 
@@ -123,15 +123,16 @@ function Editor({
   const [err, setErr] = useState<string | null>(null);
   const [sheet, setSheet] = useState(false);
 
-  const dirty = !saved || saved.title !== title || saved.body !== body || saved.kind !== kind;
+  // The API stores a note as written. An existing note is read-only; a changed note is a new note.
+  const existing = saved !== null;
 
   const save = async () => {
     setBusy(true);
     setErr(null);
     try {
-      const res = await api.personalSave({ id: saved?.id, title, body, kind });
-      setSaved(res.item);
-      onSaved(res.item);
+      const res = await api.personalCreate({ title, body, kind });
+      setSaved(res);
+      onSaved(res);
     } catch (e) {
       setErr(e instanceof ApiError ? e.reason : "Could not save.");
     } finally {
@@ -148,6 +149,7 @@ function Editor({
           className="input"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          readOnly={existing}
           placeholder="What is this about"
         />
       </div>
@@ -159,6 +161,7 @@ function Editor({
           style={{ borderRadius: 10, maxWidth: 240 }}
           value={kind}
           onChange={(e) => setKind(e.target.value as PersonalKind)}
+          disabled={existing}
         >
           {KINDS.map(([v, l]) => (
             <option key={v} value={v}>
@@ -174,6 +177,7 @@ function Editor({
           className="textarea"
           value={body}
           onChange={(e) => setBody(e.target.value)}
+          readOnly={existing}
           placeholder="Write freely. Nothing leaves your Personal Brain until you contribute it."
         />
       </div>
@@ -181,7 +185,7 @@ function Editor({
         <button
           type="button"
           className="btn primary"
-          disabled={busy || !dirty || !title.trim()}
+          disabled={busy || existing || !title.trim()}
           onClick={save}
         >
           {busy ? "Saving" : "Save"}
@@ -189,21 +193,25 @@ function Editor({
         <button
           type="button"
           className="btn"
-          disabled={!saved || dirty}
-          aria-describedby={!saved || dirty ? "contrib-why" : undefined}
+          disabled={!saved}
+          aria-describedby={!saved ? "contrib-why" : undefined}
           onClick={() => setSheet(true)}
         >
           <Share2 size={16} aria-hidden /> Contribute to Company
         </button>
         <span className="muted" aria-live="polite">
-          {saved && !dirty ? `Saved ${fmtDate(saved.updatedAt)}` : dirty ? "Unsaved changes" : ""}
+          {saved ? `Saved ${fmtDate(saved.updatedAt)}` : ""}
         </span>
       </div>
-      {!saved || dirty ? (
+      {!saved ? (
         <div className="reason" id="contrib-why">
           Save first. You contribute exactly what you saved.
         </div>
-      ) : null}
+      ) : (
+        <p className="muted" style={{ fontSize: 14 }}>
+          Saved notes are kept as written. To change one, start a new note.
+        </p>
+      )}
       {err ? <ErrorBox message={err} /> : null}
       {saved?.contributedTo?.length ? (
         <p className="muted" style={{ fontSize: 14 }}>

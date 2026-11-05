@@ -16,7 +16,6 @@ import {
   TENANT_ID,
 } from "../../../packages/contracts/src/audit-receipt.ts";
 
-
 const MAX_BYTES = 4_096;
 
 /** Constant-time string comparison (length is not secret here, the content is). */
@@ -42,7 +41,8 @@ function roleOf(c: { env: Env; req: { header: (n: string) => string | undefined 
   ];
   let found: Role | null = null;
   // Compare against every configured key so timing does not reveal which one matched.
-  for (const [key, role] of keys) if (key && key.length >= 32 && safeEqual(given, key)) found = role;
+  for (const [key, role] of keys)
+    if (key && key.length >= 32 && safeEqual(given, key)) found = role;
   return found;
 }
 

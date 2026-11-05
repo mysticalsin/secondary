@@ -1,11 +1,11 @@
 // Dev mock adapter. Loaded only when VITE_MOCK=1 (see src/api.ts). Synthetic data only.
 import { ApiError } from "../api";
-import { scanSensitive } from "../sensitive";
 import type {
   AccountCard,
   AccountDetail,
   ActivityEntry,
   Candidate,
+  ContributeResult,
   Counts,
   GovernanceCard,
   Hub,
@@ -15,12 +15,14 @@ import type {
   Me,
   NodeAction,
   NodeDetail,
+  PersonalFlag,
   PersonalItem,
   ViewPlan,
 } from "../types";
 import { STAGES } from "../types";
 import { ACCOUNTS, DEPARTMENTS, GOVERNANCES, hash, type Leaf, ORG, REGIONS, THEMES } from "./org";
 import { canDo, ROLES, roleLabel, roleOf, vis } from "./policy";
+import { detectSensitivity } from "./sensitive";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pick = <T>(arr: readonly T[], h: number): T => arr[h % arr.length] as T;
@@ -171,7 +173,12 @@ function buildMap(role: string, lens: Lens): MapView {
     core: { id: "core", label: "Company Global", topicCount: 14 },
     hubs,
     links: [
-      { from: "k_brazil", to: "k_colombia", label: "Deployed in Brazil, replication in design" },
+      {
+        from: "k_brazil",
+        to: "k_colombia",
+        kind: "replication" as const,
+        label: "Deployed in Brazil, replication in design",
+      },
     ],
   };
 }
@@ -247,12 +254,12 @@ function nodeDetail(role: string, id: string): NodeDetail {
             title: `${l.label}: ${pick(SUFFIX, gh >>> 3)}`,
             source: pick(SRC, gh >>> 6),
             ownerRole: pick(OWNERS, gh >>> 9),
-            revision: `r${1 + ((gh >>> 12) % 9)}`,
+            revision: 1 + ((gh >>> 12) % 9),
             evidence: l.gap
               ? ("unsupported" as const)
               : pick(["supported", "supported", "partial"] as const, gh),
             plane: l.plane,
-            reviewedBy2: l.plane === "GLOBAL" && i < 2,
+            reviewedBy2: l.plane === "GLOBAL_NONPERSONAL" && i < 2,
           };
         })
       : [];
@@ -295,7 +302,11 @@ function nodeDetail(role: string, id: string): NodeDetail {
       reason: "Sends a request to the scope steward.",
     });
   }
-  return { node: { ...node, facts, badges }, items, backlinks, actions };
+  const record =
+    v === "full" && !l.kind.startsWith("core")
+      ? { revision: 1, status: "approved", approvals: 0, required: 1, mine: false }
+      : null;
+  return { node: { ...node, facts, badges }, items, backlinks, actions, record, comments: [] };
 }
 
 // ---- review queue (in-memory) ----
@@ -311,11 +322,11 @@ const candidates: MockCandidate[] = [
     nodeId: "t_c_bid_pricing_models",
     title: "Pricing models: discount ranges",
     scopeLabel: "Bid & Pre-sales",
-    plane: "TEAM",
-    author: "Consultant, Delivery",
+    plane: "TEAM_RESTRICTED",
+    author: "u_consultant",
     authorRole: "consultant",
-    revision: "r4",
-    previousRevision: "r3",
+    revision: "4",
+    previousRevision: "3",
     submittedAt: "2026-11-02T14:10:00Z",
     visibleTo: ["head_bid", "reviewer"],
     approvedBy: [],
@@ -332,17 +343,19 @@ const candidates: MockCandidate[] = [
     twoPerson: { required: true, approvals: 1, needed: 2 },
     approve: okAction,
     requestChanges: okAction,
+    origin: "candidate",
+    release: "global",
   },
   {
     id: "cand_2",
     nodeId: "t_c_delivery_quality_gates",
     title: "Quality gates: release checklist",
     scopeLabel: "Delivery",
-    plane: "TEAM",
-    author: "Knowledge reviewer",
+    plane: "TEAM_RESTRICTED",
+    author: "u_reviewer",
     authorRole: "reviewer",
-    revision: "r2",
-    previousRevision: "r1",
+    revision: "2",
+    previousRevision: "1",
     submittedAt: "2026-11-03T09:40:00Z",
     visibleTo: ["reviewer"],
     approvedBy: [],
@@ -355,16 +368,18 @@ const candidates: MockCandidate[] = [
     twoPerson: { required: false, approvals: 0, needed: 1 },
     approve: okAction,
     requestChanges: okAction,
+    origin: "candidate",
+    release: "scope",
   },
   {
     id: "cand_3",
     nodeId: "t_c_bid_win_themes",
     title: "Win themes: retail renewals (from My Secondary)",
     scopeLabel: "Bid & Pre-sales",
-    plane: "TEAM",
-    author: "Head of Bid & Pre-sales",
+    plane: "TEAM_RESTRICTED",
+    author: "u_head_bid",
     authorRole: "head_bid",
-    revision: "r1",
+    revision: "1",
     previousRevision: null,
     submittedAt: "2026-11-03T16:25:00Z",
     visibleTo: ["head_bid", "reviewer"],
@@ -381,6 +396,8 @@ const candidates: MockCandidate[] = [
     twoPerson: { required: true, approvals: 0, needed: 2 },
     approve: okAction,
     requestChanges: okAction,
+    origin: "candidate",
+    release: "scope",
   },
   {
     id: "cand_4",
@@ -388,10 +405,10 @@ const candidates: MockCandidate[] = [
     title: "Acme Synthetic SA: renewal risk summary",
     scopeLabel: "Acme Synthetic SA",
     plane: "ACCOUNT_RESTRICTED",
-    author: "Consultant, Delivery",
+    author: "u_consultant",
     authorRole: "consultant",
-    revision: "r3",
-    previousRevision: "r2",
+    revision: "3",
+    previousRevision: "2",
     submittedAt: "2026-11-01T11:05:00Z",
     visibleTo: ["acme_lead"],
     approvedBy: [],
@@ -407,15 +424,30 @@ const candidates: MockCandidate[] = [
     twoPerson: { required: false, approvals: 0, needed: 1 },
     approve: okAction,
     requestChanges: okAction,
+    origin: "candidate",
+    release: "scope",
   },
 ];
+const FLAG_REASON: Record<PersonalFlag["type"], string> = {
+  email: "Contains an email address",
+  phone: "Contains a phone number",
+  health: "Mentions health information",
+  family: "Mentions family or private life",
+  hr: "Mentions HR or pay matters",
+};
+const toFlags = (text: string) =>
+  detectSensitivity({ body: text }).map((f) => ({
+    kind: f.type,
+    span: f.excerpt,
+    reason: FLAG_REASON[f.type],
+  }));
 for (const c of candidates) {
-  c.flags = scanSensitive(
+  c.flags = toFlags(
     c.diff
       .filter((d) => d.type !== "del")
       .map((d) => d.text)
       .join("\n"),
-  ).map(({ kind, span, reason }) => ({ kind, span, reason }));
+  );
 }
 
 const activity: ActivityEntry[] = [
@@ -423,7 +455,7 @@ const activity: ActivityEntry[] = [
     id: "act_1",
     title: "Response library: security questionnaire answers",
     scopeLabel: "Bid & Pre-sales",
-    revision: "r7",
+    revision: "7",
     at: "2026-11-03T10:00:00Z",
     nodeId: "t_c_bid_response_library",
   },
@@ -431,7 +463,7 @@ const activity: ActivityEntry[] = [
     id: "act_2",
     title: "Kickoff checklist: week one",
     scopeLabel: "Delivery",
-    revision: "r5",
+    revision: "5",
     at: "2026-11-02T15:30:00Z",
     nodeId: "t_c_delivery_kickoff_checklist",
   },
@@ -439,7 +471,7 @@ const activity: ActivityEntry[] = [
     id: "act_3",
     title: "Use case intake: scoring sheet",
     scopeLabel: "Strategy, Innovation & AI",
-    revision: "r3",
+    revision: "3",
     at: "2026-11-02T09:15:00Z",
     nodeId: "t_c_sia_ai_use_case_intake",
   },
@@ -478,99 +510,124 @@ const personal = new Map<string, PersonalItem[]>();
 function personalFor(role: string): PersonalItem[] {
   let list = personal.get(role);
   if (!list) {
+    const make = (it: Omit<PersonalItem, "revision" | "status" | "sensitivity_flags">) => ({
+      ...it,
+      revision: 1,
+      status: "draft",
+      sensitivity_flags: detectSensitivity({ title: it.title, body: it.body }),
+    });
     list = [
-      {
+      make({
         id: `p_${role}_1`,
         kind: "note",
         title: "Retail renewal talking points",
         updatedAt: "2026-11-03T18:20:00Z",
         body: "Lead with run-cost savings, then the transition plan.\nReference value: EUR 120,000 saved per year, under NDA.\nContact for the story: sample.contact@example.invalid",
-      },
-      {
+      }),
+      make({
         id: `p_${role}_2`,
         kind: "brief",
         title: "Monday brief (private)",
         updatedAt: "2026-11-02T07:45:00Z",
         body: "Three things for the week: close the pricing review, confirm the quality gate wording, draft the lessons note.",
-      },
-      {
+      }),
+      make({
         id: `p_${role}_3`,
         kind: "draft",
         title: "Lessons from the last handover",
         updatedAt: "2026-10-30T13:00:00Z",
         body: "What worked: a one-page runbook before go-live.\nWhat did not: sign-off by email after the demo.",
-      },
+      }),
     ];
     personal.set(role, list);
   }
   return list;
 }
 
-// ---- GenUI planner (deterministic, like the B1 rule-based planner) ----
+// ---- GenUI planner (deterministic, same shapes as workers/api/src/genui.ts) ----
 function plan(body: { prompt?: string; nodeId?: string }): ViewPlan {
   const p = (body.prompt ?? "").toLowerCase();
   if (body.nodeId) {
     return {
       version: 1,
-      title: "This node",
+      title: "Node overview",
       components: [
         { type: "NodeCard", props: { nodeId: body.nodeId } },
-        { type: "ItemList", props: { nodeId: body.nodeId, limit: 4 } },
+        { type: "KpiRow", props: { nodeId: body.nodeId } },
+        { type: "ItemList", props: { nodeId: body.nodeId, limit: 10 } },
       ],
     };
   }
-  if (/acme|account|renewal/.test(p)) {
+  if (/\b(accounts?|customers?|clients?|sectors?|acme)\b/.test(p)) {
     return {
       version: 1,
-      title: "Acme Synthetic SA",
+      title: "Accounts",
       components: [
-        { type: "AccountSummary", props: { accountId: "a_acme" } },
-        { type: "ItemList", props: { nodeId: "a_acme", limit: 4 } },
+        { type: "MapMini", props: { lens: "accounts" } },
         {
-          type: "Callout",
+          type: "Table",
           props: {
-            tone: "info",
-            text: "Contacts stay with the account team. This view shows structure and records you can already open.",
+            lens: "accounts",
+            columns: ["label", "kind", "items", "open", "freshness"],
+            sort: { by: "items", dir: "desc" },
+            limit: 25,
           },
         },
       ],
     };
   }
-  if (/govern|use case|\bai\b|stage|pilot/.test(p)) {
+  if (/\b(governances?|use cases?|maturity|stages?|pilots?)\b/.test(p)) {
     return {
       version: 1,
-      title: "AI use cases by governance",
+      title: "Governance maturity",
       components: [
-        { type: "KpiRow", props: { lens: "governances" } },
-        { type: "StageBoard", props: { governanceId: "g_sia" } },
-        { type: "Table", props: { lens: "governances" } },
+        { type: "StageBoard", props: {} },
+        { type: "MapMini", props: { lens: "governances" } },
       ],
     };
   }
-  if (/review|approve|waiting/.test(p)) {
+  if (/\b(gaps?|stale|outdated|fresh\w*)\b/.test(p)) {
     return {
       version: 1,
-      title: "Waiting on you",
+      title: "Knowledge gaps",
       components: [
+        { type: "KpiRow", props: { lens: "departments", metrics: ["gaps", "open", "items"] } },
         {
-          type: "Callout",
+          type: "Table",
           props: {
-            tone: "attention",
-            text: "Reviews open in the Review view. Approval applies to the exact revision you open.",
+            lens: "departments",
+            columns: ["label", "gaps", "freshness"],
+            sort: { by: "gaps", dir: "desc" },
+            limit: 20,
           },
         },
-        { type: "Table", props: { lens: "departments" } },
+      ],
+    };
+  }
+  if (/\b(review|candidates?|pending|approv\w*|release|waiting)\b/.test(p)) {
+    return {
+      version: 1,
+      title: "Waiting for review",
+      components: [
+        { type: "Callout", props: { template: "candidate_pending", tone: "info" } },
+        {
+          type: "Table",
+          props: {
+            lens: "topics",
+            filter: { status: "candidate" },
+            columns: ["label", "kind", "items"],
+            limit: 25,
+          },
+        },
       ],
     };
   }
   return {
     version: 1,
-    title: "Company map at a glance",
+    title: "Company overview",
     components: [
       { type: "KpiRow", props: { lens: "departments" } },
       { type: "MapMini", props: { lens: "departments" } },
-      { type: "Hologram", props: { note: "Unknown types are dropped by the renderer." } },
-      { type: "Table", props: { lens: "departments" } },
     ],
   };
 }
@@ -605,10 +662,10 @@ function accountDetail(role: string, id: string): AccountDetail {
       id: `${id}/${key}/${i}`,
       title: t,
       status: pick(status, h >>> i),
-      revision: `r${1 + ((h >>> (i + 3)) % 6)}`,
+      revision: String(1 + ((h >>> (i + 3)) % 6)),
     })),
   });
-  const sections = [
+  const sections: AccountDetail["sections"] = [
     mk(
       "overview",
       "Overview",
@@ -652,7 +709,7 @@ function accountDetail(role: string, id: string): AccountDetail {
         id: `${id}/out/${i}`,
         title: t,
         status: "approved",
-        revision: `r${i + 2}`,
+        revision: String(i + 2),
         story: {
           internal: true,
           lesson: i === 0,
@@ -675,26 +732,22 @@ function accountDetail(role: string, id: string): AccountDetail {
       ["Steering committee notes", "Quarterly business review"],
       ["captured", "captured"],
     ),
-    {
+  ];
+  // Contacts are for account members only (the API adds the `con` branch for members).
+  if (role === "acme_lead" && id === "a_acme") {
+    sections.push({
       key: "contacts",
       label: "Contacts",
       items: ["Contact ref 01", "Contact ref 02"].map((t, i) => ({
         id: `${id}/con/${i}`,
         title: t,
         status: "members only",
-        revision: "r1",
+        revision: "1",
         note: "Opaque reference. Names stay in the source system.",
       })),
-    },
-  ];
-  return {
-    account: card(a, leaf),
-    members:
-      role === "acme_lead" || role === "ceo"
-        ? ["Account lead role", "Delivery lead role", "Bid support role"]
-        : null,
-    sections,
-  };
+    });
+  }
+  return { account: card(a, leaf), members: null, sections };
 }
 
 function govCard(role: string, id: string, label: string, group: "bl" | "cf"): GovernanceCard {
@@ -737,6 +790,8 @@ function me(role: string): Me {
   ].map((a) => a.replace("_", " "));
   return {
     principal: { id: `u_${role}`, email: `${role}@example.invalid`, roleIds: [role] },
+    tenantId: "tenant_mantu_synthetic",
+    seeded: true,
     persona: role,
     env: "dev",
     describe: {
@@ -786,17 +841,13 @@ export async function handle(
       };
     }
     if (p === "/v1/accounts") {
-      return {
-        accounts: ACCOUNTS.map((a) => ({ a, l: ORG.nodes.get(a.id) as Leaf }))
-          .filter(({ l }) => vis(role, l) !== "hidden")
-          .map(({ a, l }) => card(a, l)),
-      };
+      return ACCOUNTS.map((a) => ({ a, l: ORG.nodes.get(a.id) as Leaf }))
+        .filter(({ l }) => vis(role, l) !== "hidden")
+        .map(({ a, l }) => card(a, l));
     }
     if (p.startsWith("/v1/accounts/")) return accountDetail(role, decodeURIComponent(p.slice(13)));
     if (p === "/v1/governances") {
-      return {
-        governances: GOVERNANCES.map(([id, label, group]) => govCard(role, id, label, group)),
-      };
+      return GOVERNANCES.map(([id, label, group]) => govCard(role, id, label, group));
     }
     if (p.startsWith("/v1/governances/")) {
       const id = decodeURIComponent(p.slice(16));
@@ -815,63 +866,80 @@ export async function handle(
         })),
       };
     }
-    if (p === "/v1/review") return { candidates: reviewFor(role) };
-    if (p === "/v1/activity") return { entries: activity.slice(0, 4) };
+    if (p === "/v1/review") return reviewFor(role);
+    if (p === "/v1/activity") return activity.slice(0, 4);
     if (p === "/v1/personal/items") {
-      return {
-        items: [...personalFor(role)].sort((x, y) => y.updatedAt.localeCompare(x.updatedAt)),
-      };
+      return [...personalFor(role)].sort((x, y) => y.updatedAt.localeCompare(x.updatedAt));
     }
     if (p === "/v1/admin/roles") {
       if (role !== "platform_admin") throw new ApiError(403, "Admin needs the configure grant.");
-      return { structureOnly: true, roles: Object.values(ROLES) };
+      return Object.values(ROLES).map((r) => ({ ...r, members: 1 }));
     }
     if (p === "/v1/admin/audit") {
       if (role !== "platform_admin") throw new ApiError(403, "Admin needs the configure grant.");
-      return {
-        receipts: [
-          {
-            id: "rcpt_0412",
-            at: "2026-11-04T09:12:00Z",
-            actor: "Knowledge reviewer",
-            action: "approve_release",
-            scope: "c_bid",
-            result: "ok",
-          },
-          {
-            id: "rcpt_0411",
-            at: "2026-11-04T08:40:00Z",
-            actor: "Head of Bid & Pre-sales",
-            action: "approve_release",
-            scope: "c_bid",
-            result: "denied: self-approval",
-          },
-          {
-            id: "rcpt_0410",
-            at: "2026-11-03T17:02:00Z",
-            actor: "Consultant, Delivery",
-            action: "contribute",
-            scope: "c_delivery",
-            result: "ok",
-          },
-          {
-            id: "rcpt_0409",
-            at: "2026-11-03T15:21:00Z",
-            actor: "CEO",
-            action: "view_content",
-            scope: "a_calypso",
-            result: "denied: NDA grant needed",
-          },
-          {
-            id: "rcpt_0408",
-            at: "2026-11-03T10:00:00Z",
-            actor: "Platform admin",
-            action: "configure",
-            scope: "policy",
-            result: "ok",
-          },
-        ],
-      };
+      return [
+        {
+          id: "rcpt_0412",
+          at: "2026-11-04T09:12:00Z",
+          actor: "u_reviewer",
+          action: "approve_release",
+          scope: "c_bid",
+          result: "allow",
+        },
+        {
+          id: "rcpt_0411",
+          at: "2026-11-04T08:40:00Z",
+          actor: "u_head_bid",
+          action: "approve_release",
+          scope: "c_bid",
+          result: "deny",
+        },
+        {
+          id: "rcpt_0410",
+          at: "2026-11-03T17:02:00Z",
+          actor: "u_consultant",
+          action: "contribute",
+          scope: "c_delivery",
+          result: "allow",
+        },
+        {
+          id: "rcpt_0409",
+          at: "2026-11-03T15:21:00Z",
+          actor: "u_ceo",
+          action: "view_content",
+          scope: "a_calypso",
+          result: "deny",
+        },
+        {
+          id: "rcpt_0408",
+          at: "2026-11-03T10:00:00Z",
+          actor: "u_platform_admin",
+          action: "configure",
+          scope: "policy",
+          result: "allow",
+        },
+      ];
+    }
+    if (p === "/v1/personal/targets") {
+      return [...ORG.nodes.values()]
+        .filter(
+          (n) =>
+            ["core", "circle", "account", "department"].includes(n.kind) &&
+            vis(role, n) === "full" &&
+            canDo(role, n, "contribute").allowed,
+        )
+        .map((n) => ({
+          id: n.id,
+          label: n.label,
+          group:
+            n.kind === "circle"
+              ? "Circle"
+              : n.kind === "account"
+                ? "Account"
+                : n.kind === "core"
+                  ? "Company Global"
+                  : "Department",
+        }));
     }
     throw new ApiError(404, `No mock for GET ${p}`);
   }
@@ -879,12 +947,18 @@ export async function handle(
   if (p === "/v1/actions") {
     const nodeId = String(b.nodeId ?? "");
     const action = String(b.action ?? "") as NodeAction["action"];
-    const cand = candidates.find((c) => c.nodeId === nodeId && c.visibleTo.includes(role));
+    const cand = candidates.find(
+      (c) => (c.nodeId === nodeId || c.id === nodeId) && c.visibleTo.includes(role),
+    );
+    const payload = (b.payload as { verdict?: string; text?: string } | undefined) ?? {};
+    if (cand && action === "comment") {
+      if (!payload.text?.trim()) throw new ApiError(400, "invalid comment");
+      return { ok: true, receiptId: rid(`${cand.id}${role}comment`) };
+    }
     if (cand && (action === "approve_release" || action === "review")) {
       const view = reviewFor(role).find((c) => c.id === cand.id) as Candidate;
-      const payload = (b.payload as { decision?: string; comment?: string } | undefined) ?? {};
       if (action === "approve_release") {
-        if (b.revision !== cand.revision) {
+        if (b.revision !== Number(cand.revision)) {
           throw new ApiError(
             409,
             `Revision changed. You approved ${String(b.revision)}, current is ${cand.revision}. Reopen it.`,
@@ -906,47 +980,43 @@ export async function handle(
         }
         return { ok: true, receiptId: rid(`${cand.id}${role}${cand.twoPerson.approvals}`) };
       }
-      if (payload.decision === "request_changes") {
+      if (payload.verdict === "changes_requested") {
         if (!view.requestChanges.allowed) throw new ApiError(403, view.requestChanges.reason);
-        if (!payload.comment?.trim())
-          throw new ApiError(422, "Say what needs to change. The author sees this text.");
         candidates.splice(candidates.indexOf(cand), 1);
         return { ok: true, receiptId: rid(`${cand.id}rc`) };
       }
     }
     const node = ORG.nodes.get(nodeId);
-    if (!node) throw new ApiError(404, "Unknown record.");
+    if (!node) throw new ApiError(404, "Not in your view");
     if (action === "request_access") return { ok: true, receiptId: rid(nodeId + role) };
     const r = canDo(role, node, action);
     if (!r.allowed) throw new ApiError(403, r.reason);
+    if (action === "manage_members" || action === "configure")
+      throw new ApiError(501, "Not available in B1");
     return { ok: true, receiptId: rid(nodeId + action + role) };
   }
 
   if (p === "/v1/personal/items") {
     const list = personalFor(role);
-    const id = typeof b.id === "string" ? b.id : null;
     const now = new Date().toISOString();
-    const title = String(b.title ?? "").trim() || "Untitled";
+    const title = String(b.title ?? "").trim();
+    if (!title) throw new ApiError(400, "invalid title");
+    const text = String(b.body ?? "");
     const kind = (
       ["note", "brief", "view", "draft"].includes(String(b.kind)) ? b.kind : "note"
     ) as PersonalItem["kind"];
-    const found = id ? list.find((i) => i.id === id) : undefined;
-    if (found) {
-      found.title = title;
-      found.body = String(b.body ?? "");
-      found.kind = kind;
-      found.updatedAt = now;
-      return { item: { ...found } };
-    }
     const item: PersonalItem = {
       id: `p_${role}_${Date.now()}`,
       title,
-      body: String(b.body ?? ""),
+      body: text,
       kind,
       updatedAt: now,
+      revision: 1,
+      status: "draft",
+      sensitivity_flags: detectSensitivity({ title, body: text }),
     };
     list.push(item);
-    return { item: { ...item } };
+    return { ...item };
   }
 
   const m = p.match(/^\/v1\/personal\/items\/([^/]+)\/contribute$/);
@@ -954,35 +1024,55 @@ export async function handle(
     const item = personalFor(role).find((i) => i.id === decodeURIComponent(m[1] as string));
     if (!item) throw new ApiError(404, "Not found. Only the owner can contribute a personal item.");
     const target = ORG.nodes.get(String(b.targetScopeId ?? ""));
-    if (!target || vis(role, target) !== "full")
-      throw new ApiError(403, "You cannot contribute to that scope.");
+    if (!target || vis(role, target) !== "full") throw new ApiError(403, "Not in your view");
+    const uv = b.user_validated as { by?: string; at?: string; revision?: number } | undefined;
+    if (!uv || uv.by !== `u_${role}` || uv.revision !== item.revision)
+      throw new ApiError(422, "Confirm what you are sharing, then send again.", {
+        error: "user_validation_required",
+      });
+    const ack = Array.isArray(b.acknowledged_flags) ? (b.acknowledged_flags as string[]) : [];
+    const flags = detectSensitivity({ title: item.title, body: item.body });
+    if (flags.some((f) => !ack.includes(f.id)))
+      throw new ApiError(422, "Some spans are flagged. Acknowledge each one to continue.", {
+        error: "sensitivity_flags_pending",
+        sensitivity_flags: flags,
+      });
     const can = canDo(role, target, "contribute");
     if (!can.allowed) throw new ApiError(403, can.reason);
-    const cid = `cand_p${candidates.length + 1}`;
+    const cid = `cand:${target.id}:${(hash(item.id + candidates.length) % 0xffffffff).toString(16).padStart(8, "0")}`;
     candidates.push({
       id: cid,
-      nodeId: target.id,
+      nodeId: cid,
       title: `${item.title} (from My Secondary)`,
       scopeLabel: target.label,
       plane: target.plane,
-      author: roleLabel(role),
+      author: `u_${role}`,
       authorRole: role,
-      revision: "r1",
+      revision: "1",
       previousRevision: null,
       submittedAt: new Date().toISOString(),
       visibleTo: ["reviewer", "head_bid"].filter((r) => r !== role),
       approvedBy: [],
       diff: item.body.split("\n").map((text) => ({ type: "add" as const, text })),
-      flags: scanSensitive(item.body).map(({ kind, span, reason }) => ({ kind, span, reason })),
-      twoPerson: { required: true, approvals: 0, needed: 2 },
+      flags: toFlags(item.body),
+      twoPerson: { required: false, approvals: 0, needed: 1 },
       approve: okAction,
       requestChanges: okAction,
+      origin: "candidate",
+      release: "scope",
     });
     item.contributedTo = [
       ...(item.contributedTo ?? []),
       { scopeId: target.id, candidateId: cid, at: new Date().toISOString() },
     ];
-    return { ok: true, candidateId: cid, receiptId: rid(cid) };
+    const res: ContributeResult = {
+      ok: true,
+      receiptId: rid(cid),
+      candidateId: cid,
+      status: "candidate",
+      sensitivity_flags: flags,
+    };
+    return res;
   }
 
   if (p === "/v1/genui/plan") return plan(b as { prompt?: string; nodeId?: string });

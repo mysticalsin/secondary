@@ -231,12 +231,20 @@ describe("H1: edit-then-approve bypass", () => {
       payload: { title: "Edited by the steward" },
     });
     expect(edited.status).toBe(200);
-    const approve = await act("head_bid", { nodeId: id, action: "approve_release", revision: rev + 1 });
+    const approve = await act("head_bid", {
+      nodeId: id,
+      action: "approve_release",
+      revision: rev + 1,
+    });
     expect(approve.status).toBe(403);
     expect((await json(approve)).reason).toMatch(/wrote or edited/i);
     const review = await act("head_bid", { nodeId: id, action: "review", revision: rev + 1 });
     expect(review.status).toBe(403);
-    const second = await act("reviewer", { nodeId: id, action: "approve_release", revision: rev + 1 });
+    const second = await act("reviewer", {
+      nodeId: id,
+      action: "approve_release",
+      revision: rev + 1,
+    });
     expect(second.status).toBe(200);
   });
 });
