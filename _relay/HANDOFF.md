@@ -88,6 +88,23 @@ Open items and notes:
 - The Personal Brain workspaces are not wiped by a reseed (they are not part of the seed scopes).
 - Deploy: routes are optional placeholders in the three wrangler configs. At deploy set secrets (`INTERNAL_HMAC_KEY`, `SEED_TOKEN`, `AUDIT_KEY_API`, `AUDIT_KEY_MCP`, `AUDIT_KEY_READ`), Access team domain and aud on api and mcp, `MCP_PUBLIC_URL`, the KV id for `OAUTH_KV`, and keep `DO_JURISDICTION=eu`.
 
+## B3 integration, 2026-11-05 (Claude, integrator). Read this first
+
+State: `main` holds `b3/wiki` (`--no-ff`, no textual conflicts) on top of the B2 security fixes, plus the follow-up commit below. Nothing pushed, nothing deployed. The `.worktrees/*` checkouts (b1, b2, b3) are removed; the branches are kept.
+
+Commands are the same as in the B2 section (`corepack pnpm`, `pnpm` shim, install unsandboxed). Totals at the last run: build, typecheck and `biome check .` clean. Tests: fixtures 23, contracts 91, policy 56, web 49, audit 8, connector 50, ops 13, api 437 (three clean full runs), mcp 79. Playwright 50 passed.
+
+Security review applied to the wiki:
+
+- AI gate: the only wiki path that calls a model is ingest drafting (`wiki/engine.ts` `aiDraft`). It now calls `gate(env, switchOn)` with the tenant `ai` kill switch (`aiSwitchOn`, read from TenantPolicy because the job has no session; unreadable counts as off), `AI_ENABLED` and `AI_PROCESSOR_CONTRACT=approved`. When the gate refuses, the deterministic extractor runs only if `ENVIRONMENT=dev` (the synthetic org). In staging and prod the job is skipped (`ingest.skipped`, "AI not available: ...") and the source stays un-ingested. Dreaming and ask are deterministic (no model call); a test pins that.
+- Wiki MCP tools use the same signed internal call as every tool (HMAC v2, key id, nonce). Tests: the wiki routes serve a v2 call once, refuse replay, v1, a missing nonce, a wrong key and a path swap.
+- Promote to Global goes through the workspace two-approver release; the requester (author) is refused by `Workspace.approve` (`self_approval`), one approver cannot count twice.
+- Restricted circle wikis open only with an explicit circle membership (policy H-03): a department membership gives 404, a two-person approved circle membership gives 200. The CEO still reads it through the CEO role grant.
+- New tests: `workers/api/test/wiki-security.test.ts` (the AI gate tests fail on the pre-fix engine).
+- Test fix: `ops-rights.test.ts` asserted that no receipt contains the substring `u_ceo`, which also matched `u_ceo_<hash>` (other CEO-like test addresses), so it failed depending on file order. It now checks the whole quoted id. `biome.json` ignores the gitignored `.dev` folder (Playwright wrote a file there that failed the formatter).
+
+Open: the wiki ingest alarm retries nothing when AI is off in staging or prod; sources are picked up again when they change or on a forced re-ingest. The wiki screens are English and French but the brief and PrepareBrief screens stay English only.
+
 ## B2 integration, 2026-11-05 (Claude, integrator). Read this first
 
 State: `main` holds b2/ops, id, gov, conn, ai and ux (six `--no-ff` merges, in that order) plus the gap fixes below. Nothing pushed, nothing deployed, no Cloudflare resources. The per-workstream notes after this section are history: those branches are merged.

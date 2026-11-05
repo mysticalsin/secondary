@@ -181,8 +181,9 @@ async function aiDraft(
   m: Scope,
   info: SourceInfo,
   pages: PageRow[],
+  switchOn: boolean,
 ): Promise<{ ok: true; draft: AiDraft; model: string } | { ok: false; reason: string }> {
-  const g = gate(ctx.env);
+  const g = gate(ctx.env, switchOn);
   if (!g.ok) return { ok: false, reason: g.error };
   const text = excludePersonalSegments(`${info.title}\n${info.body}`).kept.slice(0, 6_000);
   if (!text.trim()) return { ok: false, reason: "no_usable_text" };
@@ -282,6 +283,15 @@ async function aiDraft(
   };
 }
 
+/** The tenant's `ai` kill switch. Unreadable counts as off: an ingest job has no session to carry it. */
+async function aiSwitchOn(ctx: JobContext, m: Scope): Promise<boolean> {
+  try {
+    return (await tenantStub(ctx.env, m.tenantId).switchStatus(ctx.now)).switches.ai.enabled;
+  } catch {
+    return false;
+  }
+}
+
 async function ingest(
   api: WikiApi,
   ctx: JobContext,
@@ -322,7 +332,18 @@ async function ingest(
   let pageDrafts: PageDraft[] = [];
   let note: string | null = null;
   if (node.aiAllowed && !isPersonalScope(m.scopeId)) {
-    const r = await aiDraft(ctx, m, info, await api.wikiPages());
+    const r = await aiDraft(ctx, m, info, await api.wikiPages(), await aiSwitchOn(ctx, m));
+    if (!r.ok && ctx.env.ENVIRONMENT !== "dev") {
+      // AI is off or failed for real data: no model call and no stand-in. The deterministic extractor
+      // is a dev convenience for the synthetic org only. The source stays un-ingested for when AI is on.
+      await api.wikiLogAppend(
+        actor,
+        "ingest.skipped",
+        { sourceId, reason: `AI not available: ${r.reason}` },
+        ctx.now,
+      );
+      return { triage: "skipped", reason: r.reason };
+    }
     if (r.ok) {
       method = `AI processor (${r.model})`;
       if (!r.draft.newInfo) {

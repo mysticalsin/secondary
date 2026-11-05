@@ -9,6 +9,7 @@
       "!**/worker-configuration.d.ts",
       "!prototypes",
       "!.worktrees",
+      "!.dev",
       "!**/.vitest",
       "!**/generated",
       "!docs",

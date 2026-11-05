@@ -30,7 +30,8 @@ const GATES: { name: SwitchName; match: (method: string, path: string) => boolea
     match: (m, p) => m === "POST" && /^\/v1\/personal\/items\/[^/]+\/contribute$/.test(p),
   },
   // Every route that can reach the model: the planner, /v1/ai/*, and briefs (H-05). New AI routes
-  // (wiki ingest hooks) must be listed here AND call gate(env, switches.ai) in the handler.
+  // must be listed here AND call gate(env, switches.ai) in the handler. Wiki ingest runs in a Durable Object job
+  // without a session: it reads the tenant's `ai` switch itself (wiki/engine.ts, aiSwitchOn) and passes it to gate().
   {
     name: "ai",
     match: (_m, p) =>

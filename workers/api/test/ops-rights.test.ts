@@ -213,7 +213,8 @@ describe("rights erase", () => {
     expect(await everyWorkspaceJson()).not.toContain(`"${SUBJECT}"`);
     expect(await everyWorkspaceJson()).not.toContain(`personal:${SUBJECT}`);
     const receipts = JSON.stringify(await json(await as("auditor", "/v1/admin/audit")));
-    expect(receipts).not.toContain(SUBJECT);
+    // The whole id as a JSON string: other people's ids may start with it (u_ceo_afd9a525ee, a CEO-like address).
+    expect(receipts).not.toContain(`"${SUBJECT}"`);
     expect(receipts).toContain(out.pseudonym);
     // Directory entry is gone: the email now resolves to an anonymous id with no roles.
     const dir = (await tenantDo(ALPHA).exportAll()) as Loose;
