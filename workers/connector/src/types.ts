@@ -98,6 +98,8 @@ export interface Store {
   deleteBySource(sourceId: string): Awaitable<string[]>;
   getAcl(itemId: string, userKey: string): Awaitable<AclEntry | null>;
   putAcl(itemId: string, userKey: string, e: AclEntry): Awaitable<void>;
+  /** Right to erasure: drops every cached decision of one user. Returns the number of rows removed. */
+  deleteAclForUser(userKey: string): Awaitable<number>;
   deleteAclFor(itemId: string): Awaitable<void>;
   countRecords(sourceId: string): Awaitable<number>;
   listFiles(sourceId: string, limit: number): Awaitable<LocalRecord[]>;

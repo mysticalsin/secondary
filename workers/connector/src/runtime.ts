@@ -39,6 +39,7 @@ export function aclDeps(env: Env, tenantId: string): AclDeps {
     now: Date.now,
     maxAgeSeconds: parseMaxAge(env.ACL_MAX_AGE_SECONDS),
     enabled: isEnabled(env),
+    userKeySecret: env.CONNECTOR_HMAC_KEY,
     log,
   };
 }

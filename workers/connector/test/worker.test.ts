@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { apiSink, CONNECTOR_PRINCIPAL } from "../src/api-client.ts";
+import { userKey } from "../src/ids.ts";
 import worker, { createApp } from "../src/index.ts";
 import {
   type InternalPrincipal,
@@ -422,5 +423,32 @@ describe("api client", () => {
     await expect(
       apiSink({ API: down.API } as Env).purge("tenant_x01", sourceDef()),
     ).rejects.toThrow("connector_key_missing");
+  });
+});
+
+describe("M-03: /internal/acl/forget", () => {
+  it("drops the signed user's cached decisions and nobody else's", async () => {
+    const t = freshTenant();
+    const store = storeOf(t);
+    const item = "src:srcbid01:aaaaaaaaaaaaaaaaaaaaaaaa";
+    const mine = await userKey(KEY, "head_bid@example.invalid");
+    const theirs = await userKey(KEY, "someone@example.invalid");
+    await store.putAcl(item, mine, { allowed: true, checkedAt: 1 });
+    await store.putAcl(item, theirs, { allowed: true, checkedAt: 1 });
+    const r = await signed("POST", "/internal/acl/forget", { tenantId: t });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ ok: true, removed: 1 });
+    expect(await store.getAcl(item, mine)).toBeNull();
+    expect(await store.getAcl(item, theirs)).not.toBeNull();
+    // Signed calls only, and a tenant id is required.
+    const unsigned = await createApp().fetch(
+      new Request(`${O}/internal/acl/forget`, {
+        method: "POST",
+        body: JSON.stringify({ tenantId: t }),
+      }),
+      env as Env,
+    );
+    expect(unsigned.status).toBe(401);
+    expect((await signed("POST", "/internal/acl/forget", {})).status).toBe(400);
   });
 });

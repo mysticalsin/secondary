@@ -128,3 +128,63 @@ describe("audit worker", () => {
       expect((await call("/append", { method })).status).toBe(404);
   });
 });
+
+describe("right to erasure walk (M-03)", () => {
+  const erase = (body: Record<string, unknown>) =>
+    exports.default.fetch(
+      new Request("https://audit.internal/pseudonymise", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Audit-Key": env.AUDIT_KEY_ERASE },
+        body: JSON.stringify(body),
+      }),
+    );
+  const put = (date: string, tenant: string, n: number, principalId: string) =>
+    env.AUDIT_LOG.put(
+      `${date}/${tenant}/${String(n).padStart(6, "0")}-r.jsonl`,
+      `${JSON.stringify({ receiptId: `r${n}`, tenantId: tenant, principalId, scopeId: "c_bid" })}\n`,
+    );
+  const principalOf = async (key: string) =>
+    JSON.parse((await (await env.AUDIT_LOG.get(key))?.text()) as string).principalId as string;
+
+  it("lists only the tenant's own folders, so another tenant's objects never use up the page", async () => {
+    // 520 receipts of a tenant that sorts first, then three of the tenant being erased.
+    for (let i = 0; i < 520; i++) await put("2026-01-01", "tenant_aaa", i, "u_gone");
+    for (let i = 0; i < 3; i++) await put("2026-01-01", "tenant_zzz", i, "u_gone");
+    await put("2026-01-02", "tenant_zzz", 9, "u_gone");
+    const res = await erase({ tenant: "tenant_zzz", from: "u_gone", to: "pz_abc" });
+    expect(await res.json()).toEqual({ rewritten: 4 });
+    expect(await principalOf("2026-01-01/tenant_zzz/000001-r.jsonl")).toBe("pz_abc");
+    expect(await principalOf("2026-01-02/tenant_zzz/000009-r.jsonl")).toBe("pz_abc");
+    // The other tenant is untouched.
+    expect(await principalOf("2026-01-01/tenant_aaa/000001-r.jsonl")).toBe("u_gone");
+  });
+
+  it("pages through one tenant with a cursor and finishes every receipt", async () => {
+    for (let i = 0; i < 620; i++) await put("2026-02-01", "tenant_yyy", i, "u_paged");
+    await put("2026-02-03", "tenant_yyy", 1, "u_paged");
+    let cursor: string | undefined;
+    let total = 0;
+    let calls = 0;
+    do {
+      const out = (await (
+        await erase({
+          tenant: "tenant_yyy",
+          from: "u_paged",
+          to: "pz_def",
+          ...(cursor ? { cursor } : {}),
+        })
+      ).json()) as { rewritten: number; cursor?: string };
+      total += out.rewritten;
+      cursor = out.cursor;
+      calls++;
+    } while (cursor && calls < 10);
+    expect(total).toBe(621);
+    expect(calls).toBe(2);
+    expect(await principalOf("2026-02-01/tenant_yyy/000619-r.jsonl")).toBe("pz_def");
+    expect(await principalOf("2026-02-03/tenant_yyy/000001-r.jsonl")).toBe("pz_def");
+    expect(
+      (await erase({ tenant: "tenant_yyy", from: "u_paged", to: "pz_def", cursor: "../x|" }))
+        .status,
+    ).toBe(400);
+  });
+});

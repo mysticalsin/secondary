@@ -20,6 +20,7 @@ import {
 
 const T0 = 1_700_000_000_000;
 const MAX = 900;
+const KEY = "test-connector-hmac-key-0123456789abcdef";
 const ALICE = "alice@example.invalid";
 const permUrl = (id: string) => link(`items/${id}/permissions`);
 const user = (email: string, roles = ["read"]) => ({
@@ -44,6 +45,7 @@ async function setup() {
     now: () => clock.t,
     maxAgeSeconds: MAX,
     enabled: true,
+    userKeySecret: KEY,
     ...over,
   });
   const check = (email = ALICE, over = {}) =>
@@ -105,7 +107,7 @@ describe("read-time permission check", () => {
     const { g, check, store, ws, clock, itemId, tenant } = await setup();
     g.on(permUrl("A"), { value: [user(ALICE)] });
     expect((await check())?.allowed).toBe(true);
-    expect(await store.getAcl(itemId, await userKey(ALICE))).not.toBeNull();
+    expect(await store.getAcl(itemId, await userKey(KEY, ALICE))).not.toBeNull();
     g.on(
       link("root/delta?token=T2"),
       page([file("A", "a.md", "e2")], { delta: link("root/delta?token=T3") }),
@@ -116,7 +118,7 @@ describe("read-time permission check", () => {
       tenant,
       "srcbid01",
     );
-    expect(await store.getAcl(itemId, await userKey(ALICE))).toBeNull();
+    expect(await store.getAcl(itemId, await userKey(KEY, ALICE))).toBeNull();
     g.on(permUrl("A"), { value: [] });
     expect((await check())?.allowed).toBe(false); // no waiting for the cache to age out
   });
@@ -207,5 +209,35 @@ describe("SourceRecord output", () => {
     expect(later).toMatchObject({ acl_state: "stale", servable: false });
     expect(Object.keys(fresh)).not.toContain("body");
     expect(Object.keys(fresh)).not.toContain("name");
+  });
+});
+
+describe("M-03: the per-user cache key is keyed and can be forgotten", () => {
+  it("is an HMAC under the secret, not a bare hash of the address", async () => {
+    const a = await userKey(KEY, ALICE);
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+    expect(await userKey(KEY, ` ${ALICE.toUpperCase()} `)).toBe(a);
+    expect(await userKey("another-secret-0123456789abcdef0123456789", ALICE)).not.toBe(a);
+    // What an attacker with a list of addresses and no secret would compute.
+    const bare = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`acl-user:${ALICE}`)),
+      ),
+      (b) => b.toString(16).padStart(2, "0"),
+    )
+      .join("")
+      .slice(0, 32);
+    expect(a).not.toBe(bare);
+  });
+
+  it("without the secret nothing is confirmed and Graph is not asked", async () => {
+    const { g, check } = await setup();
+    g.on(permUrl("A"), { value: [user(ALICE)] });
+    const before = g.log.length;
+    expect(await check(ALICE, { userKeySecret: undefined })).toEqual({
+      allowed: false,
+      reason: NOT_CONFIRMED,
+    });
+    expect(g.log.length).toBe(before);
   });
 });

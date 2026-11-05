@@ -8,11 +8,14 @@
 
 import type { Org } from "@secondary/policy";
 import { fetchReceipts, pseudonymiseReceipts } from "./audit.ts";
+import { forgetSourceAccess } from "./connector.ts";
 import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 
 export const SUBJECT_PARAM = /^[A-Za-z0-9_.:@+-]{1,254}$/;
 const MIN_KEY = 32;
+/** How long an erasure is remembered for a restore: twice the 35 day backup retention, plus margin. */
+export const TOMBSTONE_DAYS = 90;
 
 /** Accepts a principal id or an email and returns the principal id. */
 export async function resolveSubject(env: Env, tenantId: string, raw: string): Promise<string> {
@@ -106,6 +109,8 @@ export type EraseSummary = {
   personalItemsDeleted: number;
   authored: { items: number; comments: number; approvals: number; edits: number };
   receiptsPseudonymised: number;
+  /** The connector confirmed it dropped the person's cached read decisions (M-03). */
+  connectorCacheForgotten: boolean;
 };
 
 /** Returns null when the audit worker could not complete (nothing after that step has run). */
@@ -116,10 +121,23 @@ export async function eraseSubject(
   principalId: string,
   pseudonym: string,
 ): Promise<EraseSummary | null> {
+  // The audit pass goes first (M-03): if it cannot finish, nothing else has changed and the whole erase
+  // can be asked for again. Every later step is idempotent.
+  const receiptsPseudonymised = await pseudonymiseReceipts(env, tenantId, principalId, pseudonym);
+  if (receiptsPseudonymised === null) return null;
   const authored = { items: 0, comments: 0, approvals: 0, edits: 0 };
   // The address can be typed into wiki text (an owner, a note): it is replaced with the id.
   const email = await tenantStub(env, tenantId).emailOfPrincipal(principalId);
   const aliases = email ? [email, email.toLowerCase()] : [];
+  // Remembered before anything is deleted, so a restore of an older snapshot can apply it again (M-03).
+  const at = Date.now();
+  await tenantStub(env, tenantId).tombstoneAdd(
+    principalId,
+    pseudonym,
+    [...new Set(aliases)],
+    at,
+    at + TOMBSTONE_DAYS * 86_400_000,
+  );
   for (const scope of companyScopes(org)) {
     const r = await workspaceStub(env, tenantId, scope).pseudonymise(
       principalId,
@@ -131,9 +149,42 @@ export async function eraseSubject(
     authored.approvals += r.approvals;
     authored.edits += r.edits;
   }
-  const receiptsPseudonymised = await pseudonymiseReceipts(env, tenantId, principalId, pseudonym);
-  if (receiptsPseudonymised === null) return null;
   const personalItemsDeleted = await workspaceStub(env, tenantId, `personal:${principalId}`).wipe();
+  const connectorCacheForgotten = email
+    ? await forgetSourceAccess(env, tenantId, { id: principalId, email })
+    : false;
   await tenantStub(env, tenantId).erasePrincipal(principalId);
-  return { pseudonym, personalItemsDeleted, authored, receiptsPseudonymised };
+  return {
+    pseudonym,
+    personalItemsDeleted,
+    authored,
+    receiptsPseudonymised,
+    connectorCacheForgotten,
+  };
+}
+
+/**
+ * After a restore: erase again everyone who was erased since the snapshot was taken (M-03). A tenant
+ * restore brings back the directory rows of erased people; a workspace restore brings back their items,
+ * comments and Personal Brain. Both steps are idempotent. Returns how many erasures were applied.
+ */
+export async function reapplyErasures(
+  env: Env,
+  tenantId: string,
+  kind: "tenant" | "workspace",
+  scope: string,
+): Promise<number> {
+  const t = tenantStub(env, tenantId);
+  const stones = await t.tombstoneList(Date.now());
+  for (const s of stones) {
+    if (kind === "tenant") {
+      await t.erasePrincipal(s.principalId);
+      continue;
+    }
+    const w = workspaceStub(env, tenantId, scope);
+    if (scope === `personal:${s.principalId}`) await w.wipe();
+    else if (!scope.startsWith("personal:"))
+      await w.pseudonymise(s.principalId, s.pseudonym, s.aliases);
+  }
+  return stones.length;
 }

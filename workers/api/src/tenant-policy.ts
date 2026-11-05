@@ -114,6 +114,11 @@ export class TenantPolicy extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS pending_ops (
           key TEXT PRIMARY KEY, requested_by TEXT NOT NULL, requested_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS nonces (key TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+        -- Not in SNAPSHOT_TABLES on purpose: a restore replaces the listed tables only, so this list
+        -- survives it and is applied again afterwards (M-03). It is never exported or backed up.
+        CREATE TABLE IF NOT EXISTS erasure_tombstones (
+          principal_id TEXT PRIMARY KEY, pseudonym TEXT NOT NULL, aliases TEXT NOT NULL,
+          erased_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
       `);
       this.identity.init();
       // Governance console state (roles as data, changes, elevations, requests, inbox).
@@ -162,6 +167,7 @@ export class TenantPolicy extends DurableObject<Env> {
         "nda_grants",
         "elevations",
         "rate",
+        "erasure_tombstones",
       ])
         this.sql.exec(`DELETE FROM ${t}`);
       this.govStore.reset(now);
@@ -568,6 +574,51 @@ export class TenantPolicy extends DurableObject<Env> {
       this.sql.exec("DELETE FROM pending_ops WHERE requested_by = ?", principalId);
     });
     return this.bump();
+  }
+
+  /**
+   * Remember an erasure so a restore can be undone by applying it again. `aliases` are the person's
+   * addresses as typed into text. The row lives until the last backup that could hold the person has expired.
+   */
+  tombstoneAdd(
+    principalId: string,
+    pseudonym: string,
+    aliases: string[],
+    now: number,
+    expiresAt: number,
+  ): void {
+    this.sql.exec(
+      `INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(principal_id) DO UPDATE SET pseudonym = excluded.pseudonym,
+         aliases = excluded.aliases, erased_at = excluded.erased_at, expires_at = excluded.expires_at`,
+      principalId,
+      pseudonym,
+      JSON.stringify(aliases),
+      now,
+      expiresAt,
+    );
+  }
+
+  tombstoneList(now: number): { principalId: string; pseudonym: string; aliases: string[] }[] {
+    return this.sql
+      .exec(
+        "SELECT principal_id, pseudonym, aliases FROM erasure_tombstones WHERE expires_at > ?",
+        now,
+      )
+      .toArray()
+      .map((r) => ({
+        principalId: r.principal_id as string,
+        pseudonym: r.pseudonym as string,
+        aliases: JSON.parse(r.aliases as string) as string[],
+      }));
+  }
+
+  /** Drops tombstones whose time is up. Returns how many. */
+  tombstonePurge(now: number): number {
+    return this.sql
+      .exec("DELETE FROM erasure_tombstones WHERE expires_at <= ? RETURNING principal_id", now)
+      .toArray().length;
   }
 
   exportAll(): Snapshot {

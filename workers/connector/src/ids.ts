@@ -15,7 +15,25 @@ export async function itemKey(sourceId: string, driveId: string, driveItemId: st
   return `src:${sourceId}:${(await sha256Hex(`${driveId}/${driveItemId}`)).slice(0, 24)}`;
 }
 
-/** Opaque, stable per-user cache key. The email itself is never stored. */
-export async function userKey(email: string): Promise<string> {
-  return (await sha256Hex(`acl-user:${email.trim().toLowerCase()}`)).slice(0, 32);
+/**
+ * Opaque, stable per-user cache key: HMAC-SHA256 of the address under the shared connector secret
+ * (M-03). An unkeyed hash of an email can be reversed by hashing a list of addresses; this cannot
+ * without the secret. The email itself is never stored.
+ */
+export async function userKey(secret: string, email: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    enc.encode(`acl-user-v2:${email.trim().toLowerCase()}`),
+  );
+  return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 32);
 }

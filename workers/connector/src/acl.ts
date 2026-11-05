@@ -21,6 +21,8 @@ export interface AclDeps {
   maxAgeSeconds: number;
   /** Kill switch (CONNECTOR_ENABLED). */
   enabled: boolean;
+  /** Keys the per-user cache (CONNECTOR_HMAC_KEY). Without it nothing is confirmed. */
+  userKeySecret: string | undefined;
   log?: (event: string, ids: Record<string, string | number>) => void;
 }
 
@@ -79,11 +81,11 @@ export async function checkAccess(
 ): Promise<Record<string, AclResult>> {
   const out: Record<string, AclResult> = {};
   const deny: AclResult = { allowed: false, reason: NOT_CONFIRMED };
-  const key = await userKey(user.email);
+  const key = deps.userKeySecret ? await userKey(deps.userKeySecret, user.email) : null;
   const maxAgeMs = deps.maxAgeSeconds * 1000;
   for (const itemId of itemIds.slice(0, 50)) {
     out[itemId] = deny;
-    if (!deps.enabled) continue;
+    if (!deps.enabled || key === null) continue;
     const rec = await deps.store.getRecord(itemId);
     if (rec?.kind !== "file") continue;
     const src = await deps.store.getSource(rec.sourceId);

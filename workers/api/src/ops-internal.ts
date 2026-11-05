@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
+import { reapplyErasures } from "./ops-rights.ts";
 import { getOrg } from "./org.ts";
 import { internalKeys, opsKeys, replayStore } from "./replay.ts";
 import { scopeOfNode } from "./scope.ts";
@@ -126,7 +127,9 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
           t.kind === "tenant"
             ? await tenantStub(c.env, t.tenant).importAll(tables)
             : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
-        return c.json({ ok: true, rows });
+        // Anyone erased since the snapshot was taken is erased again (M-03).
+        const erasuresReapplied = await reapplyErasures(c.env, t.tenant, t.kind, t.scope);
+        return c.json({ ok: true, rows, erasuresReapplied });
       } catch {
         return c.json({ error: "invalid_snapshot" }, 422);
       }
@@ -147,6 +150,7 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
         scopes++;
         purged += await workspaceStub(c.env, tenantId, `personal:${id}`).purgeExpired(cutoffs);
       }
+      await tenantStub(c.env, tenantId).tombstonePurge(now);
     }
     return c.json({ ok: true, scopes, purged });
   });

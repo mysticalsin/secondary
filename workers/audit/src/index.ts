@@ -126,15 +126,30 @@ app.get("/receipts", async (c) => {
 
 // Right to erasure. The only route that rewrites a receipt, and only the principal id (and the
 // personal scope id that embeds it) are replaced, never anything else. It needs its own key, held by
-// workers/api, which computes the pseudonym. Each call handles up to PAGE_OBJECTS receipts and
-// returns a cursor when there are more.
+// workers/api, which computes the pseudonym. Keys are <date>/<tenant>/<file>, so the walk goes date by
+// date and lists only `<date>/<tenant>/`: other tenants' objects are never read, and the page budget
+// is spent on this tenant (M-03). Each call handles up to PAGE_OBJECTS receipts and returns a cursor
+// (`<date>|<r2 cursor>`) when there are more.
 const PAGE_OBJECTS = 500;
+const DATE_DIR = /^\d{4}-\d{2}-\d{2}\/$/;
 
 const swap = (v: unknown, from: string, to: string): unknown => {
   if (v === from) return to;
   if (v === `personal:${from}`) return `personal:${to}`;
   return Array.isArray(v) ? v.map((x) => swap(x, from, to)) : v;
 };
+
+/** The date folders of the bucket, oldest first. */
+async function dateDirs(bucket: R2Bucket): Promise<string[]> {
+  const out: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await bucket.list({ delimiter: "/", ...(cursor ? { cursor } : {}) });
+    for (const p of page.delimitedPrefixes) if (DATE_DIR.test(p)) out.push(p);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return out.sort();
+}
 
 app.post("/pseudonymise", async (c) => {
   if (c.get("role").kind !== "erase") return c.json({ error: "forbidden" }, 403);
@@ -147,32 +162,54 @@ app.post("/pseudonymise", async (c) => {
   const tenant = str(body.tenant, TENANT_ID);
   const from = str(body.from, PRINCIPAL_ID);
   const to = str(body.to, PRINCIPAL_ID);
-  const cursor = typeof body.cursor === "string" ? body.cursor : undefined;
+  const cursorIn = typeof body.cursor === "string" ? body.cursor : "";
+  const [cursorDate = "", r2Cursor = ""] = cursorIn.split("|");
   if (!tenant || !from || !to || from === to) return c.json({ error: "invalid_request" }, 400);
+  if (cursorIn && !DATE_DIR.test(`${cursorDate}/`))
+    return c.json({ error: "invalid_request" }, 400);
 
-  const page = await c.env.AUDIT_LOG.list({ limit: PAGE_OBJECTS, ...(cursor ? { cursor } : {}) });
+  const dirs = (await dateDirs(c.env.AUDIT_LOG)).filter(
+    (d) => !cursorDate || d >= `${cursorDate}/`,
+  );
   let rewritten = 0;
-  for (const obj of page.objects) {
-    // Keys are <date>/<tenant>/<file>: only this tenant's objects.
-    if (obj.key.split("/")[1] !== tenant) continue;
-    const text = (await (await c.env.AUDIT_LOG.get(obj.key))?.text()) ?? "";
-    if (!text.trim()) continue;
-    const receipt = JSON.parse(text) as Record<string, unknown>;
-    let changed = false;
-    for (const k of ["principalId", "nodeId", "scopeId", "scopeIds"]) {
-      const next = swap(receipt[k], from, to);
-      if (JSON.stringify(next) !== JSON.stringify(receipt[k])) {
-        receipt[k] = next;
-        changed = true;
+  let budget = PAGE_OBJECTS;
+  for (const [i, dir] of dirs.entries()) {
+    let cursor = dir === `${cursorDate}/` && r2Cursor ? r2Cursor : undefined;
+    do {
+      const page = await c.env.AUDIT_LOG.list({
+        prefix: `${dir}${tenant}/`,
+        limit: Math.min(budget, 1000),
+        ...(cursor ? { cursor } : {}),
+      });
+      budget -= page.objects.length;
+      for (const obj of page.objects) {
+        const text = (await (await c.env.AUDIT_LOG.get(obj.key))?.text()) ?? "";
+        if (!text.trim()) continue;
+        const receipt = JSON.parse(text) as Record<string, unknown>;
+        let changed = false;
+        for (const k of ["principalId", "nodeId", "scopeId", "scopeIds"]) {
+          const next = swap(receipt[k], from, to);
+          if (JSON.stringify(next) !== JSON.stringify(receipt[k])) {
+            receipt[k] = next;
+            changed = true;
+          }
+        }
+        if (!changed) continue;
+        await c.env.AUDIT_LOG.put(obj.key, `${JSON.stringify(receipt)}\n`, {
+          httpMetadata: { contentType: "application/x-ndjson" },
+        });
+        rewritten++;
       }
-    }
-    if (!changed) continue;
-    await c.env.AUDIT_LOG.put(obj.key, `${JSON.stringify(receipt)}\n`, {
-      httpMetadata: { contentType: "application/x-ndjson" },
-    });
-    rewritten++;
+      cursor = page.truncated ? page.cursor : undefined;
+      if (budget <= 0) {
+        // Out of budget: resume inside this folder, or at the next one.
+        if (cursor) return c.json({ rewritten, cursor: `${dir.slice(0, 10)}|${cursor}` });
+        const next = dirs[i + 1];
+        return c.json({ rewritten, ...(next ? { cursor: `${next.slice(0, 10)}|` } : {}) });
+      }
+    } while (cursor);
   }
-  return c.json({ rewritten, ...(page.truncated ? { cursor: page.cursor } : {}) });
+  return c.json({ rewritten });
 });
 
 app.all("*", (c) => c.json({ error: "not_found" }, 404));

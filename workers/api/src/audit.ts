@@ -13,6 +13,7 @@ export type Receipt = Omit<
 >;
 
 const AUDIT_ORIGIN = "https://audit.internal";
+const MAX_ERASE_PAGES = 800;
 
 export const newReceiptId = newId;
 
@@ -63,7 +64,8 @@ export async function pseudonymiseReceipts(
   let rewritten = 0;
   let cursor: string | undefined;
   try {
-    for (let page = 0; page < 200; page++) {
+    // Each page is one subrequest; a Worker may make 1000, and the other steps of an erase need some.
+    for (let page = 0; page < MAX_ERASE_PAGES; page++) {
       const res = await env.AUDIT.fetch(`${AUDIT_ORIGIN}/pseudonymise`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Audit-Key": env.AUDIT_KEY_ERASE ?? "" },

@@ -208,3 +208,46 @@ export async function checkSourceAccess(
   }
   return allowed;
 }
+
+/**
+ * Right to erasure: ask the connector to drop the cached read decisions of one person. Best effort by
+ * design (the cache is keyed by an HMAC and expires on its own): true only when the connector confirmed.
+ */
+export async function forgetSourceAccess(
+  env: Env,
+  tenantId: string,
+  user: { id: string; email: string },
+): Promise<boolean> {
+  const secret = env.CONNECTOR_HMAC_KEY;
+  if (!secret || !env.CONNECTOR) return false;
+  try {
+    const principal: InternalPrincipal = {
+      v: 1,
+      iss: "secondary-mcp",
+      aud: "secondary-api",
+      sub: user.id,
+      email: user.email,
+      client_id: "secondary-api",
+      scope: [],
+      tool: "acl.forget",
+    };
+    const url = "https://connector.internal/internal/acl/forget";
+    const body = JSON.stringify({ tenantId });
+    const headers = await signInternalRequest({
+      secret,
+      kid: env.CONNECTOR_HMAC_KID,
+      method: "POST",
+      url,
+      body,
+      principal,
+    });
+    const res = await env.CONNECTOR.fetch(url, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

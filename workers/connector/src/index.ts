@@ -14,7 +14,7 @@ import { keyringFromEnv } from "../../../packages/contracts/src/signed-call.ts";
 import { checkAccess } from "./acl.ts";
 import { meetingWindow } from "./calendar.ts";
 import { graphFromEnv } from "./graph.ts";
-import { SOURCE_ID, sha256Hex, TENANT_ID } from "./ids.ts";
+import { SOURCE_ID, sha256Hex, TENANT_ID, userKey } from "./ids.ts";
 import { verifyInternalRequest } from "./internal-auth.ts";
 import { toSourceRecord } from "./records.ts";
 import { parseSource } from "./registry.ts";
@@ -94,6 +94,19 @@ export function createApp() {
       ids as string[],
     );
     return c.json({ results });
+  });
+
+  // Right to erasure: the api asks the connector to forget one person's cached read decisions. The
+  // person is the signed principal, exactly as in /internal/acl/check.
+  app.post("/internal/acl/forget", async (c) => {
+    const body = await bodyOf(c.req.raw);
+    const tenantId = tenantOf(body?.tenantId);
+    const secret = c.env.CONNECTOR_HMAC_KEY;
+    if (!tenantId || !secret) return c.json({ error: "invalid_body" }, 400);
+    const removed = await stateStub(c.env, tenantId).deleteAclForUser(
+      await userKey(secret, c.get("principal").email),
+    );
+    return c.json({ ok: true, removed });
   });
 
   app.get("/internal/sources", async (c) => {

@@ -209,6 +209,11 @@ export class ConnectorState extends DurableObject<Env> implements Store {
     );
   }
 
+  deleteAclForUser(userKey: string): number {
+    return this.sql.exec("DELETE FROM acl WHERE user_key = ? RETURNING item_id", userKey).toArray()
+      .length;
+  }
+
   deleteAclFor(itemId: string): void {
     this.sql.exec("DELETE FROM acl WHERE item_id = ?", itemId);
   }

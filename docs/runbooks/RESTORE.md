@@ -14,7 +14,7 @@ Tenants snapshotted are `DEFAULT_TENANT_ID` and every tenant named in `TENANT_DO
 
 ## Restore, step by step
 
-Restore replaces the whole object with the snapshot, all or nothing. It also bumps the revocation epoch so every session is re-checked. Anything written after the snapshot is lost, so pick the right snapshot.
+Restore replaces the whole object with the snapshot, all or nothing. It also bumps the revocation epoch so every session is re-checked. Anything written after the snapshot is lost, so pick the right snapshot. People erased since the snapshot was taken are erased again right after the restore: each erasure leaves a tombstone (principal id, pseudonym, addresses) in the tenant's own object for 90 days, outside every snapshot and backup, and a restore of a directory or a workspace applies the list again (the response carries `erasuresReapplied`).
 
 1. Decide scope: one Workspace, one Personal Brain, or the TenantPolicy (directory, roles, grants, switches).
 2. Allow restore. Only dev has `RESTORE_ENABLED=yes` by default. Staging and prod are `no` on both the ops and api workers: set `RESTORE_ENABLED` to `yes` in the `env.staging.vars` or `env.prod.vars` of `workers/api/wrangler.jsonc` and `workers/ops/wrangler.jsonc` for the duration, deploy with the pipeline (approval applies in prod), and set it back to `no` afterwards. Record both deploys in the incident log.
