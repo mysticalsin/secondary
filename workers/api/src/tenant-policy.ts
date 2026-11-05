@@ -13,6 +13,7 @@ import {
   type UserChange,
 } from "./auth/identity-store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
+import { SecurityJournal } from "./security-journal.ts";
 import { allOn, isSwitchName, SWITCHES, type SwitchName, type SwitchState } from "./switches.ts";
 
 export type Membership = { scope_type: ScopeType; scope_id: string };
@@ -85,12 +86,14 @@ const SNAPSHOT_TABLES = [
 export class TenantPolicy extends DurableObject<Env> {
   private readonly sql: SqlStorage;
   private readonly identity: IdentityStore;
+  private readonly journal: SecurityJournal;
   private govStore!: GovStore;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.sql = ctx.storage.sql;
-    this.identity = new IdentityStore(this.sql, ctx.storage, () => this.bump());
+    this.journal = new SecurityJournal(this.sql);
+    this.identity = new IdentityStore(this.sql, ctx.storage, () => this.bump(), this.journal);
     ctx.blockConcurrencyWhile(async () => {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS config (k TEXT PRIMARY KEY, v TEXT NOT NULL);
@@ -120,10 +123,16 @@ export class TenantPolicy extends DurableObject<Env> {
           principal_id TEXT PRIMARY KEY, pseudonym TEXT NOT NULL, aliases TEXT NOT NULL,
           erased_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
       `);
+      this.journal.init();
       this.identity.init();
       // Governance console state (roles as data, changes, elevations, requests, inbox).
       this.govStore = new GovStore(
-        { sql: this.sql, tx: (fn) => ctx.storage.transactionSync(fn), bump: () => this.bump() },
+        {
+          sql: this.sql,
+          tx: (fn) => ctx.storage.transactionSync(fn),
+          bump: () => this.bump(),
+          journal: this.journal,
+        },
         ROLE_ORDER.map((r) => ROLES[r]),
       );
     });
@@ -171,6 +180,7 @@ export class TenantPolicy extends DurableObject<Env> {
       ])
         this.sql.exec(`DELETE FROM ${t}`);
       this.govStore.reset(now);
+      this.journal.clear();
       this.sql.exec(
         "INSERT INTO config (k, v) VALUES ('tenant', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
         JSON.stringify(config),
@@ -367,6 +377,7 @@ export class TenantPolicy extends DurableObject<Env> {
           principalId,
           r,
         );
+      this.journal.roles(principalId, roleIds, Date.now());
     });
     return this.bump();
   }
@@ -378,6 +389,7 @@ export class TenantPolicy extends DurableObject<Env> {
       m.scope_type,
       m.scope_id,
     );
+    this.journal.member(principalId, m.scope_type, m.scope_id, true, Date.now());
     return this.bump();
   }
 
@@ -387,6 +399,7 @@ export class TenantPolicy extends DurableObject<Env> {
       principalId,
       accountId,
     );
+    this.journal.nda(principalId, accountId, true, Date.now());
     return this.bump();
   }
 
@@ -396,6 +409,7 @@ export class TenantPolicy extends DurableObject<Env> {
       principalId,
       accountId,
     );
+    this.journal.nda(principalId, accountId, false, Date.now());
     return this.bump();
   }
 
@@ -418,6 +432,7 @@ export class TenantPolicy extends DurableObject<Env> {
     this.ctx.storage.transactionSync(() => {
       for (const t of ["role_assignments", "memberships", "nda_grants", "elevations"])
         this.sql.exec(`DELETE FROM ${t} WHERE principal_id = ?`, principalId);
+      this.journal.revokeAll(principalId, Date.now());
     });
     return this.bump();
   }
@@ -470,7 +485,7 @@ export class TenantPolicy extends DurableObject<Env> {
     now: number,
     twoPerson: boolean,
   ): { status: "applied" | "pending"; sameActor?: boolean } {
-    const apply = () =>
+    const apply = () => {
       this.sql.exec(
         `INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, changed_by = excluded.changed_by,
@@ -480,6 +495,9 @@ export class TenantPolicy extends DurableObject<Env> {
         actor,
         now,
       );
+      // Kept outside the snapshot, so a restore cannot turn a kill switch back on (N-02).
+      this.journal.switchSet(name, enabled, now);
+    };
     if (!enabled) {
       apply();
       this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${name}`);
@@ -572,6 +590,7 @@ export class TenantPolicy extends DurableObject<Env> {
           principalId,
         );
       this.sql.exec("DELETE FROM pending_ops WHERE requested_by = ?", principalId);
+      this.journal.forget(principalId);
     });
     return this.bump();
   }
@@ -627,8 +646,13 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** Replace this tenant's directory from a snapshot and bump the epoch so every session is re-checked. */
   importAll(data: unknown): number {
+    // The counter never goes back to a snapshot's lower value (N-02).
+    const live = this.epoch();
     const rows = replaceTables(this.ctx.storage, SNAPSHOT_TABLES, data);
     this.sql.exec("INSERT OR IGNORE INTO revocation (id, epoch) VALUES (1, 0)");
+    this.sql.exec("UPDATE revocation SET epoch = MAX(epoch, ?) WHERE id = 1", live);
+    // Leavers, revoked grants and memberships and kill switches since the snapshot are applied again.
+    this.ctx.storage.transactionSync(() => this.journal.replay());
     this.bump();
     return rows;
   }

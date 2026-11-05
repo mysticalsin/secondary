@@ -3,6 +3,7 @@
 // constructs one and exposes thin RPC methods. Nothing here holds organisation content.
 
 import { ROLE_ORDER, ROLES } from "@secondary/policy";
+import type { SecurityJournal } from "../security-journal.ts";
 import {
   ABSOLUTE_MS,
   IDLE_MS,
@@ -90,11 +91,18 @@ export class IdentityStore {
   private readonly storage: DurableObjectStorage;
   /** Bumps the tenant's revocation epoch. */
   private readonly bump: () => number;
+  private readonly journal: SecurityJournal | undefined;
 
-  constructor(sql: SqlStorage, storage: DurableObjectStorage, bump: () => number) {
+  constructor(
+    sql: SqlStorage,
+    storage: DurableObjectStorage,
+    bump: () => number,
+    journal?: SecurityJournal,
+  ) {
     this.sql = sql;
     this.storage = storage;
     this.bump = bump;
+    this.journal = journal;
   }
 
   init(): void {
@@ -188,6 +196,8 @@ export class IdentityStore {
       active ? 1 : 0,
       now,
     );
+    // Outside the snapshot, so a restore cannot bring a leaver back (N-02).
+    this.journal?.status(principalId, active, now);
   }
 
   /** Deactivate and kill every session of the principal, then bump the revocation epoch. */

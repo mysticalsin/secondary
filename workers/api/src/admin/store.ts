@@ -6,6 +6,7 @@
 // never be the one who approves it, whatever the route above decided.
 
 import type { Role } from "@secondary/policy";
+import type { SecurityJournal } from "../security-journal.ts";
 import { manageAuthority, noticeLabel, type ScopeDesc } from "./validate.ts";
 
 export type ChangeKind =
@@ -165,12 +166,15 @@ export interface StoreHost {
   tx: <T>(fn: () => T) => T;
   /** Bumps the revocation epoch so every session re-resolves. */
   bump: () => number;
+  /** Security events kept outside the snapshot, so a restore cannot undo a revocation (N-02). */
+  journal?: SecurityJournal;
 }
 
 export class GovStore {
   private readonly sql: SqlStorage;
   private readonly tx: StoreHost["tx"];
   private readonly bump: () => number;
+  private readonly journal: SecurityJournal | undefined;
 
   private readonly defaults: readonly Role[];
 
@@ -179,6 +183,7 @@ export class GovStore {
     this.sql = host.sql;
     this.tx = host.tx;
     this.bump = host.bump;
+    this.journal = host.journal;
     this.sql.exec(`
       CREATE TABLE IF NOT EXISTS gov_meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gov_roles (
@@ -805,6 +810,7 @@ export class GovStore {
           )
         )
           return fail(404, "unknown_principal", "That person is no longer in the directory");
+        this.journal?.member(p.principalId as string, sc.type, sc.id, c.kind === "member_add", now);
         if (c.kind === "member_add")
           this.sql.exec(
             "INSERT OR IGNORE INTO memberships (principal_id, scope_type, scope_id) VALUES (?, ?, ?)",
@@ -826,6 +832,7 @@ export class GovStore {
         if (exp <= now) return fail(409, "expired", "The expiry date has already passed");
         if (!this.hasPrincipal(p.principalId as string))
           return fail(404, "unknown_principal", "That person is no longer in the directory");
+        this.journal?.nda(p.principalId as string, p.accountId as string, true, now);
         this.sql.exec(
           `INSERT OR REPLACE INTO nda_grants (principal_id, account_id, reason, expires_at, granted_by, approved_by, granted_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -840,6 +847,7 @@ export class GovStore {
         break;
       }
       case "nda_revoke":
+        this.journal?.nda(p.principalId as string, p.accountId as string, false, now);
         this.sql.exec(
           "DELETE FROM nda_grants WHERE principal_id = ? AND account_id = ?",
           p.principalId as string,
