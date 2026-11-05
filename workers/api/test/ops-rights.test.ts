@@ -17,8 +17,16 @@ const SUBJECT = "u_ceo";
 const ADMIN_A = { email: "admin-a@example.invalid" };
 const ADMIN_B = { email: "admin-b@example.invalid" };
 
-const exportOf = (principal: string, persona = "platform_admin") =>
-  as(persona, `/v1/admin/rights/export?principal=${encodeURIComponent(principal)}`, ADMIN_A);
+const exportReq = (principal: string, persona = "platform_admin", who = ADMIN_A, env?: Loose) =>
+  as(persona, `/v1/admin/rights/export?principal=${encodeURIComponent(principal)}`, {
+    ...who,
+    ...(env ? { env } : {}),
+  });
+/** Admin A asks, admin B confirms (H-06): returns the response B gets. */
+const exportOf = async (principal: string, persona = "platform_admin") => {
+  const first = await exportReq(principal, persona, ADMIN_A);
+  return first.status === 202 ? exportReq(principal, persona, ADMIN_B) : first;
+};
 const erase = (principal: string, who = ADMIN_A, persona = "platform_admin", env?: Loose) =>
   as(persona, "/v1/admin/rights/erase", { ...who, body: { principal }, ...(env ? { env } : {}) });
 
@@ -31,6 +39,8 @@ const everyWorkspaceJson = async (): Promise<string> => {
 };
 
 let candidateId = "";
+const meId = async () =>
+  ((await json(await as("platform_admin", "/v1/me", ADMIN_A))) as Loose).principal.id as string;
 
 beforeAll(async () => {
   await seed();
@@ -64,6 +74,30 @@ describe("rights export", () => {
     expect((await call(`/v1/admin/rights/export?principal=${SUBJECT}`)).status).toBe(401);
     for (const bad of ["", "has space", "a/b", "x".repeat(300)])
       expect((await exportOf(bad)).status, bad).toBe(400);
+  });
+
+  it("H-06: one admin alone gets nothing; a second, different admin completes it; the receipt names the pseudonym", async () => {
+    const pz = (await pseudonymFor(testEnv(), ALPHA, SUBJECT)) as string;
+    const first = await exportReq(SUBJECT);
+    expect(first.status).toBe(202);
+    const pending = (await json(first)) as Loose;
+    expect(pending).toMatchObject({ status: "pending", needs: "second_person", pseudonym: pz });
+    expect(JSON.stringify(pending)).not.toContain("personalBrain");
+    // The same admin asking again changes nothing.
+    expect((await exportReq(SUBJECT)).status).toBe(202);
+    const done = await exportReq(SUBJECT, "platform_admin", ADMIN_B);
+    expect(done.status).toBe(200);
+    expect(((await json(done)) as Loose).personalBrain).toBeTruthy();
+    // The approval is consumed: the next request starts over.
+    expect((await exportReq(SUBJECT, "platform_admin", ADMIN_B)).status).toBe(202);
+    const audit = await json(await as("auditor", "/v1/audit/receipts?principal=" + (await meId())));
+    const reasons = (audit as Loose).receipts.map((r: Loose) => `${r.action}:${r.reason}`);
+    expect(reasons.some((r: string) => r.startsWith("rights_export") && r.includes(pz))).toBe(true);
+  });
+
+  it("H-06: export is refused while no pseudonym key is configured", async () => {
+    const r = await exportReq(SUBJECT, "platform_admin", ADMIN_A, { PSEUDONYM_KEY: "" });
+    expect(r.status).toBe(503);
   });
 
   it("returns the person's Personal Brain, authored company items, comments and receipt metadata", async () => {

@@ -1,7 +1,7 @@
 // Operations admin routes (authenticated, Platform admin / "configure" only) and the kill switch gate.
 //   GET  /v1/admin/switches            state of the four switches and pending re-enable requests
 //   POST /v1/admin/switches            { switch, enabled }; re-enabling needs a second person in prod
-//   GET  /v1/admin/rights/export       ?principal=<id or email>
+//   GET  /v1/admin/rights/export       ?principal=<id or email>; needs a second person (202 until then)
 //   POST /v1/admin/rights/erase        { principal }; always needs a second person
 
 import { Hono, type MiddlewareHandler } from "hono";
@@ -123,13 +123,28 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     return c.json({ ok: true, status: "applied", switch: name, enabled });
   });
 
+  // H-06: an export returns a person's whole Personal Brain, so one configure holder is not enough.
+  // The first request records, a different configure holder confirms within 24 hours and receives
+  // the bundle. Both steps are audited with the subject's pseudonym, never the id or the content.
   r.get("/rights/export", async (c) => {
     const s = await requireConfigure(c);
     const raw = c.req.query("principal") ?? "";
     if (!SUBJECT_PARAM.test(raw)) return c.json({ error: "invalid_principal" }, 400);
     const org = requireOrg(s);
     const principalId = await resolveSubject(c.env, s.tenantId, raw);
-    if (!(await audit(c, s, "rights_export", "subject export")))
+    const pseudonym = await pseudonymFor(c.env, s.tenantId, principalId);
+    if (!pseudonym) return c.json({ error: "export_disabled" }, 503);
+    const step = await tenantStub(c.env, s.tenantId).requestSecond(
+      `export:${principalId}`,
+      s.principal.id,
+      now(),
+    );
+    if (step !== "second") {
+      if (!(await audit(c, s, "rights_export_request", `export requested for ${pseudonym}`)))
+        return c.json({ error: "audit_unavailable" }, 503);
+      return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
+    }
+    if (!(await audit(c, s, "rights_export", `export of ${pseudonym}`)))
       return c.json({ error: "audit_unavailable" }, 503);
     const bundle = await exportSubject(c.env, s.tenantId, org, principalId);
     c.header("Content-Disposition", 'attachment; filename="subject-export.json"');
