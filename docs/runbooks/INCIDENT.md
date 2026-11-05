@@ -24,7 +24,7 @@ Turning a switch back on in prod needs two different people: the first POST of `
 
 ## 2. Revoke access
 
-- One person: remove them in Entra (SCIM deprovisioning bumps the revocation epoch, sessions end within 60 seconds). See OFFBOARDING.md.
+- One person: remove them in Entra (SCIM deprovisioning ends the sessions and the next request is refused, because roles and the active flag are read on every request). See OFFBOARDING.md.
 - One MCP host or token: revoke the grant in the OAuth provider store (KV `OAUTH_KV`, keys `grant:*` and `token:*`), or switch `mcp` off while you do it. Access tokens live 1 hour, refresh tokens 30 days, so revoke the grant, not only the token.
 - Everyone: switch `mcp` off, then rotate `INTERNAL_HMAC_KEY` (KEY-ROTATION.md).
 

@@ -26,8 +26,21 @@ export async function mcpEnabled(env: Env, now = Date.now()): Promise<boolean> {
     const res = await env.API.fetch(url, { headers });
     if (res.ok)
       on = ((await res.json()) as { switches?: { mcp?: boolean } }).switches?.mcp !== false;
-  } catch {
-    // Unreachable: see the note at the top.
+    // Failing open is by design (see the note at the top), but an unanswered pre-check is logged (I-03).
+    else
+      logEvent({
+        event: "mcp_switch_check_failed",
+        worker: "mcp",
+        env: env.ENVIRONMENT,
+        status: res.status,
+      });
+  } catch (e) {
+    logEvent({
+      event: "mcp_switch_check_failed",
+      worker: "mcp",
+      env: env.ENVIRONMENT,
+      errorName: e instanceof Error ? e.name : "unknown",
+    });
   }
   cached = { at: now, on };
   if (!on) logEvent({ event: "mcp_switched_off", worker: "mcp", env: env.ENVIRONMENT });

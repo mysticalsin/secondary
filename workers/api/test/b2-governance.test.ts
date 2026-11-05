@@ -229,3 +229,22 @@ describe("I-05: inbox titles never name an NDA account", () => {
     expect(titles.some((t) => /restricted account/.test(t))).toBe(true);
   });
 });
+
+describe("I-01: revocation does not wait for an epoch", () => {
+  it("a deprovisioned person is refused on the very next request, and back when reactivated", async () => {
+    expect((await as("consultant", "/v1/me", { method: "GET" })).status).toBe(200);
+    await runInDurableObject(tenantDo(ALPHA), async (_i, state) => {
+      state.storage.sql.exec(
+        "INSERT OR REPLACE INTO principal_status (principal_id, active, changed_at) VALUES ('u_consultant', 0, 1)",
+      );
+    });
+    try {
+      expect((await as("consultant", "/v1/me", { method: "GET" })).status).toBe(401);
+    } finally {
+      await runInDurableObject(tenantDo(ALPHA), async (_i, state) => {
+        state.storage.sql.exec("DELETE FROM principal_status");
+      });
+    }
+    expect((await as("consultant", "/v1/me", { method: "GET" })).status).toBe(200);
+  });
+});

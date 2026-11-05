@@ -9,7 +9,7 @@ Goal: take B1 (live dev on Cloudflare, synthetic data) to an enterprise-ready pr
    - Microsoft Entra ID SSO through direct OIDC (auth code + PKCE). The Mantu tenant is configured by values only.
    - Cloudflare Access stays an optional outer gate.
    - Entra groups map to roles through an admin-managed table.
-   - SCIM 2.0 provisioning endpoint (Users, Groups) for Entra. Deprovisioning revokes sessions within 60 s (revocation epoch).
+   - SCIM 2.0 provisioning endpoint (Users, Groups) for Entra. Deprovisioning revokes sessions on the next request (roles and active status are read on every request; the revocation epoch is a change counter, not a gate).
    - Short sessions with re-check every 5 minutes.
 2. **Authorization.**
    - Everything goes through `packages/policy`.

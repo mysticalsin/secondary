@@ -4,7 +4,7 @@ Goal: access ends within minutes, their personal data is handled per policy, com
 
 ## 1. Cut access (same day, ideally before the conversation)
 
-1. Disable the account in Entra. SCIM deprovisioning removes roles, memberships, NDA grants and elevations in Secondary and bumps the revocation epoch, so sessions end within 60 seconds. Where SCIM is not yet live, a platform admin removes the roles and grants in the admin console (each change bumps the epoch).
+1. Disable the account in Entra. SCIM deprovisioning removes roles, memberships, NDA grants and elevations in Secondary and ends the person's sessions at once. The API reads roles and the active flag from the tenant object on every request, so the next request is refused; the revocation epoch is only a change counter and is not compared. Where SCIM is not yet live, a platform admin removes the roles and grants in the admin console (each change bumps the epoch).
 2. Revoke their MCP grants (INCIDENT.md, section 2). Refresh tokens last 30 days; a revoked grant ends them.
 3. Check: `GET /v1/audit/receipts?principal=<id>&days=1` should show only denials after the cut.
 
