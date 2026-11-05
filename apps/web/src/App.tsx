@@ -11,6 +11,7 @@ import { Personal } from "./views/Personal";
 import { Review } from "./views/Review";
 import { SourceView } from "./views/SourceView";
 import { Today } from "./views/Today";
+import { WikiPage } from "./views/wiki/WikiPage";
 
 export function App() {
   return (
@@ -25,6 +26,7 @@ export function App() {
         <Route path="review" element={<Review />} />
         <Route path="personal" element={<Personal />} />
         <Route path="sources/:id" element={<SourceView />} />
+        <Route path="wiki/:ws" element={<WikiPage />} />
         <Route path="admin" element={<Admin />} />
         <Route
           path="*"

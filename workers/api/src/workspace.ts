@@ -5,10 +5,11 @@
 // only addresses workspaces the caller's admitted view reaches. It does enforce the invariants
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
-import { DurableObject } from "cloudflare:workers";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { personalKindOf } from "./personal-kind.ts";
 import type { SensitivityFlag } from "./sensitivity.ts";
+import { WIKI_TABLES, WikiBase } from "./wiki/store.ts";
+import { isWikiKind } from "./wiki/types.ts";
 
 export type Origin = "seed" | "personal" | "candidate" | "record";
 export type ReleaseTarget = "scope" | "global";
@@ -128,17 +129,15 @@ const SNAPSHOT_TABLES = [
   "edits",
   "contributions",
   "outbox",
+  ...WIKI_TABLES,
 ] as const;
 
 const requiredFor = (releaseTarget: string, plane: string): number =>
   releaseTarget === "global" || plane === "GLOBAL_NONPERSONAL" ? 2 : 1;
 
-export class Workspace extends DurableObject<Env> {
-  private readonly sql: SqlStorage;
-
+export class Workspace extends WikiBase {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.sql = ctx.storage.sql;
     ctx.blockConcurrencyWhile(async () => {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS items (
@@ -198,6 +197,7 @@ export class Workspace extends DurableObject<Env> {
           "revisions",
         ])
           this.sql.exec(`DELETE FROM ${t}`);
+      if (reset) this.wikiReset();
       for (const r of rows) {
         this.sql.exec(
           `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, tags,
@@ -683,6 +683,13 @@ export class Workspace extends DurableObject<Env> {
   private load(id: string, expected: number): ItemRecord | Fail {
     const rec = this.get(id);
     if (!rec) return { ok: false, code: "not_found", message: "No such item" };
+    // Wiki proposals are decided through the wiki review (it applies the diff), never as plain items.
+    if (isWikiKind(rec.kind))
+      return {
+        ok: false,
+        code: "not_pending",
+        message: "Wiki proposals are decided in the wiki review",
+      };
     if (rec.revision !== expected)
       return {
         ok: false,
@@ -907,6 +914,7 @@ export class Workspace extends DurableObject<Env> {
       this.sql.exec("UPDATE comments SET author_id = ? WHERE author_id = ?", to, from);
       this.sql.exec("UPDATE approvals SET actor_id = ? WHERE actor_id = ?", to, from);
       this.sql.exec("UPDATE edits SET actor_id = ? WHERE actor_id = ?", to, from);
+      this.wikiPseudonymise(from, to);
       for (const r of this.sql
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
         .toArray()) {

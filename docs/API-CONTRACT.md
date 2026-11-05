@@ -212,3 +212,40 @@ All owner-only or policy-checked, all audited when they write (identity and ids,
 - `POST /v1/admin/access-requests` is what the drawer's "Request access" button calls (not `/v1/actions`). Approval adds the membership (two-person for restricted scopes) and the requester sees the node on the next request.
 - Review events post to the inbox (`GET /v1/admin/notifications`), content-free (the title names the scope): `review_requested` (to people who may review or approve the target, never the contributor), `review_changes_requested`, `review_approved` (first of two approvals), `review_released` (to the contributor) and `review_second_approval` (to the other approvers). Delivery is best effort and never fails the action.
 - Deploy: `scripts/deploy.sh <env>` creates the sync queue, deploys audit, api, connector, mcp, ops, and bridges the api/connector service-binding cycle with a 503 placeholder worker under the connector's name on a first deploy.
+
+## Living Wiki (B3, `workers/api/src/wiki`, `apps/web/src/views/wiki`)
+
+Normative design: `docs/DESIGN-LIVING-WIKI.md`. One wiki per workspace, stored in that workspace's Durable Object (the `Workspace` class extends `WikiBase`), so a snapshot, an erasure and a reseed cover it.
+
+Tables: `wiki_pages` (id, type, title, markdown, revision, status), `wiki_page_revisions`, `wiki_facts` (subject, predicate, object, valid_at, invalid_at, recorded_at, checked_at, source_ids, source_hashes, confidence, origin `human|agent|connector`, verified_by), `wiki_log` (append only: no method or route edits or deletes a row), `wiki_schema` (page types, required sections), `wiki_sources` (content hash last read), `wiki_jobs`, `wiki_findings` (dedupe key per lint finding), `wiki_promotions`. The index is derived from pages. Raw sources are existing workspace items of kind `record`, `meeting_record`, personal notes, promotion candidates, and connector `source_items`, each with a SHA-256 content hash.
+
+Claims are Markdown bullets with `{src:<source id>}` tokens. Links are `[[page-id]]`, and `[[global:page-id]]` toward Company Global only (any other `[[x:y]]` is removed). Facts use `kind: title` subjects (`decision:`, `commitment:`, `risk:`) and the predicates `status`, `owner`, `due`, `severity`. Decision log, commitments, risk register and overview are generated from the facts that hold now.
+
+`:ws` is a node id (an account, circle, department, or `core` for Company Global) or `me` for the caller's own Personal Brain wiki. The workspace must be in the caller's view at content level, else 404. Read routes need that. Writes need `contribute` (propose), `edit` (meeting records), or review, release or edit rights (decide, run, settings, verify). Personal: the owner has all of them.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/wiki/health` | per admitted wiki: pages, facts, unverified, openFindings, openProposals, stale, score (map signal) |
+| GET | `/v1/wiki/:ws/index` | pages (id, title, type, one-line summary), schema, health, settings, `can` |
+| GET | `/v1/wiki/:ws/pages/:pid?rev=` | page with citations resolved for the caller; `restricted` counts dropped claims |
+| GET | `/v1/wiki/:ws/pages/:pid/history` | revisions with line diffs |
+| GET | `/v1/wiki/:ws/facts?all=1&subject=` | facts over time, unverified flag, readable sources only |
+| GET | `/v1/wiki/:ws/log` | append-only log |
+| GET | `/v1/wiki/:ws/search?q=` , `/ask?q=` | index first. `ws` may be `all` (admitted wikis). `ask` answers with cited lines or `{unknown: true, answer: null}` |
+| GET | `/v1/wiki/:ws/proposals?status=` , `/proposals/:id` | wiki review items (decide rights) |
+| POST | `/v1/wiki/:ws/proposals/:id/decide {decision: approve\|reject}` | applies or rejects. A proposal's author cannot approve it (except in the owner's own Personal Brain). 409 when a page moved since the draft |
+| POST | `/v1/wiki/:ws/proposals/:id/edit {pageId, markdown}` | a reviewer's own wording, applied as written |
+| POST | `/v1/wiki/:ws/propose {title, markdown, pageId?}` | creates a `wiki_ingest` review item (origin human). MCP `wiki_propose` |
+| POST | `/v1/wiki/:ws/meetings {title, date?, decisions[], commitments[], risks[], notes?}` | stores a `meeting_record` source and queues an ingest |
+| POST | `/v1/wiki/:ws/run {jobs?: ["lint","dream"]}` | runs what is due now, plus lint or dreaming on demand |
+| POST | `/v1/wiki/:ws/facts/:id/verify` | a person confirms a fact |
+| PUT | `/v1/wiki/:ws/settings {autoAccept?, freshnessDays?}` | `autoAccept` is for `me` only |
+| POST | `/v1/wiki/:ws/pages/:pid/promote {user_validated, acknowledged_flags}` | account wikis only. De-identified candidate to Company Global through the contribute flow (sensitivity flags, release needs 2 approvers). Registers the candidate in the global wiki, which publishes the page once it is released |
+
+Review items are workspace items of kind `wiki_ingest`, `wiki_lint` or `wiki_dream` (id `cand:<node>:<hex>`), so they appear in `GET /v1/review` with `kind` set; `/v1/actions` refuses to decide them. The body is a JSON proposal (pages with before and after, new facts, facts to end, facts to confirm, sources and hashes).
+
+Jobs: a new or changed source (record create or update, meeting record, Personal Brain note, connector upsert) queues an ingest job in the workspace's own object. A Durable Object alarm runs jobs, lint daily and dreaming at 02:00 UTC. Var `WIKI_ALARMS=off` turns the scheduling off (tests). Ingest triage: unchanged hash or no new fact means a log entry only. Otherwise the deterministic extractor (structured records, `Decision:`, `Commitment:`, `Risk:` lines) or, where the processor is ready and the account contract says `allowed`, the model drafts facts and pages with a citation each. Personal Brain sources never go to a model. A fact that disagrees with a valid one ends the older one when the newer is approved (`invalid_at`), and history stays.
+
+Lint findings (review items, one each): contradiction, orphan page, broken link, source hash changed or gone, stale claim, uncited claim, missing schema section. Dreaming proposes merges, summary sections and cross-links, within the workspace, and never writes.
+
+MCP (`workers/mcp`): `wiki_search` and `wiki_read` (scope `secondary.read`), `wiki_propose` (`secondary.read` + `secondary.contribute`, creates a review item only). No tool approves.

@@ -24,6 +24,9 @@ export const TOOL_NAMES = [
   "personal_note_create",
   "contribute",
   "render_view",
+  "wiki_search",
+  "wiki_read",
+  "wiki_propose",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -38,6 +41,9 @@ export const TOOL_SCOPES: Record<ToolName, readonly [Scope, ...Scope[]]> = {
   render_view: ["secondary.read"],
   personal_note_create: ["secondary.read", "secondary.personal.write"],
   contribute: ["secondary.read", "secondary.contribute"],
+  wiki_search: ["secondary.read"],
+  wiki_read: ["secondary.read"],
+  wiki_propose: ["secondary.read", "secondary.contribute"],
 };
 
 const MAX_TEXT = 60_000;
@@ -47,6 +53,13 @@ const nodeId = z
     /^[a-z0-9][a-z0-9_.:-]{0,127}$/,
     "an id as returned by Secondary, for example c_bid:pricing-models",
   );
+/** A wiki workspace: a node id as returned by Secondary, or `me` for the user's own wiki. */
+const wikiWs = z
+  .string()
+  .regex(/^(me|[a-z0-9][a-z0-9_.:-]{0,127})$/, "an account, circle or department id, or me");
+const wikiPage = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "a wiki page id as returned by wiki_search");
 const lens = z.enum(["departments", "accounts", "topics", "governances"]);
 const noInput = z.object({});
 
@@ -97,8 +110,9 @@ export function buildServer({ env, caller }: ServerDeps): McpServer {
     {
       instructions:
         "Secondary is Mantu's governed knowledge map. Every answer is limited to what the signed-in user's role allows. " +
-        "Tools read or draft only. Ask the user before calling personal_note_create or contribute, and never include personal " +
-        "or client-confidential details they have not confirmed. To show a visual, plan a view from the catalog " +
+        "Tools read or draft only. Ask the user before calling personal_note_create, contribute or wiki_propose, and never include personal " +
+        "or client-confidential details they have not confirmed. wiki_search and wiki_read answer from the workspace wikis the user may read, with citations; " +
+        "wiki_propose only queues a page for human review. To show a visual, plan a view from the catalog " +
         "(KpiRow, NodeCard, ItemList, AccountSummary, StageBoard, MapMini, Callout, Table) and call render_view; props are queries (ids, lens, filters), never data.",
     },
   );
@@ -292,6 +306,69 @@ export function buildServer({ env, caller }: ServerDeps): McpServer {
       run("contribute", [targetScopeId], async (api) =>
         fromApi(
           await api.post(`/v1/personal/items/${q(personalItemId)}/contribute`, { targetScopeId }),
+          () => 1,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "wiki_search",
+    {
+      title: "Search the workspace wikis",
+      description:
+        "Search the wiki pages the user may read, with the cited claims that match. Searches every wiki the user is admitted to unless a workspace is given. Citations the user cannot read are already removed.",
+      inputSchema: z.object({
+        q: z.string().trim().min(1).max(200).describe("Search text"),
+        workspace: z.union([z.literal("all"), wikiWs]).default("all"),
+      }),
+      annotations: read,
+      scopeChallenge: challenge("wiki_search"),
+    },
+    ({ q: text, workspace }) =>
+      run("wiki_search", workspace === "all" ? [] : [workspace], async (api) =>
+        fromApi(await api.get(`/v1/wiki/${q(workspace)}/search?q=${q(text)}`), len("results")),
+      ),
+  );
+
+  server.registerTool(
+    "wiki_read",
+    {
+      title: "Read a wiki page",
+      description:
+        "One wiki page with its citations, as the signed-in user may see it. Claims whose sources the user cannot read are removed.",
+      inputSchema: z.object({ workspace: wikiWs, page: wikiPage }),
+      annotations: read,
+      scopeChallenge: challenge("wiki_read"),
+    },
+    ({ workspace, page }) =>
+      run("wiki_read", [workspace], async (api) =>
+        fromApi(await api.get(`/v1/wiki/${q(workspace)}/pages/${q(page)}`), () => 1),
+      ),
+  );
+
+  server.registerTool(
+    "wiki_propose",
+    {
+      title: "Propose a wiki page",
+      description:
+        "Propose a new page or a new version of a page in a workspace wiki. This creates a review item and never publishes: a person approves it in the web app. Ask the user to confirm the text first.",
+      inputSchema: z.object({
+        workspace: wikiWs,
+        title: z.string().trim().min(1).max(120),
+        markdown: z.string().trim().min(1).max(20_000),
+        pageId: wikiPage.optional(),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("wiki_propose"),
+    },
+    ({ workspace, title, markdown, pageId }) =>
+      run("wiki_propose", [workspace], async (api) =>
+        fromApi(
+          await api.post(`/v1/wiki/${q(workspace)}/propose`, {
+            title,
+            markdown,
+            ...(pageId ? { pageId } : {}),
+          }),
           () => 1,
         ),
       ),

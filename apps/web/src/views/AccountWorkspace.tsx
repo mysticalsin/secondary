@@ -23,6 +23,7 @@ import type {
 } from "../types";
 import { useApi } from "../useApi";
 import { PrepareBrief } from "./brief/PrepareBrief";
+import { WikiTab } from "./wiki/WikiTab";
 
 const RECORD_SECTIONS: RecordSection[] = ["dec", "com", "risk", "out"];
 const TAB_ORDER = ["eng", "dec", "com", "out", "risk", "meetings", "bids", "con"];
@@ -546,6 +547,7 @@ export function AccountWorkspace() {
     return [
       { key: "overview", label: t("acc.tab.overview") },
       ...keys.map((k) => ({ key: k, label: td("acc.tab", k, have.get(k) ?? k) })),
+      { key: "wiki", label: t("wiki.tab") },
     ];
   }, [d, t, td]);
 
@@ -639,7 +641,9 @@ export function AccountWorkspace() {
             ))}
           </div>
           <div id="tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-            {tab === "overview" ? (
+            {tab === "wiki" ? (
+              <WikiTab ws={id} />
+            ) : tab === "overview" ? (
               <Overview
                 d={d}
                 rec={records ?? null}

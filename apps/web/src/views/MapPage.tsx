@@ -10,6 +10,7 @@ import { flatten } from "../map-layout";
 import { useApp } from "../state";
 import type { Lens, MapView } from "../types";
 import { useApi } from "../useApi";
+import { wikiApi } from "./wiki/api";
 
 const LENSES: [Lens, Key][] = [
   ["departments", "map.lens.departments"],
@@ -35,6 +36,11 @@ export function MapPage() {
     (small ? "list" : "ring")) as Proj;
   const [query, setQuery] = useState("");
   const state = useApi(() => api.map(lens), [lens]);
+  // The wiki health signal is a hint. If it cannot be read the map still works.
+  const health = useApi(() => wikiApi.health().catch(() => []), []);
+  const wikiHealth = Object.fromEntries(
+    (health.data ?? []).map((h) => [h.nodeId, { score: h.score, openFindings: h.openFindings }]),
+  );
   const set = (k: string, v: string) => {
     const n = new URLSearchParams(sp);
     n.set(k, v);
@@ -117,6 +123,7 @@ export function MapPage() {
                 selectedId={drawerId}
                 focusId={drawerId}
                 onOpen={openNode}
+                wiki={wikiHealth}
               />
               <Legend />
             </>

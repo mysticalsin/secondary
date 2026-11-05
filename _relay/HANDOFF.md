@@ -1,6 +1,30 @@
 # HANDOFF
 
-Updated: 2026-11-04. By: Claude (Sonnet). Tasks G0.7 and G0.8 of the roadmap.
+Updated: 2026-11-05. By: Claude (Sonnet, B3 wiki on top of the B2 integration). Earlier: tasks G0.7 and G0.8 of the roadmap.
+
+## B3 Living Wiki (2026-11-05, Claude, branch `b3/wiki`, not merged, nothing deployed)
+
+Design: `docs/DESIGN-LIVING-WIKI.md`. Contract: `docs/API-CONTRACT.md`, "Living Wiki". Code: `workers/api/src/wiki/*` (types, text, store, engine, routes, review, hooks), `apps/web/src/views/wiki/*`, MCP tools `wiki_search`, `wiki_read`, `wiki_propose`. Tests: `workers/api/test/wiki.test.ts` and `wiki-units.test.ts` (every acceptance test of the design doc), `workers/mcp/test/tools.test.ts`, `apps/web/src/test/wiki.test.tsx`, `e2e/wiki.spec.ts`.
+
+Totals at the last full run: build, typecheck and `biome check .` clean. Tests: fixtures 23, contracts 91, policy 55, web 49, audit 8, connector 49, ops 6, api 386, mcp 79. Playwright 50 passed (axe on the wiki views, FR, 400 px).
+
+How it is built:
+
+- `Workspace` now extends `WikiBase` (`wiki/store.ts`): wiki tables live in the workspace's own object and are in snapshots, erasure and reseed. Review items are ordinary items of kind `wiki_ingest|wiki_lint|wiki_dream`, so `GET /v1/review` lists them (with `kind`). They are decided only through `/v1/wiki/:ws/proposals/:id/decide`, which applies the diff. `Workspace.load` refuses them for `/v1/actions`.
+- Hooks (one line each): record create/update (`ux/records.ts`), Personal Brain note create/edit, connector upsert, and the new meeting record endpoint call `wikiNotify`, which queues an ingest job. A DO alarm runs jobs, lint daily and dreaming at 02:00 UTC. `WIKI_ALARMS=off` (set in the api vitest config) disables scheduling; `POST /v1/wiki/:ws/run` runs everything due. Jobs are claimed atomically, so an alarm and a manual run never take the same job.
+- Ingest: triage by content hash, then the deterministic extractor (structured records, meeting records, `Decision:`/`Commitment:`/`Risk:` lines) or, when `ANTHROPIC_API_KEY` is set and the account contract says `allowed`, the model (single-source prompt, citation per claim, output validated, R-110 on input and output). Personal Brain never goes to a model.
+- Promote to Global registers the released candidate in the global wiki (`wiki_promotions`), which publishes the page lazily on the next read. `submitCandidate` and `parseUserValidated` in `routes.ts` are now exported and passed into `wikiRoutes`.
+- Citations are re-checked per caller on every read, search, ask and promote: the gate node must be at content level for the caller, and connector files need the connector's explicit yes (fail closed). Claims that lose all their sources are dropped.
+- `workers/api/test/ops-rights.test.ts` erases the seeded `u_ceo` and reads receipts from a stub shared by all test files, so any other file that writes receipts as `u_ceo` can make it fail under parallel load (seen before B3 too). The wiki tests use their own CEO address for that reason. It passes alone.
+- Do not run `biome check --write` and then `git checkout _relay/HANDOFF.md`: biome reformats this file, and the checkout throws the notes away.
+
+Not done or not verified:
+
+- No live model call (tests stub fetch). The AI path is exercised with a hostile fixture and a stub only.
+- Briefs do not show wiki facts yet (the "unverified" badge exists in the wiki UI and API only).
+- The dev mock (`pnpm --filter @secondary/web dev:mock`) has no wiki: the tab says it needs the live stack.
+- Lint caps at 20 findings per kind per run. Schema editing has an object method (`wikiSetSchema`) but no route or UI.
+- The Opus security review of the wiki surface is still to do (cross-workspace isolation is covered by tests, not reviewed).
 
 ## Current state
 

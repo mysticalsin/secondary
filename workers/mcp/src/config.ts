@@ -12,7 +12,8 @@ export const SCOPE_LABELS: Record<Scope, string> = {
   "secondary.read":
     "Read the Company Map, nodes, accounts and review queue that you can already see",
   "secondary.personal.write": "Save notes to your private Personal Brain",
-  "secondary.contribute": "Propose a personal item to a Company scope (it only enters review)",
+  "secondary.contribute":
+    "Propose a personal item or a wiki page to a Company scope (it only enters review)",
 };
 
 export const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1"]);

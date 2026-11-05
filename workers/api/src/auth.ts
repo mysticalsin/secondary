@@ -111,6 +111,9 @@ const INTERNAL_ROUTES: readonly { method: string; path: RegExp; scope: string }[
   { method: "GET", path: /^\/v1\/accounts\/[^/]+$/, scope: READ },
   { method: "GET", path: /^\/v1\/governances$/, scope: READ },
   { method: "GET", path: /^\/v1\/review$/, scope: READ },
+  { method: "GET", path: /^\/v1\/wiki\/[^/]+\/search$/, scope: READ },
+  { method: "GET", path: /^\/v1\/wiki\/[^/]+\/pages\/[^/]+$/, scope: READ },
+  { method: "POST", path: /^\/v1\/wiki\/[^/]+\/propose$/, scope: "secondary.contribute" },
   { method: "POST", path: /^\/v1\/personal\/items$/, scope: "secondary.personal.write" },
   {
     method: "POST",

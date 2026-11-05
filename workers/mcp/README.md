@@ -23,7 +23,9 @@ Built on `agents` 0.33 (`createMcpHandler`, stateless), `@cloudflare/workers-oau
 | `personal_note_create(title, body)`                                                                                       | `secondary.read`, `secondary.personal.write` |
 | `contribute(personalItemId, targetScopeId)`                                                                               | `secondary.read`, `secondary.contribute`     |
 
-No tool approves, deletes or changes membership. `contribute` only creates a candidate in review. A missing scope gets HTTP 403 `insufficient_scope` (the SDK `scopeChallenge`, so hosts can step up), and each tool also refuses on its own as a backstop.
+No tool approves, deletes or changes membership. `contribute` only creates a candidate in review.
+
+Wiki tools (B3, see `docs/DESIGN-LIVING-WIKI.md`): `wiki_search(q, workspace?)` and `wiki_read(workspace, page)` need `secondary.read` and answer for the caller, with citations the caller cannot read already removed; `wiki_propose(workspace, title, markdown, pageId?)` needs `secondary.contribute` and creates a review item only. No MCP tool approves a wiki change. A missing scope gets HTTP 403 `insufficient_scope` (the SDK `scopeChallenge`, so hosts can step up), and each tool also refuses on its own as a backstop.
 
 `render_view` takes a ViewPlan (see `docs/API-CONTRACT.md`, GenUI). Unknown component types are dropped and reported. The rest must pass the precompiled ViewPlan schema, so inline data (`rows`, `items`, free text) rejects the whole plan. Data is resolved through the API as the caller. The tool is linked to the MCP App `ui://secondary/view`, a single self-contained HTML page (Mantu brand, no external script, style, font or network, strings written with `textContent`). Hosts without MCP Apps get the markdown text result.
 

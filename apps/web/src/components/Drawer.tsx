@@ -384,6 +384,22 @@ export function Drawer() {
           />
         )}
       </Await>
+      {state.data &&
+      state.data.node.access === "full" &&
+      ["circle", "department", "core"].includes(state.data.node.kind) ? (
+        <p style={{ padding: "0 var(--s4) var(--s4)" }}>
+          <button
+            type="button"
+            className="btn sm"
+            onClick={() => {
+              closeDrawer();
+              nav(`/wiki/${encodeURIComponent(drawerId)}`);
+            }}
+          >
+            {t("wiki.nav")}
+          </button>
+        </p>
+      ) : null}
     </div>
   );
 }
