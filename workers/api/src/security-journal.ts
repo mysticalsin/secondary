@@ -10,7 +10,11 @@ const DAY_MS = 86_400_000;
 type Kind = "status" | "switch" | "nda" | "member" | "roles" | "revoke_all";
 
 export class SecurityJournal {
-  constructor(private readonly sql: SqlStorage) {}
+  private readonly sql: SqlStorage;
+
+  constructor(sql: SqlStorage) {
+    this.sql = sql;
+  }
 
   init(): void {
     this.sql.exec(`

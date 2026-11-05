@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { ALPHA, as, json, seed, tenantDo } from "./helpers.ts";
+import { ALPHA, as, json, seed, tenantDo, wsOf } from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -554,5 +554,50 @@ describe("audit receipts", () => {
     });
     expect(res.status).toBe(503);
     expect((await json(res)).error).toBe("audit_unavailable");
+  });
+});
+
+describe("B1 M3: item-level decisions read the live record", () => {
+  const ITEM = "c_delivery:quality-gates"; // seeded as authored by the consultant
+
+  it("a consultant edits what the workspace says they wrote, and stops when it was handed over or released", async () => {
+    const revision = await revisionOf("consultant", ITEM);
+    const ws = wsOf(ALPHA, "c_delivery");
+    const row = (authorId: string, status: string) =>
+      ws.seed(
+        [
+          {
+            id: ITEM,
+            label: "Quality gates",
+            kind: "topic",
+            plane: "ACCOUNT_RESTRICTED",
+            status,
+            revision,
+            authorId,
+            tags: [],
+            reviewedBy2: false,
+          },
+        ],
+        false,
+        Date.now(),
+      );
+    const edit = () =>
+      act("consultant", {
+        nodeId: ITEM,
+        action: "edit",
+        revision,
+        payload: { title: "Quality gates v2" },
+      });
+    // The seeded leaf still names the consultant, but the live record has another author: refused.
+    await row("u_other", "draft");
+    const res = await edit();
+    expect(res.status).toBe(403);
+    expect((await json(res)).reason).toBe("Contributors edit their own drafts only");
+    // Released since: no longer a draft, so also refused for the author.
+    await row("u_consultant", "approved");
+    expect((await edit()).status).toBe(403);
+    // Their own draft is theirs.
+    await row("u_consultant", "draft");
+    expect((await edit()).status).toBe(200);
   });
 });

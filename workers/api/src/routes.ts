@@ -705,8 +705,9 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       if (!target) return [];
       // The contributor never reviews or approves their own item (the policy only sees the target scope).
       if (r.authorId === s.principal.id) return [];
-      const review = canDoInView(view, s.principal, policyNode, "review");
-      const approve = canDoInView(view, s.principal, policyNode, "approve_release");
+      const rec = { authorId: r.authorId, status: r.status, revision: r.revision };
+      const review = canDoInView(view, s.principal, policyNode, "review", view.ctx, rec);
+      const approve = canDoInView(view, s.principal, policyNode, "approve_release", view.ctx, rec);
       if (!review.allowed && !approve.allowed) return [];
       // Flags are always the server's own scan, stored when the candidate was created.
       const text = r.body ?? r.label;
@@ -830,8 +831,20 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     const policyNode = cand ? cand.targetNodeId : nodeId;
     const view = viewOf(s);
     const vn = view.nodes.get(policyNode);
-    // Re-check on the server: the UI's list of allowed actions is advice, not authority.
-    const d = canDoInView(view, s.principal, policyNode, action);
+    // Re-check on the server: the UI's list of allowed actions is advice, not authority. Item-level
+    // actions are decided on the live record (author, status, revision), not the seeded leaf (B1 M3).
+    const live =
+      vn && (action === "edit" || action === "review" || action === "approve_release")
+        ? await wsFor(c, vn).get(nodeId)
+        : null;
+    const d = canDoInView(
+      view,
+      s.principal,
+      policyNode,
+      action,
+      view.ctx,
+      live ? { authorId: live.authorId, status: live.status, revision: live.revision } : undefined,
+    );
     const scopeId = vn ? scopeOfNode(vn) : null;
     if (!vn || !d.allowed) {
       await audit(c, {

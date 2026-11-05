@@ -115,7 +115,11 @@ export function reviewRoutes(): Hono<AppEnv> {
     const t = b.comment === undefined ? "" : text(b.comment, 0, MAX_COMMENT, "invalid_comment");
     const view = viewOf(s);
     const policyNode = parseCandidateId(id)?.targetNodeId ?? id;
-    const d = canDoInView(view, s.principal, policyNode, "review");
+    const d = canDoInView(view, s.principal, policyNode, "review", view.ctx, {
+      authorId: item.authorId,
+      status: item.status,
+      revision: item.revision,
+    });
     if (!d.allowed) return forbidden(c, d.reason);
     if (!(await audit(c, { action: "review", nodeId: id, scopeId: scope, revision })))
       return c.json({ error: "audit_unavailable" }, 503);

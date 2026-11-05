@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type AdmittedView,
+  canDoInView,
   GOVERNANCES,
   LENSES,
   PERSONAS,
@@ -188,6 +189,55 @@ describe("prototype policy checks", () => {
       (n) => n.kind === "topic" && n.leaf?.authorId === PERSONAS.consultant.id,
     );
     if (own) expect(can("consultant", own.id, "edit").allowed).toBe(true);
+  });
+
+  it("19b. M3: item-level decisions use the live record, not the seeded leaf", () => {
+    const own = "c_delivery:quality-gates"; // seeded as authored by the consultant
+    const live = (authorId: string | null, status: string) => ({ authorId, status, revision: 3 });
+    const decide = (r: RoleId, id: string, action: Parameters<typeof canDoInView>[3], l?: never) =>
+      canDoInView(views[r], PERSONAS[r], id, action, views[r].ctx, l);
+    // Same as before when the caller passes nothing.
+    expect(decide("consultant", own, "edit").allowed).toBe(true);
+    // The live record says someone else wrote it now: the stale seeded author no longer counts.
+    expect(decide("consultant", own, "edit", live("u_other", "draft") as never)).toEqual({
+      allowed: false,
+      reason: "Contributors edit their own drafts only",
+    });
+    // An item the caller authored is theirs while it is a draft or a candidate, whatever the seed says.
+    const foreign = [...views.consultant.nodes.values()].find(
+      (n) =>
+        n.kind === "topic" && n.access === "full" && n.leaf?.authorId !== PERSONAS.consultant.id,
+    );
+    expect(foreign).toBeDefined();
+    const id = foreign?.id ?? "";
+    expect(
+      decide("consultant", id, "edit", live(PERSONAS.consultant.id, "draft") as never).allowed,
+    ).toBe(true);
+    expect(
+      decide("consultant", id, "edit", live(PERSONAS.consultant.id, "candidate") as never).allowed,
+    ).toBe(true);
+    // Once it was released it is no longer a draft: changing it is the steward's job.
+    expect(
+      decide("consultant", id, "edit", live(PERSONAS.consultant.id, "approved") as never),
+    ).toEqual({
+      allowed: false,
+      reason: "Contributors edit their own drafts only",
+    });
+    // A reviewer who is the live author cannot approve or review it, even if the seed names another author.
+    const node = [...views.reviewer.nodes.values()].find(
+      (n) =>
+        n.kind === "topic" &&
+        n.access === "full" &&
+        n.leaf &&
+        n.leaf.authorId !== PERSONAS.reviewer.id,
+    );
+    expect(node).toBeDefined();
+    const nid = node?.id ?? "";
+    for (const action of ["approve_release", "review"] as const)
+      expect(
+        decide("reviewer", nid, action, live(PERSONAS.reviewer.id, "candidate") as never).allowed,
+        action,
+      ).toBe(false);
   });
 
   it("20. Locked nodes: request_access allowed, other actions denied", () => {

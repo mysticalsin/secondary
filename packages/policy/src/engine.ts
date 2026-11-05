@@ -306,13 +306,24 @@ function elevatedFor(roles: readonly Role[], action: Action, node: ViewNode, ctx
   );
 }
 
-/** canDo against an already built view. The view must belong to this principal. */
+/**
+ * The live record of the item an action is about (author, status, revision), read from the workspace
+ * by the caller. The view's leaf is the seeded copy and goes stale after edits and releases (B1 M3).
+ */
+export type LiveItem = { authorId: string | null; status: string; revision: number };
+
+/**
+ * canDo against an already built view. The view must belong to this principal. Item-level actions
+ * (edit, review, approve_release) should pass `live`, so authorship and status come from the record
+ * and not from the seeded leaf.
+ */
 export function canDoInView(
   view: AdmittedView,
   principal: Principal,
   nodeId: string,
   action: Action,
   ctx: Ctx = view.ctx,
+  live?: LiveItem,
 ): Decision {
   if (principal.id !== view.principalId || principal.tenantId !== view.tenantId)
     return deny(NOT_IN_VIEW);
@@ -341,7 +352,7 @@ export function canDoInView(
     (node.circle ? view.nodes.get(node.circle)?.label : undefined) ??
     (node.account ? view.nodes.get(node.account)?.label : undefined) ??
     (node.kind === "department" || node.kind === "circle" ? node.label : "Company Global");
-  const author = node.leaf?.authorId ?? null;
+  const author = live ? live.authorId : (node.leaf?.authorId ?? null);
 
   if (!gs.length && !elev) {
     if (node.level === "structure" && action !== "configure") {
@@ -371,9 +382,10 @@ export function canDoInView(
     action === "edit" &&
     gs.length &&
     gs.every((g) => g.conditions.own_drafts) &&
-    author !== principal.id
+    (author !== principal.id || (live && live.status !== "draft" && live.status !== "candidate"))
   ) {
-    // M3: "own" means authored by the caller. A draft status does not make it theirs.
+    // M3: "own" means authored by the caller, and a draft means it is not released yet. A draft status
+    // does not make it theirs, and a released item is the steward's to change.
     return deny("Contributors edit their own drafts only");
   }
   return allow(elev && !gs.length ? "Granted by elevation (audited)" : `Granted on ${who}`);

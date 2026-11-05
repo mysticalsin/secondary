@@ -109,11 +109,12 @@ describe("rights export", () => {
     expect(get.headers.get("Allow")).toBe("POST");
     expect(await get.text()).not.toContain("personalBrain");
     // A POST that comes from another site is refused before the handler runs.
-    for (const headers of [
+    const crossSite: Record<string, string>[] = [
       { "Sec-Fetch-Site": "cross-site" },
       { "Sec-Fetch-Site": "same-site" },
       { Origin: "https://evil.example.test" },
-    ]) {
+    ];
+    for (const headers of crossSite) {
       const cross = await as("platform_admin", "/v1/admin/rights/export", {
         ...ADMIN_B,
         body: { principal: subject },
