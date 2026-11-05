@@ -13,6 +13,7 @@ import { requireOrg, viewOf } from "../auth.ts";
 import { MAX_PROMPT } from "../genui.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
+import { metered, recordUsage } from "../uxv2/ledger.ts";
 import {
   type Brief,
   contractGate,
@@ -260,6 +261,12 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
       question,
     });
     if (!out.ok) return c.json({ error: out.error, reason: out.reason }, out.status);
+    const used = out.brief.disclosure.usage;
+    await recordUsage(c.env, s.tenantId, s.principal.id, now, {
+      capability: "brief",
+      tokens: used.inputTokens + used.outputTokens,
+      runs: 1,
+    });
     const saved =
       save && !out.brief.insufficientEvidence ? await persist(c.env, s, view, out.brief) : null;
     // The proof lets the save endpoint tell this brief from one a client made up (L-04).
@@ -384,14 +391,20 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
       ))
     )
       return next();
+    const meter = metered(budgetFor(c.env, s, g, s.ctx.now));
     const plan = await llmPlan({
       ai: g,
       view,
-      budget: budgetFor(c.env, s, g, s.ctx.now),
+      budget: meter.store,
       ...(prompt ? { prompt } : {}),
       ...(nodeId ? { nodeId } : {}),
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
+    });
+    await recordUsage(c.env, s.tenantId, s.principal.id, s.ctx.now, {
+      capability: "planner",
+      tokens: meter.spent(),
+      runs: 1,
     });
     return plan ? c.json(plan) : next();
   });

@@ -157,6 +157,50 @@ export const pageVisible = (cites: string[], ok: Readable): boolean =>
 export const sourcesReadable = (ids: readonly string[] | undefined, ok: Readable): boolean =>
   (ids ?? []).every((x) => ok.has(x));
 
+/** The workspaces the caller's wiki search reaches: admitted at content level, plus their own. */
+export function admittedWikis(
+  c: C,
+): { param: string; nodeId: string; scope: string; label: string }[] {
+  const s = sess(c);
+  const view = viewOf(s);
+  const out = [
+    {
+      param: "me",
+      nodeId: personalRootId(s.principal.id),
+      scope: personalScope(s.principal.id),
+      label: "My Secondary",
+    },
+  ];
+  for (const vn of view.nodes.values()) {
+    if (!WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content") continue;
+    const scope = scopeOfNode(vn);
+    if (scope) out.push({ param: vn.id, nodeId: vn.id, scope, label: vn.label });
+  }
+  return out.slice(0, MAX_FANOUT);
+}
+
+/** The page text for this caller: a line is kept only when every source it cites is readable (M-01). */
+export function filterMarkdown(
+  md: string,
+  ok: Readable,
+  canGlobal: boolean,
+): { text: string; dropped: number } {
+  let dropped = 0;
+  const out: string[] = [];
+  for (const line of md.split("\n")) {
+    if (!lineReadable(line, ok)) {
+      dropped++;
+      continue;
+    }
+    const t = canGlobal ? line : line.replace(/\[\[global:[A-Za-z0-9_-]+\]\]/g, "");
+    out.push(t.replace(/[ \t]+$/g, ""));
+  }
+  return { text: out.join("\n"), dropped };
+}
+
+export const canGlobal = (view: AdmittedView): boolean =>
+  view.nodes.get("core")?.level === "content";
+
 const idOf = (v: string | undefined): string => {
   if (!v || !PAGE_ID.test(v)) throw notFound();
   return v;
@@ -221,26 +265,6 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     return w;
   }
 
-  /** The workspaces the caller's wiki search reaches: admitted at content level, plus their own. */
-  function admittedWikis(c: C): { param: string; nodeId: string; scope: string; label: string }[] {
-    const s = sess(c);
-    const view = viewOf(s);
-    const out = [
-      {
-        param: "me",
-        nodeId: personalRootId(s.principal.id),
-        scope: personalScope(s.principal.id),
-        label: "My Secondary",
-      },
-    ];
-    for (const vn of view.nodes.values()) {
-      if (!WIKI_NODE_KINDS.has(vn.kind) || vn.level !== "content") continue;
-      const scope = scopeOfNode(vn);
-      if (scope) out.push({ param: vn.id, nodeId: vn.id, scope, label: vn.label });
-    }
-    return out.slice(0, MAX_FANOUT);
-  }
-
   // ---- citations, re-checked for this caller ----
 
   const readableSources = async (
@@ -249,26 +273,6 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     ids: string[],
   ): Promise<Readable> => (await readableMany(c, [{ w, ids }]))[0] as Readable;
 
-  /** The page text for this caller: a line is kept only when every source it cites is readable (M-01). */
-  function filterMarkdown(
-    md: string,
-    ok: Readable,
-    canGlobal: boolean,
-  ): { text: string; dropped: number } {
-    let dropped = 0;
-    const out: string[] = [];
-    for (const line of md.split("\n")) {
-      if (!lineReadable(line, ok)) {
-        dropped++;
-        continue;
-      }
-      const t = canGlobal ? line : line.replace(/\[\[global:[A-Za-z0-9_-]+\]\]/g, "");
-      out.push(t.replace(/[ \t]+$/g, ""));
-    }
-    return { text: out.join("\n"), dropped };
-  }
-
-  const canGlobal = (view: AdmittedView): boolean => view.nodes.get("core")?.level === "content";
   const citeMap = (ok: Readable, ids: string[]) =>
     Object.fromEntries(ids.filter((i) => ok.has(i)).map((i) => [i, ok.get(i)]));
 

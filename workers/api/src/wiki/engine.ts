@@ -10,6 +10,7 @@ import { estimateTokens, LIMITS } from "../ai/config.ts";
 import { excludePersonalSegments } from "../ai/segments.ts";
 import { getOrg } from "../org.ts";
 import { tenantStub } from "../stubs.ts";
+import { recordUsage } from "../uxv2/ledger.ts";
 import type { JobRow, ProposeOpts, ProposeResult } from "./store.ts";
 import {
   cleanText,
@@ -242,6 +243,12 @@ async function aiDraft(
   const spent = reply.ok ? reply.usage.inputTokens + reply.usage.outputTokens : estimate;
   await hold.settle(spent);
   await wikiHold.settle(spent);
+  // No person started this job, so the ledger counts it for the tenant only.
+  await recordUsage(ctx.env, m.tenantId, null, ctx.now, {
+    capability: "wiki_ingest",
+    tokens: spent,
+    runs: 1,
+  });
   if (!reply.ok) return { ok: false, reason: "ai_unavailable" };
   const raw = extractJson(reply.text) as {
     new_information?: unknown;
