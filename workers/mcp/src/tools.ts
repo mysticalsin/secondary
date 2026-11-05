@@ -30,6 +30,8 @@ export const TOOL_NAMES = [
   "lp_compose",
   "lp_compose_batch",
   "lp_list",
+  "get_brain_guide",
+  "coach_propose_structure",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -50,6 +52,8 @@ export const TOOL_SCOPES: Record<ToolName, readonly [Scope, ...Scope[]]> = {
   lp_compose: ["secondary.read", "secondary.contribute"],
   lp_compose_batch: ["secondary.read", "secondary.contribute"],
   lp_list: ["secondary.read"],
+  get_brain_guide: ["secondary.read"],
+  coach_propose_structure: ["secondary.read", "secondary.contribute"],
 };
 
 const MAX_TEXT = 60_000;
@@ -454,6 +458,50 @@ export function buildServer({ env, caller }: ServerDeps): McpServer {
     () =>
       run("lp_list", [], async (api) =>
         fromApi(await api.get("/v1/lp"), (d) => (Array.isArray(d) ? d.length : 0)),
+      ),
+  );
+
+  server.registerTool(
+    "get_brain_guide",
+    {
+      title: "Get a brain's guide",
+      description:
+        "How a brain is structured: its collections and required sections, tone, the typed business fields it defines (definitions only, never values), its publication mode and writing conventions. Read this before proposing pages. It never contains page text.",
+      inputSchema: z.object({ brainId: wikiWs }),
+      annotations: read,
+      scopeChallenge: challenge("get_brain_guide"),
+    },
+    ({ brainId }) =>
+      run("get_brain_guide", [brainId], async (api) =>
+        fromApi(await api.get(`/v1/brains/${q(brainId)}/guide`), len("collections")),
+      ),
+  );
+
+  const coachList = z.array(z.string().trim().min(1).max(60)).max(8).optional();
+  server.registerTool(
+    "coach_propose_structure",
+    {
+      title: "Propose a structure for a brain",
+      description:
+        "Structure Coach: from a short interview (role, accounts, recurring work) propose a collection tree for a brain the user manages. It only returns a proposal. The user applies it in the web app; this tool cannot change a brain, and it is refused for a brain the user does not manage. Ask the user the interview questions first.",
+      inputSchema: z.object({
+        brainId: wikiWs,
+        answers: z.object({
+          role: z.string().trim().max(60).optional(),
+          accounts: coachList,
+          recurring: coachList,
+          template: z.enum(["personal", "team", "account", "bid", "practice", "global"]).optional(),
+        }),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("coach_propose_structure"),
+    },
+    ({ brainId, answers }) =>
+      run("coach_propose_structure", [brainId], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(brainId)}/coach/propose`, { answers }),
+          len("collections"),
+        ),
       ),
   );
 

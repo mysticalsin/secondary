@@ -1,5 +1,6 @@
 import OAuthProvider, { type OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { createMcpHandler } from "agents/mcp";
+import { hostOf } from "../../../packages/contracts/src/agent-host.ts";
 import { writeAudit } from "./audit.ts";
 import { authorizeHandler } from "./authorize.ts";
 import {
@@ -16,6 +17,28 @@ import { buildServer } from "./tools.ts";
 
 export { signInternalRequest, verifyInternalRequest } from "./internal-auth.ts";
 
+const hostCache = new Map<string, string>();
+
+/** The host app of an OAuth client, from its registered redirect URIs. Cached; a label only. */
+async function hostFor(env: Env, clientId: string): Promise<string> {
+  const hit = hostCache.get(clientId);
+  if (hit) return hit;
+  let host = "other";
+  try {
+    const c = await env.OAUTH_PROVIDER.lookupClient(clientId);
+    if (c) host = hostOf(c.redirectUris ?? [], c.clientName ?? "");
+  } catch {}
+  if (hostCache.size > 500) hostCache.clear();
+  hostCache.set(clientId, host);
+  return host;
+}
+
+/** Tokens look like {userId}:{grantId}:{secret}. Only the grant id is used, as a label. */
+const grantOf = (token: string): string | undefined => {
+  const parts = token.split(":");
+  return parts.length === 3 && /^[A-Za-z0-9_-]{1,128}$/.test(parts[1] ?? "") ? parts[1] : undefined;
+};
+
 /** The protected resource: Streamable HTTP MCP at /mcp. OAuthProvider has already validated the token and its audience. */
 const mcpApi: ExportedHandlerWithFetch<Env> = {
   async fetch(request, env, rawCtx) {
@@ -28,6 +51,8 @@ const mcpApi: ExportedHandlerWithFetch<Env> = {
     if (!(await mcpEnabled(env))) {
       return Response.json({ error: "switched_off", switch: "mcp" }, { status: 503 });
     }
+    const grant = grantOf(ctx.auth.token);
+    const host = await hostFor(env, ctx.auth.clientId as string);
     const handler = createMcpHandler(
       () =>
         buildServer({
@@ -38,6 +63,8 @@ const mcpApi: ExportedHandlerWithFetch<Env> = {
             ...(props.persona ? { persona: props.persona } : {}),
             clientId: ctx.auth.clientId as string,
             scopes: ctx.auth.scope,
+            ...(grant ? { grantId: grant } : {}),
+            host,
           },
         }),
       // Same-origin only: no CORS, hosts reach us server to server. Browser clients such as MCP Inspector use its proxy.

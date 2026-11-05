@@ -518,7 +518,7 @@ async function dream(api: WikiApi, ctx: JobContext, m: Scope): Promise<Record<st
   const actor = serviceActor(m.scopeId);
   const node = await nodeOf(ctx.env, m);
   if (!node) return { filed: 0, skipped: "workspace not in the organisation" };
-  const drafts = dreamDrafts(await api.wikiPages());
+  const drafts = dreamDrafts((await api.wikiPages()).filter((p) => p.type !== "journal"));
   let filed = 0;
   for (const d of drafts) {
     const r = await api.wikiPropose(

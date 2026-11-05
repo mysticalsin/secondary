@@ -76,6 +76,8 @@ export async function composeDigest(c: C): Promise<Digest> {
   const newLeads: Item[] = [];
   const commitments: Item[] = [];
   const wins: Item[] = [];
+  const journals: Item[] = [];
+  const weekStart = new Date(since).toISOString().slice(0, 10);
 
   for (const [i, p] of per.entries()) {
     const ok = oks[i] as Readable;
@@ -85,6 +87,18 @@ export async function composeDigest(c: C): Promise<Digest> {
     const link = (pageId: string): Pick<Item, "pageId" | "workspaceId"> =>
       visible.has(pageId) ? { pageId, workspaceId: p.t.param } : {};
     const vn = view.nodes.get(p.t.nodeId);
+
+    // The daily journal of each brain (counts and links, built from its own log): this week's days.
+    for (const pg of p.pages) {
+      const day = /^journal-(\d{4}-\d{2}-\d{2})$/.exec(pg.id)?.[1];
+      if (pg.type === "journal" && day && day >= weekStart && visible.has(pg.id))
+        journals.push({
+          label: `${p.t.label}, ${day}`,
+          pageId: pg.id,
+          workspaceId: p.t.param,
+          meta: "Daily journal",
+        });
+    }
 
     // Account status. These facts are only in the view at content level, which the target guarantees.
     if (vn?.kind === "account") {
@@ -142,6 +156,15 @@ export async function composeDigest(c: C): Promise<Digest> {
     { title: "Wins", items: cap(wins) },
     // Only when there is a published page: a digest without one is the digest it always was.
     ...(pages.length ? [{ title: "Landing pages", items: pages }] : []),
+    // Likewise the journal: only when a brain wrote one this week.
+    ...(journals.length
+      ? [
+          {
+            title: "Journal",
+            items: [...journals].sort((a, b) => b.label.localeCompare(a.label)).slice(0, MAX_ITEMS),
+          },
+        ]
+      : []),
   ];
   return {
     weekOf: mondayOf(now),

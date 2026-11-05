@@ -6,10 +6,18 @@
 // wiki is read from that workspace only; and every citation is re-checked for the caller before it
 // leaves (a source the caller cannot read is dropped, with the claims that rested only on it).
 
-import { type AdmittedView, canDoInView, personalRootId, type ViewNode } from "@secondary/policy";
+import {
+  type AdmittedView,
+  canDoInView,
+  personalRootId,
+  roleAllows,
+  type ViewNode,
+} from "@secondary/policy";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
+import { fieldsFor } from "../brains/fields.ts";
+import { directPublish } from "../brains/open.ts";
 import { checkSourceAccess } from "../connector.ts";
 import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";
@@ -261,6 +269,13 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
               .reason;
       return forbidden(c, reason);
     }
+    // A stored brain role only narrows what the policy allows (API-CONTRACT "v3 brains").
+    if (need !== "read" && !w.personal) {
+      const role = await w.stub.brainRoleOf(await humanIdsOf(c.env, s));
+      const action = need === "decide" ? "review" : need === "edit" ? "edit" : "contribute";
+      if (!roleAllows(role, action))
+        return forbidden(c, "Your role in this brain does not allow this");
+    }
     await w.stub.wikiTouch(s.tenantId, w.scope, s.ctx.now);
     return w;
   }
@@ -388,6 +403,8 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       throw bad("invalid_revision");
     const page = await w.stub.wikiPage(idOf(c.req.param("pid")), revision);
     if (!page || (page.status !== "published" && revision === undefined)) throw notFound();
+    // A hidden version is for editors only (API-CONTRACT "Hidden versions").
+    if (page.hidden && !w.can.edit) throw notFound();
     const ids = citationsOf(page.markdown);
     const ok = await readableSources(c, w, ids);
     // A page with no readable source is not here for this caller.
@@ -420,6 +437,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       links,
       uncited: claimLines(linkText).filter((x) => citationsOf(x.text).length === 0).length,
       updatedAt: new Date(page.updatedAt).toISOString(),
+      fields: await fieldsFor(c, w, page),
     });
   });
 
@@ -454,16 +472,28 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const ok = await readableSources(c, w, ids);
     if (!pageVisible(citationsOf(cur.markdown), ok)) throw notFound();
     if (next !== null) c.header("X-Next-Before", String(next));
+    // Hidden versions are for editors only. For anyone else a hidden revision shows no text, and the
+    // revision after it shows no removed line (those lines are the hidden text).
+    const editor = w.can.edit;
     return c.json(
-      revisions.map((x, i) => ({
-        revision: x.revision,
-        // A title is a claim of what the revision cites.
-        title: pageVisible(citationsOf(texts[i] as string), ok) ? x.title : RESTRICTED,
-        actor: x.actor,
-        at: new Date(x.at).toISOString(),
-        proposalId: x.proposalId,
-        diff: x.diff.map((d) => ({ type: d.type, text: maskLine(d.text, ok) })),
-      })),
+      revisions.map((x, i) =>
+        x.hidden && !editor
+          ? { revision: x.revision, hidden: true, at: new Date(x.at).toISOString(), diff: [] }
+          : {
+              revision: x.revision,
+              // A title is a claim of what the revision cites.
+              title: pageVisible(citationsOf(texts[i] as string), ok) ? x.title : RESTRICTED,
+              actor: x.actor,
+              at: new Date(x.at).toISOString(),
+              proposalId: x.proposalId,
+              hidden: x.hidden,
+              diff: x.diff.flatMap((d) =>
+                x.prevHidden && !editor && d.type === "del"
+                  ? []
+                  : [{ type: d.type, text: maskLine(d.text, ok) }],
+              ),
+            },
+      ),
     );
   });
 
@@ -847,11 +877,18 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       } satisfies Omit<Proposal, "v" | "pages"> & { pages: PageDraft[] },
       s.principal.id,
       s.ctx.now,
-      { plane: w.plane, readable: [...mine.keys()] },
+      {
+        plane: w.plane,
+        readable: [...mine.keys()],
+        ...((await directPublish(c, w)) ? { publishDirect: true } : {}),
+      },
     );
     if (!res.ok) return failResponse(c, res);
     if (!res.created) return c.json({ error: "nothing_to_propose", reason: res.reason }, 422);
-    return c.json({ ok: true, proposalId: res.id, status: "candidate" }, 201);
+    return c.json(
+      { ok: true, proposalId: res.id, status: res.autoAccepted ? "published" : "candidate" },
+      201,
+    );
   });
 
   // A meeting record: structured decisions, commitments and risks. It is a raw source, and it queues an ingest.

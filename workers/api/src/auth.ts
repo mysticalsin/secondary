@@ -131,6 +131,9 @@ const INTERNAL_ROUTES: readonly { method: string; path: RegExp; scope: string }[
   { method: "GET", path: /^\/v1\/wiki\/[^/]+\/search$/, scope: READ },
   { method: "GET", path: /^\/v1\/wiki\/[^/]+\/pages\/[^/]+$/, scope: READ },
   { method: "POST", path: /^\/v1\/wiki\/[^/]+\/propose$/, scope: "secondary.contribute" },
+  // v3 brains: the guide (structure, never content) and a Structure Coach proposal. Nothing applies.
+  { method: "GET", path: /^\/v1\/brains\/[^/]+\/guide$/, scope: READ },
+  { method: "POST", path: /^\/v1\/brains\/[^/]+\/coach\/propose$/, scope: "secondary.contribute" },
   // Landing Page Studio: MCP composes drafts and lists pages. It has no route to submit, approve or publish.
   { method: "GET", path: /^\/v1\/lp$/, scope: READ },
   { method: "POST", path: /^\/v1\/lp\/compose$/, scope: "secondary.contribute" },
@@ -181,6 +184,8 @@ export const authenticate =
         clientId: r.principal.client_id,
         tool: r.principal.tool,
         scope: r.principal.scope,
+        ...(r.principal.grant_id ? { grantId: r.principal.grant_id } : {}),
+        ...(r.principal.host ? { host: r.principal.host } : {}),
       };
       internalPersona = r.principal.persona;
       const verdict = internalRouteVerdict(
@@ -249,6 +254,20 @@ export const authenticate =
     if (s.config && c.env.ENVIRONMENT === "dev") await ensureWikiSeed(c.env, tenantId, now);
     // Deprovisioned in the directory (SCIM): no identity source can sign this principal in.
     if (!s.active) return c.json({ error: "unauthorized" }, 401);
+    // A connection the person revoked is refused here, whatever the token still says (the MCP worker
+    // also deletes the grant when it sees this answer).
+    if (internal?.grantId) {
+      const seen = await stub.agentSeen({
+        principalId: s.principal.id,
+        grantId: internal.grantId,
+        clientId: internal.clientId,
+        host: internal.host ?? "other",
+        scopes: internal.scope,
+        tool: internal.tool,
+        now,
+      });
+      if (seen.revoked) return c.json({ error: "connection_revoked" }, 403);
+    }
     if (s.limited) {
       c.header("Retry-After", String(s.retryAfter));
       return c.json({ error: "rate_limited" }, 429);

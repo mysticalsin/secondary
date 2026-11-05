@@ -14,6 +14,20 @@ Merged `lp/api` (earlier) and `lp/web` (d92ecd6) `--no-ff`. Worktree `.worktrees
 
 Updated: 2026-11-05. By: Claude (LP integration).
 
+## v3 brains backend, WS-A (2026-11-05, Claude Opus, branch `v3/api`, not merged, nothing deployed)
+
+Design: `docs/DESIGN-BRAINS-V3.md`; shapes: `docs/API-CONTRACT.md` "v3 brains" (first commit 4a1eb8f, amended with what the build settled).
+
+- policy: `packages/policy/src/brains.ts` (pure): brain type of a node, role ladder (reader to owner) mapped to policy actions, `roleAllows` (a stored role only narrows), bounds for publication mode and Everyone at Mantu. Engine untouched.
+- api `workers/api/src/brains/*` (one mount line in `routes.ts`): `routes.ts` directory, home, template, access, guide, coach; `data.ts` fields, hidden versions, import, journal; `agents.ts` connections and pilot cohorts; `store.ts` `BrainBase` (between `WikiBase` and `Workspace`, tables in `WIKI_TABLES`); `importers.ts`, `unzip.ts`, `sanitize.ts`, `fields.ts`, `model.ts` (templates, health, field schema).
+- Touched elsewhere, small: `wiki/routes.ts` (stored-role cap in `open()`, `publishDirect` on propose, hidden-version rules on history and `?rev=`, `fields` on the page read), `wiki/store.ts` (`publishDirect`, hidden columns in history, journal left out of lint), `wiki/engine.ts` (dreaming skips journals), `uxv2/questions.ts` (filters, `POST /questions/batch`, one `resolveQuestion` for both), `uxv2/export.ts` (`properties`, none fields only), `uxv2/digest.ts` (Journal section), `security.ts` (the import route takes zip or JSON up to 5 MB, everything else keeps 32 KB JSON), `tenant-policy.ts` (`agent_grants`, `pilot_cohorts`), `auth.ts` (records and enforces agent grants, MCP allowlist gets guide and coach propose), `internal-auth.ts` (optional `grant_id`, `host`; the two copies stay identical).
+- mcp: `get_brain_guide`, `coach_propose_structure` (no tool applies a structure); every call carries the grant id and host; on `connection_revoked` the worker deletes the OAuth grant, so a revoked token is dead at both ends. `packages/contracts/src/agent-host.ts` labels the host.
+- Rules worth knowing: Personal Brain publication default stays `review` (direct only when set); a stored brain role never widens; restricted brains: membership adds use the governance change (two-person), role changes use `requestSecond`; personal-sensitivity fields hold values only in a Personal Brain; confidential fields show to editors and never to an agent session; export and AI see `none` fields only; a stored `direct` is ignored the moment a brain stops allowing it; imports never publish in a shared brain.
+- Open: Everyone at Mantu is stored and bounded but does not widen the admitted view (needs an engine change); a pending membership on a restricted brain keeps its stored role until the change applies (role caps nothing while not admitted); pilot invitations are matched by address, so erasure removes them only for people the directory knows; agent grants of a person with no directory row cannot be erased by address; no web yet (WS-B).
+- Gates: build, typecheck, `biome check .` clean (29 old CSS warnings). Tests: fixtures 23, contracts 91, policy 63, web 62, audit 10, connector 53, ops 17, pages 13, mcp 95, api 728 (1155 in all). Not run: Playwright (no web changes here).
+
+Updated: 2026-11-05. By: Claude (Opus, v3 WS-A).
+
 ## Landing Page Studio backend (2026-11-05, Claude, branch `lp/api`, not merged, nothing deployed)
 
 Design: `docs/DESIGN-LP-STUDIO.md`; contract: `docs/API-CONTRACT.md` "Landing Page Studio" (including `LandingRenderData`).

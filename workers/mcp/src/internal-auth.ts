@@ -52,6 +52,10 @@ export interface InternalPrincipal {
   scope: string[];
   /** MCP tool that caused the call, for the API's audit receipt. */
   tool: string;
+  /** The OAuth grant behind the token, so a connection can be listed and revoked. Optional for older callers. */
+  grant_id?: string;
+  /** Which host app the client is (claude_ai, chatgpt, dust, ...). A label, never a permission. */
+  host?: string;
 }
 
 export type InternalAuthFailure =
@@ -203,6 +207,8 @@ function isPrincipal(p: unknown): p is InternalPrincipal {
     str(o.client_id) &&
     str(o.tool) &&
     (o.persona === undefined || str(o.persona)) &&
+    (o.grant_id === undefined || str(o.grant_id)) &&
+    (o.host === undefined || str(o.host)) &&
     Array.isArray(o.scope) &&
     o.scope.every((s) => typeof s === "string")
   );

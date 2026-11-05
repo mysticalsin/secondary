@@ -6,6 +6,7 @@
 
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
+import { exportProperties } from "../brains/fields.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
 import { audit, sess } from "../ux/util.ts";
@@ -65,11 +66,13 @@ export function exportRoutes(): Hono<AppEnv> {
 
     const view = viewOf(s);
     const stub = stubOf(c, t.scope);
-    const [pages, facts, schema, meta] = await Promise.all([
+    const [pages, facts, schema, meta, brain, fieldValues] = await Promise.all([
       stub.wikiPages(),
       stub.wikiFacts({ validOnly: true, limit: 2_000 }),
       stub.wikiSchema(),
       stub.wikiMeta(),
+      stub.brainConfig(),
+      stub.brainAllFieldValues(),
     ]);
     const ok = (
       await readableMany(c, [
@@ -124,6 +127,8 @@ export function exportRoutes(): Hono<AppEnv> {
       );
       const description = oneLine(summaryOf(x.text));
       const path = `${x.folder}/${x.p.id}.md`;
+      // The export filter: only fields whose sensitivity is none leave the brain.
+      const properties = exportProperties(brain.fields, fieldValues, x.p);
       files.push({
         path,
         content:
@@ -138,6 +143,7 @@ export function exportRoutes(): Hono<AppEnv> {
             status: x.p.status,
             origin: x.p.origin,
             ...(x.p.origin === "seed" ? { synthetic: "Synthetic seed (dev data)" } : {}),
+            ...(Object.keys(properties).length ? { properties } : {}),
             stale_after: new Date(x.p.updatedAt + freshness).toISOString().slice(0, 10),
           }) + body,
       });

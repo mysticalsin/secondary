@@ -30,6 +30,8 @@ const CONTRACT_TOOLS = [
   "lp_compose",
   "lp_compose_batch",
   "lp_list",
+  "get_brain_guide",
+  "coach_propose_structure",
 ];
 
 beforeEach(async () => {
