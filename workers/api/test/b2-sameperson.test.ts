@@ -2,7 +2,7 @@
 // compare the stable identity, so one human who switches persona cannot satisfy a two-person rule.
 
 import { beforeAll, describe, expect, it } from "vitest";
-import { ALPHA, as, call, json, type Loose, seed, tenantDo } from "./helpers.ts";
+import { ALPHA, as, call, json, type Loose, seed, seenOf, tenantDo } from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -52,12 +52,14 @@ describe("N-01: persona switching by one human", () => {
     const mine = await asReviewer(HEAD_BID, `proposals/${id}/decide`, {
       decision: "approve",
       revisionHash: v.revisionHash,
+      seenChanges: seenOf(v),
     });
     expect(mine.status).toBe(403);
     expect((await json(mine)).error).toBe("self_approval");
     const other = await asReviewer("someone.else@example.invalid", `proposals/${id}/decide`, {
       decision: "approve",
       revisionHash: v.revisionHash,
+      seenChanges: seenOf(v),
     });
     expect(other.status, await other.clone().text()).toBe(200);
   });

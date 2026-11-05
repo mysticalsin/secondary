@@ -6,7 +6,18 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { runWikiJobs, type WikiApi } from "../src/wiki/engine.ts";
 import { generalise, lineDiff, residualIdentifiers } from "../src/wiki/text.ts";
 import { aiCall, KEY, stubModel } from "./ai-helpers.ts";
-import { ALPHA, as, call, json, type Loose, rawEnv, seed, testEnv, wsOf } from "./helpers.ts";
+import {
+  ALPHA,
+  as,
+  call,
+  json,
+  type Loose,
+  rawEnv,
+  seed,
+  seenOf,
+  testEnv,
+  wsOf,
+} from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -43,6 +54,7 @@ async function approveAs(email: string, id: string, ws = ACC, o: Loose = {}) {
   return lead(email, `${ws}/proposals/${id}/decide`, {
     decision: "approve",
     revisionHash: v.revisionHash,
+    seenChanges: seenOf(v),
   });
 }
 async function propose(email: string, title: string, markdown: string, o: Loose = {}) {
@@ -109,6 +121,7 @@ describe("H-01: an editor of a proposal is its author; approval binds the exact 
     const stale = await lead(C, `${ACC}/proposals/${id}/decide`, {
       decision: "approve",
       revisionHash: before.revisionHash,
+      seenChanges: seenOf(before),
     });
     expect(stale.status).toBe(409);
     const after = await view(C, id);
@@ -363,13 +376,13 @@ describe("M-02: retention and rights reach the derived wiki", () => {
     expect(r.status).toBe(200);
     const queued = (await json<Loose[]>(await get("consultant", "me/proposals")))[0];
     expect(queued).toBeTruthy();
+    const queuedView = await json(await get("consultant", `me/proposals/${queued.id}`));
     expect(
       (
         await post("consultant", `me/proposals/${queued.id}/decide`, {
           decision: "approve",
-          revisionHash: (
-            await json(await get("consultant", `me/proposals/${queued.id}`))
-          ).revisionHash,
+          revisionHash: queuedView.revisionHash,
+          seenChanges: seenOf(queuedView),
         })
       ).status,
     ).toBe(200);

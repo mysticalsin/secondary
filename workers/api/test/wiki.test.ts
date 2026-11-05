@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import hostile1 from "../../../packages/fixtures/sample/docs/acct-acme/general/doc-0004.md?raw";
 import hostile2 from "../../../packages/fixtures/sample/docs/acct-borealis/contacts/doc-0154.md?raw";
 import { aiCall, KEY, stubModel } from "./ai-helpers.ts";
-import { ALPHA, as, BETA, json, type Loose, seed, withBeta, wsOf } from "./helpers.ts";
+import { ALPHA, as, BETA, json, type Loose, seed, seenOf, withBeta, wsOf } from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -46,7 +46,7 @@ const decide = async (
   return post(
     persona,
     `${ws}/proposals/${id}/decide`,
-    { decision, revisionHash: v.revisionHash },
+    { decision, revisionHash: v.revisionHash, seenChanges: seenOf(v) },
     opts,
   );
 };
@@ -106,7 +106,7 @@ describe("ingest: a source becomes a reviewable, cited diff in that workspace on
 
   it("approving publishes the pages with resolvable citations, and the log records it", async () => {
     const r = await decide("acme_lead", ACC, proposalId);
-    expect(r.status).toBe(200);
+    expect(r.status, await r.clone().text()).toBe(200);
     expect((await json(r)).applied.pages).toContain("decision-log");
     const page = await json(await get("acme_lead", `${ACC}/pages/decision-log`));
     expect(page.markdown).toContain("Adopt fixed fee for phase 2");

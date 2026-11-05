@@ -12,7 +12,18 @@ import {
 } from "../src/internal-auth.ts";
 import { runWikiJobs, type WikiApi } from "../src/wiki/engine.ts";
 import { aiCall, KEY, stubModel } from "./ai-helpers.ts";
-import { ALPHA, as, call, json, type Loose, rawEnv, seed, testEnv, wsOf } from "./helpers.ts";
+import {
+  ALPHA,
+  as,
+  call,
+  json,
+  type Loose,
+  rawEnv,
+  seed,
+  seenOf,
+  testEnv,
+  wsOf,
+} from "./helpers.ts";
 
 beforeAll(async () => {
   await seed();
@@ -205,7 +216,7 @@ describe("Promote to Global: the requester never counts as an approver", () => {
         await post(
           "acme_lead",
           `${ACC}/proposals/${prop.proposalId}/decide`,
-          { decision: "approve", revisionHash: read.revisionHash },
+          { decision: "approve", revisionHash: read.revisionHash, seenChanges: seenOf(read) },
           other,
         )
       ).status,

@@ -38,6 +38,7 @@ import {
   text,
 } from "../ux/util.ts";
 import type { UserValidated } from "../workspace.ts";
+import { numberChanges, parseSeen, seenProblem } from "./changes.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import { wikiNotify } from "./hooks.ts";
 import { mayDecide } from "./review.ts";
@@ -705,18 +706,27 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const whole = sourcesReadable(v.titleSources, ok);
     const hide = (text: string): string => (whole ? text : RESTRICTED);
     const { titleSources: _t, ...rest } = v;
+    const numbered = numberChanges(v.pages.map((p) => p.diff));
     return {
       ...rest,
+      changeCount: numbered.count,
       title: hide(v.title),
       rationale: hide(v.rationale),
       detail: v.detail ? hide(v.detail) : "",
       createdAt: new Date(v.createdAt).toISOString(),
-      pages: v.pages.map((p) => ({
+      pages: v.pages.map((p, pi) => ({
         ...p,
         title: pageVisible(citationsOf(p.after), ok) ? p.title : RESTRICTED,
         before: p.before === null ? null : maskText(p.before, ok),
         after: maskText(p.after, ok),
-        diff: p.diff.map((d) => ({ type: d.type, text: maskLine(d.text, ok) })),
+        diff: p.diff.map((d, li) => {
+          const change = numbered.index[pi]?.[li] ?? null;
+          return {
+            type: d.type,
+            text: maskLine(d.text, ok),
+            ...(change === null ? {} : { change }),
+          };
+        }),
       })),
       facts: v.facts.map((f) => {
         const readable = !f.sourceIds.length || sourcesReadable(f.sourceIds, ok);
@@ -788,6 +798,15 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       (typeof b.revisionHash !== "string" || b.revisionHash.length > 128)
     )
       throw bad("invalid_revision_hash");
+    if (b.decision === "approve" && typeof b.revisionHash === "string") {
+      // Every change must have been seen, on the current revision (API-CONTRACT v4).
+      const seen = parseSeen(b.seenChanges);
+      if (seen === null) throw bad("invalid_seen_changes");
+      const now = await w.stub.wikiProposalView(id);
+      if (!now) throw notFound();
+      const problem = now.status === "candidate" ? seenProblem(now, seen) : null;
+      if (problem) return c.json({ error: "changes_not_seen", ...problem }, 409);
+    }
     if (
       !(await audit(c, {
         action: `wiki.${b.decision}`,

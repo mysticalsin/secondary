@@ -172,3 +172,15 @@ export const PERSONAS = [
   "platform_admin",
   "auditor",
 ] as const;
+
+/**
+ * The `seenChanges` a reviewer who looked at every change sends. Takes a proposal view (the wiki
+ * route) or a question (`detail`), both of which carry `revisionHash` and `changeCount`.
+ */
+export const seenOf = (v: Loose): { revisionHash: string; indexes: number[] } => {
+  const d = v?.detail && typeof v.detail === "object" ? v.detail : v;
+  return {
+    revisionHash: d?.revisionHash as string,
+    indexes: Array.from({ length: (d?.changeCount as number | undefined) ?? 0 }, (_, i) => i),
+  };
+};

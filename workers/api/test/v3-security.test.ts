@@ -3,7 +3,7 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { idOf, put } from "./brains-helpers.ts";
-import { ALPHA, as, json, type Loose, seed, wsOf } from "./helpers.ts";
+import { ALPHA, as, json, type Loose, seed, seenOf, wsOf } from "./helpers.ts";
 
 const AUTHOR = "sec.author@example.invalid";
 const STEW = "sec.steward@example.invalid";
@@ -40,14 +40,23 @@ describe("H-2: a stored brain role narrows the Questions routes and hidden versi
     // Single decision: refused.
     const single = await as("head_bid", `/v1/questions/${encodeURIComponent(one.id)}`, {
       email: STEW,
-      body: { action: "approve", revisionHash: one.detail.revisionHash },
+      body: { action: "approve", revisionHash: one.detail.revisionHash, seenChanges: seenOf(one) },
     });
     expect(single.status).toBe(403);
     // Batch: refused for the item, nothing applied.
     const batch = await json<Loose>(
       await as("head_bid", "/v1/questions/batch", {
         email: STEW,
-        body: { items: [{ id: two.id, action: "approve", revisionHash: two.detail.revisionHash }] },
+        body: {
+          items: [
+            {
+              id: two.id,
+              action: "approve",
+              revisionHash: two.detail.revisionHash,
+              seenChanges: seenOf(two),
+            },
+          ],
+        },
       }),
     );
     expect(batch.ok).toBe(0);
@@ -58,7 +67,7 @@ describe("H-2: a stored brain role narrows the Questions routes and hidden versi
     await ws.brainMemberRemove(id, "test", Date.now());
     const back = await as("head_bid", `/v1/questions/${encodeURIComponent(one.id)}`, {
       email: STEW,
-      body: { action: "approve", revisionHash: one.detail.revisionHash },
+      body: { action: "approve", revisionHash: one.detail.revisionHash, seenChanges: seenOf(one) },
     });
     expect(back.status).toBe(200);
   });

@@ -3,7 +3,7 @@
 
 import { beforeAll, describe, expect, it } from "vitest";
 import { runWikiJobs, type WikiApi } from "../src/wiki/engine.ts";
-import { ALPHA, as, json, type Loose, seed, testEnv, wsOf } from "./helpers.ts";
+import { ALPHA, as, json, type Loose, seed, seenOf, testEnv, wsOf } from "./helpers.ts";
 import { meId, plantPage } from "./uxv2-helpers.ts";
 
 const ACC = "a_acme";
@@ -131,7 +131,7 @@ describe("wiki review questions", () => {
     const r = await resolve(
       "acme_lead",
       id,
-      { action: "approve", revisionHash: q?.detail.revisionHash },
+      { action: "approve", revisionHash: q?.detail.revisionHash, seenChanges: seenOf(q) },
       A,
     );
     expect(r.status).toBe(403);
@@ -153,7 +153,7 @@ describe("wiki review questions", () => {
     const ok = await resolve(
       "acme_lead",
       id,
-      { action: "approve", revisionHash: q?.detail.revisionHash },
+      { action: "approve", revisionHash: q?.detail.revisionHash, seenChanges: seenOf(q) },
       B,
     );
     expect(ok.status).toBe(200);
@@ -207,6 +207,7 @@ describe("contradictions", () => {
         await resolve("ceo", q.id, {
           action: "prefer_incoming",
           revisionHash: q.detail.revisionHash,
+          seenChanges: seenOf(q),
         })
       ).status,
     ).toBe(403);
@@ -215,6 +216,7 @@ describe("contradictions", () => {
         await resolve("consultant", q.id, {
           action: "prefer_incoming",
           revisionHash: q.detail.revisionHash,
+          seenChanges: seenOf(q),
         })
       ).status,
     ).toBe(404);
@@ -231,7 +233,7 @@ describe("contradictions", () => {
     const ok = await resolve(
       "acme_lead",
       q.id,
-      { action: "prefer_incoming", revisionHash: q.detail.revisionHash },
+      { action: "prefer_incoming", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
       B,
     );
     expect(ok.status).toBe(200);
@@ -265,7 +267,7 @@ describe("contradictions", () => {
     const ok = await resolve(
       "acme_lead",
       q.id,
-      { action: "keep_current", revisionHash: q.detail.revisionHash },
+      { action: "keep_current", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
       B,
     );
     expect(ok.status, await ok.clone().text()).toBe(200);
@@ -370,12 +372,22 @@ describe("review and release questions", () => {
     // Not the author, not someone without the right.
     expect((await list("ceo")).map((x) => x.id)).not.toContain(cid);
     expect(
-      (await resolve("ceo", cid, { action: "approve", revisionHash: q.detail.revisionHash }))
-        .status,
+      (
+        await resolve("ceo", cid, {
+          action: "approve",
+          revisionHash: q.detail.revisionHash,
+          seenChanges: seenOf(q),
+        })
+      ).status,
     ).toBe(403);
     expect(
-      (await resolve("consultant", cid, { action: "approve", revisionHash: q.detail.revisionHash }))
-        .status,
+      (
+        await resolve("consultant", cid, {
+          action: "approve",
+          revisionHash: q.detail.revisionHash,
+          seenChanges: seenOf(q),
+        })
+      ).status,
     ).toBe(403);
     expect((await resolve("reviewer", cid, { action: "approve" }, R1)).status).toBe(400);
     expect(
@@ -386,7 +398,7 @@ describe("review and release questions", () => {
       await resolve(
         "reviewer",
         cid,
-        { action: "approve", revisionHash: q.detail.revisionHash },
+        { action: "approve", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
         R1,
       ),
     );
@@ -395,7 +407,7 @@ describe("review and release questions", () => {
     const again = await resolve(
       "reviewer",
       cid,
-      { action: "approve", revisionHash: q.detail.revisionHash },
+      { action: "approve", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
       R1,
     );
     expect(again.status).toBe(409);
@@ -403,7 +415,7 @@ describe("review and release questions", () => {
       await resolve(
         "reviewer",
         cid,
-        { action: "approve", revisionHash: q.detail.revisionHash },
+        { action: "approve", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
         R2,
       ),
     );
@@ -418,7 +430,12 @@ describe("review and release questions", () => {
     const r = await resolve(
       "reviewer",
       cid,
-      { action: "request_changes", revisionHash: q.detail.revisionHash, note: "Add the source" },
+      {
+        action: "request_changes",
+        revisionHash: q.detail.revisionHash,
+        seenChanges: seenOf(q),
+        note: "Add the source",
+      },
       R1,
     );
     expect(r.status).toBe(200);
@@ -435,14 +452,14 @@ describe("review and release questions", () => {
     const bad = await resolve(
       "acme_lead",
       cid,
-      { action: "approve", revisionHash: q.detail.revisionHash },
+      { action: "approve", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
       A,
     );
     expect(bad.status).toBe(403);
     const ok = await resolve(
       "acme_lead",
       cid,
-      { action: "accept", revisionHash: q.detail.revisionHash },
+      { action: "accept", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
       A,
     );
     expect(ok.status).toBe(200);

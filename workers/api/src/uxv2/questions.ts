@@ -17,9 +17,17 @@ import type { SensitivityFlag } from "../sensitivity.ts";
 import type { AppEnv } from "../types.ts";
 import { notifyApproved, notifyChangesRequested } from "../ux/notify.ts";
 import { audit, bad, type C, forbidden, notFound, readObject, sess } from "../ux/util.ts";
+import { numberChanges, parseSeen, seenProblem } from "../wiki/changes.ts";
 import { mayDecide, proposalSources, wikiQueueRow } from "../wiki/review.ts";
-import { RESTRICTED, type Readable, readableMany, sourcesReadable } from "../wiki/routes.ts";
-import { sha256Hex, titleOfSubject } from "../wiki/text.ts";
+import {
+  lineReadable,
+  pageVisible,
+  RESTRICTED,
+  type Readable,
+  readableMany,
+  sourcesReadable,
+} from "../wiki/routes.ts";
+import { citationsOf, sha256Hex, titleOfSubject } from "../wiki/text.ts";
 import { isWikiKind } from "../wiki/types.ts";
 import type { ItemRecord } from "../workspace.ts";
 import { ASK_KIND, writeIngest } from "./routines.ts";
@@ -183,6 +191,7 @@ export async function questionsOf(c: C): Promise<Question[]> {
         workspaceId: g.personal ? "me" : (r.targetNode ?? ""),
         createdAt: iso(r.createdAt),
       };
+      const numbered = numberChanges(pv.pages.map((p) => p.diff));
       const common = {
         revisionHash: pv.revisionHash,
         approvals: r.approvals,
@@ -207,7 +216,24 @@ export async function questionsOf(c: C): Promise<Question[]> {
         title: row.title,
         summary: whole ? short(pv.detail || pv.rationale) : RESTRICTED,
         options: [...(kind === "lint" ? OPTIONS.lint : OPTIONS.wiki)],
-        detail: { ...common, changes: row.diff.map((d) => d.text).slice(0, 20) },
+        detail: {
+          ...common,
+          changes: row.diff.map((d) => d.text).slice(0, 20),
+          // The page diff, every change numbered, so the reviewer can mark each one as seen.
+          changeCount: numbered.count,
+          pages: pv.pages.map((p, pi) => ({
+            pageId: p.pageId,
+            title: pageVisible(citationsOf(p.after), ok) ? p.title : RESTRICTED,
+            diff: p.diff.map((d, li) => {
+              const change = numbered.index[pi]?.[li] ?? null;
+              return {
+                type: d.type,
+                text: lineReadable(d.text, ok) ? d.text : `- ${RESTRICTED}`,
+                ...(change === null ? {} : { change }),
+              };
+            }),
+          })),
+        },
       });
     }
   }
@@ -308,6 +334,8 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
   if (b.note !== undefined && (typeof b.note !== "string" || b.note.length > NOTE_MAX))
     throw bad("invalid_note");
   const revisionHash = b.revisionHash as string | undefined;
+  const seen = parseSeen(b.seenChanges);
+  if (seen === null) throw bad("invalid_seen_changes");
   const note = typeof b.note === "string" ? b.note.trim() : "";
   const view = viewOf(s);
 
@@ -397,6 +425,23 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
       ...(revisionHash ? { revisionHash } : {}),
       sameHuman,
     };
+    if (approving && item.status === "candidate") {
+      // Every change must have been seen, on the current revision (API-CONTRACT v4).
+      const now = await stub.wikiProposalView(id);
+      if (!now) throw notFound();
+      const problem = seenProblem(now, seen);
+      if (problem) {
+        await audit(c, {
+          action: `wiki.${action}`,
+          nodeId: id,
+          scopeId: scope,
+          revision: null,
+          decision: "deny",
+          reason: "changes_not_seen",
+        });
+        return c.json({ error: "changes_not_seen", ...problem }, 409);
+      }
+    }
 
     if (action === "keep_current") {
       // Keeping the current statement means ending the incoming one, as a proposal of its own that
@@ -607,6 +652,7 @@ export function questionRoutes(): Hono<AppEnv> {
         const res = await resolveQuestion(c, id, {
           action: it.action,
           ...(it.revisionHash !== undefined ? { revisionHash: it.revisionHash } : {}),
+          ...(it.seenChanges !== undefined ? { seenChanges: it.seenChanges } : {}),
           ...(it.note !== undefined ? { note: it.note } : {}),
         });
         const out = (await res.json().catch(() => ({}))) as { error?: string; reason?: string };

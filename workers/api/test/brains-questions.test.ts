@@ -2,7 +2,7 @@
 // single-item path (never your own, revisionHash, two people counted per item).
 
 import { beforeAll, describe, expect, it } from "vitest";
-import { as, json, type Loose, seed } from "./helpers.ts";
+import { as, json, type Loose, seed, seenOf } from "./helpers.ts";
 
 const AUTHOR = "qb.author@example.invalid";
 const OTHER = "qb.other@example.invalid";
@@ -63,7 +63,7 @@ describe("batch review", () => {
     const b = find(qs, "Batch beta");
     const c = find(qs, "Batch gamma");
     const res = await batch("head_bid", OTHER, [
-      { id: a.id, action: "approve", revisionHash: a.detail.revisionHash },
+      { id: a.id, action: "approve", revisionHash: a.detail.revisionHash, seenChanges: seenOf(a) },
       { id: b.id, action: "approve" }, // no revisionHash
       { id: c.id, action: "approve", revisionHash: "stale-hash" },
       { id: "cand:c_bid:00000000", action: "approve", revisionHash: "x" },
@@ -94,7 +94,12 @@ describe("batch review", () => {
     const res = await batch(
       "head_bid",
       AUTHOR,
-      own.map((x) => ({ id: x.id, action: "approve", revisionHash: x.detail.revisionHash })),
+      own.map((x) => ({
+        id: x.id,
+        action: "approve",
+        revisionHash: x.detail.revisionHash,
+        seenChanges: seenOf(x),
+      })),
     );
     const out = await json<Loose>(res);
     expect(out.ok).toBe(0);
@@ -110,7 +115,12 @@ describe("batch review", () => {
     const two = find(qs, "Company method two");
     expect(one.detail.required).toBe(2);
     const items = (q: Loose[]) =>
-      q.map((x) => ({ id: x.id, action: "approve", revisionHash: x.detail.revisionHash }));
+      q.map((x) => ({
+        id: x.id,
+        action: "approve",
+        revisionHash: x.detail.revisionHash,
+        seenChanges: seenOf(x),
+      }));
 
     const first = await json<Loose>(await batch("reviewer", R1, items([one, two])));
     expect(first.ok).toBe(2);
