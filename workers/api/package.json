@@ -1,0 +1,21 @@
+{
+  "name": "@secondary/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "types": "wrangler types",
+    "typecheck": "wrangler types && tsc --noEmit -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "hono": "4.13.16"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.5.1",
+    "@secondary/web": "workspace:*",
+    "wrangler": "4.153.0"
+  }
+}

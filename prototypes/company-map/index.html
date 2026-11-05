@@ -1,0 +1,1272 @@
+<title>Company Brain Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#10121a; --bg-raise:#171a25; --panel:#151822; --panel-2:#1c2030;
+  --line:#2a3044; --line-soft:#1f2434; --text:#ece8df; --text-2:#c9c6bf; --muted:#9aa1b5; --faint:#6b7390;
+  --accent:#f2d9a0; --accent-ink:#1a1608; --focus:#9fd0ff; --seg-on:#ece7da; --seg-on-ink:#14161f;
+  --ok:#8fd0a8; --warn:#e8c06a; --bad:#e58a8a; --star:#ffe08a; --core:#f6e2b0; --scrim:rgba(6,8,14,.72);
+  --c1:#e8a07a; --c2:#e58a8a; --c3:#e8c36a; --c4:#d79be0; --c5:#f0a6c8; --c6:#8fb6e8;
+  --c7:#8adbd8; --c8:#7fc6a4; --c9:#b4c97a; --c10:#a8a0e8; --c11:#9ac3d6; --c12:#cfb59a;
+  --font-display:'Cormorant Garamond','Cormorant',Georgia,'Times New Roman',serif;
+  --font-body:'Manrope','Segoe UI',system-ui,-apple-system,sans-serif;
+  --fs-xs:11px; --fs-sm:12px; --fs-md:13.5px; --fs-lg:17px; --fs-xl:26px;
+  --r-md:12px; --r-sm:8px; --gap:12px;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:var(--fs-md);line-height:1.45;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.app{height:100%;display:flex;flex-direction:column;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:10px 0 8px;flex:none}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--font-display);font-size:var(--fs-xl);font-weight:600;letter-spacing:.06em;line-height:1;margin-right:6px}
+.brand-mark{width:14px;height:14px;border-radius:50%;background:radial-gradient(circle,var(--core),rgba(246,226,176,.15) 70%);box-shadow:0 0 14px rgba(246,226,176,.55)}
+.seg{display:inline-flex;flex-wrap:wrap;background:var(--bg-raise);border:1px solid var(--line-soft);border-radius:999px;padding:3px}
+.seg button{border:0;background:none;color:var(--muted);padding:6px 13px;border-radius:999px;font-size:var(--fs-sm);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.seg button[aria-pressed="true"]{background:var(--seg-on);color:var(--seg-on-ink)}
+.seg button:not([aria-pressed="true"]):hover{color:var(--text)}
+.search{position:relative;flex:1 1 200px;min-width:160px;max-width:340px}
+.search input{width:100%;background:var(--bg-raise);border:1px solid var(--line-soft);border-radius:999px;padding:7px 14px;font-size:var(--fs-sm)}
+.search input::placeholder{color:var(--faint)}
+#results{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 6px);margin:0;padding:6px;list-style:none;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-md);max-height:300px;overflow:auto}
+#results button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;background:none;border:0;padding:7px 9px;border-radius:var(--r-sm);font-size:var(--fs-sm)}
+#results button:hover{background:var(--line-soft)}
+#results small,.muted{color:var(--muted)}
+.btn{background:var(--bg-raise);border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:var(--fs-sm);font-weight:600}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn[disabled],.btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
+.viewer{display:flex;flex-direction:column;gap:2px;margin-left:auto;min-width:180px}
+.viewer label{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.viewer select{background:var(--bg-raise);border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 8px;font-size:var(--fs-sm)}
+.banner{flex:none;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:rgba(242,217,160,.1);border:1px solid rgba(242,217,160,.4);color:var(--accent);padding:7px 12px;border-radius:var(--r-sm);font-size:var(--fs-sm);margin-bottom:8px}
+.banner[hidden],.facets[hidden],[hidden]{display:none!important}
+.facets{flex:none;background:var(--bg-raise);border:1px solid var(--line-soft);border-radius:var(--r-md);padding:10px 12px;margin-bottom:8px;max-height:30%;overflow:auto}
+.fgroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:3px 0}
+.fgroup>b{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);min-width:78px;font-weight:600}
+.chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:none;border-radius:999px;padding:2px 10px;font-size:var(--fs-xs);color:var(--text-2)}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chip.static{cursor:default}
+.chip.ok{color:var(--ok);border-color:rgba(143,208,168,.45)}
+.chip.warn{color:var(--warn);border-color:rgba(232,192,106,.45)}
+.chip.bad{color:var(--bad);border-color:rgba(229,138,138,.45)}
+.chip.off{opacity:.4;text-decoration:line-through}
+.main{flex:1;min-height:0;display:flex;gap:var(--gap)}
+.stage{position:relative;flex:1;min-width:0;border:1px solid var(--line-soft);border-radius:var(--r-md);overflow:hidden;background:radial-gradient(ellipse at 50% 45%,#161a28 0%,var(--bg) 70%)}
+#cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#cv:active{cursor:grabbing}
+.ov{position:absolute;z-index:5}
+.crumbs{left:12px;top:10px;display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase;max-width:calc(100% - 150px)}
+.crumbs button{background:none;border:0;color:var(--muted);padding:2px 4px;letter-spacing:inherit;text-transform:inherit;font-size:inherit;font-weight:600}
+.crumbs button:hover{color:var(--text)}
+.crumbs .cur{color:var(--text);font-weight:700;padding:2px 4px}
+.crumbs .sep{color:var(--faint)}
+.count{right:14px;top:10px;font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:right}
+.count b{color:var(--accent);font-family:var(--font-display);font-size:var(--fs-lg);letter-spacing:.02em;margin-right:4px}
+.lg{right:12px;bottom:52px;display:flex;align-items:center;gap:10px;font-size:var(--fs-xs);color:var(--muted);background:rgba(16,18,26,.7);border:1px solid var(--line-soft);border-radius:999px;padding:3px 12px}
+.lg label{display:flex;align-items:center;gap:6px}
+.lg input[type=range]{width:70px;accent-color:#f2d9a0}
+.arrow{top:50%;transform:translateY(-50%);background:none;border:0;color:var(--muted);display:flex;align-items:center;gap:8px;padding:10px 6px;writing-mode:vertical-rl;font-family:var(--font-display);font-size:15px;letter-spacing:.35em;text-transform:uppercase;max-height:60%}
+.arrow:hover{color:var(--text)}
+.arrow.prev{left:4px;transform:translateY(-50%) rotate(180deg)}
+.arrow.next{right:4px}
+.legend{left:12px;bottom:12px;max-width:min(300px,calc(100% - 24px));background:rgba(16,18,26,.82);border:1px solid var(--line-soft);border-radius:var(--r-md);padding:6px 10px;font-size:var(--fs-xs);color:var(--muted)}
+.legend summary{cursor:pointer;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+.legend ul{list-style:none;margin:6px 0 2px;padding:0;display:grid;gap:5px}
+.legend li{display:flex;gap:8px;align-items:center}
+.legend svg{flex:none;width:22px;height:16px;overflow:visible}
+.zoom{right:12px;bottom:12px;display:flex;align-items:center;gap:2px;background:rgba(16,18,26,.85);border:1px solid var(--line-soft);border-radius:999px;padding:3px 6px;font-size:var(--fs-xs);color:var(--muted)}
+.zoom button{background:none;border:0;padding:3px 9px;font-weight:700;color:var(--text-2)}
+.zoom span{min-width:42px;text-align:center}
+#mm{right:12px;bottom:92px;width:150px;height:104px;border:1px solid var(--line-soft);border-radius:var(--r-sm);background:rgba(16,18,26,.78);touch-action:none;cursor:pointer}
+.tip{position:absolute;z-index:8;pointer-events:none;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;font-size:var(--fs-xs);max-width:240px;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.tip b{display:block;font-family:var(--font-display);font-size:var(--fs-lg);letter-spacing:.03em;font-weight:600;margin-bottom:2px}
+.empty-note{left:50%;top:50%;transform:translate(-50%,40px);text-align:center;color:var(--muted);font-size:var(--fs-sm);max-width:300px}
+.altview{position:absolute;inset:0;z-index:4;background:var(--bg);overflow:auto;padding:70px 16px 16px}
+.altview ul{list-style:none;margin:0;padding-left:18px;border-left:1px solid var(--line-soft)}
+.altview>ul{padding-left:0;border-left:0}
+.altview li{margin:2px 0}
+.altview .row{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;width:100%;text-align:left;background:none;border:0;padding:5px 8px;border-radius:var(--r-sm)}
+.altview .row:hover,.altview .row[aria-current="true"]{background:var(--panel-2)}
+.altview .meta{font-size:var(--fs-xs);color:var(--muted)}
+.altview .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+table.base{border-collapse:collapse;width:100%;min-width:760px;font-size:var(--fs-sm)}
+table.base th{position:sticky;top:0;background:var(--panel-2);text-align:left;font-size:var(--fs-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0;border-bottom:1px solid var(--line)}
+table.base th button{background:none;border:0;width:100%;text-align:left;padding:9px 10px;color:inherit;letter-spacing:inherit;text-transform:inherit;font-size:inherit;font-weight:700}
+table.base td{padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+table.base tr:hover td{background:rgba(255,255,255,.03)}
+table.base tr[aria-selected="true"] td{background:rgba(242,217,160,.08)}
+table.base td button.name{background:none;border:0;padding:0;text-align:left;font-weight:600;color:var(--text)}
+.panel{width:352px;flex:none;overflow:auto;border:1px solid var(--line-soft);border-radius:var(--r-md);background:var(--panel);padding:14px 16px 20px}
+.panel h2{font-family:var(--font-display);font-size:var(--fs-xl);line-height:1.1;font-weight:600;letter-spacing:.03em;margin:0 0 6px}
+.panel h3{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px;font-weight:700}
+.panel .close{display:none}
+.panel .grab{display:none}
+.mobile-only,.brk{display:none}
+.agroups{display:flex;flex-wrap:wrap;gap:10px 16px}
+.agroup small{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.actions button{white-space:nowrap}
+.rolecard{border:1px solid var(--line-soft);border-radius:var(--r-md);background:var(--bg-raise);padding:8px 12px;margin-bottom:12px}
+.rolecard summary{cursor:pointer;font-size:var(--fs-xs);letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--accent)}
+.rolecard .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.rolecard h4{margin:0 0 4px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.rolecard ul{margin:0;padding:0;list-style:none;display:grid;gap:4px;font-size:var(--fs-xs);color:var(--text-2)}
+.rolecard .never{margin-top:8px;font-size:var(--fs-xs);color:var(--bad)}
+.rolecard .rc-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;font-size:var(--fs-xs)}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.badge{font-size:10px;letter-spacing:.09em;font-weight:700;border:1px solid var(--line);border-radius:6px;padding:2px 7px;color:var(--text-2)}
+.badge.plane{color:var(--accent);border-color:rgba(242,217,160,.5)}
+.counts{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0}
+.counts div{background:var(--bg-raise);border:1px solid var(--line-soft);border-radius:var(--r-sm);padding:6px 8px}
+.counts b{display:block;font-family:var(--font-display);font-size:var(--fs-xl);line-height:1}
+.counts small{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:6px}
+.actions button{background:var(--bg-raise);border:1px solid var(--line);border-radius:var(--r-sm);padding:5px 10px;font-size:var(--fs-xs);font-weight:600}
+.actions button:not([aria-disabled="true"]):hover{border-color:var(--accent);color:var(--accent)}
+.actions button[aria-disabled="true"]{opacity:.42;cursor:not-allowed}
+.reason{font-size:var(--fs-xs);color:var(--warn);margin-top:6px;min-height:1.3em}
+.items{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.items li{background:var(--bg-raise);border:1px solid var(--line-soft);border-radius:var(--r-sm);padding:8px 10px}
+.items .t{font-weight:600;font-size:var(--fs-sm)}
+.items .m{font-size:var(--fs-xs);color:var(--muted);margin:2px 0 6px}
+.items .chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.links{list-style:none;margin:0;padding:0;display:grid;gap:3px}
+.links button{background:none;border:0;padding:3px 0;text-align:left;font-size:var(--fs-sm);color:var(--text-2)}
+.links button:hover{color:var(--accent)}
+.ask{display:grid;gap:6px}
+.ask input,.sheet textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;font-size:var(--fs-sm)}
+.ask.dim{opacity:.5}
+.note{font-size:var(--fs-xs);color:var(--muted)}
+.outputs{display:flex;flex-wrap:wrap;gap:6px}
+.sheet-bg{position:fixed;inset:0;z-index:50;background:var(--scrim);display:flex;align-items:center;justify-content:center;padding:16px}
+.sheet{width:min(460px,100%);background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r-md);padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.6);max-height:90%;overflow:auto}
+.sheet h2{font-family:var(--font-display);font-size:var(--fs-xl);margin:0 0 8px;font-weight:600}
+.sheet .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.sheet ul{margin:8px 0;padding-left:18px;color:var(--text-2);font-size:var(--fs-sm)}
+.foot{flex:none;display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:center;align-items:center;padding:6px 0 8px;font-size:var(--fs-xs);color:var(--faint);text-align:center}
+.checks{border:1px solid var(--line);border-radius:999px;padding:1px 9px}
+.checks.ok{color:var(--ok);border-color:rgba(143,208,168,.5)}
+.checks.bad{color:var(--bad);border-color:rgba(229,138,138,.6)}
+@media (max-width:760px){
+  .bar{gap:6px;padding:8px 0 6px}
+  .brand,.seg{display:none}
+  .mobile-only{display:block;flex:1 1 0;min-width:0;background:var(--bg-raise);border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 6px;font-size:var(--fs-sm)}
+  .brk{display:block;flex-basis:100%;height:0}
+  .search{flex:1 1 0;min-width:0;max-width:none}
+  .viewer{margin-left:0;flex:1 1 0;min-width:0}
+  .viewer label{font-size:8px;line-height:1.15;letter-spacing:.04em}
+  .panel .grab{display:block;width:46px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 10px;touch-action:none;cursor:grab}
+  .panel.tall{max-height:90%}
+  .panel{display:none;position:fixed;left:0;right:0;bottom:0;width:auto;max-height:60%;z-index:40;border-radius:16px 16px 0 0;box-shadow:0 -12px 40px rgba(0,0,0,.55);padding-bottom:max(20px,env(safe-area-inset-bottom,0px))}
+  .panel.open{display:block}
+  .panel .close{display:inline-block;float:right;background:none;border:1px solid var(--line);border-radius:999px;padding:3px 12px;font-size:var(--fs-xs)}
+  #mm{display:none}
+  .arrow{font-size:12px;padding:6px 2px}
+  .crumbs{max-width:calc(100% - 20px)}
+  .count{top:auto;bottom:58px;right:auto;left:12px;text-align:left}
+  .lg{bottom:52px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Manrope:wght@400;500;600;700&display=swap">
+<div class="app" id="app">
+  <header class="bar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>Company Brain</span></div>
+    <div class="seg" role="group" aria-label="Lens" id="lensSeg"></div>
+    <div class="seg" role="group" aria-label="View mode" id="viewSeg"></div>
+    <select id="lensSel" class="mobile-only" aria-label="Lens"></select>
+    <select id="viewSel" class="mobile-only" aria-label="View mode"></select>
+    <button class="btn" id="facetBtn" aria-expanded="false" aria-controls="facets">Filters <span id="facetN"></span></button>
+    <span class="brk" aria-hidden="true"></span>
+    <div class="search" id="searchBox">
+      <input id="q" type="search" placeholder="Search visible nodes" aria-label="Search visible nodes" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="results">
+      <ul id="results" role="listbox" hidden></ul>
+    </div>
+    <div class="viewer">
+      <label for="viewer">Prototype viewer (simulated, not access control)</label>
+      <select id="viewer"></select>
+    </div>
+  </header>
+  <div class="banner" id="banner" role="status" hidden></div>
+  <div class="facets" id="facets" hidden></div>
+  <main class="main">
+    <section class="stage" id="stage" aria-label="Company map">
+      <canvas id="cv" tabindex="0" aria-label="Company map. Use arrow keys to move between nodes, Enter to open, Escape to go back. The List and Table views show the same content."></canvas>
+      <div class="ov crumbs" id="crumbs"></div>
+      <div class="ov count" id="count"></div>
+      <div class="ov lg" id="lg"><label><input type="checkbox" id="lgOn"> Local graph</label><label>Hops <input type="range" id="lgHops" min="1" max="3" value="2" aria-label="Local graph depth in hops"></label><output id="lgOut" for="lgHops">2</output></div>
+      <button class="ov arrow prev" id="prev" aria-label="Previous"></button>
+      <button class="ov arrow next" id="next" aria-label="Next"></button>
+      <details class="ov legend" id="legend">
+        <summary>Legend</summary>
+        <ul>
+          <li><svg viewBox="0 0 22 16"><circle cx="5" cy="8" r="2.5" fill="var(--c6)"/><circle cx="15" cy="8" r="5.5" fill="var(--c6)"/></svg>Size: item count</li>
+          <li><svg viewBox="0 0 22 16"><circle cx="5" cy="8" r="4" fill="var(--c8)" opacity=".3"/><circle cx="16" cy="8" r="4" fill="var(--c8)"/></svg>Brightness: freshness</li>
+          <li><svg viewBox="0 0 22 16"><circle cx="11" cy="8" r="3" fill="var(--c3)"/><circle cx="11" cy="8" r="7" fill="none" stroke="var(--c3)" opacity=".7"/></svg>Pulse ring: open decision or overdue action</li>
+          <li><svg viewBox="0 0 22 16"><path d="M11 1l2.1 4.6 5 .5-3.8 3.4 1.1 4.9L11 11.8 6.6 14.4l1.1-4.9L3.9 6.1l5-.5z" fill="var(--star)"/></svg>Star: approved success story</li>
+          <li><svg viewBox="0 0 22 16"><circle cx="11" cy="8" r="4.5" fill="none" stroke="var(--muted)" stroke-dasharray="2 2"/></svg>Hollow: gap, no evidence in 90 days</li>
+          <li><svg viewBox="0 0 22 16"><rect x="6" y="7" width="10" height="7" rx="1.5" fill="var(--muted)"/><path d="M8 7V5a3 3 0 016 0v2" fill="none" stroke="var(--muted)" stroke-width="1.5"/></svg>Padlock: locked, name only</li>
+          <li><svg viewBox="0 0 22 16"><path d="M1 8h20" stroke="var(--muted)"/></svg>Same account (solid)</li>
+          <li><svg viewBox="0 0 22 16"><path d="M1 8h20" stroke="var(--muted)" stroke-dasharray="1 3" stroke-linecap="round"/></svg>Follow-up of (dotted)</li>
+          <li><svg viewBox="0 0 22 16"><path d="M1 8h20" stroke="var(--muted)" stroke-dasharray="5 3"/></svg>In sector (dashed)</li>
+        </ul>
+      </details>
+      <canvas class="ov" id="mm" width="150" height="104" aria-hidden="true"></canvas>
+      <div class="ov zoom" id="zoom"><button id="zOut" aria-label="Zoom out">-</button><span id="zPct" aria-live="off">100%</span><button id="zIn" aria-label="Zoom in">+</button><button id="zFit">Fit</button></div>
+      <div class="ov empty-note" id="emptyNote" hidden></div>
+      <div class="tip" id="tip" hidden></div>
+      <div class="altview" id="listView" hidden></div>
+      <div class="altview" id="tableView" hidden></div>
+    </section>
+    <aside class="panel" id="panel" aria-label="Details">
+      <div class="grab" id="grab" aria-hidden="true"></div><button class="close" id="panelClose">Close</button>
+      <div id="roleCard"></div>
+      <div id="panelBody"></div>
+    </aside>
+  </main>
+  <footer class="foot">
+    <span>Synthetic data. Prototype for design feedback.</span>
+    <span>Structure and counts from Mantu internal sources; items, accounts and titles are synthetic.</span>
+    <span class="checks" id="checks">Policy checks: running</span>
+  </footer>
+  <div class="sr" id="sr" aria-live="polite"></div>
+  <div class="sheet-bg" id="sheetBg" hidden><div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetT"></div></div>
+</div>
+<script>
+(()=> {
+'use strict';
+const $=(s,r)=>(r||document).querySelector(s);
+const hash=s=>{let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0};
+const pick=(a,h)=>a[h%a.length];
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const slug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+
+/* =====================================================================
+   1. DATA  (the synthetic organisation; config, not code)
+   Structure and counts follow Mantu internal sources. Items, accounts and titles are synthetic.
+   ===================================================================== */
+const ACTIONS=['view_structure','view_content','comment','contribute','edit','review','approve_release','manage_members','configure','request_access'];
+const ACTION_LABEL={comment:'Comment',contribute:'Contribute',edit:'Edit',review:'Review',approve_release:'Approve release',manage_members:'Manage members',configure:'Configure'};
+const GROUPS={bl:'Business lines',cf:'Corporate functions'};
+const STATUSES=['Discover','In design','Building','Piloting','Deployed'];   // use-case maturity
+const MATURITY_SHARE=[.30,.25,.15,.15,.15];
+// Governances: one constant, easy to swap. Counts are real (total 433).
+const GOVERNANCES=[
+  ['g_lbc','LittleBig Connection','bl',92],['g_eleven','Eleven VMS','bl',88],['g_hr','HR, Legal and Hub Operations','cf',62],
+  ['g_amaris','Amaris','bl',55],['g_af','A&F','cf',40],['g_it','IT','cf',24],['g_perf','Performance','cf',19],
+  ['g_recruit','Recruitment','bl',19],['g_mkt','Marketing & Communication','cf',12],['g_sia','Strategy, Innovation & AI','cf',10],
+  ['g_sus','Sustainability','cf',8],['g_ci','Creative Intelligence','bl',4]];
+const DEPTS_SRC=[ // [id,label,group,[[circleId,label,restricted,[topics]]]]
+ ['d_amaris','Amaris','bl',[['c_sales','Sales & Accounts',0,['Account planning','Renewal motions','Win and loss reviews','Stakeholder maps']],
+   ['c_bid','Bid & Pre-sales',0,['Response library','Pricing models','Win themes','Go or no-go criteria','Red team method']],
+   ['c_delivery','Delivery',0,['Kickoff checklist','Status reporting','Quality gates','Close-out method']],
+   ['c_eng','Engineering Practices',0,['Code review norms','Test strategy','Release runbooks']],
+   ['c_escal','Delivery Escalations',1,['Escalation paths','Recovery plans','Client health signals']]]],
+ ['d_lbc','LittleBig Connection','bl',[['c_lbc_prog','Programme Delivery',0,['Programme cadence','Risk registers','Stakeholder reporting']],['c_lbc_cx','Client Experience',0,['Onboarding journeys','Service reviews','Feedback loops']]]],
+ ['d_eleven','Eleven VMS','bl',[['c_ev_ops','Platform Operations',0,['Vendor onboarding','Spend controls','Invoice flows']],['c_ev_net','Supplier Network',0,['Supplier scoring','Compliance packs','Rate benchmarks']]]],
+ ['d_recruit','Recruitment','bl',[['c_rc_src','Sourcing',0,['Talent pools','Search playbooks','Outreach cadences']],['c_rc_plc','Placement Quality',0,['Interview guides','Offer handling','Retention signals']]]],
+ ['d_ci','Creative Intelligence','bl',[['c_ci_studio','Studio',0,['Concept method','Storyboard kit','Review rituals']],['c_ci_lab','Insight Lab',0,['Research synthesis','Trend briefs','Audience models']]]],
+ ['d_hr','HR, Legal and Hub Operations','cf',[['c_hr_pp','People Partners',1,['Case handling method','Calibration process','Policy exceptions']],['c_hr_legal','Legal & Contracts',0,['Clause library','NDA handling','Data protection terms']],['c_hr_hub','Hub Operations',0,['Onboarding checklist','Mobility rules','Workplace standards']]]],
+ ['d_af','A&F','cf',[['c_af_close','Controls & Close',0,['Month-end close','Expense policy','Revenue recognition']],['c_af_price','Pricing & Margin',0,['Rate cards','Margin decomposition','Invoicing rules']]]],
+ ['d_it','IT','cf',[['c_it_sec','Security Operations',0,['Alert triage','Vulnerability handling','Access reviews']],['c_it_wp','Workplace Technology',0,['Device onboarding','Software catalogue','Offboarding checklist']]]],
+ ['d_perf','Performance','cf',[['c_pf_util','Utilisation',0,['Utilisation targets','Bench handling','Staffing rules']],['c_pf_q','Quality',0,['Quality reviews','Client health checks','Lessons registers']]]],
+ ['d_mkt','Marketing & Communication','cf',[['c_mk_brand','Brand & Content',0,['Brand voice','Case study kit','Thought leadership']],['c_mk_dem','Demand Generation',0,['Campaign playbooks','Lead scoring','Event follow-up']]]],
+ ['d_sia','Strategy, Innovation & AI','cf',[['c_sia_ai','AI Programme',0,['Use case intake','Prioritisation scoring','Value tracking','Model risk checks']],['c_sia_str','Strategy Office',0,['Portfolio reviews','Market scans','Investment cases']]]],
+ ['d_sus','Sustainability','cf',[['c_su_rep','Reporting',0,['Emissions method','Disclosure calendar','Supplier data']],['c_su_ini','Initiatives',0,['Programme catalogue','Client offers','Impact stories']]]]];
+const CORE_TOPICS=['Mission and values','Operating model','Code of conduct','Security basics','Glossary','Org chart','Brand principles','Travel policy','Tooling map','Client engagement principles','Quality policy','AI usage policy','Onboarding handbook','Information classification'];
+const THEMES_SRC=[ // [id,label,[[deptId,[items]]]]
+ ['th_methods','Methods',[['d_amaris',['Estimation method','Red team method']],['d_lbc',['Programme cadence']],['d_sia',['Evaluation method']]]],
+ ['th_pricing','Pricing',[['d_amaris',['Pricing models','Discount ranges']],['d_af',['Rate cards','Margin decomposition']]]],
+ ['th_ai','AI use cases',[['d_sia',['Use case intake','Value tracking']],['d_eleven',['Invoice flow automation']],['d_it',['Tool governance']]]],
+ ['th_lessons','Lessons learned',[['d_amaris',['Win and loss reviews']],['d_perf',['Lessons registers','Close-out method']],['d_ci',['Review rituals']]]],
+ ['th_risk','Risk and compliance',[['d_it',['Access reviews','Incident comms']],['d_hr',['Data protection terms']],['d_af',['Revenue recognition']]]],
+ ['th_ways','Ways of working',[['d_hr',['Onboarding checklist']],['d_mkt',['Brand voice']],['d_sus',['Disclosure calendar']]]]];
+const REGIONS_SRC=[
+ ['r_eu','Europe',['France','Spain','Italy','Switzerland','Belgium','Turkey','Portugal','Netherlands','Serbia','Poland','Luxembourg','Austria','Czech Republic','Sweden']],
+ ['r_am','Americas',['Colombia','Brazil','Chile','Canada','Peru','Mexico']],
+ ['r_af','Africa & Middle East',['Tunisia','Ivory Coast','South Africa']],
+ ['r_ap','APAC',['Vietnam','China','Japan','Thailand','Singapore']]];
+const ACCTS_SRC=[ // [id,label,country,sector,status,{bid,nda,eng,ai,perm}] all fictional
+ ['a_acme','Acme Synthetic SA','France','Retail','Active',{bid:1,eng:3,ai:'allowed',perm:1}],
+ ['a_ember','Ember Sample SAS','France','Energy','Renewal',{eng:2,ai:'unknown'}],
+ ['a_quartz','Quartz Placeholder SA','France','Banking','Active',{eng:2,ai:'allowed'}],
+ ['a_lumen','Lumen Fictive SAS','France','Telecom','Paused',{eng:1,ai:'not allowed'}],
+ ['a_solana','Solana Demo SL','Spain','Retail','Active',{eng:2,ai:'allowed',perm:1}],
+ ['a_ibero','Ibero Mock SA','Spain','Insurance','Onboarding',{bid:1,eng:1,ai:'unknown'}],
+ ['a_calypso','Calypso Demo Srl','Italy','Manufacturing','Active',{nda:1,eng:2,ai:'unknown'}],
+ ['a_alpen','Alpen Sample AG','Switzerland','Banking','Active',{eng:2,ai:'not allowed'}],
+ ['a_flandre','Flandre Fictive NV','Belgium','Logistics','Renewal',{bid:1,eng:1,ai:'allowed'}],
+ ['a_kappa','Kappa Demo SAS','Colombia','Banking','Active',{eng:2,ai:'allowed',perm:1}],
+ ['a_andes','Andes Fictive SAS','Colombia','Energy','Onboarding',{bid:1,eng:1,ai:'unknown'}],
+ ['a_delta','Delta Mock Ltda','Brazil','Telecom','Active',{eng:2,ai:'allowed'}],
+ ['a_jaguar','Jaguar Sample SA','Brazil','Mining','Renewal',{eng:1,ai:'unknown'}],
+ ['a_pacifico','Pacifico Example SpA','Chile','Mining','Active',{eng:1,ai:'allowed'}],
+ ['a_borealis','Borealis Fictive Inc','Canada','Banking','Active',{eng:3,ai:'allowed',perm:1}],
+ ['a_cedar','Cedar Mock Corp','Canada','Public sector','Active',{bid:1,eng:1,ai:'not allowed'}],
+ ['a_azteca','Azteca Placeholder SA','Mexico','Retail','Active',{eng:1,ai:'unknown'}],
+ ['a_lotus','Lotus Placeholder JSC','Vietnam','Manufacturing','Active',{eng:2,ai:'allowed'}],
+ ['a_mekong','Mekong Sample Co','Vietnam','Retail','Active',{eng:1,ai:'unknown'}],
+ ['a_merlion','Merlion Demo Pte','Singapore','Insurance','Renewal',{eng:1,ai:'allowed'}],
+ ['a_carthage','Carthage Mock SARL','Tunisia','Telecom','Active',{eng:1,ai:'allowed'}]];
+const PENDING={'c_bid/Pricing models':'head_bid','c_delivery/Quality gates':'consultant'};   // contributions awaiting release
+const BRIDGES_SRC=[{from:'k_brazil',to:'k_colombia',label:'Deployed in Brazil, replication in design'}];
+
+const TYPES=['Method','Decision','Deliverable','Playbook','Policy','Template'];
+const OWNER_ROLES=['Steward','Practice lead','Delivery manager','Analyst','Function head','Reviewer'];
+const TAGS=['pricing','method','ai','compliance','onboarding','quality','lessons','security'];
+const SRC=['Wiki page','Decision log','Document store','Meeting capture','Policy repository','Ticket export'];
+const SUFFIX=['guidance page','decision record','working template','lessons summary','review notes','checklist'];
+const UC_TITLES=['Invoice triage','Clause extraction','Candidate shortlisting','Ticket routing','Forecast narrative','Proposal first draft','Meeting minutes','Knowledge search','Compliance check','Timesheet anomalies','Onboarding assistant','Quality review','Skills matching','Report summariser','Policy Q&A'];
+const BRANCHES=[['eng','Engagements','Engagement',['Platform renewal','Advisory retainer','Run support','Transformation programme']],
+ ['prj','Projects','Project',['Migration wave 1','Data foundation','Service desk redesign','Reporting rebuild']],
+ ['dec','Decisions','Decision',['Vendor shortlist','Scope change','Architecture choice','Pricing position']],
+ ['com','Commitments & actions','Commitment',['Quarterly review actions','SLA remediation plan','Training commitments','Handover tasks']],
+ ['del','Deliverables','Deliverable',['Target design','Status pack','Runbook set','Business case']],
+ ['out','Outcomes & success stories','Success story',['Cost reduction result','Adoption milestone','Time to value story']],
+ ['risk','Risks','Risk',['Key person dependency','Budget freeze','Integration delay','Contract renewal exposure']]];
+
+const REG={};   // id -> reference used by POLICY (type, dept, circle, account...)
+function synth(id,label,o){
+  const h=hash(id), d=(h>>>5)%125;
+  const days=o.fresh?d%55:d, gap=!o.fresh&&days>90;
+  const items=gap?1+h%3:4+h%37;
+  const status=o.status||(h%10<7?'approved':h%10<9?'candidate':'draft');
+  const evidence=gap?'unsupported':(h>>>4)%10<7?'supported':'partial';
+  const plane=o.plane, reviewed2=plane==='GLOBAL'&&status==='approved';
+  const star=!gap&&(o.star!==undefined?o.star:(h>>>13)%8===0);
+  const srcI=hash(id+'s')%SRC.length;
+  return {id,label,kind:'leaf',type:o.type||pick(TYPES,h>>>3),status,evidence,owner:pick(OWNER_ROLES,h>>>9),ownerGroup:o.group,days,gap,items,
+    open:!gap&&(o.open!==undefined?o.open:(h>>>9)%6===0),star,tags:[pick(TAGS,h>>>2),pick(TAGS,h>>>6)].filter((t,i,a)=>a.indexOf(t)===i),
+    rev:'r'+(1+(h>>>14)%9),plane,reviewed2,sector:o.sector||null,pendingAuthor:PENDING[id]||null,
+    lineage:SRC[srcI]+' > '+o.group,
+    story:star?{internal:true,lesson:h%2===0,extPermission:!!o.perm,external:!!o.perm&&h%3===0}:null,
+    itemList:[0,1,2,3].map(i=>{const g=hash(id+i);return{title:label+': '+pick(SUFFIX,g>>>3),src:pick(SRC,g>>>6),lineage:pick(SRC,g>>>6)+' > '+o.group,owner:pick(OWNER_ROLES,g>>>9),
+      rev:'r'+(1+(g>>>12)%9),evidence:gap?'unsupported':(g%10<6?'supported':g%10<9?'partial':'unsupported'),plane,reviewed2:reviewed2&&i<2}})};
+}
+function reg(id,o){REG[id]=o;return o}
+
+const DATA={};
+DATA.core={id:'core',label:'Company Global',topics:CORE_TOPICS.map(t=>{reg('core/'+t,{type:'coretopic',label:t,plane:'GLOBAL',status:'approved'});return synth('core/'+t,t,{plane:'GLOBAL',group:'Company Global',fresh:true,status:'approved',star:false})})};
+reg('core',{type:'core',label:'Company Global',plane:'GLOBAL'});
+DATA.departments=DEPTS_SRC.map(([id,label,group,circles],idx)=>{
+  reg(id,{type:'department',dept:id,label,deptLabel:label,plane:'DEPARTMENT'});
+  return {id,label,group,idx,circles:circles.map(([cid,cl,restr,tps])=>{
+    reg(cid,{type:'circle',dept:id,circle:cid,label:cl,deptLabel:label,circleLabel:cl,restricted:!!restr,plane:'TEAM'});
+    return {id:cid,label:cl,restricted:!!restr,topics:tps.map(t=>{const L=synth(cid+'/'+t,t,{plane:'TEAM',group:cl});
+      reg(L.id,{type:'topic',dept:id,circle:cid,label:t,deptLabel:label,circleLabel:cl,restricted:!!restr,plane:'TEAM',status:L.status,pendingAuthor:L.pendingAuthor});return L})}})}});
+DATA.themes=THEMES_SRC.map(([id,label,ds])=>{reg(id,{type:'theme',label,plane:'GLOBAL'});
+  return {id,label,children:ds.map(([did,items])=>{const dep=DEPTS_SRC.find(d=>d[0]===did);
+    return {id:id+'/'+did,deptId:did,label:dep[1],idx:DEPTS_SRC.indexOf(dep),items:items.map(t=>{const L=synth(id+'/'+did+'/'+t,t,{plane:'GLOBAL',group:'Company Global',fresh:true,status:'approved',star:false});
+      reg(L.id,{type:'themeitem',label:t,plane:'GLOBAL',status:'approved'});return L})}})}});
+DATA.governances=GOVERNANCES.map(([id,label,group,n],idx)=>{
+  reg(id,{type:'governance',label,plane:'GLOBAL'});
+  const cnt=MATURITY_SHARE.map(s=>Math.floor(n*s)); cnt[0]+=n-cnt.reduce((a,b)=>a+b,0);
+  const seq=[]; cnt.forEach((c,si)=>{for(let k=0;k<c;k++)seq.push(STATUSES[si])});
+  const order=seq.map((st,i)=>({st,k:hash(id+'#'+i)})).sort((x,y)=>x.k-y.k).map(x=>x.st); seq.length=0; order.forEach(x=>seq.push(x));
+  const abbr=id.replace('g_','').toUpperCase(); let repl=false;
+  const useCases=seq.map((st,i)=>{const code='UC-'+abbr+'-'+String(i+1).padStart(2,'0');const uid=id+'/'+code;
+    const L=synth(uid,pick(UC_TITLES,hash(uid)>>>3)+' ('+code+', synthetic)',{plane:'GLOBAL',group:label,type:'Use case',star:false,status:st});
+    L.stage=STATUSES.indexOf(st);
+    if(id==='g_lbc'&&st==='Deployed'&&!repl){repl=true;L.note=BRIDGES_SRC[0].label;L.tags=L.tags.concat('replication');}
+    reg(uid,{type:'usecase',label:L.label,plane:'GLOBAL',status:st});return L});
+  return {id,label,group,idx,n,useCases}});
+const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
+DATA.regions=REGIONS_SRC.map(([rid,rl,countries])=>{
+  reg(rid,{type:'region',region:rid,label:rl,plane:'ACCOUNT_RESTRICTED'});
+  return {id:rid,label:rl,countries:countries.map(cn=>{const kid='k_'+slug(cn);
+    reg(kid,{type:'country',region:rid,label:cn,plane:'ACCOUNT_RESTRICTED'});
+    return {id:kid,label:cn,accounts:ACCTS_SRC.filter(a=>a[2]===cn).map(a=>mkAccount(a,rid,kid))}})}});
+function mkAccount([id,label,country,sector,status,o],rid,kid){
+  const base={account:id,accLabel:label,region:rid,country:kid,sector,nda:!!o.nda,bid:!!o.bid};
+  reg(id,Object.assign({type:'account',label,plane:'ACCOUNT_RESTRICTED'},base));
+  const leaf=(lid,lab,extra)=>{const L=synth(lid,lab,Object.assign({plane:'ACCOUNT_RESTRICTED',group:'Account team',sector,perm:o.perm},extra));
+    reg(lid,Object.assign({type:'accleaf',label:lab,plane:'ACCOUNT_RESTRICTED',status:L.status,pendingAuthor:null},base,extra&&extra.ref));return L};
+  const branches=BRANCHES.map(([k,bl,ty,pool])=>{const bid=id+'/'+k, hh=hash(bid);
+    reg(bid,Object.assign({type:'branch',label:bl,plane:'ACCOUNT_RESTRICTED'},base));
+    const n=k==='eng'?o.eng:2+hh%2;
+    return {id:bid,key:k,label:bl,leaves:Array.from({length:n},(_,i)=>leaf(bid+'/'+i,pool[(hh+i)%pool.length]+(k==='eng'?'':''),
+      {type:ty,star:k==='out',fresh:k==='out',open:(k==='dec'||k==='com'||k==='risk')?undefined:false}))}});
+  const cid=id+'/con'; reg(cid,Object.assign({type:'branch',label:'Contacts',contacts:true,plane:'ACCOUNT_RESTRICTED'},base));
+  branches.push({id:cid,key:'con',label:'Contacts',restricted:true,leaves:[0,1,2].map(i=>{const ref='CT-'+(1000+hash(id+i)%9000);
+    const L=synth(cid+'/'+i,ref,{plane:'ACCOUNT_RESTRICTED',group:'Account team',type:'Contact ref',status:'approved',fresh:true,star:false,open:false});
+    reg(L.id,Object.assign({type:'accleaf',label:ref,contacts:true,plane:'ACCOUNT_RESTRICTED',status:'approved'},base));return L})});
+  const meetings=Array.from({length:2+hash(id)%2},(_,i)=>leaf(id+'/m'+i,'Meeting M-'+(200+hash(id+'m'+i)%700),{type:'Meeting',star:false,open:false,fresh:true}));
+  const bids=o.bid?Array.from({length:1+hash(id)%2},(_,i)=>leaf(id+'/b'+i,'Bid BID-26-'+String(10+hash(id+'b'+i)%80),{type:'Bid',star:false,fresh:true})):[];
+  reg(id+'/sector',Object.assign({type:'accleaf',label:'Sector: '+sector,plane:'ACCOUNT_RESTRICTED'},base));
+  return {id,label,country:kid,region:rid,sector,status,nda:!!o.nda,bid:!!o.bid,eng:o.eng,ai:o.ai,custPerm:!!o.perm,branches,meetings,bids};
+}
+DATA.bridges=BRIDGES_SRC.map(b=>Object.assign({},b));
+
+/* =====================================================================
+   2. ROLES  (declarative grants: scope x actions x conditions)
+   ===================================================================== */
+const V=['view_structure','view_content'];
+const G=(scope_type,scope_id,actions,conditions)=>({scope_type,scope_id,actions,conditions:conditions||{}});
+const STEWARD=[...V,'comment','contribute','edit','review','approve_release','manage_members','request_access'];
+const ROLES={
+ ceo:{id:'ceo',label:'CEO',summary:'Sees all of Company Brain. Views, comments and contributes. No edit, release or membership changes by default.',
+  grants:[G('global','core',[...V,'comment','contribute','request_access']),G('department','*',[...V,'comment','contribute']),G('region','*',['view_structure']),
+          G('account','*',[...V,'comment','contribute'],{nda:'named_grant'})],
+  exclusions:['personal_brain','nda_without_grant'],elevation:{actions:['edit','review'],hours:4},
+  never:['Approve release or manage members, even when elevated']},
+ head_bid:{id:'head_bid',label:'Head of Bid & Pre-sales',summary:'Department steward for the Bid & Pre-sales circle, plus bids linked to accounts.',
+  grants:[G('global','core',[...V,'comment','contribute']),G('circle','c_bid',STEWARD,{self_approval:false}),G('account','*',[...V,'comment','contribute'],{linked_to_bid:true})],
+  exclusions:['personal_brain','nda_without_grant'],never:['Approve their own contribution']},
+ acme_lead:{id:'acme_lead',label:'Account lead, Acme',summary:'Works in the Sales & Accounts circle and owns the Acme Synthetic SA workspace.',
+  grants:[G('global','core',V),G('circle','c_sales',[...V,'comment','contribute','edit']),
+          G('account','a_acme',[...V,'comment','contribute','edit','review','manage_members'],{member:true})],
+  exclusions:['personal_brain','nda_without_grant'],never:['Global release without a distinct reviewer']},
+ consultant:{id:'consultant',label:'Consultant, Delivery',summary:'Contributor in own Delivery circles. Edits own drafts only.',
+  grants:[G('global','core',V),G('circle','c_delivery',[...V,'comment','contribute','edit'],{own_drafts:true}),G('circle','c_eng',[...V,'comment','contribute','edit'],{own_drafts:true})],
+  exclusions:['personal_brain','nda_without_grant'],never:['Review their own work']},
+ reviewer:{id:'reviewer',label:'Knowledge reviewer',summary:'Reviews and approves items in the assigned queue. Exact-version approval only.',
+  grants:[G('global','core',[...V,'comment']),G('circle','c_bid',[...V,'review','approve_release'],{assigned_queue:true,not_contributor:true}),
+          G('circle','c_delivery',[...V,'review','approve_release'],{assigned_queue:true,not_contributor:true})],
+  exclusions:['personal_brain','nda_without_grant'],never:['Approve items they contributed']},
+ platform_admin:{id:'platform_admin',label:'Platform admin',summary:'Configures policy and connectors. Structure only, no content, all counts hidden.',
+  grants:[G('global','core',['view_structure','configure']),G('department','*',['view_structure','configure']),G('region','*',['view_structure','configure']),
+          G('account','*',['view_structure','configure'],{nda:'named_grant'})],
+  exclusions:['personal_brain','nda_without_grant','content'],breakGlass:true,never:['Any content, unless a break-glass grant is approved']},
+ auditor:{id:'auditor',label:'Auditor',summary:'Reads metadata and counts for audit. Item content is redacted.',
+  grants:[G('global','core',[...V,'comment'],{metadata_only:true}),G('department','*',[...V,'comment'],{metadata_only:true}),G('region','*',['view_structure']),
+          G('account','*',[...V,'comment'],{metadata_only:true,nda:'named_grant'})],
+  exclusions:['personal_brain','nda_without_grant'],never:['Item content','Any change to content']}};
+const ROLE_ORDER=['ceo','head_bid','acme_lead','consultant','reviewer','platform_admin','auditor'];
+
+/* =====================================================================
+   3. POLICY  (single decision point: admittedView + canDo)
+   ===================================================================== */
+const GLOBAL_TYPES=new Set(['core','coretopic','theme','themeitem','governance','usecase']);
+const roleOf=r=>typeof r==='string'?ROLES[r]:r;
+function scopeMatch(g,ref){
+  const id=g.scope_id, any=id==='*';
+  switch(g.scope_type){
+    case 'global': return GLOBAL_TYPES.has(ref.type);
+    case 'department': return (ref.type==='department'||ref.type==='circle'||ref.type==='topic')&&(any||ref.dept===id);
+    case 'circle': return (ref.type==='circle'||ref.type==='topic')&&(any||ref.circle===id);
+    case 'account': return !!ref.account&&(any||ref.account===id);
+    case 'region': return (ref.type==='region'||ref.type==='country')&&(any||ref.region===id);
+  } return false;
+}
+function condOK(g,ref,ctx){
+  const c=g.conditions||{};
+  if(ref.nda&&!(ctx.ndaGrant&&c.nda==='named_grant'))return false;           // NDA needs a named grant
+  if(c.linked_to_bid&&!ref.bid)return false;
+  if(ref.contacts&&!(c.member&&g.scope_id===ref.account))return false;        // contacts: members only
+  return true;
+}
+function levelFor(role,ref,ctx){
+  let best=0;
+  for(const g of role.grants){
+    if(!scopeMatch(g,ref)||!condOK(g,ref,ctx))continue;
+    const l=g.actions.includes('view_content')?(g.conditions.metadata_only?2:3):g.actions.includes('view_structure')?1:0;
+    if(l>best)best=l;
+  }
+  return best?['','structure','metadata','content'][best]:null;
+}
+const shape=(leaf,lv)=>lv==='content'?leaf:Object.assign({},leaf,{itemList:null,story:null,redacted:true});
+const VIEW_CACHE={};
+function admittedView(roleIn,ctxIn){
+  const role=roleOf(roleIn), ctx=ctxIn||{};
+  const key=role.id+'|'+(ctx.ndaGrant?1:0); if(VIEW_CACHE[key])return VIEW_CACHE[key];
+  const gl=levelFor(role,{type:'core'},ctx)||'structure';
+  const lvLeaves=(list,l)=>l==='structure'?[]:list.map(t=>shape(t,l));
+  const view={role:role.id,level:gl,locked:new Set()};
+  view.core={id:'core',label:'Company Global',level:gl,topics:lvLeaves(DATA.core.topics,gl)};
+  view.departments=DATA.departments.map(d=>{
+    const dl=levelFor(role,REG[d.id],ctx);
+    const circles=d.circles.map(c=>{const l=levelFor(role,REG[c.id],ctx); if(!l)return null;
+      return {id:c.id,label:c.label,restricted:c.restricted,level:l,topics:l==='structure'?[]:c.topics.map(t=>shape(t,levelFor(role,REG[t.id],ctx)||l))}}).filter(Boolean);
+    const access=dl?'full':circles.length?'partial':'locked';
+    if(access==='locked')view.locked.add(d.id);
+    const RK={structure:1,metadata:2,content:3}; const level=dl||(circles.length?circles.map(c=>c.level).sort((x,y)=>RK[x]-RK[y]).pop():null);
+    return {id:d.id,label:d.label,group:d.group,idx:d.idx,access,level:level||'structure',circles};});
+  const member=a=>role.grants.some(g=>g.scope_type==='account'&&g.scope_id===a.id&&g.conditions.member);
+  const admitAcc=a=>{const al=levelFor(role,REG[a.id],ctx); if(!al)return null;
+    const out={id:a.id,label:a.label,country:a.country,region:a.region,sector:a.sector,status:a.status,nda:a.nda,bid:a.bid,eng:a.eng,ai:a.ai,custPerm:a.custPerm,level:al,member:member(a),branches:[],meetings:[],bids:[]};
+    if(al!=='structure'){
+      out.branches=a.branches.map(b=>{const bl=levelFor(role,REG[b.id],ctx); if(!bl)return null;
+        return {id:b.id,key:b.key,label:b.label,restricted:!!b.restricted,level:bl,leaves:b.leaves.map(l=>shape(l,levelFor(role,REG[l.id],ctx)||bl))}}).filter(Boolean);
+      out.meetings=a.meetings.map(m=>shape(m,al)); out.bids=a.bids.map(m=>shape(m,al));}
+    return out};
+  view.regions=DATA.regions.map(r=>{
+    const rl=levelFor(role,REG[r.id],ctx);
+    const countries=r.countries.map(k=>{const kl=levelFor(role,REG[k.id],ctx); const accounts=k.accounts.map(admitAcc).filter(Boolean);
+      return (kl||accounts.length)?{id:k.id,label:k.label,level:kl||'structure',accounts}:null}).filter(Boolean);
+    return countries.length?{id:r.id,label:r.label,level:rl||'structure',countries}:null}).filter(Boolean);
+  const tl=levelFor(role,{type:'theme'},ctx)||'structure';
+  view.themes=DATA.themes.map(t=>({id:t.id,label:t.label,level:tl,children:tl==='structure'?[]:t.children.map(c=>Object.assign({},c,{items:c.items.map(i=>shape(i,tl))}))}));
+  const govl=levelFor(role,{type:'governance'},ctx)||'structure';
+  view.governances=DATA.governances.map(g=>({id:g.id,label:g.label,group:g.group,idx:g.idx,level:govl,useCases:lvLeaves(g.useCases,govl)}));
+  const have=new Set(); view.regions.forEach(r=>r.countries.forEach(k=>have.add(k.id)));
+  view.bridges=govl==='structure'?[]:DATA.bridges.filter(b=>have.has(b.from)&&have.has(b.to));
+  view.ids=idsOf(view);
+  return VIEW_CACHE[key]=view;
+}
+function idsOf(v){
+  const s=new Set(['core']); v.core.topics.forEach(t=>s.add(t.id));
+  v.departments.forEach(d=>{s.add(d.id);d.circles.forEach(c=>{s.add(c.id);c.topics.forEach(t=>s.add(t.id))})});
+  v.regions.forEach(r=>{s.add(r.id);r.countries.forEach(k=>{s.add(k.id);k.accounts.forEach(a=>{s.add(a.id);a.branches.forEach(b=>{s.add(b.id);b.leaves.forEach(l=>s.add(l.id))});
+    a.meetings.concat(a.bids).forEach(l=>s.add(l.id)); if(a.level!=='structure')s.add(a.id+'/sector')})})});
+  v.themes.forEach(t=>{s.add(t.id);t.children.forEach(c=>{s.add(c.id);c.items.forEach(i=>s.add(i.id))})});
+  v.governances.forEach(g=>{s.add(g.id);STATUSES.forEach(st=>{if(g.useCases.some(u=>u.status===st))s.add(g.id+'/c/'+st)});g.useCases.forEach(u=>s.add(u.id))});
+  return s;
+}
+const allow=reason=>({allowed:true,reason:reason||'Granted'}), deny=reason=>({allowed:false,reason});
+const regOf=id=>REG[id]||REG[id.split('/')[0]];
+function scopeName(ref){return ref.circleLabel||ref.accLabel||(ref.type==='department'||ref.type==='circle'?ref.label:null)||'Company Global'}
+function canDo(roleIn,nodeId,action,ctxIn){
+  const role=roleOf(roleIn), ctx=ctxIn||{}, view=admittedView(role,ctx), ref=regOf(nodeId);
+  if(!ref||!view.ids.has(nodeId))return deny('Not in your view');
+  if(action==='request_access')return view.locked.has(nodeId)?allow('Sends a request to the steward'):deny('You already have access');
+  if(view.locked.has(nodeId))return deny('Locked: name only. Request access first');
+  const lv=levelFor(role,ref,ctx);
+  const gs=role.grants.filter(g=>scopeMatch(g,ref)&&condOK(g,ref,ctx)&&g.actions.includes(action));
+  const elev=!!(ctx.elevated&&role.elevation&&role.elevation.actions.includes(action)&&ref.dept);
+  const who=scopeName(ref), author=ctx.author||ref.pendingAuthor||null;
+  if(!gs.length&&!elev){
+    if(lv==='structure'&&action!=='configure')return deny('Structure only: platform admins configure and do not read content');
+    const m={edit:'View only: editing needs the steward of '+who,comment:'Commenting needs a grant on '+who,contribute:'Contributing needs a grant on '+who,
+      review:'Review needs a reviewer assigned to '+who,approve_release:'Release needs a Knowledge reviewer who did not author the item',
+      manage_members:'Membership changes need the steward of '+who,configure:'Configuration needs the Platform admin'};
+    let r=m[action]||'Not granted';
+    if(role.elevation&&role.elevation.actions.includes(action))r+=', or time-boxed elevation with a stated reason';
+    return deny(r);
+  }
+  if(action==='approve_release'&&author===role.id)return deny('Self-approval blocked: a second reviewer must approve this contribution');
+  if(action==='review'&&author===role.id)return deny('You cannot review your own contribution');
+  if(action==='edit'&&gs.length&&gs.every(g=>g.conditions.own_drafts)&&!(ref.status==='draft'||author===role.id))return deny('Contributors edit their own drafts only');
+  return allow(elev&&!gs.length?'Granted by elevation (audited)':'Granted on '+who);
+}
+function describeRole(roleIn){
+  const role=roleOf(roleIn), see=[], dos=[];
+  const nm=g=>{const id=g.scope_id;
+    switch(g.scope_type){case 'global':return 'Company Global';case 'department':return id==='*'?'all departments':REG[id].label;case 'circle':return REG[id].label+' (circle)';
+      case 'region':return 'all regions and countries';case 'account':return id==='*'?(g.conditions.linked_to_bid?'accounts linked to bids':'all accounts, NDA only with a named grant'):'Account: '+REG[id].label}};
+  role.grants.forEach(g=>{
+    const lv=g.actions.includes('view_content')?(g.conditions.metadata_only?'Metadata only':'Full'):'Structure only';
+    see.push(lv+': '+nm(g));
+    const acts=g.actions.filter(a=>ACTION_LABEL[a]);
+    if(acts.length)dos.push(acts.map(a=>ACTION_LABEL[a].toLowerCase()).join(', ')+' in '+nm(g));
+    if(g.conditions.member)see.push('Contacts: members only');
+  });
+  if(!dos.length)dos.push('Nothing');
+  const never=['Personal Brains'].concat(role.exclusions.includes('nda_without_grant')?['NDA accounts without a named grant']:[],role.never);
+  return {see,do:dos,never};
+}
+const POLICY={admittedView,canDo,describeRole};
+
+/* =====================================================================
+   4. LAYOUT  (positions computed from the admitted view only; never reads DATA)
+   ===================================================================== */
+const css=getComputedStyle(document.documentElement);
+const tok=n=>css.getPropertyValue(n).trim();
+const C={bg:tok('--bg'),panel:tok('--panel'),line:tok('--line'),text:tok('--text'),muted:tok('--muted'),faint:tok('--faint'),accent:tok('--accent'),focus:tok('--focus'),
+  star:tok('--star'),core:tok('--core'),body:tok('--font-body'),disp:tok('--font-display')};
+const PAL=Array.from({length:12},(_,i)=>tok('--c'+(i+1)));
+const pal=i=>PAL[i%12];
+const rgba=(hex,a)=>{const h=hex.replace('#','');const n=parseInt(h.length===3?h.replace(/./g,'$&$&'):h,16);return 'rgba('+(n>>16)+','+((n>>8)&255)+','+(n&255)+','+a+')'};
+const polar=(r,a)=>({x:Math.cos(a)*r,y:Math.sin(a)*r});
+const reduceMQ=window.matchMedia('(prefers-reduced-motion: reduce)');
+let reduce=reduceMQ.matches;
+const LENSES=[['departments','Departments','All departments'],['accounts','Accounts','All regions'],['topics','Topics','All themes'],['governances','Governances','All governances']];
+const S={lens:'departments',mode:'map',role:'ceo',ndaGrant:false,elevated:false,focus:null,account:null,sel:null,hover:null,hoverSec:null,kb:-1,
+  filters:{},sort:{col:'name',dir:1},lg:false,hops:2,requested:new Set(),scene:null,lensScene:null,trans:null,ghosts:[],q:''};
+const cctx=()=>({ndaGrant:S.ndaGrant&&S.role==='ceo',elevated:S.elevated&&S.role==='ceo'});
+const curView=()=>POLICY.admittedView(S.role,cctx());
+
+const aggOf=ls=>({cnt:sum(ls,l=>l.items||0),nLeaf:ls.length,cOpen:sum(ls,l=>l.open?1:0),cGap:sum(ls,l=>l.gap?1:0),cStar:sum(ls,l=>l.star?1:0),minDays:ls.length?Math.min(...ls.map(l=>l.days)):null});
+function layoutLens(v,lens){
+  const sc={structureOnly:v.level==='structure',lens,nodes:[],edges:[],links:[],hubs:[],arcs:[],byId:new Map(),account:null,adj:null};
+  const mk=o=>{const n=Object.assign({children:[],x:0,y:0,r:6,depth:0,parent:null,sec:null,color:C.text,pass:true},o);n.dx=n.x;n.dy=n.y;n.fx=n.x;n.fy=n.y;sc.nodes.push(n);sc.byId.set(n.id,n);return n};
+  const link=(p,c,type)=>{p.children.push(c);c.parent=p;sc.edges.push({a:p,b:c,type:type||'contains'})};
+  const core=mk({id:'core',kind:'core',label:v.core.label,plane:'GLOBAL',level:v.core.level,sec:'core',color:C.core,depth:0,ly:122});
+  v.core.topics.forEach((t,i)=>{const a=i*2.4,r=24+Math.sqrt(i)*21;
+    link(core,mk(Object.assign({},t,{kind:'topic',isLeaf:true,x:Math.cos(a)*r,y:Math.sin(a)*r,sec:'core',color:C.core,depth:1})))});
+  function radial(roots,cfg){
+    const N=roots.length; if(!N)return;
+    const gset=[...new Set(roots.map(r=>r.group))], gap=gset.length>1?0.7:0, total=N+gset.length*gap||1;
+    const sw=2*Math.PI/total, ang={};
+    roots.forEach((rd,i)=>{
+      const a=-Math.PI/2+(i+gset.indexOf(rd.group)*gap)/total*2*Math.PI; ang[rd.id]=a;
+      const hub=mk(Object.assign({},rd,{children:[],depth:1,sec:rd.id,x:polar(cfg.R1,a).x,y:polar(cfg.R1,a).y})); link(core,hub,'spoke'); sc.hubs.push(hub); hub.ang=a;
+      const cs=rd.children||[], rows=Math.ceil(cs.length/cfg.perRow);
+      for(let ri=0;ri<rows;ri++){
+        const row=cs.slice(ri*cfg.perRow,(ri+1)*cfg.perRow), p=row.length, step=Math.min(cfg.maxStep,sw*0.82/Math.max(p,1));
+        row.forEach((c,j)=>{const ca=a+(j-(p-1)/2)*step, pos=polar(cfg.R2+ri*cfg.rowGap,ca);
+          const cn=mk(Object.assign({},c,{children:[],depth:2,sec:rd.id,x:pos.x,y:pos.y})); link(hub,cn);
+          if(cfg.blob)(c.children||[]).forEach((u,k)=>{const aa=k*2.4,rr=7+Math.sqrt(k)*4.2;
+            link(cn,mk(Object.assign({},u,{children:[],depth:3,sec:rd.id,x:cn.x+Math.cos(aa)*rr,y:cn.y+Math.sin(aa)*rr})))});
+          else fan(cn,c,ca,cfg.R3,3,rd.id,cfg);});
+      }
+      const lp=polar(cfg.R2+(Math.max(rows,1)-1)*cfg.rowGap+cfg.labelPad,a); hub.lx=lp.x;hub.ly=lp.y;
+    });
+    gset.forEach(g=>{ if(!g)return; const hs=roots.filter(r=>r.group===g).map(r=>ang[r.id]); sc.arcs.push({label:GROUPS[g],a0:Math.min(...hs)-sw*0.42,a1:Math.max(...hs)+sw*0.42,r:cfg.R1-52}); });
+  }
+  function fan(pn,d,dir,rad,depth,sec,cfg){
+    const ts=d.children||[],t=ts.length, step=depth===3&&cfg.step3?cfg.step3:Math.min(0.5,1.7/Math.max(t,1));
+    ts.forEach((c,k)=>{const ta=dir+(k-(t-1)/2)*step, rr=rad+(k%2)*(depth===3?12:0);
+      const n=mk(Object.assign({},c,{children:[],depth,sec,x:pn.x+Math.cos(ta)*rr,y:pn.y+Math.sin(ta)*rr})); link(pn,n);
+      if(c.children&&c.children.length)fan(n,c,ta,cfg.R4,depth+1,sec,cfg)});
+  }
+  const L=(arr,kind,color,extra)=>arr.map(t=>Object.assign({},t,{kind,isLeaf:true,color},extra));
+  if(lens==='departments'){
+    radial(v.departments.map(d=>{const col=pal(d.idx);return {id:d.id,kind:'dept',label:d.label,group:d.group,color:col,level:d.level,access:d.access,locked:d.access==='locked',plane:'DEPARTMENT',
+      children:d.circles.map(c=>({id:c.id,kind:'circle',label:c.label,color:col,level:c.level,restricted:c.restricted,plane:'TEAM',children:L(c.topics,'topic',col)}))}}),
+      {R1:380,R2:640,rowGap:165,perRow:2,maxStep:.3,R3:60,labelPad:275});
+  }else if(lens==='accounts'){
+    const accNodes=[];
+    radial(v.regions.map((r,ri)=>{const col=pal([0,5,7,2][ri%4]);return {id:r.id,kind:'region',label:r.label,color:col,level:r.level,plane:'ACCOUNT_RESTRICTED',
+      children:r.countries.map(k=>({id:k.id,kind:'country',label:k.label,color:col,level:k.level,plane:'ACCOUNT_RESTRICTED',
+        children:k.accounts.map(a=>{const ls=[].concat(...a.branches.filter(b=>b.key!=='con'||a.member).map(b=>b.leaves));
+          return {id:a.id,kind:'account',label:a.label,color:col,level:a.level,plane:'ACCOUNT_RESTRICTED',acct:a,sector:a.sector,status:a.status,nda:a.nda,ai:a.ai,custPerm:a.custPerm,
+            agg:aggOf(ls),nEngAcct:a.eng,children:L((a.branches.find(b=>b.key==='eng')||{leaves:[]}).leaves,'eng',col)}})}))}}),
+      {R1:340,R2:540,rowGap:135,perRow:5,maxStep:.34,R3:70,R4:26,step3:1.25,labelPad:215});
+    const bySector={}; sc.nodes.filter(n=>n.kind==='account').forEach(n=>(bySector[n.sector]=bySector[n.sector]||[]).push(n));
+    Object.values(bySector).forEach(a=>{for(let i=1;i<a.length;i++)sc.links.push({a:a[i-1],b:a[i],type:'in-sector'})});
+    v.bridges.forEach(b=>{const x=sc.byId.get(b.from),y=sc.byId.get(b.to); if(x&&y)sc.links.push({a:x,b:y,type:'replication',label:b.label})});
+  }else if(lens==='topics'){
+    radial(v.themes.map((t,i)=>{const col=pal(i);return {id:t.id,kind:'theme',label:t.label,color:col,level:t.level,plane:'GLOBAL',
+      children:t.children.map(c=>({id:c.id,kind:'themedept',label:c.label,color:pal(c.idx),level:t.level,plane:'GLOBAL',children:L(c.items,'topic',pal(c.idx))}))}}),
+      {R1:310,R2:480,rowGap:130,perRow:3,maxStep:.4,R3:62,labelPad:225});
+  }else{
+    radial(v.governances.map(g=>{const col=pal(g.idx),by={};g.useCases.forEach(u=>(by[u.status]=by[u.status]||[]).push(u));
+      return {id:g.id,kind:'gov',label:g.label,group:g.group,color:col,level:g.level,plane:'GLOBAL',useCaseTotal:g.useCases.length,
+        children:STATUSES.filter(s=>by[s]).map(s=>({id:g.id+'/c/'+s,kind:'cluster',label:s,color:col,level:g.level,plane:'GLOBAL',stage:STATUSES.indexOf(s),children:L(by[s],'uc',col)}))}}),
+      {R1:380,R2:560,rowGap:112,perRow:3,maxStep:.3,blob:true,labelPad:245});
+  }
+  return finishScene(sc);
+}
+function layoutAccount(v,accId){
+  let acct=null; v.regions.forEach(r=>r.countries.forEach(k=>k.accounts.forEach(a=>{if(a.id===accId)acct=a})));
+  if(!acct)return null;
+  const sc={structureOnly:v.level==='structure',lens:'account',nodes:[],edges:[],links:[],hubs:[],arcs:[],byId:new Map(),account:acct,originId:acct.id};
+  const mk=o=>{const n=Object.assign({children:[],x:0,y:0,r:6,depth:0,parent:null,sec:null,pass:true},o);n.dx=n.x;n.dy=n.y;n.fx=n.x;n.fy=n.y;sc.nodes.push(n);sc.byId.set(n.id,n);return n};
+  const link=(p,c,type)=>{p.children.push(c);c.parent=p;sc.edges.push({a:p,b:c,type:type||'contains'})};
+  const col=pal(hash(acct.region)%12), ls=[].concat(...acct.branches.map(b=>b.leaves));
+  const hub=mk({id:acct.id,kind:'accthub',label:acct.label,color:col,level:acct.level,plane:'ACCOUNT_RESTRICTED',acct,sector:acct.sector,status:acct.status,nda:acct.nda,ai:acct.ai,custPerm:acct.custPerm,
+    agg:aggOf(ls),nEngAcct:acct.eng,sec:'hub',depth:1,ly:62});
+  const n=acct.branches.length;
+  acct.branches.forEach((b,i)=>{const a=-Math.PI/2+i*2*Math.PI/Math.max(n,1), p=polar(210,a);
+    const bn=mk({id:b.id,kind:'branch',label:b.label,color:col,level:b.level,restricted:b.restricted,plane:'ACCOUNT_RESTRICTED',x:p.x,y:p.y,sec:b.id,depth:2,contacts:b.key==='con'}); link(hub,bn);
+    b.leaves.forEach((l,k)=>{const ta=a+(k-(b.leaves.length-1)/2)*.52, q=polar(105+(k%2)*12,ta);
+      link(bn,mk(Object.assign({},l,{kind:'leaf',isLeaf:true,color:col,x:bn.x+q.x,y:bn.y+q.y,sec:b.id,depth:3})))});});
+  if(acct.level!=='structure'){
+    acct.meetings.forEach((m,i)=>{const p=polar(470,2.4+i*.28);const mn=mk(Object.assign({},m,{kind:'meeting',isLeaf:true,color:col,x:p.x,y:p.y,sec:'graph',depth:2}));
+      sc.links.push({a:hub,b:mn,type:'same-account'}); if(i)sc.links.push({a:mn,b:sc.byId.get(acct.meetings[i-1].id),type:'follow-up-of'})});
+    acct.bids.forEach((m,i)=>{const p=polar(470,.45+i*.3);const bn=mk(Object.assign({},m,{kind:'bid',isLeaf:true,color:col,x:p.x,y:p.y,sec:'graph',depth:2}));sc.links.push({a:hub,b:bn,type:'same-account'})});
+    const sp=polar(470,Math.PI/2), s=mk({id:acct.id+'/sector',kind:'sector',label:'Sector: '+acct.sector,color:col,level:acct.level,plane:'ACCOUNT_RESTRICTED',x:sp.x,y:sp.y,sec:'graph',depth:2,sectorOnly:true});
+    sc.links.push({a:hub,b:s,type:'in-sector'});}
+  sc.hubs=[hub];
+  return finishScene(sc);
+}
+function facetVal(l,k){return k==='fresh'?(l.days<30?'Under 30 days':l.days<=90?'30 to 90 days':'Over 90 days'):k==='tag'?l.tags:l[k]}
+const FACETS=[['type','Type'],['owner','Owner role'],['status','Status'],['evidence','Evidence'],['fresh','Freshness'],['tag','Tag'],['sector','Sector']];
+function matches(l){return FACETS.every(([k])=>{const f=S.filters[k];if(!f||!f.size)return true;const v=facetVal(l,k);return Array.isArray(v)?v.some(x=>f.has(x)):f.has(v)})}
+function applyFilter(sc){
+  const active=FACETS.some(([k])=>S.filters[k]&&S.filters[k].size);
+  const rec=n=>{ if(n.isLeaf&&n.type!==undefined){n.pass=!active||matches(n);return n.pass}
+    let any=false;n.children.forEach(c=>{if(rec(c))any=true}); n.pass=!active||any; return n.pass};
+  sc.nodes.filter(n=>!n.parent||n.kind==='core').forEach(rec); sc.nodes.forEach(n=>{if(n.kind==='core')n.pass=true});
+}
+function finishScene(sc){
+  const fin=n=>{ n.children.forEach(fin);
+    if(n.agg)Object.assign(n,{cnt:n.agg.cnt,nLeaf:n.agg.nLeaf,cOpen:n.agg.cOpen,cGap:n.agg.cGap,cStar:n.agg.cStar,minDays:n.agg.minDays,nAcc:1,nEng:n.nEngAcct||0});
+    else if(n.isLeaf&&!n.children.length)Object.assign(n,{cnt:n.items||0,nLeaf:n.kind==='sector'?0:1,cOpen:n.open?1:0,cGap:n.gap?1:0,cStar:n.star?1:0,minDays:n.days==null?null:n.days,nAcc:0,nEng:0});
+    else{const ch=n.kind==='core'?n.children.filter(c=>c.sec==='core'):n.children,m=ch.map(c=>c.minDays).filter(x=>x!=null);
+      Object.assign(n,{cnt:sum(ch,c=>c.cnt),nLeaf:sum(ch,c=>c.nLeaf),cOpen:sum(ch,c=>c.cOpen),cGap:sum(ch,c=>c.cGap),cStar:sum(ch,c=>c.cStar),minDays:m.length?Math.min(...m):null,nAcc:sum(ch,c=>c.nAcc),nEng:sum(ch,c=>c.nEng)})}
+    if(n.kind==='uc'||n.kind==='core'||n.kind==='topic'&&n.sec==='core')n.nAcc=0;
+    n.hide=n.level==='structure'&&sc.structureOnly&&!n.locked;
+    n.alpha=n.isLeaf&&n.days!=null?Math.max(.3,1-n.days/120):n.minDays!=null?Math.max(.55,1-n.minDays/160):.8;
+    n.r=sizeOf(n);};
+  const roots=sc.nodes.filter(n=>!n.parent); roots.forEach(fin);
+  sc.roots=roots.filter(n=>n.kind==='core'||n.depth===1&&!n.parent||true);
+  sc.adj=new Map(); const add=(a,b)=>{(sc.adj.get(a)||sc.adj.set(a,new Set()).get(a)).add(b);(sc.adj.get(b)||sc.adj.set(b,new Set()).get(b)).add(a)};
+  sc.edges.forEach(e=>add(e.a,e.b)); sc.links.forEach(e=>add(e.a,e.b));
+  sc.b=boundsOf(sc.nodes); applyFilter(sc); return sc;
+}
+function sizeOf(n){
+  switch(n.kind){case 'core':return 14;case 'dept':case 'region':case 'theme':case 'gov':case 'accthub':return n.kind==='accthub'?24:15;
+    case 'circle':case 'country':case 'themedept':return 7+Math.min(7,Math.sqrt(n.cnt||0)*.55);
+    case 'cluster':return 6+Math.sqrt(n.nLeaf||0)*1.5;case 'account':return 8+Math.min(6,Math.sqrt(n.cnt||0)*.5);
+    case 'branch':return 10;case 'uc':return 2+(n.stage||0)*.9;case 'eng':return 3.2;case 'meeting':case 'bid':case 'sector':return 5;
+    default:return 3+Math.min(7,Math.sqrt(n.cnt||0)*.85)}
+}
+function boundsOf(ns){
+  let a=1e9,b=1e9,c=-1e9,d=-1e9;
+  ns.forEach(n=>{const x=n.x,y=n.y,m=n.r+30;a=Math.min(a,x-m);c=Math.max(c,x+m);b=Math.min(b,y-m);d=Math.max(d,y+m);
+    if(n.lx!=null){a=Math.min(a,n.lx-160);c=Math.max(c,n.lx+160);b=Math.min(b,n.ly-30);d=Math.max(d,n.ly+40)}});
+  if(a>c){a=-200;c=200;b=-160;d=160}
+  return {a,b,c,d};
+}
+function localSet(){
+  const sc=S.scene; if(!S.sel||!sc.adj.has(S.sel))return null;
+  const seen=new Set([S.sel]); let fr=[S.sel];
+  for(let h=0;h<S.hops;h++){const nx=[];fr.forEach(n=>sc.adj.get(n)&&sc.adj.get(n).forEach(m=>{if(!seen.has(m)){seen.add(m);nx.push(m)}}));fr=nx}
+  return seen;
+}
+
+/* =====================================================================
+   5. RENDER  (canvas; reads only scene nodes derived from admittedView)
+   ===================================================================== */
+const cv=$('#cv'), g2=cv.getContext('2d'), mm=$('#mm'), mg=mm.getContext('2d');
+let cw=0,ch=0,dpr=1,raf=0;
+const cam={x:0,y:0,z:.4,tw:null};
+const stars=Array.from({length:170},(_,i)=>({x:(hash('sx'+i)%1000)/1000,y:(hash('sy'+i)%1000)/1000,r:.3+(hash('sr'+i)%100)/100*.9,a:.15+(hash('sa'+i)%100)/100*.4,d:.2+(hash('sd'+i)%100)/100}));
+const toS=(x,y)=>[(x-cam.x)*cam.z+cw/2,(y-cam.y)*cam.z+ch/2];
+const toW=(sx,sy)=>[(sx-cw/2)/cam.z+cam.x,(sy-ch/2)/cam.z+cam.y];
+const ease=p=>1-(1-p) ** 3;
+function invalidate(){if(!raf)raf=requestAnimationFrame(draw)}
+function resize(){const r=cv.getBoundingClientRect();cw=r.width;ch=r.height;dpr=Math.min(window.devicePixelRatio||1,2);cv.width=Math.round(cw*dpr);cv.height=Math.round(ch*dpr);invalidate()}
+function flyTo(x,y,z,instant){z=clamp(z,.12,4);if(instant||reduce){cam.x=x;cam.y=y;cam.z=z;cam.tw=null}else cam.tw={t0:performance.now(),d:700,x0:cam.x,y0:cam.y,z0:cam.z,x1:x,y1:y,z1:z};invalidate()}
+function fitNodes(ns,instant){
+  if(!ns.length||!cw)return; const b=boundsOf(ns), w=Math.max(b.c-b.a,380), h=Math.max(b.d-b.b,300), M=48;
+  let z=Math.min(cw/w,ch/h)*.92; const cx=(b.a+b.c)/2, cy=(b.b+b.d)/2;
+  for(let i=0;i<16;i++){let ok=true;
+    for(const n of ns){const sx=(n.x-cx)*z+cw/2,sy=(n.y-cy)*z+ch/2,r=n.r*z ** .75+8;let l=sx-r,rr=sx+r,t=sy-r,bt=sy+r;
+      if(n.lx!=null){const lx=(n.lx-cx)*z+cw/2,ly=(n.ly-cy)*z+ch/2;l=Math.min(l,lx-112);rr=Math.max(rr,lx+112);t=Math.min(t,ly-36);bt=Math.max(bt,ly+44)}
+      if(l<M||rr>cw-M||t<M||bt>ch-M){ok=false;break}}
+    if(ok)break; z*=.94}
+  flyTo(cx,cy,z,instant);
+}
+function applyView(instant){
+  const sc=S.scene; let ns=sc.nodes;
+  if(sc===S.lensScene&&S.focus)ns=ns.filter(n=>n.sec===S.focus);
+  fitNodes(ns,instant);
+}
+const activeSec=()=>S.hoverSec||(S.scene===S.lensScene&&S.focus)||null;
+function nodeVisible(n){
+  if(n.kind==='uc')return cam.z>=.8||activeSec()===n.sec||S.sel===n||S.hover===n;
+  if(n.kind==='eng')return cam.z>=.4;
+  return true;
+}
+function setScene(sc){
+  const old=S.scene;
+  S.ghosts=[];S.trans=null;
+  if(old&&!reduce){
+    const from=new Map(old.nodes.map(n=>[n.id,[n.dx,n.dy]])), ids=new Set(sc.nodes.map(n=>n.id)), o=from.get(sc.originId)||[0,0];
+    sc.nodes.forEach(n=>{const f=from.get(n.id);n.isNew=!f;n.fx=f?f[0]:o[0];n.fy=f?f[1]:o[1]});
+    S.ghosts=old.nodes.filter(n=>!ids.has(n.id)&&n.depth<=3).map(n=>({x:n.dx,y:n.dy,r:n.r,c:n.color}));
+    S.trans={t0:performance.now(),d:850,tx:o};
+  }
+  S.scene=sc;
+}
+function updatePos(now){
+  const sc=S.scene,t=S.trans; let p=1;
+  if(t){p=clamp((now-t.t0)/t.d,0,1);if(p>=1){S.trans=null;S.ghosts=[]}p=ease(p)}
+  sc.nodes.forEach(n=>{n.dx=n.fx+(n.x-n.fx)*p;n.dy=n.fy+(n.y-n.fy)*p;n.ta=n.isNew?p:1});
+  S.tp=p;
+}
+function stepTween(now){const t=cam.tw;if(!t)return;let p=(now-t.t0)/t.d;if(p>=1){p=1;cam.tw=null}const e=ease(p);cam.x=t.x0+(t.x1-t.x0)*e;cam.y=t.y0+(t.y1-t.y0)*e;cam.z=t.z0*(t.z1/t.z0) ** e}
+function dimOf(n,loc){let f=1;const a=activeSec();if(a&&n.sec!==a&&n.kind!=='core')f*=.16;if(loc&&!loc.has(n))f*=.1;if(!n.pass)f*=.12;return f}
+function txt(s,x,y,size,color,o){
+  o=o||{};g2.font=(o.w||500)+' '+size+'px '+(o.f||C.body);g2.textAlign=o.al||'center';g2.textBaseline=o.bl||'middle';
+  if('letterSpacing' in g2)g2.letterSpacing=(o.ls||0)+'px';
+  g2.globalAlpha=o.a==null?1:o.a;
+  if(o.halo!==false){g2.lineWidth=3.5;g2.strokeStyle=C.bg;g2.lineJoin='round';g2.strokeText(s,x,y)}
+  g2.fillStyle=color;g2.fillText(s,x,y);
+  if('letterSpacing' in g2)g2.letterSpacing='0px';g2.globalAlpha=1;
+}
+function wrap(s,max){const w=s.split(' '),out=[];let cur='';w.forEach(x=>{if((cur+' '+x).trim().length>max&&cur){out.push(cur);cur=x}else cur=(cur+' '+x).trim()});if(cur)out.push(cur);return out}
+function lockIcon(x,y,s,color){g2.fillStyle=color;g2.fillRect(x-s*.5,y-s*.05,s,s*.75);g2.lineWidth=Math.max(1,s*.16);g2.strokeStyle=color;g2.beginPath();g2.arc(x,y-s*.05,s*.32,Math.PI,0);g2.stroke()}
+function starPath(x,y,R){g2.beginPath();for(let i=0;i<10;i++){const r=i%2?R*.45:R,a=-Math.PI/2+i*Math.PI/5;g2.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r)}g2.closePath()}
+function edgePath(a,b,bend){const [x1,y1]=toS(a.dx,a.dy),[x2,y2]=toS(b.dx,b.dy);g2.beginPath();g2.moveTo(x1,y1);
+  if(bend){const mx=(x1+x2)/2,my=(y1+y2)/2,dx=x2-x1,dy=y2-y1;g2.quadraticCurveTo(mx-dy*bend,my+dx*bend,x2,y2)}else g2.lineTo(x2,y2)}
+
+function draw(now){
+  raf=0; if(!cw||!S.scene||S.mode!=='map')return;
+  stepTween(now||performance.now()); updatePos(now||performance.now());
+  const sc=S.scene, z=cam.z, tp=S.tp==null?1:S.tp, loc=S.lg?localSet():null, mot=!reduce;
+  g2.setTransform(dpr,0,0,dpr,0,0); g2.clearRect(0,0,cw,ch);
+  for(let i=0;i<stars.length;i++){const s=stars[i],tw=mot?.75+.25*Math.sin(now/1100+i):1;
+    const x=(((s.x*cw-cam.x*s.d*.05)%cw)+cw)%cw,y=(((s.y*ch-cam.y*s.d*.05)%ch)+ch)%ch;g2.globalAlpha=s.a*tw;g2.fillStyle='#fff';g2.fillRect(x,y,s.r*1.6,s.r*1.6)}
+  g2.globalAlpha=1;
+  // group arcs
+  sc.arcs.forEach(a=>{const [cx,cy]=toS(0,0);g2.strokeStyle=rgba(C.muted,.22*tp);g2.lineWidth=1;g2.beginPath();g2.arc(cx,cy,a.r*z,a.a0,a.a1);g2.stroke();
+    const m=(a.a0+a.a1)/2,[tx,ty]=toS(Math.cos(m)*(a.r+0),Math.sin(m)*(a.r+0));txt(a.label.toUpperCase(),tx,ty,10,C.faint,{ls:3,a:.9*tp,halo:true})});
+  // core glow
+  {const [cx,cy]=toS(0,0),R=(150+(mot?Math.sin(now/1500)*8:0))*z,gr=g2.createRadialGradient(cx,cy,0,cx,cy,R);gr.addColorStop(0,rgba(C.core,.32));gr.addColorStop(1,rgba(C.core,0));g2.fillStyle=gr;g2.fillRect(cx-R,cy-R,R*2,R*2)}
+  // country glow = active engagements
+  sc.nodes.forEach(n=>{if(n.kind==='country'&&n.nEng>0){const [x,y]=toS(n.dx,n.dy),R=(46+n.nEng*14)*z ** .8,gr=g2.createRadialGradient(x,y,0,x,y,R);
+    gr.addColorStop(0,rgba(n.color,.2*dimOf(n,loc)*tp));gr.addColorStop(1,rgba(n.color,0));g2.fillStyle=gr;g2.fillRect(x-R,y-R,R*2,R*2)}});
+  // ghosts
+  if(S.trans)S.ghosts.forEach(gh=>{const [x,y]=toS(gh.x*(1-tp),gh.y*(1-tp));g2.globalAlpha=(1-tp)*.5;g2.fillStyle=gh.c;g2.beginPath();g2.arc(x,y,Math.max(1.5,gh.r*z ** .75),0,7);g2.fill();g2.globalAlpha=1});
+  // structural edges
+  sc.edges.forEach(e=>{if(!nodeVisible(e.a)||!nodeVisible(e.b))return;const f=Math.min(dimOf(e.a,loc),dimOf(e.b,loc))*(e.b.ta==null?1:e.b.ta);
+    g2.strokeStyle=rgba(e.b.color||C.muted,(e.type==='spoke'?.1:.26)*f);g2.lineWidth=e.type==='spoke'?.8:1;edgePath(e.a,e.b);g2.stroke()});
+  // link edges (same-account, follow-up-of, in-sector, replication)
+  sc.links.forEach(e=>{const f=Math.min(dimOf(e.a,loc),dimOf(e.b,loc)),rep=e.type==='replication';
+    g2.save();g2.strokeStyle=rgba(rep?C.accent:C.muted,(rep?.8:.45)*f*tp);g2.lineWidth=rep?1.6:1.1;
+    g2.setLineDash(e.type==='in-sector'?[7,5]:e.type==='follow-up-of'?[1,5]:rep?[8,4]:[]);g2.lineCap='round';edgePath(e.a,e.b,rep?.28:e.type==='in-sector'?.12:0);g2.stroke();g2.restore();
+    if(rep&&z>.3){const [x1,y1]=toS(e.a.dx,e.a.dy),[x2,y2]=toS(e.b.dx,e.b.dy);txt('Replication in design',(x1+x2)/2,(y1+y2)/2-26*z-6,10.5,C.accent,{ls:1,a:.9*f})}});
+  // nodes
+  sc.nodes.forEach(n=>{
+    if(!nodeVisible(n))return;
+    const [x,y]=toS(n.dx,n.dy); if(x<-80||y<-80||x>cw+80||y>ch+80)return;
+    const rs=Math.max(2,n.r*z ** .75), f=dimOf(n,loc)*(n.ta==null?1:n.ta), a=(n.locked?.42:n.alpha)*f, col=n.color, big=n.depth<=1&&n.kind!=='topic'&&n.kind!=='uc'||n.kind==='accthub';
+    g2.globalAlpha=1;
+    if(n.kind==='core'){const R=rs*3,gr=g2.createRadialGradient(x,y,0,x,y,R);gr.addColorStop(0,rgba(C.core,.95));gr.addColorStop(.35,rgba(C.core,.35));gr.addColorStop(1,rgba(C.core,0));g2.fillStyle=gr;g2.beginPath();g2.arc(x,y,R,0,7);g2.fill();return}
+    if(big||n.kind==='circle'||n.kind==='country'||n.kind==='themedept'||n.kind==='account'||n.kind==='branch'||n.kind==='cluster'){
+      if(!n.locked&&big){const R=rs*3.4,gr=g2.createRadialGradient(x,y,0,x,y,R);gr.addColorStop(0,rgba(col,.32*f));gr.addColorStop(1,rgba(col,0));g2.fillStyle=gr;g2.beginPath();g2.arc(x,y,R,0,7);g2.fill()}
+      g2.globalAlpha=Math.min(1,a+.1);g2.fillStyle=C.bg;g2.beginPath();g2.arc(x,y,rs,0,7);g2.fill();
+      g2.strokeStyle=col;g2.lineWidth=big?1.8:1.3;g2.setLineDash(n.locked||n.restricted||n.contacts?[3,3]:[]);g2.stroke();g2.setLineDash([]);
+      if(n.locked)lockIcon(x,y+rs*.12,rs*.7,col);
+      else if(n.kind==='cluster'){if(rs>7)txt(String(n.nLeaf),x,y,Math.min(11,rs*.9),col,{halo:false,w:700,a:Math.min(1,f)});}
+      else{g2.fillStyle=col;g2.beginPath();g2.arc(x,y,rs*(n.kind==='account'?.3+Math.min(.35,(n.cnt||0)/220):.35),0,7);g2.fill()}
+      g2.globalAlpha=1;
+    }else{
+      const R=rs*3,gr=g2.createRadialGradient(x,y,0,x,y,R);
+      if(!n.gap){gr.addColorStop(0,rgba(col,.5*a));gr.addColorStop(1,rgba(col,0));g2.fillStyle=gr;g2.beginPath();g2.arc(x,y,R,0,7);g2.fill()}
+      if(n.gap){g2.globalAlpha=Math.max(.4,f);g2.strokeStyle=col;g2.lineWidth=1.2;g2.setLineDash([2,2]);g2.beginPath();g2.arc(x,y,rs,0,7);g2.stroke();g2.setLineDash([])}
+      else{g2.globalAlpha=Math.min(1,a+.08);g2.fillStyle=col;g2.beginPath();g2.arc(x,y,rs,0,7);g2.fill()}
+      g2.globalAlpha=1;
+    }
+    // living signals
+    const pulses=(n.isLeaf&&n.open)||(n.kind==='account'||n.kind==='accthub'||n.kind==='branch')&&n.cOpen>0;
+    if(pulses&&!n.locked){const ph=mot?((now/1700)+hash(n.id)%100/100)%1:.3;g2.globalAlpha=(1-ph)*.75*f;g2.strokeStyle=C.accent;g2.lineWidth=1.3;g2.beginPath();g2.arc(x,y,rs+4+ph*13*Math.min(z,1.4),0,7);g2.stroke();g2.globalAlpha=1}
+    if((n.isLeaf&&n.star)||(n.kind==='account'||n.kind==='accthub')&&n.cStar>0){g2.globalAlpha=Math.min(1,f+.1);g2.fillStyle=C.star;starPath(x+rs+4,y-rs-4,5.5);g2.fill();g2.globalAlpha=1}
+    if(S.sel===n){g2.strokeStyle=C.text;g2.lineWidth=1.5;g2.setLineDash([4,3]);g2.beginPath();g2.arc(x,y,rs+8,0,7);g2.stroke();g2.setLineDash([])}
+    if(S.hover===n){g2.strokeStyle=rgba(C.text,.7);g2.lineWidth=1;g2.beginPath();g2.arc(x,y,rs+6,0,7);g2.stroke()}
+    if(sc.nodes[S.kb]===n){g2.strokeStyle=C.focus;g2.lineWidth=2;g2.beginPath();g2.arc(x,y,rs+10,0,7);g2.stroke()}
+  });
+  // labels with collision avoidance (hubs nudged radially, others skipped if they collide)
+  const act=activeSec(), accScene=sc.lens==='account', placed=[];
+  const fits=r=>placed.every(p=>r.l>=p.r||r.r<=p.l||r.t>=p.b||r.b<=p.t);
+  const mw=(s,size,o)=>{g2.font=(o.w||500)+' '+size+'px '+(o.f||C.body);if('letterSpacing' in g2)g2.letterSpacing=(o.ls||0)+'px';const w=g2.measureText(s).width+4;if('letterSpacing' in g2)g2.letterSpacing='0px';return w};
+  const put=(s,x,y,size,color,o,force)=>{
+    const w=mw(s,size,o),al=o.al||'center'; let l=al==='center'?x-w/2:al==='left'?x:x-w; l=clamp(l,6,Math.max(6,cw-w-6));
+    const rect={l:l-2,r:l+w+2,t:y-size*.65,b:y+size*.65}; if(!force&&!fits(rect))return;
+    placed.push(rect); txt(s,l,y,size,color,Object.assign({},o,{al:'left'}));
+  };
+  sc.nodes.forEach(n=>{
+    if(n.kind==='core'){const [x,y]=toS(n.dx,n.dy);const o={ls:3.5,a:.95,f:C.disp,w:600};put('COMPANY GLOBAL',x,y+n.ly*z*.9+4,11,C.core,o,true);return}
+    if(!(n.depth===1&&n.lx!=null))return;
+    const [lx0,ly0]=toS(n.lx,n.ly); if(lx0<-150||lx0>cw+150||ly0<-80||ly0>ch+80)return;
+    const size=(act===n.sec||!act)?14:12, lines=wrap(n.label.toUpperCase(),14), lo={ls:3.2,f:C.disp,w:600};
+    const sub=n.locked?'LOCKED, NAME ONLY':n.hide?'STRUCTURE ONLY':n.kind==='gov'?n.useCaseTotal+' USE CASES':n.kind==='region'?n.nAcc+' ACCOUNTS':n.cnt+' ITEMS, '+n.nLeaf+' TOPICS';
+    const W=Math.max(sub.length*10.5,...lines.map(l=>mw(l,size,lo)))+8, H=lines.length*(size+3)+24, ux=Math.cos(n.ang),uy=Math.sin(n.ang);
+    let x0=lx0,y0=ly0;
+    for(let k=0;k<=14;k++){x0=clamp(lx0+ux*k*13,W/2+6,cw-W/2-6);y0=clamp(ly0+uy*k*13,H/2+4,ch-H/2-4);
+      const r={l:x0-W/2,r:x0+W/2,t:y0-H/2,b:y0+H/2}; if(fits(r)||k===14){placed.push(r);break}}
+    const dim=(act&&act!==n.sec?.35:1)*(n.ta==null?1:n.ta);
+    lines.forEach((l,i)=>txt(l,x0,y0-H/2+10+size/2+i*(size+3),size,n.locked?C.faint:(act===n.sec?n.color:C.text),Object.assign({a:(n.locked?.7:.95)*dim},lo)));
+    txt(sub,x0,y0+H/2-8,9,C.muted,{ls:1.2,a:.8*(act&&act!==n.sec?.3:1),halo:false});
+  });
+  const cands=[];
+  sc.nodes.forEach(n=>{
+    if(n.kind==='core'||(n.depth===1&&n.lx!=null)||!nodeVisible(n))return;
+    const [x,y]=toS(n.dx,n.dy); if(x<-120||y<-60||x>cw+120||y>ch+60)return;
+    const f=dimOf(n,loc)*(n.ta==null?1:n.ta), rs=Math.max(2,n.r*z ** .75), forced=S.hover===n||S.sel===n;
+    const al0=.9*Math.min(1,f+.2)*(n.pass?1:.3), col=n.locked?C.faint:C.text, lab=n.label.length>38?n.label.slice(0,36)+'...':n.label;
+    if(accScene&&n.kind==='accthub'){cands.push({s:n.label.toUpperCase(),x,y:y+rs+22,size:15,o:{ls:3,f:C.disp,w:600},pr:0,force:true,col:C.text});return}
+    if(n.kind==='branch'){const p=n.parent;let ux=n.dx-p.dx,uy=n.dy-p.dy;const L=Math.hypot(ux,uy)||1;ux/=L;uy/=L;
+      cands.push({s:lab,x:x-ux*(rs+22),y:y-uy*(rs+16),size:12,o:{a:al0},pr:1,force:forced,col});return}
+    let size=11,dy=-rs-9,al='center',pr=2,show=false;
+    if(n.kind==='circle'||n.kind==='country'||n.kind==='themedept'||n.kind==='cluster'){show=z>=.75||act===n.sec;if(n.kind==='cluster'){show=z>=1.1;dy=rs+10}pr=1}
+    else if(n.kind==='account'){show=z>=1||act===n.sec}
+    else{show=(act===n.sec&&z>=1)||z>=1.7||(accScene&&z>=1.15);size=10.5;al=n.parent&&n.x<n.parent.x?'right':'left';dy=0;pr=3}
+    if(forced)show=true,pr=0; if(!show)return;
+    cands.push({s:lab,x:al==='center'?x:x+(al==='left'?1:-1)*(rs+6),y:y+dy,size,o:{al,a:al0},pr,force:forced,col});
+  });
+  cands.sort((a,b)=>a.pr-b.pr).forEach(c=>put(c.s,c.x,c.y,c.size,c.col,c.o,c.force));
+  // zoom label + minimap
+  $('#zPct').textContent=Math.round(z*100)+'%'; drawMini();
+  if(mot&&(S.trans||cam.tw||true))raf=requestAnimationFrame(draw);
+}
+function drawMini(){
+  const sc=S.scene,b=sc.b,W=mm.width,H=mm.height; mg.clearRect(0,0,W,H);
+  const w=b.c-b.a,h=b.d-b.b,k=Math.min((W-12)/w,(H-12)/h),ox=(W-w*k)/2-b.a*k,oy=(H-h*k)/2-b.b*k;
+  sc.nodes.forEach(n=>{mg.globalAlpha=n.locked?.3:n.pass?.85:.2;mg.fillStyle=n.color;const r=n.depth<=1?2.4:n.depth===2?1.5:1;mg.fillRect(n.x*k+ox-r,n.y*k+oy-r,r*2,r*2)});
+  mg.globalAlpha=1;mg.strokeStyle=C.accent;mg.lineWidth=1;
+  const vw=cw/cam.z,vh=ch/cam.z;mg.strokeRect((cam.x-vw/2)*k+ox,(cam.y-vh/2)*k+oy,vw*k,vh*k);
+  mm._k={k,ox,oy};
+}
+function hitTest(sx,sy){
+  const sc=S.scene; let best=null,bd=1e9;
+  for(let i=sc.nodes.length-1;i>=0;i--){const n=sc.nodes[i]; if(!nodeVisible(n)||(n.ta!=null&&n.ta<.5))continue;
+    const [x,y]=toS(n.dx,n.dy),r=Math.max(2,n.r*cam.z ** .75)+(n.isLeaf?4:6),d=Math.hypot(x-sx,y-sy);
+    if(d<=r&&d<bd){bd=d;best=n}}
+  return best;
+}
+
+/* =====================================================================
+   6. UI  (controls, panel, list, table, search, sheets; reads admittedView output via scenes)
+   ===================================================================== */
+const h=(tag,props,...kids)=>{const e=document.createElement(tag);for(const k in props||{}){const v=props[k];
+  if(k==='class')e.className=v;else if(k.slice(0,2)==='on')e.addEventListener(k.slice(2),v);else if(v===true)e.setAttribute(k,'');else if(v!==false&&v!=null)e.setAttribute(k,v)}
+  kids.flat(9).forEach(c=>{if(c==null||c===false)return;e.append(c.nodeType?c:document.createTextNode(c))});return e};
+const KIND={core:'Company Global',dept:'Department',circle:'Circle',topic:'Topic',region:'Region',country:'Country',account:'Account',accthub:'Account',branch:'Branch',leaf:'Item',eng:'Engagement',
+  theme:'Theme',themedept:'Contributing department',gov:'Governance',cluster:'Maturity stage',uc:'AI use case',meeting:'Meeting',bid:'Bid',sector:'Sector'};
+const ctxFor=r=>({ndaGrant:S.ndaGrant&&r==='ceo',elevated:S.elevated&&r==='ceo'});
+const ago=d=>d==null?'no evidence':d===0?'today':d+' days ago';
+const evClass=e=>e==='supported'?'ok':e==='partial'?'warn':'bad';
+const aiClass=s=>s==='allowed'?'ok':s==='unknown'?'warn':'bad';
+const sr=t=>{$('#sr').textContent=t};
+
+function rebuild(o){
+  o=o||{}; const v=curView();
+  S.lensScene=layoutLens(v,S.lens); let sc=S.lensScene;
+  if(S.account){const a=layoutAccount(v,S.account);if(a)sc=a;else S.account=null}
+  if(S.focus&&!S.lensScene.byId.has(S.focus))S.focus=null;
+  setScene(sc); S.sel=S.selId?sc.byId.get(S.selId)||null:null; S.kb=-1; S.hover=null; S.hoverSec=null;
+  chrome(); applyView(o.instant); renderPanel(); renderAlt(); renderFacets(); renderRoleCard(); invalidate();
+}
+function refilter(){[S.lensScene,S.scene].forEach(sc=>sc&&applyFilter(sc));renderFacets();renderAlt();chrome();invalidate()}
+function select(n){S.sel=n;S.selId=n?n.id:null;renderPanel();renderAlt(true);$('#panel').classList.toggle('open',!!n);invalidate()}
+function focusHub(n){S.focus=n?n.sec:null;applyView();chrome();invalidate()}
+function openAccount(id){S.account=id;S.selId=id;rebuild()}
+function closeAccount(){const id=S.account;S.account=null;S.selId=id;rebuild()}
+function activate(n){
+  const sc=S.scene;
+  if(sc===S.lensScene){
+    if(n.kind==='core'){S.focus=null;applyView();chrome()}
+    else if(n.depth===1&&n.sec!=='core'){focusHub(n)}
+    else if(n.kind==='account'){openAccount(n.id);return}
+  }
+  select(n); sr(n.label+', '+(KIND[n.kind]||''));
+}
+function back(){
+  if(!$('#sheetBg').hidden){closeSheet();return}
+  if(S.sel){select(null);return}
+  if(S.account){closeAccount();return}
+  if(S.focus){S.focus=null;applyView();chrome();invalidate()}
+}
+
+/* ---- chrome: crumbs, counter, arrows, legend, banner ---- */
+function chrome(){
+  const sc=S.scene,lens=LENSES.find(l=>l[0]===S.lens),cr=$('#crumbs'); cr.replaceChildren();
+  const parts=[[lens[2],()=>{S.account=null;S.focus=null;S.selId=null;rebuild()}]];
+  if(S.account){const a=sc.account,rg=S.lensScene.byId.get(a.region),ct=S.lensScene.byId.get(a.country);
+    if(rg)parts.push([rg.label,()=>{S.account=null;S.focus=rg.sec;S.selId=null;rebuild()}]);
+    if(ct)parts.push([ct.label,()=>{S.account=null;S.focus=rg.sec;S.selId=ct.id;rebuild()}]);
+    parts.push([a.label,null]);
+  }else if(S.focus){const hb=S.lensScene.byId.get(S.focus);if(hb)parts.push([hb.label,null])}
+  parts.forEach((p,i)=>{if(i)cr.append(h('span',{class:'sep','aria-hidden':'true'},'>'));cr.append(p[1]&&i<parts.length-1?h('button',{type:'button',onclick:p[1]},p[0]):h('span',{class:'cur'},p[0]))});
+  const lv=curView().level, hidden=lv==='structure', c=$('#count'); c.replaceChildren();
+  const n=sc.nodes;
+  if(hidden)c.append('Structure only, counts hidden');
+  else if(sc.lens==='account')c.append(h('b',null,String(n.filter(x=>x.isLeaf&&x.pass).length)),'items you can see');
+  else if(S.lens==='accounts')c.append(h('b',null,String(n.filter(x=>x.kind==='account'&&x.pass).length)),'accounts you can see');
+  else if(S.lens==='governances')c.append(h('b',null,String(n.filter(x=>x.kind==='uc'&&x.pass).length)),'use cases you can see');
+  else c.append(h('b',null,String(n.filter(x=>x.kind==='topic'&&x.pass).length)),'topics you can see');
+  const nav=sc===S.lensScene&&S.focus&&S.mode==='map', hubs=S.lensScene.hubs, i=hubs.findIndex(x=>x.sec===S.focus);
+  ['prev','next'].forEach(k=>{const b=$('#'+k);b.hidden=!nav||hubs.length<2;if(!b.hidden){const t=hubs[(i+(k==='next'?1:hubs.length-1))%hubs.length];b.textContent=(k==='next'?'':'< ')+t.label.toUpperCase()+(k==='next'?' >':'');b.setAttribute('aria-label',(k==='next'?'Next: ':'Previous: ')+t.label)}});
+  const none=S.lens==='accounts'&&!S.lensScene.hubs.length;
+  $('#emptyNote').hidden=!none; if(none)$('#emptyNote').textContent='No accounts in your scope. Accounts appear only through a role grant or membership.';
+  $('#lg').hidden=S.mode!=='map'; ['#legend','#zoom'].forEach(s=>$(s).hidden=S.mode!=='map'); $('#mm').hidden=S.mode!=='map';
+  $('#lgOut').value=S.hops;
+  const b=$('#banner');
+  if(S.elevated&&S.role==='ceo'){b.hidden=false;b.replaceChildren('Elevated, audited. Edit and review are enabled until the 4 h window ends (simulated). Approval stays blocked. ',h('button',{class:'btn',type:'button',onclick:()=>{S.elevated=false;rebuildKeepView()}},'End elevation'))}
+  else b.hidden=true;
+}
+const rebuildKeepView=()=>{rebuild({instant:true})};
+
+/* ---- selects and segmented controls ---- */
+function setLens(id){S.lens=id;S.focus=null;S.account=null;S.selId=null;S.filters={};buildControls();rebuild()}
+function setMode(id){S.mode=id;buildControls();$('#listView').hidden=id!=='list';$('#tableView').hidden=id!=='table';renderAlt();chrome();invalidate()}
+const MODES=[['map','Map'],['list','List'],['table','Table']];
+function buildControls(){
+  const ls=$('#lensSeg'),vs=$('#viewSeg'); ls.replaceChildren();vs.replaceChildren();
+  LENSES.forEach(([id,label])=>ls.append(h('button',{type:'button','aria-pressed':String(S.lens===id),onclick:()=>setLens(id)},label)));
+  MODES.forEach(([id,label])=>vs.append(h('button',{type:'button','aria-pressed':String(S.mode===id),onclick:()=>setMode(id)},label)));
+  const fill=(sel,items,cur,fn)=>{sel.replaceChildren(...items.map(([id,l])=>h('option',{value:id},l)));sel.value=cur;sel.onchange=()=>fn(sel.value)};
+  fill($('#lensSel'),LENSES,S.lens,setLens);fill($('#viewSel'),MODES,S.mode,setMode);
+}
+
+/* ---- facets (Obsidian-style property filters) ---- */
+function renderFacets(){
+  const box=$('#facets'),leaves=S.scene.nodes.filter(n=>n.isLeaf&&n.type!==undefined); box.replaceChildren();
+  let active=0;
+  FACETS.forEach(([k,label])=>{
+    const vals=new Set(); leaves.forEach(l=>{const v=facetVal(l,k);(Array.isArray(v)?v:[v]).forEach(x=>x&&vals.add(x))});
+    const sel=S.filters[k]||new Set(); active+=sel.size; if(vals.size<2&&!sel.size)return;
+    box.append(h('div',{class:'fgroup',role:'group','aria-label':label},h('b',null,label),[...vals].sort().map(v=>h('button',{type:'button',class:'chip','aria-pressed':String(sel.has(v)),onclick:()=>{const s=S.filters[k]||(S.filters[k]=new Set());s.has(v)?s.delete(v):s.add(v);refilter()}},v))));
+  });
+  if(!box.children.length)box.append(h('span',{class:'note'},'No filterable properties in this view.'));
+  else if(active)box.append(h('button',{class:'btn',type:'button',onclick:()=>{S.filters={};refilter()}},'Clear filters'));
+  $('#facetN').textContent=active?'('+active+')':'';
+}
+
+/* ---- list view and table view (accessible twins) ---- */
+function sigText(n){const s=[];if(n.locked)s.push('locked');if(n.hide)s.push('counts hidden');if(n.isLeaf&&n.open)s.push('open decision');if(n.isLeaf&&n.gap)s.push('gap');if(n.isLeaf&&n.star)s.push('success story');return s}
+function metaOf(n){if(n.locked)return 'Locked, name only, 0 items';if(n.hide)return KIND[n.kind]+', counts hidden';return KIND[n.kind]+', '+n.cnt+' items'+(sigText(n).length?', '+sigText(n).join(', '):'')}
+function renderAlt(selOnly){
+  if(S.mode==='list'){
+    const ul=h('ul'),sc=S.scene,seen=new Set();
+    const li=n=>{if(!n.pass)return null;seen.add(n);const kids=(n.kind==='core'?n.children.filter(c=>c.sec==='core'):n.children).map(li).filter(Boolean);
+      return h('li',null,h('button',{type:'button',class:'row','aria-current':String(S.sel===n),onclick:()=>activate(n)},h('span',{class:'dot',style:'background:'+n.color}),h('b',null,n.label),h('span',{class:'meta'},metaOf(n))),kids.length?h('ul',null,kids):null)};
+    const tops=sc.nodes.filter(n=>!n.parent);
+    const order=sc===S.lensScene?[sc.byId.get('core')].concat(sc.hubs):tops;
+    order.concat(sc===S.lensScene?[]:[]).forEach(n=>n&&ul.append(li(n)||''));
+    $('#listView').replaceChildren(ul);
+  }else if(S.mode==='table'){
+    const cols=[['name','Name'],['scope','Scope'],['type','Type'],['items','Items'],['updated','Updated'],['evidence','Evidence'],['owner','Owner role']];
+    const rows=tableRows(S.scene), d=S.sort.dir, k=S.sort.col;
+    rows.sort((a,b)=>{const x=a[k],y=b[k];if(x==null&&y==null)return 0;if(x==null)return 1;if(y==null)return -1;return (typeof x==='number'?x-y:String(x).localeCompare(String(y)))*d});
+    const tb=h('tbody'); rows.forEach(r=>tb.append(h('tr',{'aria-selected':String(S.sel===r.n)},
+      h('td',null,h('button',{class:'name',type:'button',onclick:()=>activate(r.n)},r.name)),h('td',null,r.scope),h('td',null,r.type),
+      h('td',null,r.items==null?'hidden':String(r.items)),h('td',null,r.updated==null?'-':ago(r.updated)),h('td',null,r.evidence||'-'),h('td',null,r.owner||'-'))));
+    const th=h('tr'); cols.forEach(([c,l])=>th.append(h('th',{scope:'col','aria-sort':S.sort.col===c?(d>0?'ascending':'descending'):'none'},h('button',{type:'button',onclick:()=>{S.sort=S.sort.col===c?{col:c,dir:-d}:{col:c,dir:1};renderAlt()}},l+(S.sort.col===c?(d>0?' ^':' v'):'')))));
+    $('#tableView').replaceChildren(h('table',{class:'base'},h('caption',{class:'sr'},'Visible nodes as a table, sortable by column'),h('thead',null,th),tb));
+  }
+}
+function tableRows(sc){
+  return sc.nodes.filter(n=>n.kind!=='core'&&n.pass).map(n=>({n,name:n.label,scope:n.plane||'',type:n.isLeaf&&n.type?n.type:KIND[n.kind],
+    items:n.locked?0:n.hide?null:n.cnt,updated:n.minDays,evidence:n.isLeaf?n.evidence:null,owner:n.isLeaf?n.owner:null}));
+}
+function searchNodes(sc,q){
+  q=q.trim().toLowerCase(); if(!q)return [];
+  return sc.nodes.filter(n=>n.kind!=='sector'&&(n.label.toLowerCase().includes(q)||(n.tags||[]).some(t=>t.includes(q)))).sort((a,b)=>a.depth-b.depth).slice(0,12);
+}
+
+/* ---- search ---- */
+function runSearch(){
+  const q=$('#q').value, ul=$('#results'), r=searchNodes(S.lensScene,q); ul.replaceChildren();
+  r.forEach(n=>ul.append(h('li',null,h('button',{type:'button',onclick:()=>{ul.hidden=true;goTo(n.id)}},h('span',null,n.label),h('small',null,KIND[n.kind])))));
+  if(q&&!r.length)ul.append(h('li',{class:'note',style:'padding:6px 9px'},'No visible node matches'));
+  ul.hidden=!q; $('#q').setAttribute('aria-expanded',String(!!q));
+}
+function goTo(id){
+  if(S.account){S.account=null;S.selId=id;rebuild()}
+  const n=S.lensScene.byId.get(id); if(!n)return;
+  if(S.scene!==S.lensScene){S.account=null;rebuild()}
+  if(n.kind==='account'){openAccount(n.id);return}
+  S.focus=n.sec==='core'?null:n.sec; select(n); chrome(); if(S.mode==='map')flyTo(n.x,n.y,Math.max(cam.z,1.8)); sr('Focused '+n.label);
+}
+
+/* ---- side panel ---- */
+function leavesOf(n){
+  if(n.acct)return [].concat(...n.acct.branches.map(b=>b.leaves));
+  if(n.isLeaf&&n.children.length===0)return n.itemList!==undefined?[n]:[];
+  const ch=n.kind==='core'?n.children.filter(c=>c.sec==='core'):n.children; return [].concat(...ch.map(leavesOf));
+}
+function aiOf(n,sc){return n.ai||(sc.account&&n.plane==='ACCOUNT_RESTRICTED'&&sc.account.ai)||null}
+function actionStates(roleId,n){return ['comment','contribute','edit','review','approve_release','manage_members','configure'].map(a=>({a,label:ACTION_LABEL[a],res:POLICY.canDo(roleId,n.id,a,ctxFor(roleId))}))}
+const SHEET_TEXT={comment:'Adds a comment thread anchored to this node. Only people who can read the node see it.',contribute:'Creates a candidate item routed to a reviewer. It stays out of the shared plane until approved. You cannot approve your own contribution.',
+  edit:'Opens an editor on the items in this scope. Saving creates a new revision and records who changed it.',review:'Opens the review queue for this node. You compare the exact version and record a decision.',
+  approve_release:'Signs the exact version as second approver. Publication needs two distinct people.',manage_members:'Opens membership for this scope. Adding someone to a restricted circle needs a second person.',
+  configure:'Opens policy, connector and retention settings for this scope. No content is shown.'};
+function buildPanel(roleId,n,sc){
+  const root=h('div'), role=ROLES[roleId];
+  root.append(h('h2',null,n.label),h('div',{class:'note'},KIND[n.kind]||''));
+  const bd=h('div',{class:'badges'}); if(n.plane)bd.append(h('span',{class:'badge plane'},n.plane));
+  if(n.locked)bd.append(h('span',{class:'badge'},'LOCKED'));if(n.hide)bd.append(h('span',{class:'badge'},'STRUCTURE ONLY'));
+  if(n.level==='metadata')bd.append(h('span',{class:'badge'},'METADATA ONLY'));if(n.restricted)bd.append(h('span',{class:'badge'},'RESTRICTED CIRCLE'));
+  if(n.nda)bd.append(h('span',{class:'badge'},'NDA, NAMED GRANT'));
+  if(n.reviewed2)bd.append(h('span',{class:'badge'},'REVIEWED BY 2'));
+  root.append(bd);
+  if(n.locked){
+    root.append(h('p',{class:'note'},'Locked. You see the name only, with zero counts. You are not a member of this department.'));
+    const done=S.requested.has(n.id);
+    root.append(h('button',{class:'btn primary',type:'button','data-action':'request_access','aria-disabled':String(done),onclick:()=>{if(done)return;S.requested.add(n.id);renderPanel()}},done?'Request pending':'Request access'));
+    if(done)root.append(h('p',{class:'note',role:'status'},'Request recorded in this prototype. A steward reviews it and no access is granted automatically. Nothing left this page.'));
+    return root;
+  }
+  const kindA=n.kind==='gov'||n.kind==='cluster'?['Evidence items','Use cases']:(n.kind==='region'||n.kind==='country')?['Items','Accounts']:['Items','Topics'];
+  const cells=n.hide?['Hidden','Hidden','Hidden','Hidden']:[n.cnt,(n.kind==='region'||n.kind==='country')?n.nAcc:n.isLeaf?'-':n.nLeaf,n.cOpen,n.cGap];
+  root.append(h('div',{class:'counts'},[[kindA[0],cells[0]],[kindA[1],cells[1]],['Open',cells[2]],['Gaps',cells[3]]].map(([l,v])=>h('div',null,h('b',null,String(v)),h('small',null,l)))));
+  if(n.minDays!=null&&!n.hide)root.append(h('div',{class:'note'},'Freshest evidence: '+ago(n.minDays)));
+  const facts=h('div',{class:'badges'});
+  if(n.isLeaf&&n.type){facts.append(h('span',{class:'chip static'},n.type),h('span',{class:'chip static'},'Status: '+n.status),h('span',{class:'chip static'},'Revision '+n.rev),
+    h('span',{class:'chip static '+evClass(n.evidence)},'Evidence: '+n.evidence),h('span',{class:'chip static'},'Owner role: '+n.owner),h('span',{class:'chip static'},'Source: '+n.lineage))}
+  if(n.sector)facts.append(h('span',{class:'chip static'},'Sector: '+n.sector));
+  if(n.status&&!n.isLeaf)facts.append(h('span',{class:'chip static'},'Status: '+n.status));
+  const ai=aiOf(n,sc);
+  if(ai)facts.append(h('span',{class:'chip static '+aiClass(ai)},'AI processing: '+ai));
+  if(facts.children.length)root.append(facts);
+  if(n.pendingAuthor)root.append(h('p',{class:'note'},'One contribution is awaiting release. Author role: '+ROLES[n.pendingAuthor].label+'.'));
+  if(n.note)root.append(h('p',{class:'note'},'Note: '+n.note+'. Shown as a replication link between countries.'));
+  if(n.tags&&n.tags.length){root.append(h('h3',null,'Tags'),h('div',{class:'badges'},n.tags.map(t=>h('span',{class:'chip static'},'#'+t))))}
+  if(n.story){root.append(h('h3',null,'Success story outputs'),h('div',{class:'outputs'},h('span',{class:'chip static ok'},'Internal story'),
+    h('span',{class:'chip static '+(n.story.lesson?'ok':'warn')},'Generalized lesson'+(n.story.lesson?'':' (pending)')),
+    h('span',{class:'chip static '+(n.story.extPermission?(n.story.external?'ok':'warn'):'off'),title:n.story.extPermission?'':'Needs customer permission'},'External case study'+(n.story.extPermission?(n.story.external?'':' (can be drafted)'):''))));
+    if(!n.story.extPermission)root.append(h('div',{class:'note'},'External case study needs customer permission.'))}
+  // action bar, driven by canDo
+  const reasonEl=h('div',{class:'reason',role:'status'}), st=actionStates(roleId,n), bar=h('div',{class:'agroups',role:'group','aria-label':'Actions'});
+  const firstDeny=st.find(s=>s.a==='edit'&&!s.res.allowed)||st.find(s=>!s.res.allowed); reasonEl.textContent=firstDeny?firstDeny.res.reason:'';
+  const mkBtn=s=>{const b=h('button',{type:'button','data-action':s.a,'aria-disabled':String(!s.res.allowed),title:s.res.reason,
+    onclick:()=>{if(s.res.allowed)openActionSheet(s,n)},onpointerenter:()=>{reasonEl.textContent=s.res.reason},onfocus:()=>{reasonEl.textContent=s.res.reason}},s.label);return b};
+  [['Collaborate',['comment','contribute','edit']],['Govern',['review','approve_release','manage_members']],['Admin',['configure']]].forEach(([gl,keys])=>
+    bar.append(h('div',{class:'agroup'},h('small',null,gl),h('div',{class:'actions',role:'group','aria-label':gl},keys.map(k=>mkBtn(st.find(x=>x.a===k)))))));
+  root.append(h('h3',null,'Actions'),bar,reasonEl);
+  // items
+  root.append(h('h3',null,'Top items'));
+  const ls=leavesOf(n).sort((a,b)=>b.items-a.items);
+  if(!ls.length)root.append(h('p',{class:'note'},n.hide?'No content for this role. Structure only.':'No items in this node.'));
+  else if(ls[0].itemList===null)root.append(h('p',{class:'note'},'Redacted: metadata only for this role. Counts and freshness are shown, item titles are not.'));
+  else{const ul=h('ul',{class:'items'});
+    for(let i=0;i<4&&i<ls.length*4;i++){const l=ls[i%ls.length],it=l.itemList[Math.floor(i/ls.length)]; if(!it)continue;
+      ul.append(h('li',null,h('div',{class:'t'},it.title),h('div',{class:'m'},it.src+', Owner role: '+it.owner+', '+it.rev),
+        h('div',{class:'chips'},h('span',{class:'chip static plane'},it.plane),h('span',{class:'chip static '+evClass(it.evidence)},it.evidence),h('span',{class:'chip static'},'Source: '+it.lineage),
+          it.reviewed2?h('span',{class:'chip static ok'},'Reviewed by 2'):null,h('button',{class:'chip',type:'button','aria-disabled':'true',title:'Disabled in this prototype'},'Open in source'))))}
+    root.append(ul)}
+  // backlinks
+  const inc=sc.edges.filter(e=>e.b===n&&e.a.kind!=='core'||e.b===n&&e.type==='spoke').map(e=>[e.a,e.type==='spoke'?'hub of core':'contains']).concat(sc.links.filter(e=>e.b===n).map(e=>[e.a,e.type]));
+  root.append(h('h3',null,'Linked from'));
+  if(!inc.length)root.append(h('p',{class:'note'},'No incoming links in your view.'));
+  else root.append(h('ul',{class:'links'},inc.slice(0,8).map(([a,t])=>h('li',null,h('button',{type:'button',onclick:()=>activate(a)},a.label+' ('+t+')')))));
+  // ask box
+  const off=ai==='unknown'||ai==='not allowed';
+  root.append(h('h3',null,'Ask this node'),h('div',{class:'ask'+(off?' dim':'')},h('input',{disabled:true,placeholder:'Scoped question (coming later)','aria-label':'Scoped question (coming later)'}),
+    off?h('div',{class:'note'},ai==='unknown'?'AI processing is unknown for this account. Confirm the contract constraint first.':'AI processing is not allowed by this account contract.'):h('div',{class:'note'},'Answers would cite sources or say unknown. Limited to this node scope.')));
+  return root;
+}
+function renderPanel(){
+  const b=$('#panelBody'); b.replaceChildren();
+  if(!S.sel){b.append(h('h2',null,'Select a node'),h('p',{class:'note'},'Click a node, a list row or a table row to see its evidence, owner role and what you can do with it. Personal Brains never appear on this map.'));$('#panel').classList.remove('open');return}
+  b.append(buildPanel(S.role,S.sel,S.scene));
+}
+function renderRoleCard(){
+  const role=ROLES[S.role],d=POLICY.describeRole(role),el=$('#roleCard'); el.replaceChildren();
+  const det=h('details',{class:'rolecard',open:true},h('summary',null,'What you can see and do'),h('div',{class:'note',style:'margin-top:6px'},role.label+'. '+role.summary),
+    h('div',{class:'cols'},h('div',null,h('h4',null,'See'),h('ul',null,d.see.map(x=>h('li',null,x)))),h('div',null,h('h4',null,'Do'),h('ul',null,d.do.map(x=>h('li',null,x))))),
+    h('div',{class:'never'},'Never: '+d.never.join('; ')));
+  const acts=h('div',{class:'rc-actions'});
+  if(role.id==='ceo'){
+    acts.append(S.elevated?h('span',null,'Elevated, audited'):h('button',{class:'btn',type:'button',id:'elevateBtn',onclick:openElevate},'Elevate for 4 h'),
+      h('label',null,h('input',{type:'checkbox',checked:S.ndaGrant,onchange:e=>{S.ndaGrant=e.target.checked;rebuild({instant:true})}}),' Named grant: Calypso Demo Srl (NDA)'));
+  }
+  if(role.breakGlass)acts.append(S.breakReq?h('span',{role:'status'},'Break-glass requested, two approvals needed (simulated). No content access granted.'):h('button',{class:'btn',type:'button',onclick:openBreakGlass},'Request break-glass'));
+  if(acts.children.length)det.append(acts);
+  el.append(det);
+}
+
+/* ---- sheets (in-page dialogs, no network) ---- */
+let sheetOpener=null;
+function openSheet(title,body,buttons){
+  sheetOpener=document.activeElement; const s=$('#sheet'); s.replaceChildren(h('h2',{id:'sheetT'},title),body,h('div',{class:'row'},buttons.map(b=>h('button',{type:'button',class:'btn'+(b.primary?' primary':''),id:b.id||null,onclick:b.on},b.label))));
+  $('#sheetBg').hidden=false; const f=s.querySelector('textarea,button.primary,button'); f&&f.focus();
+}
+function closeSheet(){$('#sheetBg').hidden=true;sheetOpener&&sheetOpener.focus&&sheetOpener.focus()}
+function openActionSheet(s,n){
+  openSheet(s.label+': '+n.label,h('div',null,h('p',null,SHEET_TEXT[s.a]),h('ul',null,h('li',null,'Granted: '+s.res.reason),h('li',null,'Scope: '+(n.plane||'')),h('li',null,'Prototype: nothing is sent, no network call is made'))),[{label:'Close',primary:true,on:closeSheet}]);
+}
+function openElevate(){
+  const ta=h('textarea',{rows:3,placeholder:'Reason for elevation (required)','aria-label':'Reason for elevation'});
+  const ok={label:'Elevate for 4 h',primary:true,id:'elevateOk',on:()=>{if(!ta.value.trim())return;S.elevated=true;closeSheet();rebuild({instant:true})}};
+  openSheet('Elevate for 4 h',h('div',null,h('p',null,'Elevation adds edit and review in department scopes for 4 hours. Approval and membership changes stay blocked. Every read and write is audited.'),ta),[{label:'Cancel',on:closeSheet},ok]);
+}
+function openBreakGlass(){
+  openSheet('Request break-glass',h('p',null,'Request break-glass, two approvals needed. Content access is separate, time-boxed and audited. Nothing is granted by this request.'),
+    [{label:'Cancel',on:closeSheet},{label:'Send request',primary:true,on:()=>{S.breakReq=true;closeSheet();renderRoleCard()}}]);
+}
+
+/* ---- canvas input ---- */
+const ptrs=new Map(); let drag=null,pinch=null;
+function tipFor(n,sx,sy){
+  const t=$('#tip'); if(!n){t.hidden=true;return}
+  t.replaceChildren(h('b',null,n.label),h('div',{class:'muted'},(KIND[n.kind]||'')+(n.plane?' / '+n.plane:'')),
+    h('div',null,n.locked?'Locked, name only, 0 items':n.hide?'Counts hidden for your role':n.cnt+' items'+(n.nLeaf>1?', '+n.nLeaf+(n.kind==='gov'||n.kind==='cluster'?' use cases':' topics'):'')+(n.cOpen?', '+n.cOpen+' open':'')),
+    n.hide||n.locked?null:h('div',{class:'muted'},'Freshest: '+ago(n.minDays)));
+  t.hidden=false; const w=t.offsetWidth,hh=t.offsetHeight; t.style.left=Math.min(Math.max(8,sx+14),cw-w-8)+'px'; t.style.top=Math.min(Math.max(8,sy+14),ch-hh-8)+'px';
+}
+function setHover(n,sx,sy){
+  if(n!==S.hover){S.hover=n;S.hoverSec=n?(S.scene.lens==='account'?(n.depth>=2?n.sec:null):n.sec):null;cv.style.cursor=n?'pointer':'';invalidate()}
+  tipFor(n,sx,sy);
+}
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.offsetX,e.offsetY]);cam.tw=null;
+  if(ptrs.size===1)drag={x:e.offsetX,y:e.offsetY,cx:cam.x,cy:cam.y,moved:0,id:e.pointerId};
+  else if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),z:cam.z};drag=null}});
+cv.addEventListener('pointermove',e=>{
+  if(ptrs.has(e.pointerId))ptrs.set(e.pointerId,[e.offsetX,e.offsetY]);
+  if(pinch&&ptrs.size===2){const [a,b]=[...ptrs.values()];cam.z=clamp(pinch.z*Math.hypot(a[0]-b[0],a[1]-b[1])/pinch.d,.12,4);invalidate();return}
+  if(drag){const dx=e.offsetX-drag.x,dy=e.offsetY-drag.y;drag.moved=Math.max(drag.moved,Math.hypot(dx,dy));if(drag.moved>4){cam.x=drag.cx-dx/cam.z;cam.y=drag.cy-dy/cam.z;setHover(null);invalidate()}return}
+  if(e.pointerType==='mouse')setHover(hitTest(e.offsetX,e.offsetY),e.offsetX,e.offsetY);
+});
+const endPtr=e=>{ptrs.delete(e.pointerId);if(ptrs.size<2)pinch=null;
+  if(drag&&drag.id===e.pointerId){const m=drag.moved;drag=null;if(m<=4){const n=hitTest(e.offsetX,e.offsetY);if(n)activate(n);else if(S.sel)select(null)}}};
+cv.addEventListener('pointerup',endPtr);cv.addEventListener('pointercancel',e=>{drag=null;ptrs.delete(e.pointerId)});
+cv.addEventListener('pointerleave',()=>{if(!drag)setHover(null)});
+cv.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.offsetX,e.offsetY,Math.exp(-e.deltaY*.0016))},{passive:false});
+function zoomAt(sx,sy,f){cam.tw=null;const [wx,wy]=toW(sx,sy);cam.z=clamp(cam.z*f,.12,4);const [wx2,wy2]=toW(sx,sy);cam.x+=wx-wx2;cam.y+=wy-wy2;invalidate()}
+cv.addEventListener('keydown',e=>{
+  const ns=S.scene.nodes.filter(nodeVisible);
+  const mv=d=>{const cur=S.scene.nodes[S.kb];let i=ns.indexOf(cur);i=i<0?(d>0?0:ns.length-1):(i+d+ns.length)%ns.length;S.kb=S.scene.nodes.indexOf(ns[i]);const n=ns[i];sr(n.label+', '+metaOf(n));invalidate()};
+  if(e.key==='ArrowRight'||e.key==='ArrowDown'){mv(1);e.preventDefault()}
+  else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){mv(-1);e.preventDefault()}
+  else if(e.key==='Enter'||e.key===' '){const n=S.scene.nodes[S.kb];if(n)activate(n);e.preventDefault()}
+  else if(e.key==='Escape')back();
+  else if(e.key==='+'||e.key==='='){zoomAt(cw/2,ch/2,1.25)}else if(e.key==='-'){zoomAt(cw/2,ch/2,.8)}else if(e.key==='0')applyView();
+});
+$('#zIn').onclick=()=>zoomAt(cw/2,ch/2,1.3);$('#zOut').onclick=()=>zoomAt(cw/2,ch/2,.77);$('#zFit').onclick=()=>{applyView()};
+const stepHub=d=>{const hs=S.lensScene.hubs,i=hs.findIndex(x=>x.sec===S.focus),n=hs[(i+d+hs.length)%hs.length];S.focus=n.sec;select(n);applyView();chrome()};
+$('#prev').onclick=()=>stepHub(-1);$('#next').onclick=()=>stepHub(1);
+function mmMove(e){const r=mm.getBoundingClientRect(),k=mm._k;if(!k)return;const x=(e.clientX-r.left)*mm.width/r.width,y=(e.clientY-r.top)*mm.height/r.height;cam.tw=null;cam.x=(x-k.ox)/k.k;cam.y=(y-k.oy)/k.k;invalidate()}
+let mmDown=false;mm.addEventListener('pointerdown',e=>{mmDown=true;mm.setPointerCapture(e.pointerId);mmMove(e)});mm.addEventListener('pointermove',e=>{if(mmDown)mmMove(e)});mm.addEventListener('pointerup',()=>{mmDown=false});
+
+/* ---- wiring ---- */
+function init(){
+  const sel=$('#viewer'); ROLE_ORDER.forEach(id=>sel.append(h('option',{value:id},ROLES[id].label)));
+  sel.onchange=()=>{S.role=sel.value;S.elevated=false;S.breakReq=false;if(S.role!=='ceo')S.ndaGrant=false;S.filters={};rebuild({instant:true})};
+  buildControls();
+  $('#q').addEventListener('input',runSearch);
+  $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){const r=searchNodes(S.lensScene,$('#q').value);if(r[0]){$('#results').hidden=true;goTo(r[0].id)}}else if(e.key==='Escape'){$('#results').hidden=true;$('#q').value=''}});
+  $('#searchBox').addEventListener('focusout',e=>{if(!$('#searchBox').contains(e.relatedTarget))$('#results').hidden=true});
+  $('#facetBtn').onclick=()=>{const f=$('#facets');f.hidden=!f.hidden;$('#facetBtn').setAttribute('aria-expanded',String(!f.hidden))};
+  $('#lgOn').onchange=e=>{S.lg=e.target.checked;invalidate()};
+  $('#lgHops').oninput=e=>{S.hops=+e.target.value;$('#lgOut').value=S.hops;invalidate()};
+  $('#panelClose').onclick=()=>select(null);
+  {const gp=$('#grab'),pn=$('#panel');let y0=null;gp.addEventListener('pointerdown',e=>{y0=e.clientY;gp.setPointerCapture(e.pointerId)});
+   gp.addEventListener('pointerup',e=>{if(y0==null)return;const d=e.clientY-y0;y0=null;if(d>60){pn.classList.contains('tall')?pn.classList.remove('tall'):select(null)}else if(d<-40)pn.classList.add('tall');else pn.classList.toggle('tall')})}
+  $('#sheetBg').addEventListener('click',e=>{if(e.target.id==='sheetBg')closeSheet()});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheetBg').hidden)closeSheet()});
+  reduceMQ.addEventListener&&reduceMQ.addEventListener('change',e=>{reduce=e.matches;invalidate()});
+  if(window.matchMedia('(max-width:760px)').matches)$('#legend').open=false;
+  resize(); rebuild({instant:true});
+  if('ResizeObserver' in window)new ResizeObserver(()=>{resize()}).observe($('#stage'));else window.addEventListener('resize',resize);
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(invalidate);
+  runSelfTests();
+}
+
+/* =====================================================================
+   7. SELF-TEST  (console.info only; badge in footer)
+   ===================================================================== */
+function runSelfTests(){
+  const res=[],t=(name,fn)=>{let ok=false,err='';try{ok=!!fn()}catch(e){err=String(e)}res.push([name,ok,err]);console.info('[policy-check]',ok?'PASS':'FAIL',name,err)};
+  const walkAccounts=v=>[].concat(...v.regions.map(r=>[].concat(...r.countries.map(k=>k.accounts))));
+  const labelsOf=(v,lens)=>layoutLens(v,lens).nodes.map(n=>n.label);
+  const v={};ROLE_ORDER.forEach(r=>v[r]=POLICY.admittedView(r,{}));
+  t('CEO gets all departments, all full',()=>v.ceo.departments.length===DEPTS_SRC.length&&v.ceo.departments.every(d=>d.access==='full'));
+  t('CEO sees 28 countries and 433 use cases',()=>sum(v.ceo.regions,r=>r.countries.length)===28&&sum(v.ceo.governances,g=>g.useCases.length)===433);
+  t('CEO sees no NDA account without a named grant',()=>!walkAccounts(v.ceo).some(a=>a.nda));
+  t('CEO sees NDA account with a named grant',()=>walkAccounts(POLICY.admittedView('ceo',{ndaGrant:true})).some(a=>a.nda));
+  t('No role sees an NDA account without a grant',()=>ROLE_ORDER.every(r=>!walkAccounts(v[r]).some(a=>a.nda)));
+  t('Head of Bid: no NDA account label in any lens',()=>['departments','accounts','topics','governances'].every(l=>!labelsOf(v.head_bid,l).some(x=>/Calypso/.test(x))));
+  t('Head of Bid: Amaris partial with only the Bid circle, others locked',()=>{const am=v.head_bid.departments.find(d=>d.id==='d_amaris');
+    return am.access==='partial'&&am.circles.length===1&&am.circles[0].id==='c_bid'&&v.head_bid.departments.filter(d=>d.id!=='d_amaris').every(d=>d.access==='locked'&&d.circles.length===0)});
+  t('Head of Bid: only bid-linked accounts',()=>walkAccounts(v.head_bid).length>0&&walkAccounts(v.head_bid).every(a=>a.bid));
+  t('Consultant: no restricted circle nodes in any lens',()=>v.consultant.departments.every(d=>d.circles.every(c=>!c.restricted))&&layoutLens(v.consultant,'departments').nodes.every(n=>!n.restricted));
+  t('Consultant: only own Delivery circles',()=>v.consultant.departments.flatMap(d=>d.circles.map(c=>c.id)).sort().join()==='c_delivery,c_eng');
+  t('Account lead: one account with contacts; CEO has none',()=>{const a=walkAccounts(v.acme_lead);const c=walkAccounts(v.ceo).find(x=>x.id==='a_acme');
+    return a.length===1&&a[0].id==='a_acme'&&a[0].branches.some(b=>b.key==='con')&&!c.branches.some(b=>b.key==='con')});
+  const zero=view=>{let n=0;const w=l=>{n+=l.items||0};view.core.topics.forEach(w);view.departments.forEach(d=>d.circles.forEach(c=>c.topics.forEach(w)));
+    view.governances.forEach(g=>g.useCases.forEach(w));view.themes.forEach(x=>x.children.forEach(c=>c.items.forEach(w)));walkAccounts(view).forEach(a=>a.branches.forEach(b=>b.leaves.forEach(w)));return n};
+  t('Platform admin: zero item counts and no content',()=>zero(v.platform_admin)===0&&['departments','accounts','topics','governances'].every(l=>layoutLens(v.platform_admin,l).nodes.every(n=>!n.isLeaf)));
+  t('Platform admin: configure only, no content actions',()=>['c_bid','d_amaris','core'].every(id=>!['comment','contribute','edit','review','approve_release'].some(a=>POLICY.canDo('platform_admin',id,a).allowed))&&POLICY.canDo('platform_admin','d_amaris','configure').allowed);
+  t('Auditor: counts visible, item content redacted',()=>zero(v.auditor)>0&&v.auditor.departments[0].circles.every(c=>c.topics.every(x=>x.itemList===null)));
+  t('CEO cannot edit, approve or manage members',()=>['d_amaris','c_bid','c_bid/Response library','core'].every(id=>['edit','approve_release','manage_members'].every(a=>!POLICY.canDo('ceo',id,a).allowed)));
+  t('CEO elevated may edit but never approve',()=>POLICY.canDo('ceo','c_bid','edit',{elevated:true}).allowed&&!POLICY.canDo('ceo','c_bid','approve_release',{elevated:true}).allowed&&!POLICY.canDo('ceo','c_bid','manage_members',{elevated:true}).allowed);
+  t('Steward cannot approve their own contribution',()=>!POLICY.canDo('head_bid','c_bid/Pricing models','approve_release').allowed&&POLICY.canDo('head_bid','c_bid/Response library','approve_release').allowed);
+  t('Reviewer may approve a steward contribution',()=>POLICY.canDo('reviewer','c_bid/Pricing models','approve_release').allowed);
+  t('Contributor edits own drafts only',()=>!POLICY.canDo('consultant','c_eng/Test strategy','edit').allowed||DATA.departments.flatMap(d=>d.circles).flatMap(c=>c.topics).find(x=>x.id==='c_eng/Test strategy').status==='draft');
+  t('Locked nodes: request_access allowed, other actions denied',()=>POLICY.canDo('head_bid','d_it','request_access').allowed&&!POLICY.canDo('head_bid','d_it','edit').allowed);
+  t('Hidden nodes are not in canDo scope',()=>!POLICY.canDo('consultant','c_escal','edit').allowed&&POLICY.canDo('consultant','c_escal','edit').reason==='Not in your view');
+  // scenes: every node id is in admittedView; table and search never expose others
+  const scenes=(r)=>{const vw=v[r],out=[];['departments','accounts','topics','governances'].forEach(l=>out.push(layoutLens(vw,l)));walkAccounts(vw).slice(0,4).forEach(a=>out.push(layoutAccount(vw,a.id)));return out};
+  t('Every scene node id exists in admittedView',()=>ROLE_ORDER.every(r=>scenes(r).every(sc=>sc.nodes.every(n=>v[r].ids.has(n.id)))));
+  t('Table and search never contain a node absent from admittedView',()=>ROLE_ORDER.every(r=>scenes(r).every(sc=>tableRows(sc).every(x=>v[r].ids.has(x.n.id))&&
+    ['a','e','i','o','u','s','1'].every(q=>searchNodes(sc,q).every(n=>v[r].ids.has(n.id))))));
+  t('Every enabled UI action satisfies canDo (and disabled ones do not)',()=>ROLE_ORDER.every(r=>{const sc=layoutLens(v[r],'departments'),sc2=layoutLens(v[r],'accounts'),ctx={};
+    return sc.nodes.concat(sc2.nodes).filter((_,i)=>i%9===0).every(n=>{const root=buildPanel(r,n,sc);
+      return [...root.querySelectorAll('[data-action]')].every(b=>{const a=b.dataset.action,en=b.getAttribute('aria-disabled')!=='true';const can=POLICY.canDo(r,n.id,a,ctx).allowed;return a==='request_access'?true:en===can})})}));
+  t('Replication link only between admitted countries',()=>layoutLens(v.ceo,'accounts').links.some(l=>l.type==='replication')&&!layoutLens(v.head_bid,'accounts').links.some(l=>l.type==='replication'&&!v.head_bid.ids.has(l.a.id)));
+  const pass=res.filter(r=>r[1]).length,b=$('#checks'); b.textContent='Policy checks: '+pass+'/'+res.length+' pass'; b.className='checks '+(pass===res.length?'ok':'bad');
+  console.info('[policy-check] '+pass+'/'+res.length+' pass',res.filter(r=>!r[1]).map(r=>r[0]));
+  window.__policyChecks={pass,total:res.length};
+}
+init();
+})();
+</script>

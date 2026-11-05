@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "secondary-audit-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "r2_buckets": [
+    { "binding": "AUDIT_LOG", "bucket_name": "secondary-audit-dev", "jurisdiction": "eu" }
+  ],
+  "vars": { "ENVIRONMENT": "dev" }
+}

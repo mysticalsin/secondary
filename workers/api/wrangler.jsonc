@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "secondary-api-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  // Static SPA built by apps/web (run `pnpm --filter @secondary/web build` first).
+  "assets": {
+    "directory": "../../apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // API paths reach the worker first; everything else is served as a static asset.
+    "run_worker_first": ["/v1/*"]
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
+      { "name": "WORKSPACE", "class_name": "Workspace" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] }],
+  "r2_buckets": [
+    { "binding": "BLOBS", "bucket_name": "secondary-blobs-dev", "jurisdiction": "eu" }
+  ],
+  "services": [{ "binding": "AUDIT", "service": "secondary-audit-dev" }],
+  "vars": {
+    "ENVIRONMENT": "dev",
+    // Cloudflare Access team domain, e.g. "<team>.cloudflareaccess.com". Empty until Access is configured.
+    "ACCESS_TEAM_DOMAIN": "",
+    // Cloudflare Access application AUD tag used to verify the JWT. Empty until Access is configured.
+    "ACCESS_AUD": ""
+  }
+}

@@ -1,4 +1,16 @@
 {
-  "files": { "includes": ["**", "!**/out", "!**/sample", "!pnpm-lock.yaml"] },
+  "files": {
+    "includes": [
+      "**",
+      "!**/out",
+      "!**/sample",
+      "!**/dist",
+      "!**/.wrangler",
+      "!**/worker-configuration.d.ts",
+      "!prototypes",
+      "!docs",
+      "!pnpm-lock.yaml"
+    ]
+  },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 }
 }

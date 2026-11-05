@@ -7,9 +7,11 @@
     "node": ">=22.22.3 <23"
   },
   "scripts": {
-    "lint": "biome check .",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "lint": "biome check .",
+    "dev": "pnpm --filter @secondary/web build && pnpm --filter @secondary/api dev"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.5",

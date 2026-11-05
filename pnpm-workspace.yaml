@@ -1,4 +1,6 @@
 packages:
+  - "apps/*"
+  - "workers/*"
   - "packages/*"
 minimumReleaseAgeExclude:
   - "@biomejs/biome@2.6.5"
@@ -12,3 +14,7 @@ minimumReleaseAgeExclude:
   - "@biomejs/cli-linux-x64@2.6.5"
   - "@biomejs/cli-win32-arm64@2.6.5"
   - "@biomejs/cli-win32-x64@2.6.5"
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: true
