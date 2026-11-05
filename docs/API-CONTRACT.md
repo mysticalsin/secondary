@@ -392,3 +392,40 @@ Written first so the web agent can build against it. All routes are policy-gated
 - `GET /v1/admin/pilot` returns `{cohorts: [{id, name, members: string[] (emails), flags: {key: boolean}, createdAt}], flagKeys: string[]}`. `flagKeys` are `brains_v3`, `imports`, `coach`, `batch_review`, `journal`.
 - `POST /v1/admin/pilot {name, members, flags}` creates (201 `{id}`), `PUT /v1/admin/pilot/:id` replaces, `DELETE /v1/admin/pilot/:id` removes (all audited). At most 20 cohorts, 500 members each.
 - `GET /v1/me/flags` returns `{flags: {key: boolean}}` for the caller. A key is **managed** once any cohort sets it: then it is on only for members of a cohort that turns it on. A key no cohort mentions is on for everyone. `imports`, `coach`, `batch_review` and `brains_v3` (the whole `/v1/brains` family) are enforced by the API.
+
+## v4 (docs/DESIGN-V4-BRAINS-UI.md), normative shapes
+
+All of it sits behind the `brains_v3` flag and answers from the caller's admitted view only. A brain is opened only when the caller is admitted to the node itself at content level (`opensBrain` in `packages/policy`): a department shown as `partial` because a circle inside it is admitted is **not** a brain they can open (it was readable before; it is 404 now).
+
+### Nav and `scope=all`
+
+- `GET /v1/brains/nav` returns `{items: NavItem[]}`, `NavItem = BrainCard & {group: "personal"|"governance"|"global", governanceId?: string, children?: BrainCard[]}`. Order: the caller's Personal Brain, then the governances in this order, then Company Global (when readable). A governance the caller has no brain for is left out: no name, count or placeholder.
+  - Governances: Bid & Pre-sales (`c_bid`), Sales (`c_sales`), Accounts, Delivery (`c_delivery`), Finance (A&F) (`d_af`), HR, Legal and Hub Operations (`d_hr`), IT (`d_it`), Marketing & Communication (`d_mkt`), Strategy, Innovation & AI (`d_sia`), Performance (`d_perf`), Sustainability (`d_sus`), Recruitment (`d_recruit`), then the business-line brains Amaris (`d_amaris`), LittleBig Connection (`d_lbc`), Eleven VMS (`d_eleven`), Creative Intelligence (`d_ci`). `id` is the real brain id and `name` the governance's label. `governanceId` is the use-case governance's `g_*` id where one exists, else the node id; `accounts` for Accounts.
+  - **Accounts** is a group: `id: "accounts"` (not a brain id: `GET /v1/brains/accounts` is 404), `readers: 0`, `pages` the sum and `health.score` the mean of its children, `children` the account brains the caller may open (by name). It appears only with at least one child. Circles and departments outside the list (Engineering Practices, Delivery Escalations, other circles) are in the directory but not in the nav.
+- `BrainCard` gains `role: BrainRole`: the caller's effective role (Personal: `owner`; else owner if they manage, steward if they decide, editor if they edit, contributor if they contribute, else reader).
+- `GET /v1/brains?scope=all` returns `{brains: Entry[]}`: every openable brain as the directory gives it plus `canOpen: true`, then the brains the caller can **see but not open**: `{id, type, name, canOpen: false, restricted, canRequestAccess}` (identity only, no pages, readers or health; names the caller's map already shows, never an NDA account without a grant). `canRequestAccess` is the policy's `request_access` right; ask with `POST /v1/admin/access-requests {nodeId: id, reason}` (the existing steward queue). `type` and `q` filter both lists; any other `scope` is 400 `invalid_scope`. Without `scope` the directory is unchanged.
+
+### Seen changes
+
+- A **change** is a maximal run of consecutive added or removed lines in one page's diff, numbered from 0 in page order.
+- `GET /v1/wiki/:ws/proposals/:id` adds `changeCount` and, on every `pages[].diff` line that is not `same`, `change: number`. The Waiting-for-you question (`GET /v1/questions`) of a wiki proposal adds `detail.changeCount` and `detail.pages: [{pageId, title, diff: [{type, text, change?}]}]` (same numbering, same masking). Both carry `revisionHash`.
+- Approving needs `seenChanges: {revisionHash: string, indexes: number[]}`, on every path that can approve: `POST /v1/wiki/:ws/proposals/:id/decide {decision: "approve", revisionHash, seenChanges}`, `POST /v1/questions/:id {action: "approve" | "prefer_incoming" | "keep_current", revisionHash, seenChanges}` and, per item, `POST /v1/questions/batch {items: [{id, action, revisionHash, seenChanges}]}`. Refused with 409 `{error: "changes_not_seen", reason, changeCount}` (the batch item fails with `error: "changes_not_seen"`) when `seenChanges` is missing, its `revisionHash` is not the proposal's current one, or `indexes` do not cover `0..changeCount-1`. A proposal with no page change needs none. A malformed value is 400 `invalid_seen_changes`. Reject needs no acknowledgement. A missing `revisionHash` is still 400 `revision_required`.
+- `[[links]]` in what a reader gets back (search and Ask snippets, page history, proposal diffs, Waiting-for-you diffs) never name a page the reader cannot see: snippets carry no links, the others drop a link to a hidden page, as the page read already did.
+
+### MCP: pushing into a brain
+
+Tools act with the user's rights and name, need the `secondary.read` and `secondary.contribute` scopes (`list_brains` only `secondary.read`), and are audited per call (`mcp.tool_call`, plus the API receipt `brain.push_page`, `brain.push_change`, `brain.push_session_report` with the tool name).
+
+| Tool | Input | API call |
+|---|---|---|
+| `list_brains` | `{}` | `GET /v1/brains` projected to `{brains: [{id, name, type, role, publication}]}` |
+| `propose_page` | `{brainId, title (1..120), markdown (1..20000), type?}` | `POST /v1/brains/:id/push/page` |
+| `propose_change` | `{brainId, pageId, markdown, rationale? (..500)}` | `POST /v1/brains/:id/push/change` |
+| `write_session_report` | `{brainId, markdown, date? (YYYY-MM-DD)}` | `POST /v1/brains/:id/push/session-report` |
+
+`brainId` is a brain id from `list_brains` or `me`. The three endpoints answer 201 `{ok, brainId, pageId, proposalId, status: "candidate"|"published"}` (`write_session_report` adds `folder: ["Sources", "Session reports", "<Person>"]`) and are also callable from the app with the same rules.
+- Rights: the contribute right in that brain (contributor role or above, a stored role only narrows), opened through the admitted view. A brain the caller cannot read is 404 `{error: "not_found"}`, byte for byte what a brain that does not exist gives, whatever the body; a brain they can read but not contribute to is 403 `forbidden`. Rate limit: the wiki write budget (`WIKI_WRITE_PER_MIN`, default 30 a minute), shared with `wiki_propose`.
+- The proposal waits in **that brain's** review queue (Waiting for you, `workspaceId` = the brain) and in no other, as a `wiki_ingest` item the person reviews like any other. It is never published directly (M-5), with one exception: `write_session_report` into the caller's own Personal Brain follows that brain's publication mode (`direct` publishes at once, status `published`).
+- `propose_change` needs a published page the caller can read (else 404), keeps the page's title and type, and stores `rationale` as the proposal's rationale. A page's cited sources are re-checked for the caller as for any proposal (L-01).
+- A session report is a page of type `session_report` (a collection every brain knows, left out of health and the coach), id `session-report-<person>-<date>-<4 hex>`, title `Session report <Person> <date>`, whose Markdown starts with `Folder: Sources / Session reports / <Person>` (the folder; `<Person>` is the display name derived from the address). Two reports on one day are two pages.
+- `wiki_propose`, `wiki_search`, `wiki_read`, `get_brain_guide` and `coach_propose_structure` are unchanged. The API accepts these MCP calls only for the routes listed in `INTERNAL_ROUTES` (`workers/api/src/auth.ts`).

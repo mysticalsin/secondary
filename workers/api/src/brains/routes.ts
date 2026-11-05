@@ -56,7 +56,7 @@ const CONVENTIONS = [
 ];
 
 const HOW_TO_PROPOSE =
-  "Propose a page with wiki_propose (brain id, title, Markdown). It waits in the review queue; nothing publishes unreviewed unless the brain's publication mode is direct and you may edit.";
+  "Propose a page with propose_page (brain id, title, Markdown), or a new version of a page with propose_change. It waits in the review queue; an agent's proposal is never published unreviewed in a shared brain.";
 
 const QUESTIONS = [
   {
