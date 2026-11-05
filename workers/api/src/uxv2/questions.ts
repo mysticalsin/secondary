@@ -203,6 +203,7 @@ export async function questionsOf(c: C): Promise<Question[]> {
         revisionHash: pv.revisionHash,
         approvals: r.approvals,
         required: r.required,
+        authorId: r.authorId,
       };
       if (kind === "contradiction") {
         const sides = await contradictionSides(stub, r, ok, whole);
