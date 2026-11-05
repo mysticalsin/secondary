@@ -142,10 +142,33 @@ function route(method: string, path: string, query: URLSearchParams): Response {
         ],
       });
     }
+    if (/^\/v1\/wiki\/[^/]+\/search$/.test(path))
+      return j({
+        results: [
+          {
+            ws: "a_acme",
+            pageId: "decision-log",
+            title: "Decision log",
+            lines: [],
+            query: query.get("q"),
+          },
+        ],
+      });
+    if (/^\/v1\/wiki\/[^/]+\/pages\/[^/]+$/.test(path)) {
+      if (path.includes("denied")) return j({ reason: "not admitted" }, 404);
+      return j({
+        id: "decision-log",
+        title: "Decision log",
+        markdown: "- A claim {src:s1}",
+        citations: {},
+      });
+    }
     if (path === "/v1/review") return j({ candidates: [{ id: "cand1", title: "Pricing FAQ" }] });
   }
   if (method === "POST") {
     if (path === "/v1/personal/items") return j({ ok: true, id: "pb:u1:n1" });
+    if (/^\/v1\/wiki\/[^/]+\/propose$/.test(path))
+      return j({ ok: true, proposalId: "cand:a_acme:00000001", status: "candidate" }, 201);
     if (/^\/v1\/personal\/items\/[^/]+\/contribute$/.test(path))
       return j({ ok: true, receiptId: "r1" });
   }

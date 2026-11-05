@@ -15,6 +15,7 @@ import {
   verifyInternalRequest,
 } from "./internal-auth.ts";
 import { workspaceStub } from "./stubs.ts";
+import { wikiNotify } from "./wiki/hooks.ts";
 import type { SourceItem } from "./workspace.ts";
 
 export const NOT_CONFIRMED = "source permission could not be confirmed";
@@ -103,6 +104,14 @@ export function connectorRoutes(): Hono<{ Bindings: Env }> {
       rows.push(row);
     }
     const changed = await workspaceStub(c.env, tenantId, scopeId).sourceUpsert(rows);
+    if (changed)
+      await wikiNotify(
+        c.env,
+        tenantId,
+        scopeId,
+        rows.map((r) => r.id),
+        Date.now(),
+      );
     return c.json({ ok: true, changed });
   });
 

@@ -71,6 +71,8 @@ interface Props {
   focusId?: string | null;
   onOpen: (id: string) => void;
   compact?: boolean;
+  /** Wiki health by node id. A node whose wiki needs attention gets a marker. */
+  wiki?: Record<string, { score: number; openFindings: number }>;
 }
 
 export function MapCanvas({
@@ -81,6 +83,7 @@ export function MapCanvas({
   focusId,
   onOpen,
   compact,
+  wiki,
 }: Props) {
   const { t } = useI18n();
   const layout: Layout = useMemo(
@@ -374,14 +377,17 @@ export function MapCanvas({
               : p.depth === 0
                 ? -p.r + px(14)
                 : p.r + px(12);
+            const wh = !locked ? wiki?.[p.id] : undefined;
+            const wikiWarn = !!wh && (wh.score < 80 || wh.openFindings > 0);
             const summary =
-              p.node.counts && !locked
+              (p.node.counts && !locked
                 ? t("map.node.counts", {
                     name: p.label,
                     items: p.node.counts.items,
                     open: p.node.counts.open,
                   })
-                : t(locked ? "map.node.locked" : "map.node.hidden", { name: p.label });
+                : t(locked ? "map.node.locked" : "map.node.hidden", { name: p.label })) +
+              (wh ? `. ${t("wiki.health.map", { score: wh.score, n: wh.openFindings })}` : "");
             // Zoomed out on a big map, small leaves are plain dots: no title, no marks.
             if (lod && p.depth === 2 && !hit && !sel)
               return (
@@ -454,6 +460,12 @@ export function MapCanvas({
                 {p.node.signals.star && !locked && p.depth !== 2 ? (
                   <g transform={`translate(${p.r * 0.75} ${-p.r * 0.75})`}>
                     <polygon points={STAR} fill="#f8f060" stroke="#140c1c" strokeWidth="0.8" />
+                  </g>
+                ) : null}
+                {wikiWarn ? (
+                  <g transform={`translate(${-p.r * 0.75} ${p.r * 0.75})`}>
+                    <circle r={4} fill="#ff6b8a" stroke="#140c1c" strokeWidth="1" />
+                    <path d="M-2.2 0 H2.2 M0 -2.2 V2.2" stroke="#140c1c" strokeWidth="1.2" />
                   </g>
                 ) : null}
                 {locked && p.depth !== 2 ? <Padlock s={p.depth === 0 ? 1 : 0.7} /> : null}

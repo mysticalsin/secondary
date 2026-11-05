@@ -7,6 +7,7 @@ import { personalScope, scopeOfNode } from "../scope.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import { workspaceStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
+import { wikiNotify } from "../wiki/hooks.ts";
 import type { ItemRecord } from "../workspace.ts";
 import {
   audit,
@@ -105,6 +106,13 @@ export function personalRoutes(): Hono<AppEnv> {
     if (!res.ok) return failResponse(c, res);
     // A saved revision supersedes the working copy.
     await ws(c).remove(`ud:${item.id}`);
+    await wikiNotify(
+      c.env,
+      sess(c).tenantId,
+      personalScope(sess(c).principal.id),
+      [item.id],
+      sess(c).ctx.now,
+    );
     const now = (await ws(c).get(item.id)) as ItemRecord;
     return c.json({
       ok: true,

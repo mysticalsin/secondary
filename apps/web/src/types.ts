@@ -246,6 +246,8 @@ export interface Candidate {
   requestChanges: { allowed: boolean; reason: string };
   origin: string;
   release: "scope" | "global";
+  /** Wiki proposals (wiki_ingest, wiki_lint, wiki_dream) come with their kind. */
+  kind?: string;
 }
 
 export type PersonalKind = "note" | "brief" | "view" | "draft";

@@ -96,9 +96,9 @@ function reasonOf(status: number, data: unknown): string {
   return translate(getLang(), "err.failed", { status });
 }
 
-type Method = "GET" | "POST" | "PUT" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "DELETE";
 
-async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: Method, path: string, body?: unknown): Promise<T> {
   const persona = getPersona();
   if (MOCK) {
     // The dynamic import sits behind a build-time constant, so production builds without

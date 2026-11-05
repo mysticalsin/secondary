@@ -8,6 +8,7 @@ import { viewOf } from "../auth.ts";
 import { scopeOfNode } from "../scope.ts";
 import { workspaceStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
+import { wikiNotify } from "../wiki/hooks.ts";
 import type { ItemRecord } from "../workspace.ts";
 import {
   audit,
@@ -243,6 +244,7 @@ export function recordRoutes(): Hono<AppEnv> {
       sess(c).ctx.now,
     );
     if ("ok" in made) return failResponse(c, made);
+    await wikiNotify(c.env, sess(c).tenantId, w.acc.scope, [made.id], sess(c).ctx.now);
     return c.json(recordView(made, sess(c).ctx.now), 201);
   });
 
@@ -292,6 +294,7 @@ export function recordRoutes(): Hono<AppEnv> {
       sess(c).principal.id,
     );
     if (!res.ok) return failResponse(c, res);
+    await wikiNotify(c.env, sess(c).tenantId, w.acc.scope, [rid], sess(c).ctx.now);
     return c.json(recordView((await w.stub.get(rid)) as ItemRecord, sess(c).ctx.now));
   });
 

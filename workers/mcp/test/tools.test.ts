@@ -24,6 +24,9 @@ const CONTRACT_TOOLS = [
   "personal_note_create",
   "contribute",
   "render_view",
+  "wiki_search",
+  "wiki_read",
+  "wiki_propose",
 ];
 
 beforeEach(async () => {
@@ -121,6 +124,66 @@ describe("scope enforcement", () => {
     const r = await callTool(t.token as string, "personal_note_create", { title: "t", body: "b" });
     expect(r.json?.result.isError).toBeUndefined();
     expect(JSON.parse(textOf(r))).toMatchObject({ ok: true });
+  });
+});
+
+describe("wiki tools", () => {
+  it("search and read use the caller's own reads; propose needs the contribute scope and only creates a proposal", async () => {
+    const t = await getToken({ scope: "secondary.read secondary.contribute" });
+    const token = t.token as string;
+    const s = await callTool(token, "wiki_search", { q: "fixed fee" });
+    expect(JSON.parse(textOf(s)).results[0]).toMatchObject({ pageId: "decision-log" });
+    const all = await callTool(token, "wiki_search", { q: "fee", workspace: "a_acme" });
+    expect(all.json?.result.isError).toBeUndefined();
+    const r = await callTool(token, "wiki_read", { workspace: "a_acme", page: "decision-log" });
+    expect(JSON.parse(textOf(r))).toMatchObject({ id: "decision-log" });
+    const p = await callTool(token, "wiki_propose", {
+      workspace: "me",
+      title: "Pricing",
+      markdown: "# P\n- x",
+    });
+    expect(JSON.parse(textOf(p))).toMatchObject({ status: "candidate" });
+    expect((await apiCalls()).map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /v1/wiki/all/search?q=fixed%20fee",
+      "GET /v1/wiki/a_acme/search?q=fee",
+      "GET /v1/wiki/a_acme/pages/decision-log",
+      "POST /v1/wiki/me/propose",
+    ]);
+    expect((await apiCalls())[3]?.body).toEqual({ title: "Pricing", markdown: "# P\n- x" });
+    expect((await apiCalls()).map((c) => c.principal.tool)).toEqual([
+      "wiki_search",
+      "wiki_search",
+      "wiki_read",
+      "wiki_propose",
+    ]);
+  });
+
+  it("wiki_propose is refused without the contribute scope and never reaches the API", async () => {
+    const t = await getToken({ scope: "secondary.read" });
+    const { res } = await callTool(t.token as string, "wiki_propose", {
+      workspace: "me",
+      title: "x",
+      markdown: "y",
+    });
+    expect(res.status).toBe(403);
+    expect(res.headers.get("www-authenticate") ?? "").toContain("secondary.contribute");
+    expect(await apiCalls()).toEqual([]);
+    expect(
+      (await callTool(t.token as string, "wiki_read", { workspace: "a_acme", page: "../x" })).json
+        ?.result?.isError,
+    ).toBeTruthy();
+  });
+
+  it("an API refusal is a tool error, audited as denied", async () => {
+    const t = await getToken();
+    const r = await callTool(t.token as string, "wiki_read", {
+      workspace: "a_acme",
+      page: "denied",
+    });
+    expect(r.json?.result.isError).toBe(true);
+    expect((await auditEvents()).find((e) => e.action === "wiki_read")).toMatchObject({
+      outcome: "denied",
+    });
   });
 });
 

@@ -36,4 +36,6 @@ interface Env {
   AI_DAILY_TOKEN_BUDGET?: string;
   /** Var. Per-attempt timeout in ms. Default 30000. */
   AI_TIMEOUT_MS?: string;
+  /** Var. "off" stops wiki jobs from scheduling Durable Object alarms (jobs then run through POST /v1/wiki/:ws/run). */
+  WIKI_ALARMS?: string;
 }

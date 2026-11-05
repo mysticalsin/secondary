@@ -10,6 +10,7 @@ import { useFocusTrap } from "../lib/focus";
 import { useApp } from "../state";
 import type { ContributionStatus, Draft, PersonalItem, PersonalKind, RevisionRow } from "../types";
 import { useApi } from "../useApi";
+import { WikiTab } from "./wiki/WikiTab";
 
 const KINDS: PersonalKind[] = ["note", "brief", "draft", "view"];
 const AUTOSAVE_MS = 1200;
@@ -38,6 +39,7 @@ export function Personal() {
   const [q, setQ] = useState("");
   const [tag, setTag] = useState("");
   const [fresh, setFresh] = useState<PersonalItem | null>(null);
+  const [area, setArea] = useState<"notes" | "wiki">("notes");
   const items = state.data ?? [];
   const current =
     selId === "new"
@@ -84,107 +86,130 @@ export function Personal() {
         <Lock size={16} aria-hidden />
         <span>{t("p.privacy")}</span>
       </div>
-      <Await state={state} skeleton={3}>
-        {() => (
-          <div className="personal-layout">
-            <div className="stack">
-              <button type="button" className="btn primary" onClick={() => setSelId("new")}>
-                <Plus size={16} aria-hidden /> {t("p.new")}
-              </button>
-              <div className="field">
-                <label htmlFor="p-search" className="sr-only">
-                  {t("p.search")}
-                </label>
-                <input
-                  id="p-search"
-                  className="input"
-                  type="search"
-                  placeholder={t("p.search")}
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
+      <div className="tabs" role="tablist" aria-label={t("wiki.personal.tabs")}>
+        {(["notes", "wiki"] as const).map((k) => (
+          <button
+            key={k}
+            id={`p-area-${k}`}
+            type="button"
+            role="tab"
+            className="tab"
+            aria-selected={area === k}
+            aria-controls="p-area-panel"
+            tabIndex={area === k ? 0 : -1}
+            onClick={() => setArea(k)}
+          >
+            {t(k === "notes" ? "wiki.personal.tab.notes" : "wiki.personal.tab.wiki")}
+          </button>
+        ))}
+      </div>
+      <div id="p-area-panel" role="tabpanel" aria-labelledby={`p-area-${area}`}>
+        {area === "wiki" ? (
+          <WikiTab ws="me" />
+        ) : (
+          <Await state={state} skeleton={3}>
+            {() => (
+              <div className="personal-layout">
+                <div className="stack">
+                  <button type="button" className="btn primary" onClick={() => setSelId("new")}>
+                    <Plus size={16} aria-hidden /> {t("p.new")}
+                  </button>
+                  <div className="field">
+                    <label htmlFor="p-search" className="sr-only">
+                      {t("p.search")}
+                    </label>
+                    <input
+                      id="p-search"
+                      className="input"
+                      type="search"
+                      placeholder={t("p.search")}
+                      value={q}
+                      onChange={(e) => setQ(e.target.value)}
+                    />
+                  </div>
+                  {allTags.length > 0 ? (
+                    <div className="pills" role="group" aria-label={t("p.tags")}>
+                      {allTags.map((x) => (
+                        <button
+                          key={x}
+                          type="button"
+                          className="pill"
+                          aria-pressed={tag === x}
+                          onClick={() => setTag(tag === x ? "" : x)}
+                        >
+                          #{x}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {items.length === 0 ? (
+                    <Empty title={t("p.empty.title")}>{t("p.empty.body")}</Empty>
+                  ) : shown.length === 0 ? (
+                    <Empty title={t("p.nomatch.title")}>{t("p.nomatch.body")}</Empty>
+                  ) : null}
+                  <ul
+                    className="stack"
+                    style={{ listStyle: "none", margin: 0, padding: 0 }}
+                    aria-label={t("p.list")}
+                  >
+                    {shown.map((i) => (
+                      <li key={i.id}>
+                        <button
+                          type="button"
+                          className="qitem"
+                          aria-current={current?.id === i.id}
+                          onClick={() => setSelId(i.id)}
+                        >
+                          <strong>{i.title}</strong>
+                          <span className="muted" style={{ fontSize: 14 }}>
+                            {td("kind", i.kind)} · {fmtDate(i.updatedAt)}
+                          </span>
+                          <span className="row">
+                            {(i.tags ?? []).map((x) => (
+                              <span key={x} className="muted" style={{ fontSize: 13 }}>
+                                #{x}
+                              </span>
+                            ))}
+                            {draftFor(i.id) ? <Chip tone="attn">{t("p.unsaved")}</Chip> : null}
+                            {i.contributedTo?.length ? (
+                              <Chip tone="progress">
+                                {t("p.contributed", { n: i.contributedTo.length })}
+                              </Chip>
+                            ) : null}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <Editor
+                  key={selId === "new" ? "new" : (current?.id ?? "none")}
+                  item={selId === "new" ? null : (current ?? null)}
+                  draft={draftFor(selId === "new" ? "new" : (current?.id ?? ""))}
+                  onChanged={drafts.reload}
+                  onSaved={(it) => {
+                    setFresh(it);
+                    setSelId(it.id);
+                    state.reload();
+                    drafts.reload();
+                    say(t("p.saved"));
+                  }}
+                  onDeleted={(copies) => {
+                    setSelId(null);
+                    state.reload();
+                    drafts.reload();
+                    say(copies > 0 ? t("p.deleted.copies", { n: copies }) : t("p.deleted"));
+                  }}
+                  onContributed={(m) => {
+                    say(t("p.sent", { scope: m.scope, receipt: m.receiptId }));
+                    state.reload();
+                  }}
                 />
               </div>
-              {allTags.length > 0 ? (
-                <div className="pills" role="group" aria-label={t("p.tags")}>
-                  {allTags.map((x) => (
-                    <button
-                      key={x}
-                      type="button"
-                      className="pill"
-                      aria-pressed={tag === x}
-                      onClick={() => setTag(tag === x ? "" : x)}
-                    >
-                      #{x}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              {items.length === 0 ? (
-                <Empty title={t("p.empty.title")}>{t("p.empty.body")}</Empty>
-              ) : shown.length === 0 ? (
-                <Empty title={t("p.nomatch.title")}>{t("p.nomatch.body")}</Empty>
-              ) : null}
-              <ul
-                className="stack"
-                style={{ listStyle: "none", margin: 0, padding: 0 }}
-                aria-label={t("p.list")}
-              >
-                {shown.map((i) => (
-                  <li key={i.id}>
-                    <button
-                      type="button"
-                      className="qitem"
-                      aria-current={current?.id === i.id}
-                      onClick={() => setSelId(i.id)}
-                    >
-                      <strong>{i.title}</strong>
-                      <span className="muted" style={{ fontSize: 14 }}>
-                        {td("kind", i.kind)} · {fmtDate(i.updatedAt)}
-                      </span>
-                      <span className="row">
-                        {(i.tags ?? []).map((x) => (
-                          <span key={x} className="muted" style={{ fontSize: 13 }}>
-                            #{x}
-                          </span>
-                        ))}
-                        {draftFor(i.id) ? <Chip tone="attn">{t("p.unsaved")}</Chip> : null}
-                        {i.contributedTo?.length ? (
-                          <Chip tone="progress">
-                            {t("p.contributed", { n: i.contributedTo.length })}
-                          </Chip>
-                        ) : null}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <Editor
-              key={selId === "new" ? "new" : (current?.id ?? "none")}
-              item={selId === "new" ? null : (current ?? null)}
-              draft={draftFor(selId === "new" ? "new" : (current?.id ?? ""))}
-              onChanged={drafts.reload}
-              onSaved={(it) => {
-                setFresh(it);
-                setSelId(it.id);
-                state.reload();
-                drafts.reload();
-                say(t("p.saved"));
-              }}
-              onDeleted={(copies) => {
-                setSelId(null);
-                state.reload();
-                drafts.reload();
-                say(copies > 0 ? t("p.deleted.copies", { n: copies }) : t("p.deleted"));
-              }}
-              onContributed={(m) => {
-                say(t("p.sent", { scope: m.scope, receipt: m.receiptId }));
-                state.reload();
-              }}
-            />
-          </div>
+            )}
+          </Await>
         )}
-      </Await>
+      </div>
     </div>
   );
 }

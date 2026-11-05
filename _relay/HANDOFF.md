@@ -1,6 +1,30 @@
 # HANDOFF
 
-Updated: 2026-11-04. By: Claude (Sonnet). Tasks G0.7 and G0.8 of the roadmap.
+Updated: 2026-11-05. By: Claude (Sonnet, B3 wiki on top of the B2 integration). Earlier: tasks G0.7 and G0.8 of the roadmap.
+
+## B3 Living Wiki (2026-11-05, Claude, branch `b3/wiki`, not merged, nothing deployed)
+
+Design: `docs/DESIGN-LIVING-WIKI.md`. Contract: `docs/API-CONTRACT.md`, "Living Wiki". Code: `workers/api/src/wiki/*` (types, text, store, engine, routes, review, hooks), `apps/web/src/views/wiki/*`, MCP tools `wiki_search`, `wiki_read`, `wiki_propose`. Tests: `workers/api/test/wiki.test.ts` and `wiki-units.test.ts` (every acceptance test of the design doc), `workers/mcp/test/tools.test.ts`, `apps/web/src/test/wiki.test.tsx`, `e2e/wiki.spec.ts`.
+
+Totals at the last full run: build, typecheck and `biome check .` clean. Tests: fixtures 23, contracts 91, policy 55, web 49, audit 8, connector 49, ops 6, api 386, mcp 79. Playwright 50 passed (axe on the wiki views, FR, 400 px).
+
+How it is built:
+
+- `Workspace` now extends `WikiBase` (`wiki/store.ts`): wiki tables live in the workspace's own object and are in snapshots, erasure and reseed. Review items are ordinary items of kind `wiki_ingest|wiki_lint|wiki_dream`, so `GET /v1/review` lists them (with `kind`). They are decided only through `/v1/wiki/:ws/proposals/:id/decide`, which applies the diff. `Workspace.load` refuses them for `/v1/actions`.
+- Hooks (one line each): record create/update (`ux/records.ts`), Personal Brain note create/edit, connector upsert, and the new meeting record endpoint call `wikiNotify`, which queues an ingest job. A DO alarm runs jobs, lint daily and dreaming at 02:00 UTC. `WIKI_ALARMS=off` (set in the api vitest config) disables scheduling; `POST /v1/wiki/:ws/run` runs everything due. Jobs are claimed atomically, so an alarm and a manual run never take the same job.
+- Ingest: triage by content hash, then the deterministic extractor (structured records, meeting records, `Decision:`/`Commitment:`/`Risk:` lines) or, when `ANTHROPIC_API_KEY` is set and the account contract says `allowed`, the model (single-source prompt, citation per claim, output validated, R-110 on input and output). Personal Brain never goes to a model.
+- Promote to Global registers the released candidate in the global wiki (`wiki_promotions`), which publishes the page lazily on the next read. `submitCandidate` and `parseUserValidated` in `routes.ts` are now exported and passed into `wikiRoutes`.
+- Citations are re-checked per caller on every read, search, ask and promote: the gate node must be at content level for the caller, and connector files need the connector's explicit yes (fail closed). Claims that lose all their sources are dropped.
+- `workers/api/test/ops-rights.test.ts` erases the seeded `u_ceo` and reads receipts from a stub shared by all test files, so any other file that writes receipts as `u_ceo` can make it fail under parallel load (seen before B3 too). The wiki tests use their own CEO address for that reason. It passes alone.
+- Do not run `biome check --write` and then `git checkout _relay/HANDOFF.md`: biome reformats this file, and the checkout throws the notes away.
+
+Not done or not verified:
+
+- No live model call (tests stub fetch). The AI path is exercised with a hostile fixture and a stub only.
+- Briefs do not show wiki facts yet (the "unverified" badge exists in the wiki UI and API only).
+- The dev mock (`pnpm --filter @secondary/web dev:mock`) has no wiki: the tab says it needs the live stack.
+- Lint caps at 20 findings per kind per run. Schema editing has an object method (`wikiSetSchema`) but no route or UI.
+- The Opus security review of the wiki surface is still to do (cross-workspace isolation is covered by tests, not reviewed).
 
 ## Current state
 
@@ -80,6 +104,7 @@ corepack pnpm e2e:mcp ceo  # scripted MCP host against :8788
 Totals at the last run: build, typecheck and `biome check .` clean (0 errors, 0 warnings). Tests: fixtures 23, contracts 91, policy 55, web 41, audit 8, connector 49, ops 6, api 340, mcp 76. Playwright 44 passed, axe on every view with no rule skipped.
 
 What the integration changed:
+
 - Conflict resolution: unions in `routes.ts`, `wrangler.jsonc`, `env.d.ts`, `types.ts`, `API-CONTRACT.md`; `AccountWorkspace.tsx` took the UX layout and re-added the AI "Prepare brief" buttons; TenantPolicy snapshots now also cover the identity (`principal_status`, `group_role_map`, `scim_*`) and `gov_*` tables, and erasure also clears the identity rows of the principal.
 - Policy consumes memberships: grant condition `membership: true` (see `docs/API-CONTRACT.md`, "Memberships reach the policy"). `head_bid`, `acme_lead`, `consultant` carry three such grants. Tenants seeded earlier keep their stored role bodies until reseeded (dev) or edited in the console. Approving an access request now changes what the requester sees (tested end to end, including the two-person path). A requester whose id is not in the directory (a dev persona under a non-seeded address) can be admitted through their own request only.
 - The drawer's "Request access" opens `RequestAccessForm` (governance API). Review events (contribute, request changes, approve, release, second approval needed) post content-free notices to the inbox (`workers/api/src/ux/notify.ts`, best effort). The web renders connector `source` search results (`/sources/:id`, text only).
@@ -90,6 +115,7 @@ What the integration changed:
 - Local stack: `dev-all.mjs` blanks the Access team and AUD (wrangler.jsonc carries the deployed dev values, which broke the loopback sign-in and the MCP e2e), writes `AUDIT_KEY_ERASE` and `PSEUDONYM_KEY`, and raises `RATE_LIMIT_PER_MIN` to 6000 (all personas share one address and one counter). The vitest configs of api and mcp do the same for Access. The connector and ops workers are not part of the local stack.
 
 Open items and notes:
+
 - `workers/api/test/ops-rights.test.ts` failed twice in one run under load (an erased principal id still found in a workspace export) and passed on every other run. Not reproduced; check if it recurs.
 - Playwright right after a cold `wrangler dev` start can see the audit service binding not answering for a while; `e2e/global-setup.ts` now waits for the api and mcp bindings. It is a local registry artefact, not seen in unit tests.
 - The brief and PrepareBrief screens are still English only (outside the admin scope asked for).

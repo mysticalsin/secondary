@@ -29,7 +29,7 @@ import { MAX_PROMPT, planView } from "./genui.ts";
 import { readiness } from "./observe.ts";
 import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
 import { PERSONAL_KINDS, type PersonalKind, personalKindOf } from "./personal-kind.ts";
-import { candidateId, parseCandidateId, scopeOfNode } from "./scope.ts";
+import { candidateId, parseCandidateId, personalScope, scopeOfNode } from "./scope.ts";
 import { limitBody, mutationGuard, safeEqual } from "./security.ts";
 import { seedTenant } from "./seed.ts";
 import { detectSensitivity, type SensitivityFlag } from "./sensitivity.ts";
@@ -37,6 +37,10 @@ import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
 import { uxRoutes } from "./ux/index.ts";
 import { notifyApproved, notifyChangesRequested, notifyContributed } from "./ux/notify.ts";
+import { wikiNotify } from "./wiki/hooks.ts";
+import { wikiQueueRow } from "./wiki/review.ts";
+import { wikiRoutes } from "./wiki/routes.ts";
+import { isWikiKind } from "./wiki/types.ts";
 import type { Fail, ItemRecord, UserValidated } from "./workspace.ts";
 
 export const VERSION = "0.1.0";
@@ -149,7 +153,7 @@ function failResponse(c: C, f: Fail): Response {
 
 // ---- candidates (Personal Brain contribute and direct contribute) ----
 
-interface CandidateInput {
+export interface CandidateInput {
   targetNodeId: string;
   title: string;
   body: string | null;
@@ -163,7 +167,11 @@ const hex8 = (): string =>
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
-function parseUserValidated(v: unknown, s: Session, expectedRevision: number): UserValidated {
+export function parseUserValidated(
+  v: unknown,
+  s: Session,
+  expectedRevision: number,
+): UserValidated {
   if (!v || typeof v !== "object") throw bad("user_validation_required", 422);
   const o = v as Record<string, unknown>;
   const by = typeof o.by === "string" ? o.by.toLowerCase() : "";
@@ -176,7 +184,11 @@ function parseUserValidated(v: unknown, s: Session, expectedRevision: number): U
   return { by: s.principal.id, at: new Date(at).toISOString(), revision: expectedRevision };
 }
 
-async function submitCandidate(c: C, view: AdmittedView, i: CandidateInput): Promise<Response> {
+export async function submitCandidate(
+  c: C,
+  view: AdmittedView,
+  i: CandidateInput,
+): Promise<Response> {
   const s = sess(c);
   if (!s.switches.contribute) return c.json(switchedOff("contribute"), 503);
   const flags = detectSensitivity({ title: i.title, body: i.body });
@@ -655,6 +667,8 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       admittedScopes(view).map((scope) => workspaceStub(c.env, s.tenantId, scope).pending(100)),
     );
     const items = lists.flat().flatMap((r) => {
+      // Wiki proposals (ingest, lint, dreaming) are decided in the wiki review (apps/web views/wiki).
+      if (isWikiKind(r.kind)) return wikiQueueRow(view, s.principal, r) ?? [];
       const policyNode = r.targetNode ?? r.id;
       const target = view.nodes.get(policyNode);
       if (!target) return [];
@@ -971,6 +985,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       s.ctx.now,
     );
     if ("ok" in made) return failResponse(c, made);
+    await wikiNotify(c.env, s.tenantId, personalScope(s.principal.id), [made.id], s.ctx.now);
     return c.json(personalView(made, []), 201);
   });
 
@@ -1048,6 +1063,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     return c.json({ receipts });
   });
 
+  v1.route("/", wikiRoutes(deps, { submitCandidate, parseUserValidated })); // B3 Living Wiki
   v1.route("/", uxRoutes(deps)); // B2 UX: edit, history, drafts, prefs, review detail, records
 
   v1.all("*", (c) => c.json({ error: "not_found" }, 404));

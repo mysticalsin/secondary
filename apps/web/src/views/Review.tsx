@@ -18,6 +18,8 @@ import { whoIs } from "../personas";
 import { useApp } from "../state";
 import type { Candidate } from "../types";
 import { useApi } from "../useApi";
+import { wikiWsOf } from "./wiki/api";
+import { useWho, WikiProposalDetail } from "./wiki/WikiProposalDetail";
 
 /** Candidate ids look like cand:<targetNodeId>:<8 hex>. The node to open is the target. */
 const targetOf = (id: string) => /^cand:(.+):[0-9a-f]{8}$/.exec(id)?.[1] ?? id;
@@ -346,6 +348,7 @@ export function Review() {
   const state = useApi(() => api.review(), []);
   const { say } = useApp();
   const { t, td } = useI18n();
+  const wikiWho = useWho();
   const [sel, setSel] = useState<string | null>(null);
   const list = state.data ?? [];
   const current = list.find((c) => c.id === sel) ?? list[0];
@@ -382,8 +385,14 @@ export function Review() {
                 >
                   <strong>{c.title}</strong>
                   <span className="muted" style={{ fontSize: 14 }}>
-                    {c.scopeLabel} · {fmtRev(c.revision)} ·{" "}
-                    {whoIs(c.author, (rid, f) => td("role", rid, f))}
+                    {c.scopeLabel} ·{" "}
+                    {c.kind?.startsWith("wiki_")
+                      ? td("wiki.kind", c.kind, c.kind)
+                      : fmtRev(c.revision)}{" "}
+                    ·{" "}
+                    {c.kind?.startsWith("wiki_")
+                      ? wikiWho(c.author)
+                      : whoIs(c.author, (rid, f) => td("role", rid, f))}
                   </span>
                   <span className="row">
                     {c.flags.length > 0 ? (
@@ -400,7 +409,18 @@ export function Review() {
               </li>
             ))}
           </ul>
-          {current ? (
+          {current?.kind?.startsWith("wiki_") ? (
+            <WikiProposalDetail
+              key={current.id}
+              ws={wikiWsOf(targetOf(current.nodeId))}
+              id={current.id}
+              onDone={(m) => {
+                say(m);
+                setSel(null);
+                state.reload();
+              }}
+            />
+          ) : current ? (
             <CandidateDetail
               key={`${current.id}-${current.twoPerson.approvals}-${current.revision}`}
               c={current}
