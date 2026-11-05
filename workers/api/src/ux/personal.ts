@@ -75,6 +75,16 @@ export function personalRoutes(): Hono<AppEnv> {
       throw bad("nothing_to_edit");
     // Type and tags alone are metadata: no new revision, nothing for the history to hold.
     if (title === undefined && itemBody === undefined && tags) {
+      // Metadata only, but still on the record (L-08).
+      if (
+        !(await audit(c, {
+          action: "personal.retag",
+          nodeId: item.id,
+          scopeId: null,
+          revision: item.revision,
+        }))
+      )
+        return c.json({ error: "audit_unavailable" }, 503);
       await ws(c).retag(item.id, tags);
       return c.json({
         ok: true,
@@ -256,10 +266,23 @@ export function personalRoutes(): Hono<AppEnv> {
   r.put("/ux/drafts/:key", async (c) => {
     const key = c.req.param("key");
     if (!DRAFT_KEY.test(key)) throw notFound();
+    // A draft belongs to a note that exists, or is the one new-note draft: at most one per note (L-08).
+    if (key !== "new" && (await ws(c).get(key))?.kind !== "personalitem") throw notFound();
     const b = await readObject(c);
     const title = optText(b.title, 200, "invalid_title") ?? "";
     const body = optText(b.body, MAX_BODY_TEXT, "invalid_body") ?? "";
     const kind = typeof b.kind === "string" && PERSONAL_KINDS.includes(b.kind) ? b.kind : "note";
+    // Autosave is frequent: only the first save of a draft leaves a receipt.
+    if (
+      !(await ws(c).get(`ud:${key}`)) &&
+      !(await audit(c, {
+        action: "personal.draft",
+        nodeId: key === "new" ? null : key,
+        scopeId: null,
+        revision: null,
+      }))
+    )
+      return c.json({ error: "audit_unavailable" }, 503);
     const baseRevision =
       typeof b.baseRevision === "number" ? Math.max(0, Math.floor(b.baseRevision)) : 0;
     const rec = await ws(c).scratch(
@@ -281,6 +304,16 @@ export function personalRoutes(): Hono<AppEnv> {
   r.delete("/ux/drafts/:key", async (c) => {
     const key = c.req.param("key");
     if (!DRAFT_KEY.test(key)) throw notFound();
+    if (
+      (await ws(c).get(`ud:${key}`)) &&
+      !(await audit(c, {
+        action: "personal.draft_delete",
+        nodeId: key === "new" ? null : key,
+        scopeId: null,
+        revision: null,
+      }))
+    )
+      return c.json({ error: "audit_unavailable" }, 503);
     await ws(c).remove(`ud:${key}`);
     return c.json({ ok: true });
   });
@@ -304,6 +337,10 @@ export function personalRoutes(): Hono<AppEnv> {
       if (typeof b.tourDone !== "boolean") throw bad("invalid_tour");
       next.tourDone = b.tourDone;
     }
+    if (
+      !(await audit(c, { action: "personal.prefs", nodeId: null, scopeId: null, revision: null }))
+    )
+      return c.json({ error: "audit_unavailable" }, 503);
     await ws(c).scratch(
       {
         id: "pref:ui",
