@@ -82,6 +82,22 @@ export const devBypassEmail = (env: Env, url: string): string | null => {
   return env.ENVIRONMENT === "dev" && email && isLocalHost(url) ? email : null;
 };
 
+/**
+ * The local sign-in has one address, so every persona of a local session would be one human to the
+ * two-person rules (M-08). With a persona header each persona gets its own plus-address, like testers
+ * on a deployed dev environment. Loopback only, like the bypass itself.
+ */
+export const devBypassEmailFor = (
+  env: Env,
+  url: string,
+  persona: string | undefined,
+): string | null => {
+  const email = devBypassEmail(env, url);
+  if (!email || !persona || !/^[a-z_]{3,32}$/.test(persona)) return email;
+  const [local, domain] = email.split("@");
+  return `${local}+${persona}@${domain}`;
+};
+
 export function tenantFor(email: string, env: Env): string {
   const domain = email.split("@")[1] ?? "";
   let map: Record<string, unknown> = {};
@@ -185,7 +201,7 @@ export const authenticate =
         const token = c.req.header("Cf-Access-Jwt-Assertion") ?? getCookie(c, "CF_Authorization");
         email = token
           ? await verifyAccessJwt(token, c.env, deps)
-          : devBypassEmail(c.env, c.req.url);
+          : devBypassEmailFor(c.env, c.req.url, c.req.header("X-Demo-Persona"));
       }
     }
     if (!email) return c.json({ error: "unauthorized" }, 401);

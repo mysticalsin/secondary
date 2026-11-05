@@ -1,6 +1,23 @@
 # HANDOFF
 
-Updated: 2026-11-05. By: Claude (Opus, B3 wiki security fixes; Sonnet built B3). Earlier: tasks G0.7 and G0.8 of the roadmap.
+## B2 review, remaining findings closed (2026-11-05, Claude Opus, `main`, commits acac616 to 5f8887c, nothing pushed)
+
+Source: `docs/security/B2-SECURITY-REVIEW.md` (OneDrive project) plus the wiki review L-07. Every finding was open in the code before this pass (checked one by one). Each fix has a regression test that failed on the old source and passes now. Accepted decisions: `docs/security/ACCEPTED-RISKS.md` (owner Tony Walteur).
+
+- M-07 `admin/validate.ts`: manage_members, approve_release or review on `*` or a restricted scope, and any new or looser elevation, need a second approver. M-08 `admin/store.ts`: `gov_identity` remembers which address each principal id acted with; proposer, beneficiary, requester and elevation subject count as the same person under any id with that address. L-06: last-admin guard counts only holders who are not deprovisioned. I-05: inbox titles say "a restricted account" for NDA accounts. Tests `b2-governance.test.ts`. Commit acac616.
+- I-01: docs and runbooks now say revocation is per request (roles and `active` are read every time); the epoch is a counter. I-03: MCP edge pre-check logs `mcp_switch_check_failed`. Commit ba2607b.
+- L-03 `security.ts`: browser mutations are refused when `Sec-Fetch-Site` is not same-origin/none or `Origin` is foreign (same-site siblings included). Commit 370e089.
+- M-04: the `connector` switch now stops `/v1/sources/:id`, source hits in search and wiki source reads. Commit 030536e. M-05: AI evidence checks `AI use with client` per owning account (`ai/evidence.ts` `ownerAllowsAi`). Commit 645d6b2. L-04: `/v1/briefs` returns a `proof` (HMAC, per tenant and person, 24 h) and `/v1/briefs/save` refuses a brief without it (`ai/proof.ts`). Commit e19807c.
+- M-12: customer permission stores the exact external text (`permission.text`); a rewrite locks it until recorded again; `POST .../permission` takes `text`; the story form in the web app records text and permission together (e2e updated). Old permissions without `text` read as locked. Commit 07129fa.
+- L-07: pending sign-ins are capped per address (10, `login_state.ip_hash`) and evicted busiest-first; a re-login deletes the session the browser held. Commits 4c9b583, 8d8ffbf. L-08: retag, prefs, first draft save and draft delete write receipts; a draft key must be `new` or an existing note. Commit 68a7af1.
+- M-03, commit 68b3764: audit `/pseudonymise` lists only `<date>/<tenant>/` folders and pages by budget; the API runs the audit pass first, so a failure leaves nothing half done; each erase leaves a tombstone in `erasure_tombstones` (TenantPolicy, not in `SNAPSHOT_TABLES`, 90 days) and a tenant or workspace restore applies it again (`reapplyErasures`, `erasuresReapplied` in the restore answer); connector `userKey` is an HMAC under `CONNECTOR_HMAC_KEY` (signature `userKey(secret, email)`), `/internal/acl/forget` drops it on erase (`connectorCacheForgotten` in the summary).
+- M-02 receipt, commit 2c4a707: `/v1/internal/ops/restore` writes `ops_restore` before and `ops_restore_done` after, under `ops:<handle>` (handle = SHA-256 prefix of the Access email or service token name, or `key` in dev), and returns 503 when the audit worker is down. The ops worker passes `actor=` (signed in the query).
+- Wiki L-07, commit 5f8887c: each proposed fact carries `excerpt` (the source line, JSON element or record; the closest line for AI drafts), shown in the review only when the reader may read the source.
+- I-02 and I-04 are accepted, not built (see ACCEPTED-RISKS). Dev reseeds clear tombstones.
+- Deploy notes: no new secrets. api, audit, connector, ops and mcp must deploy together (the `userKey` change empties the ACL cache once; the erase walk and restore route changed on both sides).
+
+
+Updated: 2026-11-05. By: Claude (Opus, remaining B2 review findings; earlier B3 wiki security fixes; Sonnet built B3). Earlier: tasks G0.7 and G0.8 of the roadmap.
 
 ## B3 wiki security review fixes (2026-11-05, Claude Opus, `main`, commits ac56af8 and d4f9508, dev redeployed, nothing pushed)
 

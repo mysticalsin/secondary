@@ -6,6 +6,7 @@ import { runInDurableObject } from "cloudflare:test";
 import type { Role } from "@secondary/policy";
 import { beforeEach, describe, expect, it } from "vitest";
 import { elevationLoosened } from "../src/admin/validate.ts";
+import { devBypassEmailFor } from "../src/auth.ts";
 import { as, json, type Loose, seed, tenantDo } from "./helpers.ts";
 
 const ALPHA = "tenant_mantu_synthetic";
@@ -246,5 +247,24 @@ describe("I-01: revocation does not wait for an epoch", () => {
       });
     }
     expect((await as("consultant", "/v1/me", { method: "GET" })).status).toBe(200);
+  });
+});
+
+describe("M-08: the local sign-in gives each persona its own address", () => {
+  const env = {
+    ENVIRONMENT: "dev",
+    DEV_AUTH_BYPASS_EMAIL: "dev@example.invalid",
+  } as unknown as Env;
+  it("adds the persona to the address on loopback only", () => {
+    expect(devBypassEmailFor(env, "http://127.0.0.1:8787/v1/me", "ceo")).toBe(
+      "dev+ceo@example.invalid",
+    );
+    expect(devBypassEmailFor(env, "http://127.0.0.1:8787/v1/me", undefined)).toBe(
+      "dev@example.invalid",
+    );
+    expect(devBypassEmailFor(env, "http://127.0.0.1:8787/v1/me", "../x")).toBe(
+      "dev@example.invalid",
+    );
+    expect(devBypassEmailFor(env, "https://app.example.test/v1/me", "ceo")).toBeNull();
   });
 });

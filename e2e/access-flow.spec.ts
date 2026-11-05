@@ -62,6 +62,8 @@ test.describe("access request loop", () => {
       .toBe("full");
 
     // A contribution reaches the reviewer's bell without any content in the notice.
+    // Each persona has its own address on the local stack, so the validation names this one.
+    const mine = (await api(me, "consultant", "/v1/me")).json.principal.email as string;
     const made = await api(me, "consultant", "/v1/actions", {
       body: {
         nodeId: "c_delivery",
@@ -69,7 +71,7 @@ test.describe("access request loop", () => {
         payload: {
           title: "Runbook for handover",
           body: "Step one",
-          user_validated: { by: "dev@example.invalid", at: new Date().toISOString(), revision: 1 },
+          user_validated: { by: mine, at: new Date().toISOString(), revision: 1 },
         },
       },
     });
