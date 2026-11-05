@@ -43,6 +43,8 @@ export interface Prospect {
 }
 export interface Contact {
   name: string;
+  /** Job title, shown beside the name in the footer. Optional. */
+  title?: string;
   email: string;
 }
 export type Permission = "named" | "generalised-only";
@@ -54,12 +56,21 @@ export interface Reference {
   image?: string;
   permission: Permission;
   generalisedTitle?: string;
+  /** An outcome figure, only on a `named` reference and only when the customer permission covers it. */
+  metric?: { value: string; label: string };
+}
+/** What one click does: `text` replaces the whole slot, `removeReference` drops that reference (its pageId). */
+export interface Fix {
+  label: string;
+  text?: string;
+  removeReference?: string;
 }
 export interface Issue {
+  /** A slot id, or `reference:<pageId>`. */
   slot: string;
   kind: "customer-permission" | "sensitivity" | "length";
   detail: string;
-  fix?: string;
+  fix?: Fix;
 }
 export interface CheckResult {
   ok: boolean;
@@ -119,6 +130,7 @@ export interface LandingDraft {
   checks?: CheckResult;
   composedBy: "deterministic" | "ai";
   expiresAt: string;
+  updatedAt: string;
   url?: string;
   note?: string;
 }
@@ -145,8 +157,15 @@ export async function revisionHashOf(
     r.lang,
     [r.prospect.firstName ?? "", r.prospect.role, r.prospect.company],
     SLOTS.map((s) => r.slots[s]),
-    r.references.map((x) => [x.pageId, x.title, x.summary, x.image ?? "", x.permission]),
-    [r.contact.name, r.contact.email],
+    r.references.map((x) => [
+      x.pageId,
+      x.title,
+      x.summary,
+      x.image ?? "",
+      x.permission,
+      x.metric ? [x.metric.value, x.metric.label] : null,
+    ]),
+    [r.contact.name, r.contact.title ?? "", r.contact.email],
     r.revision,
   ]);
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canon));

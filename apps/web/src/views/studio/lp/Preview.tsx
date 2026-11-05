@@ -1,8 +1,8 @@
+import { renderLandingParts } from "@secondary/lp-template";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../../i18n";
 import type { LandingDraft, LpLang, LpReference, SlotId } from "../../../lp/types";
 import { SLOT_IDS } from "../../../lp/types";
-import { renderLandingPage, renderLandingParts } from "../../../lp-template";
 import "./lp.css";
 
 export type Device = "desktop" | "phone";
@@ -18,6 +18,38 @@ const FALLBACK: Record<LpLang, string> = { en: "A client project", fr: "Un proje
 /** The title the visitor sees. Without permission on record the client stays hidden. */
 export function shownTitle(r: LpReference, lang: LpLang): string {
   return r.permission === "named" ? r.title : (r.generalisedTitle ?? FALLBACK[lang]);
+}
+
+const applied = new WeakMap<Document, string>();
+
+/**
+ * Puts the template's CSS on a frame's document. The app's CSP allows no inline style (`style-src 'self'`),
+ * and a frame made from `srcdoc` inherits it, so a `<style>` element would be dropped. A constructed
+ * stylesheet is not inline style: it is exempt, and needs neither a nonce nor 'unsafe-inline'. Where a
+ * browser has none (or a test runs without one) a `<style>` element is the fallback.
+ */
+export function setFrameCss(doc: Document, css: string): void {
+  if (applied.get(doc) === css) return;
+  const win = doc.defaultView as (Window & typeof globalThis) | null;
+  if (win && "adoptedStyleSheets" in doc && typeof win.CSSStyleSheet === "function") {
+    try {
+      const sheet = new win.CSSStyleSheet();
+      sheet.replaceSync(css);
+      doc.adoptedStyleSheets = [sheet];
+      applied.set(doc, css);
+      return;
+    } catch {
+      /* fall through to the element */
+    }
+  }
+  let st = doc.getElementById("lp-style");
+  if (!st) {
+    st = doc.createElement("style");
+    st.id = "lp-style";
+    doc.head.append(st);
+  }
+  if (st.textContent !== css) st.textContent = css;
+  applied.set(doc, css);
 }
 
 const closestSlot = (t: EventTarget | null): HTMLElement | null =>
@@ -175,13 +207,7 @@ export function PagePreview({ page, device, onSlot, flagged }: PreviewProps) {
     bind(doc);
     doc.documentElement.lang = page.lang;
     doc.title = title;
-    let st = doc.getElementById("lp-style");
-    if (!st) {
-      st = doc.createElement("style");
-      st.id = "lp-style";
-      doc.head.append(st);
-    }
-    if (st.textContent !== css) st.textContent = css;
+    setFrameCss(doc, css);
     if (editing.current) return;
     if (doc.body.dataset.src !== body) {
       doc.body.innerHTML = body;
@@ -217,27 +243,43 @@ export function PagePreview({ page, device, onSlot, flagged }: PreviewProps) {
 
 /** A small inert render of the page, for the list. It scales to the width of its card. */
 export function PageThumb({ page }: { page: PageData }) {
-  const html = useMemo(() => renderLandingPage(page, { mode: "thumb" }), [page]);
+  const parts = useMemo(() => renderLandingParts(page, { mode: "thumb" }), [page]);
   const box = useRef<HTMLDivElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
   const [scale, setScale] = useState(0.25);
+  const fill = () => {
+    const doc = frame.current?.contentDocument;
+    if (!doc?.head || !doc.body) return;
+    doc.documentElement.lang = page.lang;
+    setFrameCss(doc, parts.css);
+    if (doc.body.dataset.src !== parts.body) {
+      doc.body.innerHTML = parts.body;
+      doc.body.dataset.src = parts.body;
+    }
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fill reads the latest render
+  useLayoutEffect(fill, [parts, page.lang]);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const fit = () => setScale(el.clientWidth / DEVICE_W.desktop);
-    fit();
-    const ro = new ResizeObserver(fit);
+    const measure = () => setScale(el.clientWidth / DEVICE_W.desktop);
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
   return (
     <div className="lp-thumbbox" ref={box} aria-hidden="true">
+      {/* No scripts run in it (sandbox without allow-scripts); allow-same-origin lets the app set its styles. */}
       <iframe
+        ref={frame}
         className="lp-thumb-frame"
         title={page.slots.hero}
         tabIndex={-1}
         loading="lazy"
-        sandbox=""
-        srcDoc={html}
+        sandbox="allow-same-origin"
+        srcDoc="<!doctype html><html><head><meta charset='utf-8'></head><body></body></html>"
+        onLoad={fill}
         style={{ transform: `scale(${scale})` }}
       />
     </div>

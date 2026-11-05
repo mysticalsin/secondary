@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { type Browser, expect, type Page, test } from "@playwright/test";
-import { renderLandingPage, type TemplateData } from "../apps/web/src/lp-template/index.ts";
+import { renderLandingPage, type TemplateData } from "../packages/lp-template/src/index.ts";
 
 const SCREENS = fileURLToPath(new URL("./screens/", import.meta.url));
 mkdirSync(SCREENS, { recursive: true });
@@ -106,7 +106,7 @@ test("compose, edit, check, submit, approve as a reviewer, publish, unpublish", 
     "Hello Jo. Here is what Amaris would build for Acme.",
   );
   await expect(preview.locator("body")).toContainText(
-    "AI governance, built for Chief Data Officer at Acme.",
+    "AI that moves from pilot to daily work, for Acme",
   );
   const hero = preview.getByRole("button", { name: /Edit Headline/ });
   await hero.hover();

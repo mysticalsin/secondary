@@ -72,11 +72,13 @@ const posInt = (v: string | undefined, fallback: number): number => {
 
 // Per visitor limit, kept in memory of this isolate only and keyed by a salted hash that is never
 // written anywhere: the address itself is not stored, not even briefly (it is hashed on arrival).
-const SALT = crypto.getRandomValues(new Uint8Array(16));
+// Made on first use: workerd refuses random values in the global scope of a worker.
+let salt: Uint8Array | null = null;
 const visitors = new Map<string, { minute: number; n: number }>();
 async function visitorLimited(req: Request, slug: string, now: number, max: number) {
   const ip = req.headers.get("CF-Connecting-IP") ?? "";
-  const data = new Uint8Array([...SALT, ...new TextEncoder().encode(`${slug}|${ip}`)]);
+  salt ??= crypto.getRandomValues(new Uint8Array(16));
+  const data = new Uint8Array([...salt, ...new TextEncoder().encode(`${slug}|${ip}`)]);
   const h = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
   const key = [...h.slice(0, 12)].map((b) => b.toString(16).padStart(2, "0")).join("");
   const minute = Math.floor(now / 60_000);

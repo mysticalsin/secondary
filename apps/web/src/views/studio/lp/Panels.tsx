@@ -63,8 +63,7 @@ export function ReferencesPanel({ draftId, references, lang, onChange }: RefsPro
   useEffect(() => {
     let live = true;
     lp.references(draftId, "").then(
-      (r) =>
-        live && setVisuals([...new Set(r.results.map((c) => c.image).filter(Boolean))] as string[]),
+      (r) => live && setVisuals([...new Set(r.map((c) => c.image).filter(Boolean))] as string[]),
       () => {},
     );
     return () => {
@@ -78,7 +77,7 @@ export function ReferencesPanel({ draftId, references, lang, onChange }: RefsPro
       lp.references(draftId, term.trim()).then(
         (r) => {
           if (!live) return;
-          setResults(r.results);
+          setResults(r);
           setError(null);
         },
         (e: unknown) => live && setError(e instanceof ApiError ? e.reason : t("common.failed")),

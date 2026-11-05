@@ -24,7 +24,7 @@ function Row({ p }: { p: LandingSummary }) {
         ? t("lp.expired.on", { date: fmtDate(p.expiresAt) })
         : null;
   const s = p.stats;
-  const week = s?.byDay.slice(-7) ?? [];
+  const week = s?.byDay.slice(-7).map((d) => d.views) ?? [];
   const total = week.reduce((a, b) => a + b, 0);
   const showStats = s && (p.status === "published" || p.status === "expired");
   return (

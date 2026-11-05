@@ -10,7 +10,9 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
 import { appendReceipt, newReceiptId } from "./audit.ts";
+import { afterLandingRestore } from "./lp/ops.ts";
 import { expireLandingPages } from "./lp/retention.ts";
+import { lpStub } from "./lp/stub.ts";
 import { reapplyErasures } from "./ops-rights.ts";
 import { getOrg } from "./org.ts";
 import { internalKeys, opsKeys, replayStore } from "./replay.ts";
@@ -18,6 +20,9 @@ import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps } from "./types.ts";
 import { runWeeklyDigests } from "./uxv2/digest-job.ts";
+
+const what = (kind: "tenant" | "workspace" | "lp"): string =>
+  kind === "tenant" ? "the directory" : kind === "lp" ? "the landing pages" : "a workspace";
 
 const TENANT_ID = /^[a-z0-9_]{3,64}$/;
 const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
@@ -93,6 +98,8 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     const scope = c.req.query("scope") ?? "";
     if (!TENANT_ID.test(tenant)) return null;
     if (kind === "tenant") return { tenant, kind: "tenant" as const, scope: "" };
+    // The Landing Page Studio store: one per tenant, backed up and restored like the directory.
+    if (kind === "lp") return { tenant, kind: "lp" as const, scope: "" };
     if (kind === "workspace" && SCOPE_ID.test(scope))
       return { tenant, kind: "workspace" as const, scope };
     return null;
@@ -104,7 +111,9 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     const tables =
       t.kind === "tenant"
         ? await tenantStub(c.env, t.tenant).exportAll()
-        : await workspaceStub(c.env, t.tenant, t.scope).exportAll();
+        : t.kind === "lp"
+          ? await lpStub(c.env, t.tenant).exportAll()
+          : await workspaceStub(c.env, t.tenant, t.scope).exportAll();
     return c.json({ tenant: t.tenant, kind: t.kind, scope: t.scope, tables });
   });
 
@@ -138,7 +147,7 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
           principalId: `ops:${handle ?? (actor === "key" ? "key" : "unknown")}`,
           action,
           nodeId: null,
-          scopeId: t.kind === "tenant" ? null : t.scope.slice(0, 128),
+          scopeId: t.kind === "workspace" ? t.scope.slice(0, 128) : null,
           decision: "allow",
           reason,
           revision: null,
@@ -163,7 +172,7 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
           if (
             !(await receipt(
               "ops_restore_request",
-              `restore of ${t.kind === "tenant" ? "the directory" : "a workspace"} requested, a second person must confirm`,
+              `restore of ${what(t.kind)} requested, a second person must confirm`,
             ))
           )
             return c.json({ error: "audit_unavailable" }, 503);
@@ -174,7 +183,7 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
       if (
         !(await receipt(
           "ops_restore",
-          `restore of ${t.kind === "tenant" ? "the directory" : "a workspace"} ${approval ? `confirmed${approval}` : "requested"}`,
+          `restore of ${what(t.kind)} ${approval ? `confirmed${approval}` : "requested"}`,
         ))
       )
         return c.json({ error: "audit_unavailable" }, 503);
@@ -182,9 +191,14 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
         const rows =
           t.kind === "tenant"
             ? await tenantStub(c.env, t.tenant).importAll(tables)
-            : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
+            : t.kind === "lp"
+              ? await lpStub(c.env, t.tenant).importAll(tables)
+              : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
         // Anyone erased since the snapshot was taken is erased again (M-03).
         const erasuresReapplied = await reapplyErasures(c.env, t.tenant, t.kind, t.scope);
+        // Pages whose clock ran out since the snapshot are expired again, and none comes back public
+        // without its object.
+        if (t.kind === "lp") await afterLandingRestore(c.env, t.tenant, deps.now?.() ?? Date.now());
         await receipt(
           "ops_restore_done",
           `restored ${rows} rows, ${erasuresReapplied} erasures applied again`,

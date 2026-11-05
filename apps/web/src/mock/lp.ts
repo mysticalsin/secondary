@@ -117,6 +117,56 @@ const CANDIDATES: LpCandidate[] = [
   },
 ];
 
+/** The same references in French, so a French page has no English sentence on it. */
+const FR: Record<string, Pick<LpCandidate, "title" | "summary" | "generalisedTitle" | "metric">> = {
+  "acme-retail-platform": {
+    title: "Migration de la plateforme retail d'Acme",
+    summary: "40 magasins passés sur une seule plateforme en 9 mois, sans journée de vente perdue.",
+    metric: { value: "40 magasins", label: "sur une seule plateforme" },
+  },
+  "acme-ai-governance": {
+    title: "Bureau de gouvernance IA d'Acme",
+    summary: "Un bureau de gouvernance IA et un registre des cas d'usage en un trimestre.",
+    metric: { value: "1 trimestre", label: "pour un bureau IA opérationnel" },
+  },
+  "northwind-kyc": {
+    title: "Automatisation KYC de Northwind Bank",
+    summary:
+      "Des contrôles d'entrée en relation passés de cinq jours à un grâce à un assistant IA relu.",
+    generalisedTitle: "Une banque européenne : automatisation du KYC",
+  },
+  "contoso-control-tower": {
+    title: "Tour de contrôle supply chain de Contoso",
+    summary: "Une vue unique des commandes, des stocks et des retards sur 12 usines.",
+    generalisedTitle: "Un industriel mondial : tour de contrôle",
+  },
+  "fabrikam-bid-factory": {
+    title: "Fabrique de réponses de Fabrikam",
+    summary: "Un processus de réponse répétable qui a fait gagner un tiers de taux de succès.",
+    metric: { value: "+33 %", label: "de taux de succès" },
+  },
+  "tailspin-data-platform": {
+    title: "Plateforme de données de Tailspin",
+    summary: "Une plateforme de données gouvernée que les métiers utilisent sans ticket.",
+    metric: { value: "0 ticket", label: "pour accéder aux données" },
+  },
+  "wingtip-cyber": {
+    title: "Programme de maturité cyber de Wingtip",
+    summary: "Un organisme public passé d'une sécurité ad hoc à une sécurité maîtrisée en 18 mois.",
+    generalisedTitle: "Un organisme public : maturité cyber",
+  },
+  "litware-agent-desk": {
+    title: "Guichet d'agents de Litware",
+    summary:
+      "Un guichet d'agents qui répond à 6 questions internes sur 10 sans intervention humaine.",
+    metric: { value: "6 sur 10", label: "questions résolues" },
+  },
+};
+const localised = (c: LpCandidate, lang: ComposeInput["lang"]): LpCandidate => ({
+  ...c,
+  ...(lang === "fr" ? FR[c.pageId] : {}),
+});
+
 /** Client names the page may not show without permission, and the wording that replaces them. */
 const BLOCKED: [RegExp, string][] = [
   [/Northwind( Bank)?/gi, "a European bank"],
@@ -140,31 +190,165 @@ function pickReferences(input: ComposeInput): LpReference[] {
     c,
     s: words(`${c.title} ${c.summary}`).filter((w) => want.has(w)).length * 10 - i,
   })).sort((a, b) => b.s - a.s);
-  return scored.slice(0, 4).map((x) => ({ ...x.c }));
+  return scored.slice(0, 4).map((x) => localised(x.c, input.lang));
 }
 
-const cap = (s: string) => (s ? s[0]?.toUpperCase() + s.slice(1) : s);
+// The copy is written in the chosen language only: the angle picks a theme, and the words of that theme
+// come in both languages. The angle itself is never pasted in (people type it in any language).
+type Theme = "ai" | "cloud" | "cyber" | "data" | "cost" | "change" | "general";
+const THEMES: [Theme, RegExp][] = [
+  ["ai", /\b(ai|ia|genai|llm|copilot|machine learning|intelligence artificielle)\b/i],
+  ["cyber", /(cyber|security|sécurité|securite|compliance|conformité|risk|risque)/i],
+  ["cloud", /(cloud|migration|infrastructure|devops|platform|plateforme)/i],
+  ["data", /(\bdata\b|analytics|données|donnees|reporting|visibility|visibilité|supply)/i],
+  ["cost", /(cost|finops|saving|économ|econom|margin|marge|coût|cout)/i],
+  ["change", /(transform|agile|change|operating model|organi[sz]|conduite|adoption)/i],
+];
+const themeOf = (angle: string): Theme => THEMES.find(([, re]) => re.test(angle))?.[0] ?? "general";
+
+interface Words {
+  topic: string;
+  hero: string;
+  value: string;
+  cases: string;
+  cta: string;
+}
+const WHY = {
+  en: "We ship in small steps, show results at every step and leave your teams holding the keys to what we build.",
+  fr: "Nous livrons en petites étapes, nous montrons les résultats à chaque étape et nous laissons à vos équipes les clés de ce qui est construit.",
+};
+const WORDS: Record<"en" | "fr", Record<Theme, Words>> = {
+  en: {
+    ai: {
+      topic: "AI that your teams actually use",
+      hero: "AI that moves from pilot to daily work, for {company}",
+      value:
+        "It starts with the use cases that matter, a governance your risk team can sign, and a path to a service people rely on.",
+      cases: "Engagements where AI went into production.",
+      cta: "Talk about AI at {company}",
+    },
+    cyber: {
+      topic: "security and compliance that hold under pressure",
+      hero: "Security and compliance that hold under pressure, for {company}",
+      value:
+        "We make the controls you need visible, owned and tested, so the next audit is a routine.",
+      cases: "Engagements where controls moved from paper to practice.",
+      cta: "Talk security with us",
+    },
+    cloud: {
+      topic: "cloud and platform change",
+      hero: "A cloud move your teams can run, built for {company}",
+      value:
+        "We plan the move around the services you cannot interrupt, and leave a platform your teams can operate.",
+      cases: "Engagements where a platform moved with no surprise.",
+      cta: "Plan the move with us",
+    },
+    data: {
+      topic: "data you can decide with",
+      hero: "Data that supports the decision, for {company}",
+      value:
+        "We start from the decisions your leaders take every week and work back to the data they need.",
+      cases: "Engagements where better data changed a decision.",
+      cta: "Talk data with us",
+    },
+    cost: {
+      topic: "lower cost without damage to the service",
+      hero: "Lower cost, same service, a plan {company} can verify",
+      value: "We look for the savings that last, each with an owner and a way to check it.",
+      cases: "Engagements where efficiency was measured and kept.",
+      cta: "Look at your levers with us",
+    },
+    change: {
+      topic: "change that people adopt",
+      hero: "Change your people adopt, designed with {company}",
+      value:
+        "We design the operating model, the tools and the habits as one programme and keep the steering group short.",
+      cases: "Engagements where the new way of working held.",
+      cta: "Shape the change with us",
+    },
+    general: {
+      topic: "delivery you can rely on",
+      hero: "A partner for what comes next at {company}",
+      value:
+        "We help leaders turn a priority into a plan and a plan into delivery, with a team accountable for the result.",
+      cases: "Engagements that look like yours.",
+      cta: "Start the conversation",
+    },
+  },
+  fr: {
+    ai: {
+      topic: "une IA que vos équipes utilisent vraiment",
+      hero: "Une IA qui passe du pilote au quotidien, pour {company}",
+      value:
+        "Tout commence par les cas d'usage qui comptent, une gouvernance que votre direction des risques peut signer, et un chemin vers un service fiable.",
+      cases: "Des missions où l'IA est passée en production.",
+      cta: "Parler d'IA chez {company}",
+    },
+    cyber: {
+      topic: "une sécurité et une conformité qui tiennent sous pression",
+      hero: "Une sécurité et une conformité qui tiennent, pour {company}",
+      value:
+        "Nous rendons les contrôles utiles visibles, attribués et testés, pour que le prochain audit soit une routine.",
+      cases: "Des missions où les contrôles sont passés du papier à la pratique.",
+      cta: "Parler sécurité avec nous",
+    },
+    cloud: {
+      topic: "le changement de cloud et de plateforme",
+      hero: "Une migration cloud que vos équipes savent exploiter, pour {company}",
+      value:
+        "Nous planifions le déménagement autour des services que vous ne pouvez pas interrompre et laissons une plateforme que vos équipes exploitent.",
+      cases: "Des missions où une plateforme a changé sans surprise.",
+      cta: "Préparer la migration avec nous",
+    },
+    data: {
+      topic: "des données pour décider",
+      hero: "Des données qui servent la décision, pour {company}",
+      value:
+        "Nous partons des décisions que vos dirigeants prennent chaque semaine et remontons aux données nécessaires.",
+      cases: "Des missions où de meilleures données ont changé une décision.",
+      cta: "Parler données avec nous",
+    },
+    cost: {
+      topic: "des coûts réduits sans dégrader le service",
+      hero: "Des coûts réduits, un service préservé, un plan que {company} peut vérifier",
+      value:
+        "Nous cherchons les économies qui durent, chacune avec un responsable et un moyen de contrôle.",
+      cases: "Des missions où l'efficacité a été mesurée et conservée.",
+      cta: "Examiner vos leviers avec nous",
+    },
+    change: {
+      topic: "un changement que les équipes adoptent",
+      hero: "Un changement que vos équipes adoptent, conçu avec {company}",
+      value:
+        "Nous concevons le modèle opérationnel, les outils et les habitudes comme un seul programme et gardons un comité de pilotage court.",
+      cases: "Des missions où la nouvelle façon de travailler a tenu.",
+      cta: "Façonner le changement avec nous",
+    },
+    general: {
+      topic: "une exécution fiable",
+      hero: "Un partenaire pour la suite chez {company}",
+      value:
+        "Nous aidons les dirigeants à transformer une priorité en plan, et un plan en livraison, avec une équipe responsable du résultat.",
+      cases: "Des missions qui ressemblent à la vôtre.",
+      cta: "Engager la conversation",
+    },
+  },
+};
 
 function writeSlots(input: ComposeInput): LpSlots {
   const { role, company, firstName } = input.prospect;
-  const angle = input.angle.trim() || "AI that holds up in production";
-  const hi = firstName ? `${firstName}, ` : "";
-  if (input.lang === "fr")
-    return {
-      hero: `${cap(angle)}, pensé pour le rôle de ${role} chez ${company}.`,
-      intro: `${hi}vous portez ce sujet chez ${company}. Voici comment nous l'abordons avec d'autres équipes, avec des résultats que l'on peut vérifier.`,
-      whyUs:
-        "Nous livrons en petites étapes, nous montrons les résultats à chaque étape et nous laissons à vos équipes les clés de ce qui est construit.",
-      caseStudyIntro: "Des projets proches de votre contexte.",
-      cta: "Parlons de votre prochaine étape. Un message suffit pour fixer 30 minutes.",
-    };
+  const w = WORDS[input.lang][themeOf(input.angle)];
+  const fill = (t: string) => t.replace("{company}", company);
+  const fr = input.lang === "fr";
+  const hi = firstName ? (fr ? `Bonjour ${firstName}. ` : `Hello ${firstName}. `) : "";
   return {
-    hero: `${cap(angle)}, built for ${role} at ${company}.`,
-    intro: `${hi}you own this topic at ${company}. Here is how we work on it with other teams, with results you can check.`,
-    whyUs:
-      "We ship in small steps, show results at every step and leave your teams holding the keys to what we build.",
-    caseStudyIntro: "Projects close to your situation.",
-    cta: "Let's talk about your next step. One message is enough to book 30 minutes.",
+    hero: fill(w.hero),
+    intro: fr
+      ? `${hi}En tant que ${role} chez ${company}, vous avez une priorité : ${w.topic}. ${w.value}`
+      : `${hi}As ${role} at ${company}, you have a priority: ${w.topic}. ${w.value}`,
+    whyUs: WHY[input.lang],
+    caseStudyIntro: w.cases,
+    cta: fill(w.cta),
   };
 }
 
@@ -202,7 +386,14 @@ const hashOf = (d: LandingDraft) =>
     .toString(16)
     .padStart(8, "0")
     .repeat(8);
-const zeros = (): LpStats => ({ views: 0, ctaClicks: 0, consentRate: 0, byDay: Array(14).fill(0) });
+const zeros = (): LpStats => ({ views: 0, ctaClicks: 0, consentRate: 0, byDay: [] });
+/** Daily view counts, newest last, as the API sends them: one entry per day. */
+const days = (views: number[]): LpStats["byDay"] =>
+  views.map((v, i) => ({
+    day: new Date(Date.now() - (views.length - 1 - i) * DAY).toISOString().slice(0, 10),
+    views: v,
+    ctaClicks: Math.floor(v / 8),
+  }));
 
 function blank(
   store: Store,
@@ -226,6 +417,9 @@ function blank(
     },
     revision: 1,
     revisionHash: "",
+    composedBy: "deterministic",
+    // Every page has a clock from the day it is composed; publishing restarts it.
+    expiresAt: new Date(Date.now() + EXPIRY_DAYS * DAY).toISOString(),
     updatedAt: new Date().toISOString(),
     ...extra,
   };
@@ -256,7 +450,7 @@ function seed(): Store {
     views: 87,
     ctaClicks: 9,
     consentRate: 0.62,
-    byDay: [0, 2, 3, 1, 6, 9, 14, 8, 5, 11, 7, 10, 6, 5],
+    byDay: days([0, 2, 3, 1, 6, 9, 14, 8, 5, 11, 7, 10, 6, 5]),
   };
   const draft = blank(
     s,
@@ -288,7 +482,7 @@ function seed(): Store {
     views: 31,
     ctaClicks: 2,
     consentRate: 0.48,
-    byDay: [1, 0, 4, 2, 3, 0, 1, 5, 2, 0, 3, 1, 0, 0],
+    byDay: days([1, 0, 4, 2, 3, 0, 1, 5, 2, 0, 3, 1, 0, 0]),
   };
   s.recs = [pub, draft, old];
   return s;
@@ -508,9 +702,9 @@ export function handleLp(
   }
   if (sub === "/references" && method === "GET") {
     const term = (search.get("q") ?? "").toLowerCase();
-    return {
-      results: CANDIDATES.filter((c) => `${c.title} ${c.summary}`.toLowerCase().includes(term)),
-    };
+    return CANDIDATES.map((c) => localised(c, d.lang)).filter((c) =>
+      `${c.title} ${c.summary}`.toLowerCase().includes(term),
+    );
   }
   if (sub === "/check" && method === "POST") {
     mine(role, id);
@@ -529,7 +723,7 @@ export function handleLp(
   }
   if (sub === "/approve" && method === "POST") {
     approve(rec, role, body.revisionHash);
-    return d;
+    return { ok: true, status: "approved", approvals: 1, required: 1 };
   }
   if (sub === "/publish" && method === "POST") {
     mine(role, id);

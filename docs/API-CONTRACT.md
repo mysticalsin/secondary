@@ -310,7 +310,7 @@ Endpoints are as in the design, with these additions and decisions.
 
 ### `LandingRenderData` and `renderLandingPage`
 
-The page template is a pure function: `renderLandingPage(data: LandingRenderData): string`. The default is `workers/api/src/lp/render.ts`; the premium template in `apps/web/src/lp-template/` has the same signature and replaces it at integration.
+The one template is the shared package `packages/lp-template` (`@secondary/lp-template`), a pure function with no imports: `renderLandingPage(data, {mode, nonce?})`. The web editor previews with it and the API stores the review rendering and the published page with it. `workers/api/src/lp/render.ts` keeps the API's own interface and maps it:
 
 ```ts
 interface LandingRenderData {
@@ -318,13 +318,18 @@ interface LandingRenderData {
   lang: "en" | "fr";
   prospect: { firstName?: string; role: string; company: string };
   slots: { hero: string; intro: string; whyUs: string; caseStudyIntro: string; cta: string }; // plain text, blank line = paragraph
-  references: { title: string; summary: string; image?: string }[]; // at most 6, already generalised or permitted
-  contact: { name: string; email: string };
-  mode: "preview" | "published";
+  references: { title: string; summary: string; image?: string; permission?: "named" | "generalised-only"; generalisedTitle?: string; metric?: { value: string; label: string } }[]; // at most 6, already generalised or permitted
+  contact: { name: string; title?: string; email: string };
+  mode: "preview" | "published"; // template modes "public" (no script) and "published" (consent banner and beacon)
+  expiresAt?: string;
 }
 ```
 
-Rules every template keeps (tested against the default in `workers/api/test/lp-render.test.ts` and `workers/pages/test/pages.test.ts`; run the same checks against any other template):
+Shapes the web app reads (checked by `workers/api/test/lp-mock-contract.test.ts`, which runs one call against the real API and the web mock): `GET /v1/lp` rows are drafts plus `stats` (`byDay` is `{day, views, ctaClicks}[]`); a draft has `url` (published), `expiresAt`, `updatedAt`; `contact` has an optional `title`; `GET /v1/lp/:id/references` is an array; a check issue is `{slot, kind, detail, fix?}` with `slot` a slot id or `reference:<pageId>` and `fix = {label, text?, removeReference?}`; the release question title is "Landing page: <role> at <company>" and its `detail.landing` is `{id, draft, previous}` (`previous` is the revision before, or null). A reference `metric` exists only on a `named` reference and only when the customer permission (`POST .../permission` with `metric: {value, label}`) covers it.
+
+Operations: `POST /v1/admin/switches {switch:"lp", enabled:false, takeOffline:true}` also takes every published page offline (receipt `lp.take_offline` per page, `lp_take_offline` for the admin; pages stay approved and can be published again). Erasing a person removes their pages with the prospect data, redacts them as contact on others' pages and takes those offline. The page store is backed up as target `kind=lp` (`<date>/<tenant>/lp.jsonl.enc`); a restore expires pages past their clock again and re-applies erasures.
+
+Rules every template keeps (tested in `workers/api/test/lp-render.test.ts`, `packages/lp-template/test` and `workers/pages/test/pages.test.ts`):
 
 - One self-contained static HTML document. No external request: no absolute URL, font, stylesheet, script, iframe, form, `url()` or `@import`.
 - At most one script: the inline consent and beacon script, only when `mode` is `published`, with no attribute (the pages worker allows it by its SHA-256 hash; CSP is `default-src 'none'`, `script-src` and `style-src` by hash, `img-src 'self'`, `connect-src 'self'`). The `preview` has no script. Inline style is allowed by hash too, so no inline `style=""` attribute may be relied on.

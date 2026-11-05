@@ -26,11 +26,11 @@ const DAY_MS = 86_400_000;
 const PARALLEL = 4;
 export const DEFAULT_RETENTION_DAYS = 35;
 
-type Target = { tenant: string; kind: "tenant" | "workspace"; scope: string };
+type Target = { tenant: string; kind: "tenant" | "workspace" | "lp"; scope: string };
 type Tables = Record<string, Record<string, unknown>[]>;
 
 export const objectKey = (date: string, t: Target): string =>
-  `${date}/${t.tenant}/${t.kind === "tenant" ? "tenant" : `ws-${t.scope}`}.jsonl.enc`;
+  `${date}/${t.tenant}/${t.kind === "tenant" ? "tenant" : t.kind === "lp" ? "lp" : `ws-${t.scope}`}.jsonl.enc`;
 
 async function callApi(
   d: BackupDeps,
@@ -89,6 +89,8 @@ export async function runBackup(
   const date = new Date(now).toISOString().slice(0, 10);
   const targets: Target[] = tenants.flatMap((t) => [
     { tenant: t.tenantId, kind: "tenant" as const, scope: "" },
+    // The Landing Page Studio store (copy, prospect data, review trail) is part of the backup.
+    { tenant: t.tenantId, kind: "lp" as const, scope: "" },
     ...t.scopes.map((scope) => ({ tenant: t.tenantId, kind: "workspace" as const, scope })),
   ]);
   let objects = 0;
@@ -229,7 +231,7 @@ export async function restoreBackup(
   if (snap.meta.env !== d.ENVIRONMENT) return { ok: false, error: "wrong_environment" };
   const { tenant, kind, scope } = snap.meta as {
     tenant: string;
-    kind: "tenant" | "workspace";
+    kind: "tenant" | "workspace" | "lp";
     scope: string;
   };
   const rows = Object.values(snap.tables).reduce((n, r) => n + r.length, 0);

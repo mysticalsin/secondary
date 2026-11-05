@@ -27,6 +27,7 @@ import {
   slug,
   tokensOf,
 } from "../wiki/text.ts";
+import { languageOf } from "./lang.ts";
 import { cleanSlot, type Lang, MAX_REFERENCES, type Reference } from "./types.ts";
 
 /** Wiki page types a landing page may point at. Contacts, decisions, risks and the generated pages never. */
@@ -136,13 +137,47 @@ export function sameCompany(a: string, b: string): boolean {
   return x === y || x.includes(y) || y.includes(x);
 }
 
-/** The phrase that stands for a client once its name is gone: "A European retail client". */
+/** Sectors the page can name in its own language. A sector not listed is left out, never printed in another language. */
+const SECTORS: Record<string, { en: string; fr: string }> = {
+  banking: { en: "banking", fr: "du secteur bancaire" },
+  retail: { en: "retail", fr: "du commerce de détail" },
+  telecom: { en: "telecom", fr: "des télécommunications" },
+  mining: { en: "mining", fr: "des mines" },
+  energy: { en: "energy", fr: "de l'énergie" },
+  "public sector": { en: "public-sector", fr: "du secteur public" },
+  manufacturing: { en: "manufacturing", fr: "de l'industrie" },
+  logistics: { en: "logistics", fr: "de la logistique" },
+  insurance: { en: "insurance", fr: "de l'assurance" },
+};
+const SECTOR_ALIAS: Record<string, string> = {
+  banque: "banking",
+  bank: "banking",
+  commerce: "retail",
+  telecoms: "telecom",
+  télécoms: "telecom",
+  énergie: "energy",
+  energie: "energy",
+  "secteur public": "public sector",
+  industrie: "manufacturing",
+  assurance: "insurance",
+};
+
+/** The phrase that stands for a client once its name is gone: "A European retail client". One language only. */
 export function clientPhrase(facts: Readonly<Record<string, string>>, lang: Lang): string {
-  const sector = (facts.Sector ?? "").trim().toLowerCase();
+  const raw = (facts.Sector ?? "").trim().toLowerCase();
+  const sector = SECTORS[SECTOR_ALIAS[raw] ?? raw];
   const eu = EUROPE.has((facts.Country ?? "").trim().toLowerCase());
-  if (lang === "fr")
-    return `Un client ${eu ? "européen " : ""}${sector ? `du secteur ${sector}` : ""}`.trim();
-  return `A ${eu ? "European " : ""}${sector ? `${sector} ` : ""}client`;
+  if (lang === "fr") return `Un client${eu ? " européen" : ""}${sector ? ` ${sector.fr}` : ""}`;
+  return `A ${eu ? "European " : ""}${sector ? `${sector.en} ` : ""}client`;
+}
+
+/** `generalise` with its placeholder in the page's language ("the client" is English). */
+export function anonymise(text: string, ids: string[], lang: Lang): string {
+  // The contact placeholders ("[email removed]") are English and have no place on a page: they go.
+  const out = generalise(text, ids)
+    .replace(/\s*\[(?:email|phone) removed\]/g, "")
+    .replace(/\s+([.,;:])/g, "$1");
+  return lang === "fr" ? out.replace(/\bthe client\b/gi, "le client") : out;
 }
 
 const METRIC = /\d|%|[€$£]|["“”«»]/;
@@ -175,6 +210,8 @@ interface Story {
   label: string;
   external: string;
   permitted: boolean;
+  /** The figure the permission covers, if it names one. */
+  metric?: { value: string; label: string };
 }
 
 const channelOk = (channels: unknown): boolean =>
@@ -244,14 +281,31 @@ export class Brain {
             try {
               const st = (JSON.parse(r.body ?? "{}") as { story?: Record<string, unknown> }).story;
               if (!st || typeof st.external !== "string") return [];
-              const perm = st.permission as { text?: unknown; channels?: unknown } | null;
+              const perm = st.permission as {
+                text?: unknown;
+                channels?: unknown;
+                metric?: { value?: unknown; label?: unknown };
+              } | null;
               // The permission stands for these exact words and for this channel, nothing wider (M-12).
               const permitted =
                 !!perm &&
                 perm.text === st.external &&
                 st.external.trim().length > 0 &&
                 channelOk(perm.channels);
-              return [{ id: r.id, label: r.label, external: st.external, permitted }];
+              const m = perm?.metric;
+              const metric =
+                permitted && m && typeof m.value === "string" && typeof m.label === "string"
+                  ? { value: m.value, label: m.label }
+                  : undefined;
+              return [
+                {
+                  id: r.id,
+                  label: r.label,
+                  external: st.external,
+                  permitted,
+                  ...(metric ? { metric } : {}),
+                },
+              ];
             } catch {
               return [];
             }
@@ -325,6 +379,7 @@ export class Brain {
             title: r.title,
             summary: cleanSlot(story.external).slice(0, SUMMARY_MAX),
             permission: "named",
+            ...(story.metric ? { metric: story.metric } : {}),
           },
         };
     }
@@ -332,10 +387,10 @@ export class Brain {
     const ids = this.named.flatMap((n) => n.ids);
     const own = r.node?.kind === "account" ? clientPhrase(r.node.facts, this.lang) : "";
     const topic = r.title.split(/\s+(?:at|chez|pour|for|with|avec)\s+/i)[0] ?? r.title;
-    const gTopic = generalise(topic, ids).replace(/\s+/g, " ").trim();
+    const gTopic = anonymise(topic, ids, this.lang).replace(/\s+/g, " ").trim();
     const generalisedTitle = (own ? `${own}: ${gTopic}` : gTopic).slice(0, 120);
     const lines = claimLines(r.text).map((l) => l.text);
-    const body = generalise(lines.join("\n"), ids).replace(/\{src:[^}]+\}/g, "");
+    const body = anonymise(lines.join("\n"), ids, this.lang).replace(/\{src:[^}]+\}/g, "");
     const summary = withoutMetrics(body).slice(0, SUMMARY_MAX).trim() || FALLBACK[this.lang];
     if (
       generalisedTitle.length < 3 ||
@@ -415,7 +470,9 @@ export class Brain {
           (TYPE_WEIGHT[r.type] ?? 0) +
           inTitle * 5 +
           Math.min(inText, 8) +
-          (out.named ? 15 : 0) -
+          (out.named ? 15 : 0) +
+          // A page in the language of the landing page reads better than one in the other.
+          (languageOf(r.text) === this.lang ? 3 : 0) -
           (hit && hit.rank > 0 ? Math.min(hit.rank, 9) * 0.1 : 0);
         return { ref: out.ref, score };
       }),

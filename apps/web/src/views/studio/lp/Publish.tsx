@@ -213,7 +213,7 @@ export function PublishedPanel({
               </div>
             </dl>
             <Sparkline
-              data={s.byDay}
+              data={s.byDay.map((d) => d.views)}
               label={t("lp.spark", { n: s.byDay.length, total: s.views })}
             />
             <p className="muted">{t("lp.pp.stats.note")}</p>

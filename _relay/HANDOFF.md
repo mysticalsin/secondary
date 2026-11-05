@@ -1,5 +1,19 @@
 # HANDOFF
 
+## Landing Page Studio integrated on `main` (2026-11-05, Claude Opus, nothing pushed, dev redeployed)
+
+Merged `lp/api` (earlier) and `lp/web` (d92ecd6) `--no-ff`. Worktree `.worktrees/v3-api` untouched.
+
+- Renderer: the premium template is now the shared package `packages/lp-template` (`@secondary/lp-template`, pure, no imports). Web preview and API both use it. `workers/api/src/lp/render.ts` keeps `LandingRenderData` and maps to it (`preview` = template mode `public`, `published` adds the consent banner and the one beacon script). Images: `/p/<slug>/i/<n>` only when published, inline `data:` otherwise; no `https:`. No inline style attribute. The pages worker CSP stays hash based (`style-src` and `script-src` by sha256, `img-src 'self'`); the template also takes a `nonce` for the style. The web frames (editor, review, list thumbs) apply the CSS as a constructed stylesheet because the app CSP has no inline style. Footer claims are real now (closing date from `expiresAt`, "reviewed by a second person"); with no references the work section is left out.
+- Web and API aligned: list rows carry `stats` (`byDay` objects), drafts carry `url`, `expiresAt`, `updatedAt`, contact `title`; check `fix` is `{label, text?, removeReference?}` with slot `reference:<pageId>`; release question title "Landing page: role at company", options "Approve page"/"Ask for changes", `detail.landing = {id, draft, previous}`; `references` returns an array; reference `metric` only when the story permission carries `metric` (permission route accepts `metric:{value,label}`). Contract test `workers/api/test/lp-mock-contract.test.ts`.
+- Language: one language per page. Deterministic composer and mock use theme words in the page language (the typed angle is never pasted); `clientPhrase` has sector names per language (unknown sector is left out); "the client" and contact placeholders handled; AI slots in the other language are refused (`lp/lang.ts`). Tests in `lp-integrated.test.ts`.
+- Ops: `POST /v1/admin/switches {switch:"lp", enabled:false, takeOffline:true}` takes published pages offline (audited per page). Person erasure removes their pages and redacts them as contact (incl. snapshots). LP store is backup target `kind=lp`; restore re-expires and re-applies erasures. Dev reseed empties the LP store.
+- Bugs found by running for real: pages worker called `crypto.getRandomValues` in global scope (workerd refuses; the worker would not start), now lazy. App CSP blocked data-URI fonts; vite no longer inlines fonts. `scripts/dev-all.mjs` now also runs the pages worker (8790) on the same local bucket; `e2e/lp-real.spec.ts` drives compose, review, publish and the public page in a browser.
+- Gaps: brain pages carry no images, so the visual picker is empty on the real stack. Page copy from the brain stays in the language of its page.
+- Gates: build, typecheck, biome clean. Tests: lp-template 9, fixtures 23, contracts 91, policy 57, connector 53, ops 17, audit 10, pages 14, web 72, mcp 89, api 665. Playwright real stack 54 passed, mock suite 53 passed.
+
+Updated: 2026-11-05. By: Claude (LP integration).
+
 ## Landing Page Studio backend (2026-11-05, Claude, branch `lp/api`, not merged, nothing deployed)
 
 Design: `docs/DESIGN-LP-STUDIO.md`; contract: `docs/API-CONTRACT.md` "Landing Page Studio" (including `LandingRenderData`).

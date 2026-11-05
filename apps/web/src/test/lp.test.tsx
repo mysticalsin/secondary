@@ -58,7 +58,7 @@ describe("references panel", () => {
   const all = [...six, cand(7), cand(8)];
 
   it("enforces the 6 reference maximum with a helpful message", async () => {
-    vi.spyOn(lp, "references").mockResolvedValue({ results: all });
+    vi.spyOn(lp, "references").mockResolvedValue(all);
     const onChange = vi.fn();
     render(<ReferencesPanel draftId="lp_t" references={six} lang="en" onChange={onChange} />);
     const add = await screen.findByRole("button", { name: "Add Client 7 programme" });
@@ -71,7 +71,7 @@ describe("references panel", () => {
   });
 
   it("adds a reference while there is room", async () => {
-    vi.spyOn(lp, "references").mockResolvedValue({ results: all });
+    vi.spyOn(lp, "references").mockResolvedValue(all);
     const onChange = vi.fn();
     render(
       <ReferencesPanel draftId="lp_t" references={six.slice(0, 2)} lang="en" onChange={onChange} />,
@@ -84,7 +84,7 @@ describe("references panel", () => {
   });
 
   it("badges Named and Generalised, and explains the customer permission", async () => {
-    vi.spyOn(lp, "references").mockResolvedValue({ results: [] });
+    vi.spyOn(lp, "references").mockResolvedValue([]);
     const refs = [cand(1), cand(2, "generalised-only")];
     render(<ReferencesPanel draftId="lp_t" references={refs} lang="en" onChange={vi.fn()} />);
     const items = await screen.findAllByRole("listitem");
@@ -116,7 +116,7 @@ describe("editor", () => {
   it("blocks Submit for review while a check is open", async () => {
     vi.spyOn(lp, "get").mockResolvedValue(draft());
     vi.spyOn(lp, "check").mockResolvedValue(issues);
-    vi.spyOn(lp, "references").mockResolvedValue({ results: [] });
+    vi.spyOn(lp, "references").mockResolvedValue([]);
     const submit = vi.spyOn(lp, "submit");
     wrap(<LpEditor id="lp_t" />);
     const btn = await screen.findByRole("button", { name: "Submit for review" });
@@ -135,7 +135,7 @@ describe("editor", () => {
   it("submits once the checks pass", async () => {
     vi.spyOn(lp, "get").mockResolvedValue(draft());
     vi.spyOn(lp, "check").mockResolvedValue({ ok: true, issues: [] });
-    vi.spyOn(lp, "references").mockResolvedValue({ results: [] });
+    vi.spyOn(lp, "references").mockResolvedValue([]);
     const submit = vi.spyOn(lp, "submit").mockResolvedValue(draft({ status: "in_review" }));
     wrap(<LpEditor id="lp_t" />);
     await userEvent.click(await screen.findByRole("button", { name: "Submit for review" }));
@@ -147,7 +147,7 @@ describe("editor", () => {
   it("applies a one-click fix and saves it", async () => {
     vi.spyOn(lp, "get").mockResolvedValue(draft());
     vi.spyOn(lp, "check").mockResolvedValueOnce(issues).mockResolvedValue({ ok: true, issues: [] });
-    vi.spyOn(lp, "references").mockResolvedValue({ results: [] });
+    vi.spyOn(lp, "references").mockResolvedValue([]);
     const save = vi.spyOn(lp, "save").mockResolvedValue(draft({ revision: 4 }));
     wrap(<LpEditor id="lp_t" />);
     await userEvent.click(await screen.findByRole("button", { name: /Checks/ }));
@@ -163,7 +163,7 @@ describe("editor", () => {
   it("says plainly when another save won (409) and offers both ways out", async () => {
     vi.spyOn(lp, "get").mockResolvedValue(draft());
     vi.spyOn(lp, "check").mockResolvedValue({ ok: true, issues: [] });
-    vi.spyOn(lp, "references").mockResolvedValue({ results: [] });
+    vi.spyOn(lp, "references").mockResolvedValue([]);
     const save = vi
       .spyOn(lp, "save")
       .mockRejectedValueOnce(new ApiError(409, "This page changed since you opened it."))

@@ -6,6 +6,8 @@
 //   api   http://localhost:8787   web app + /v1/*   (sign-in: DEV_AUTH_BYPASS_EMAIL, persona header)
 //   mcp   http://localhost:8788   /mcp, /authorize, /token, /register
 //   audit (service binding only)  port 8789 is bound locally for the dev registry, never used directly
+//   pages http://localhost:8790   the public landing page worker; it reads the same local bucket the api writes
+//                                 (both persist to .dev/state), so a published page can be opened here
 //
 // The connector and ops workers are not part of this stack (they need Graph and a backup bucket); the api's
 // CONNECTOR binding then resolves to nothing and source results stay hidden, which is the fail-closed default.
@@ -27,7 +29,11 @@ const args = new Set(process.argv.slice(2));
 const API_PORT = Number(process.env.DEV_API_PORT ?? 8787);
 const MCP_PORT = Number(process.env.DEV_MCP_PORT ?? 8788);
 const AUDIT_PORT = Number(process.env.DEV_AUDIT_PORT ?? 8789);
+const PAGES_PORT = Number(process.env.DEV_PAGES_PORT ?? 8790);
 const INSPECTOR = Number(process.env.DEV_INSPECTOR_BASE ?? 9229);
+// The api writes published pages into a bucket and the pages worker serves them from it: locally both
+// must open the same one.
+const STATE = join(root, ".dev", "state");
 
 // ---- secrets (local only) ----
 mkdirSync(join(root, ".dev"), { recursive: true });
@@ -92,6 +98,15 @@ writeFileSync(
   }),
 );
 
+writeFileSync(
+  join(root, "workers/pages/.dev.vars"),
+  vars({
+    // Local workerd cannot create an EU-jurisdiction counter; the worker accepts "off" only with LOCAL_DEV.
+    DO_JURISDICTION: "off",
+    LOCAL_DEV: "yes",
+  }),
+);
+
 // ---- web build ----
 if (!args.has("--no-build")) {
   console.log("[dev:all] building apps/web");
@@ -113,6 +128,7 @@ const workers = [
   { name: "audit", dir: "workers/audit", port: AUDIT_PORT, inspector: INSPECTOR + 2 },
   { name: "api", dir: "workers/api", port: API_PORT, inspector: INSPECTOR },
   { name: "mcp", dir: "workers/mcp", port: MCP_PORT, inspector: INSPECTOR + 1 },
+  { name: "pages", dir: "workers/pages", port: PAGES_PORT, inspector: INSPECTOR + 3, shared: true },
 ];
 
 function start(w) {
@@ -126,6 +142,7 @@ function start(w) {
       "--inspector-port",
       String(w.inspector),
       "--show-interactive-dev-session=false",
+      ...(w.shared || w.name === "api" ? ["--persist-to", STATE] : []),
     ],
     {
       cwd: join(root, w.dir),
@@ -182,6 +199,7 @@ async function waitFor(url, label, ms = 90_000) {
   start(workers[0]); // audit first, so the registry knows it when api and mcp bind to it
   await new Promise((r) => setTimeout(r, 3000));
   start(workers[1]);
+  start(workers[3]);
   await waitFor(`http://localhost:${API_PORT}/v1/health`, "api");
   start(workers[2]);
   await waitFor(`http://localhost:${MCP_PORT}/health`, "mcp");
@@ -199,6 +217,7 @@ async function waitFor(url, label, ms = 90_000) {
     `  web + api  http://localhost:${API_PORT}   (persona switch in the header, dev only)`,
   );
   console.log(`  mcp        http://localhost:${MCP_PORT}/mcp`);
+  console.log(`  pages      http://localhost:${PAGES_PORT}/p/<slug>   (published landing pages)`);
   console.log(
     '  seed       curl -X POST localhost:8787/v1/admin/seed -H "X-Seed-Token: $(jq -r .SEED_TOKEN .dev/secrets.json)"',
   );

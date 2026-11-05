@@ -1,6 +1,7 @@
 import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
+import { renderLandingPage } from "../../../packages/lp-template/src/index.ts";
 import { parseJsonc } from "../../../scripts/assert-eu.mjs";
 import configRaw from "../wrangler.jsonc?raw";
 
@@ -62,6 +63,36 @@ describe("serving a page", () => {
     expect(csp).not.toContain("unsafe-eval");
     expect(csp).not.toMatch(/https?:/);
     expect((await get(`/p/${SLUG}`, { method: "HEAD" })).status).toBe(200);
+  });
+
+  it("serves the premium template with a CSP that names exactly its one style and one script", async () => {
+    const html = renderLandingPage(
+      {
+        brand: "amaris",
+        lang: "fr",
+        prospect: { role: "CFO", company: "Contoso" },
+        slots: {
+          hero: "Un titre",
+          intro: "Une intro.",
+          whyUs: "Pourquoi.",
+          caseStudyIntro: "Cas.",
+          cta: "Agir",
+        },
+        references: [
+          { title: "T", summary: "S", permission: "generalised-only", image: `/p/${SLUG}/i/0` },
+        ],
+        contact: { name: "Alex Doe", email: "alex@example.invalid" },
+      },
+      { mode: "published" },
+    );
+    await put(SLUG, Date.now() + 60_000, html);
+    const res = await get(`/p/${SLUG}`);
+    expect(await res.text()).toBe(html);
+    const csp = res.headers.get("Content-Security-Policy") ?? "";
+    expect(csp.match(/'sha256-/g)?.length).toBe(2);
+    expect(csp).toContain("img-src 'self'");
+    expect(csp).not.toMatch(/img-src[^;]*(?:https?:|data:|\*)/);
+    expect(csp).not.toContain("unsafe-inline");
   });
 
   it("answers 404 for an unknown, malformed, expired or deleted page", async () => {

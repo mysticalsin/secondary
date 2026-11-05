@@ -1,5 +1,5 @@
-// Landing Page Studio shapes (docs/DESIGN-LP-STUDIO.md section 2). Fields marked "assumed" are not
-// fixed by the design yet and are always read defensively.
+// Landing Page Studio shapes (docs/DESIGN-LP-STUDIO.md section 2, docs/API-CONTRACT.md). The mock answers in
+// the same shapes: workers/api/test/lp-mock-contract.test.ts runs one call against both.
 
 export type LpStatus = "draft" | "in_review" | "approved" | "published" | "expired" | "unpublished";
 export type LpBrand = "amaris" | "mantu";
@@ -23,7 +23,7 @@ export interface LpReference {
   /** `named`: a CustomerPermission covers this item for landing pages. Otherwise only the generalised wording may show. */
   permission: "named" | "generalised-only";
   generalisedTitle?: string;
-  /** Assumed: an outcome figure. The page shows it only when `permission` is `named`. */
+  /** An outcome figure. The page shows it only when `permission` is `named`; the API sends it only when the customer permission covers it. */
   metric?: { value: string; label: string };
 }
 
@@ -40,7 +40,7 @@ export interface LpIssue {
   slot: string;
   kind: LpIssueKind;
   detail: string;
-  /** Assumed shape: what one click does. `text` replaces the whole slot, `removeReference` drops a reference. */
+  /** What one click does. `text` replaces the whole slot, `removeReference` drops that reference (its pageId). */
   fix?: { label: string; text?: string; removeReference?: string };
 }
 
@@ -61,20 +61,24 @@ export interface LandingDraft {
   revision: number;
   revisionHash: string;
   checks?: LpChecks;
-  /** Assumed: set once published. */
+  /** Set once published. */
   url?: string;
   expiresAt?: string;
   updatedAt?: string;
+  composedBy?: "deterministic" | "ai";
+  /** A reviewer's note after "request changes". */
+  note?: string;
 }
 
 export interface LpStats {
   views: number;
   ctaClicks: number;
   consentRate: number;
-  byDay: number[];
+  /** One entry per day with counts, oldest first (the API sends only the days that have any). */
+  byDay: { day: string; views: number; ctaClicks: number }[];
 }
 
-/** Assumed: GET /v1/lp rows are drafts with their stats. */
+/** GET /v1/lp rows are drafts with their stats. */
 export interface LandingSummary extends LandingDraft {
   stats?: LpStats;
 }
@@ -95,7 +99,7 @@ export interface SaveInput {
   revision: number;
 }
 
-/** Assumed: the release question carries what the reviewer needs to read the page. */
+/** The release question carries what the reviewer needs to read the page: `detail.landing`. */
 export interface LpReviewDetail {
   id: string;
   draft: LandingDraft;

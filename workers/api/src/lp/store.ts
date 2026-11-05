@@ -5,6 +5,7 @@
 // decided by the API before it is addressed.
 
 import { DurableObject } from "cloudflare:workers";
+import { exportTables, replaceTables, type Snapshot } from "../ops-snapshot.ts";
 import {
   type Brand,
   type CheckResult,
@@ -19,6 +20,9 @@ import {
   type Status,
   type Utm,
 } from "./types.ts";
+
+/** Tables a backup carries: the whole LP store (copy, prospect data, review trail). */
+const SNAPSHOT_TABLES = ["pages", "snapshots", "edits", "approvals"] as const;
 
 export type Fail = {
   ok: false;
@@ -136,7 +140,12 @@ export class LandingPages extends DurableObject<Env> {
       "INSERT OR REPLACE INTO snapshots (page_id, revision, snapshot) VALUES (?, ?, ?)",
       r.id,
       r.revision,
-      json({ slots: r.slots, references: r.references.map((x) => x.title), contact: r.contact }),
+      json({
+        slots: r.slots,
+        references: r.references.map((x) => x.title),
+        refs: r.references,
+        contact: r.contact,
+      }),
     );
   }
 
@@ -214,7 +223,10 @@ export class LandingPages extends DurableObject<Env> {
   }
 
   /** The snapshot of an earlier revision, for the diff in the review. */
-  snapshotOf(id: string, revision: number): { slots: Slots; references: string[] } | null {
+  snapshotOf(
+    id: string,
+    revision: number,
+  ): { slots: Slots; references: string[]; refs?: Reference[]; contact?: Contact } | null {
     const r = this.sql
       .exec("SELECT snapshot FROM snapshots WHERE page_id = ? AND revision = ?", id, revision)
       .toArray()[0];
@@ -420,5 +432,109 @@ export class LandingPages extends DurableObject<Env> {
         this.sql.exec(`DELETE FROM ${t} WHERE page_id = ?`, id);
     });
     return true;
+  }
+
+  // ---- operations: backups, switch-off, rights ----
+
+  exportAll(): Snapshot {
+    return exportTables(this.sql, SNAPSHOT_TABLES);
+  }
+
+  /** Replace the whole store from a snapshot. All or nothing. */
+  importAll(data: unknown): number {
+    return replaceTables(this.ctx.storage, SNAPSHOT_TABLES, data);
+  }
+
+  /** Every page that is public now, to take offline. */
+  published(limit: number): PageRecord[] {
+    return this.sql
+      .exec("SELECT * FROM pages WHERE status = 'published' ORDER BY id LIMIT ?", limit)
+      .toArray()
+      .map(toRecord);
+  }
+
+  /** The pages one person owns, and the pages of others that name them as the contact. */
+  ofPerson(ids: string[], emails: string[]): { owned: PageRecord[]; named: PageRecord[] } {
+    const mail = new Set(emails.map(lower).filter(Boolean));
+    const all = this.sql.exec("SELECT * FROM pages ORDER BY id").toArray().map(toRecord);
+    const owned = all.filter((p) => ids.includes(p.owner) || mail.has(lower(p.ownerEmail)));
+    const own = new Set(owned.map((p) => p.id));
+    const named = all.filter((p) => !own.has(p.id) && mail.has(lower(p.contact.email)));
+    return { owned, named };
+  }
+
+  /**
+   * Right to erasure. The person's own pages go with everything on them (the prospect's data, the copy, the
+   * review trail). A page of someone else that names them as its contact loses that contact, goes offline
+   * when it was public and needs a new approval. Their ids in edits and approvals become the pseudonym.
+   * The caller has already taken the public objects down.
+   */
+  erasePerson(
+    ids: string[],
+    emails: string[],
+    pseudonym: string,
+    now: number,
+  ): { removed: number; redacted: number } {
+    const { owned, named } = this.ofPerson(ids, emails);
+    const mail = emails.map(lower).filter(Boolean);
+    this.ctx.storage.transactionSync(() => {
+      for (const p of owned) {
+        for (const t of ["pages", "snapshots", "edits", "approvals"])
+          this.sql.exec(`DELETE FROM ${t} WHERE ${t === "pages" ? "id" : "page_id"} = ?`, p.id);
+      }
+      for (const p of named) {
+        this.sql.exec(
+          `UPDATE pages SET contact = ?, status = CASE status WHEN 'published' THEN 'unpublished'
+             WHEN 'in_review' THEN 'draft' WHEN 'approved' THEN 'draft' ELSE status END,
+             checks = NULL, approved_hash = NULL, approved_by = NULL, preview_html = NULL,
+             updated_at = ? WHERE id = ?`,
+          json({ name: pseudonym, email: "" }),
+          now,
+          p.id,
+        );
+      }
+      // Earlier revisions of other people's pages may still name them as the contact.
+      for (const row of this.sql
+        .exec("SELECT page_id, revision, snapshot FROM snapshots")
+        .toArray()) {
+        const snap = parse<{ contact?: Contact } | null>(row.snapshot, null);
+        if (snap?.contact && mail.includes(lower(snap.contact.email)))
+          this.sql.exec(
+            "UPDATE snapshots SET snapshot = ? WHERE page_id = ? AND revision = ?",
+            json({ ...snap, contact: { name: pseudonym, email: "" } }),
+            row.page_id,
+            row.revision,
+          );
+      }
+      for (const id of ids) {
+        this.sql.exec("UPDATE edits SET actor_id = ? WHERE actor_id = ?", pseudonym, id);
+        this.sql.exec("UPDATE approvals SET actor_id = ? WHERE actor_id = ?", pseudonym, id);
+        this.sql.exec("UPDATE pages SET approved_by = ? WHERE approved_by = ?", pseudonym, id);
+      }
+      for (const m of mail)
+        this.sql.exec(
+          "UPDATE edits SET actor_email = ? WHERE lower(actor_email) = ?",
+          pseudonym,
+          m,
+        );
+    });
+    return { removed: owned.length, redacted: named.length };
+  }
+
+  /** Every slug the store knows, to take the public objects down before a reset. */
+  slugs(): string[] {
+    return this.sql
+      .exec("SELECT slug FROM pages WHERE slug IS NOT NULL")
+      .toArray()
+      .map((r) => r.slug as string);
+  }
+
+  /** A dev reseed starts from an empty store. */
+  wipe(): number {
+    let n = 0;
+    this.ctx.storage.transactionSync(() => {
+      for (const t of SNAPSHOT_TABLES) n += this.sql.exec(`DELETE FROM ${t}`).rowsWritten;
+    });
+    return n;
   }
 }

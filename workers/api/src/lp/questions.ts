@@ -9,6 +9,7 @@ import { humanIdsOf } from "../human.ts";
 import { type C, sess } from "../ux/util.ts";
 import type { Question } from "../uxv2/questions.ts";
 import { iso } from "../uxv2/shared.ts";
+import { toDraft } from "./draft.ts";
 import { approvePage, mayDecide, RELEASE_NODE, requestPageChanges } from "./review.ts";
 import { lpStub } from "./stub.ts";
 import { type PageRecord, revisionHashOf, SLOTS } from "./types.ts";
@@ -38,6 +39,29 @@ async function diffOf(c: C, rec: PageRecord) {
   return out;
 }
 
+/** The revision before this one, as the reviewer's diff reads it. Null for a first revision. */
+async function previousOf(c: C, rec: PageRecord) {
+  const prev =
+    rec.revision > 1
+      ? await lpStub(c.env, sess(c).tenantId).snapshotOf(rec.id, rec.revision - 1)
+      : null;
+  if (!prev) return null;
+  return {
+    revision: rec.revision - 1,
+    slots: prev.slots,
+    contact: prev.contact ?? rec.contact,
+    // Snapshots from before references were kept in full carry titles only.
+    references:
+      prev.refs ??
+      prev.references.map((title) => ({
+        pageId: "",
+        title,
+        summary: "",
+        permission: "generalised-only" as const,
+      })),
+  };
+}
+
 /** Pages waiting for this caller's decision. Empty for anyone the policy does not let decide. */
 export async function lpQuestions(c: C): Promise<Question[]> {
   const s = sess(c);
@@ -58,13 +82,13 @@ export async function lpQuestions(c: C): Promise<Question[]> {
     out.push({
       id: questionIdOf(rec.id),
       kind: "release",
-      title: `Landing page for ${rec.prospect.company}`,
+      title: `Landing page: ${rec.prospect.role} at ${rec.prospect.company}`,
       workspaceId: RELEASE_NODE,
       createdAt: iso(rec.updatedAt),
       summary: short(rec.slots.hero),
       options: [
-        { action: "approve", label: "Approve release" },
-        { action: "request_changes", label: "Request changes" },
+        { action: "approve", label: "Approve page" },
+        { action: "request_changes", label: "Ask for changes" },
       ],
       detail: {
         revisionHash: await revisionHashOf(rec),
@@ -84,6 +108,13 @@ export async function lpQuestions(c: C): Promise<Question[]> {
         brand: rec.brand,
         lang: rec.lang,
         expiresAt: iso(rec.expiresAt),
+        // What the web app reads: the page as data (it renders it with the shared template in a sandboxed
+        // frame) and the revision before, for the diff.
+        landing: {
+          id: rec.id,
+          draft: await toDraft(c.env, rec),
+          previous: await previousOf(c, rec),
+        },
       },
     });
   }

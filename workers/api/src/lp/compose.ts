@@ -10,6 +10,7 @@ import type { AiGate } from "../ai/brief.ts";
 import { type BudgetStore, reserve } from "../ai/budget.ts";
 import { estimateTokens } from "../ai/config.ts";
 import { residualIdentifiers } from "../wiki/text.ts";
+import { languageOf } from "./lang.ts";
 import { type Named, withoutMetrics } from "./refs.ts";
 import {
   type Brand,
@@ -280,9 +281,11 @@ export async function composeWithAi(i: {
   for (const s of SLOTS) {
     const v = typeof raw[s] === "string" ? cleanSlot(raw[s] as string) : "";
     // A slot with a figure, a name of another account, a link or an address is not used.
+    // Nor is one in the other language: a page speaks the language it was asked for, all of it.
     const ok =
       v.length > 0 &&
       v.length <= SLOT_MAX[s] &&
+      (languageOf(v) ?? i.lang) === i.lang &&
       withoutMetrics(v) === v.replace(/\s+/g, " ") &&
       !/https?:|www\.|@/i.test(v) &&
       residualIdentifiers(v, others).every((x) => x !== "account name or id");

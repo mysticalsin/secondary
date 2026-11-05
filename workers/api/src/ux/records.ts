@@ -63,6 +63,8 @@ interface Stored {
       text?: string;
       /** Channels the customer agreed to, for example "landing page". Absent on older records: covers none. */
       channels?: string[];
+      /** An outcome figure the customer agreed to show with the text ("40 stores", "on one platform"). Absent: no figure is covered. */
+      metric?: { value: string; label: string };
     };
   };
 }
@@ -123,6 +125,7 @@ export function recordView(r: ItemRecord, now: number) {
                     by: perm.by,
                     at: perm.at,
                     ...(perm.channels ? { channels: perm.channels } : {}),
+                    ...(perm.metric ? { metric: perm.metric } : {}),
                   }
                 : null,
           },
@@ -347,6 +350,16 @@ export function recordRoutes(): Hono<AppEnv> {
         throw bad("invalid_channels");
       channels = [...new Set((b.channels as string[]).map((x) => x.trim().toLowerCase()))];
     }
+    // A figure is shown on a landing page only when the customer agreed to it: it is part of what is recorded here.
+    let metric: { value: string; label: string } | undefined;
+    if (b.metric !== undefined && b.metric !== null) {
+      const m = b.metric as Record<string, unknown>;
+      if (typeof m !== "object" || Array.isArray(m)) throw bad("invalid_metric");
+      metric = {
+        value: text(m.value, 1, 40, "invalid_metric"),
+        label: text(m.label, 1, 80, "invalid_metric"),
+      };
+    }
     if (
       !(await audit(c, {
         action: "record.permission",
@@ -363,6 +376,7 @@ export function recordRoutes(): Hono<AppEnv> {
           at: new Date(sess(c).ctx.now).toISOString(),
           text: external,
           ...(channels ? { channels } : {}),
+          ...(metric ? { metric } : {}),
         }
       : null;
     const res = await w.stub.update(

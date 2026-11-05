@@ -18,6 +18,7 @@ import { audit, bad, type C, forbidden, notFound, readObject, sess } from "../ux
 import { metered, recordUsage } from "../uxv2/ledger.ts";
 import { runChecks } from "./checks.ts";
 import { composeDeterministic, composeWithAi } from "./compose.ts";
+import { baseUrl, statsOf, toDraft, urlOf } from "./draft.ts";
 import { Brain } from "./refs.ts";
 import { IMAGE_OK, type LandingRenderData, renderLandingPage } from "./render.ts";
 import { approvePage } from "./review.ts";
@@ -84,17 +85,12 @@ export const nameOfEmail = (email: string): string =>
     .join(" ")
     .slice(0, 80) || "Your contact";
 
-/** The base address of the pages worker. Without it nothing can be published: fail closed. */
-const baseUrl = (env: Env): string | null => {
-  const b = (env.PAGES_BASE_URL ?? "").trim().replace(/\/+$/, "");
-  return /^https:\/\/[^\s/]+$/.test(b) && !b.includes("<") ? b : null;
-};
-
 /** The data a template gets. Published images are the paths the publish step has just copied. */
 export function renderData(
   rec: PageRecord,
   mode: LandingRenderData["mode"],
   images: string[] = [],
+  expiresAt: number = rec.expiresAt,
 ): LandingRenderData {
   return {
     brand: rec.brand,
@@ -103,52 +99,19 @@ export function renderData(
     slots: rec.slots,
     references: rec.references.map((x, n) => {
       const image = mode === "published" ? images[n] : x.image;
-      return { title: x.title, summary: x.summary, ...(image ? { image } : {}) };
+      return {
+        title: x.title,
+        summary: x.summary,
+        permission: x.permission,
+        ...(x.generalisedTitle ? { generalisedTitle: x.generalisedTitle } : {}),
+        ...(x.permission === "named" && x.metric ? { metric: x.metric } : {}),
+        ...(image ? { image } : {}),
+      };
     }),
     contact: rec.contact,
     mode,
+    expiresAt: new Date(expiresAt).toISOString(),
   };
-}
-
-export function urlOf(env: Env, rec: PageRecord): string | undefined {
-  const b = baseUrl(env);
-  if (!b || rec.status !== "published" || !rec.slug) return undefined;
-  const q = new URLSearchParams();
-  if (rec.utm?.source) q.set("utm_source", rec.utm.source);
-  if (rec.utm?.medium) q.set("utm_medium", rec.utm.medium);
-  if (rec.utm?.campaign) q.set("utm_campaign", rec.utm.campaign);
-  const qs = q.toString();
-  return `${b}/p/${rec.slug}${qs ? `?${qs}` : ""}`;
-}
-
-export async function toDraft(env: Env, rec: PageRecord): Promise<LandingDraft> {
-  const revisionHash = await revisionHashOf(rec);
-  const url = urlOf(env, rec);
-  return {
-    id: rec.id,
-    status: rec.status,
-    brand: rec.brand,
-    lang: rec.lang,
-    prospect: rec.prospect,
-    slots: rec.slots,
-    references: rec.references,
-    contact: rec.contact,
-    revision: rec.revision,
-    revisionHash,
-    ...(rec.checks && rec.checks.hash === revisionHash
-      ? { checks: { ok: rec.checks.ok, issues: rec.checks.issues } }
-      : {}),
-    composedBy: rec.composer,
-    expiresAt: new Date(rec.expiresAt).toISOString(),
-    ...(url ? { url } : {}),
-    ...(rec.note ? { note: rec.note } : {}),
-  };
-}
-
-export async function statsOf(env: Env, rec: PageRecord): Promise<Stats> {
-  if (rec.status === "published") return readStats(env, rec.slug);
-  if (rec.finalStats) return rec.finalStats;
-  return readStats(env, rec.status === "unpublished" ? rec.slug : null);
 }
 
 export function lpRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -333,8 +296,13 @@ export function lpRoutes(deps: AppDeps): Hono<AppEnv> {
     if (new Set(asked.map((x: { pageId: string }) => x.pageId)).size !== asked.length)
       throw bad("duplicate_references");
     const ct = (b.contact ?? {}) as Record<string, unknown>;
+    const title =
+      typeof ct.title === "string" && ct.title.trim()
+        ? oneLine(ct.title, 1, 80, "invalid_contact")
+        : "";
     const contact: Contact = {
       name: oneLine(ct.name, 1, 80, "invalid_contact"),
+      ...(title ? { title } : {}),
       email: oneLine(ct.email, 5, 120, "invalid_contact"),
     };
     if (!EMAIL.test(contact.email)) throw bad("invalid_contact");
@@ -525,10 +493,14 @@ export function lpRoutes(deps: AppDeps): Hono<AppEnv> {
       });
       images.push(`/p/${slug}/i/${n}`);
     }
-    await c.env.PAGES.put(pageKey(slug), renderLandingPage(renderData(rec, "published", images)), {
-      httpMetadata: { contentType: "text/html; charset=utf-8" },
-      customMetadata: { expiresAt: String(expiresAt) },
-    });
+    await c.env.PAGES.put(
+      pageKey(slug),
+      renderLandingPage(renderData(rec, "published", images, expiresAt)),
+      {
+        httpMetadata: { contentType: "text/html; charset=utf-8" },
+        customMetadata: { expiresAt: String(expiresAt) },
+      },
+    );
     const made = await store.markPublished(rec.id, slug, expiresAt, utm, now(c));
     if (!made.ok) {
       await deletePage(c.env, slug);
