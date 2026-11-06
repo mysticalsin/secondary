@@ -231,7 +231,11 @@ test.describe("settings and the rest, on real data", () => {
     await page.goto("/settings/agents");
     await settle(page);
     await expect(
-      page.getByText(/claude mcp add --transport http .* http:\/\/localhost:8788\/mcp/),
+      page.getByText(
+        new RegExp(
+          `claude mcp add --transport http .* ${MCP_URL.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}/mcp`,
+        ),
+      ),
     ).toBeVisible();
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.getByRole("button", { name: /Copy/ }).first().click();
