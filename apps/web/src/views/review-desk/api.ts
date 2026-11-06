@@ -1,10 +1,14 @@
 import { request } from "../../api";
-import type { Desk, DeskDetail, SlaInfo } from "./types";
+import type { Desk, DeskDetail, RuleItems, SlaInfo } from "./types";
 
 const q = encodeURIComponent;
 
 export const deskApi = {
   desk: () => request<Desk>("GET", "/v1/review-desk"),
+  /** Rule items for this person: held actions they may decide, publications waiting for a second person. */
+  rules: () => request<RuleItems>("GET", "/v1/rules/desk"),
+  decideHold: (id: string, decision: "approve" | "reject") =>
+    request<{ status: string }>("POST", `/v1/rules/holds/${q(id)}/decide`, { decision }),
   detail: (id: string) => request<DeskDetail>("GET", `/v1/review-desk/${q(id)}`),
   /** A 409 `personal_data_warning` (body.kinds) asks the person to confirm: resend with `acknowledged: true`. */
   comment: (id: string, text: string, acknowledged = false) =>

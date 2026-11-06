@@ -1,8 +1,9 @@
 import { Clock, Inbox, UserCheck } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { ago } from "../../lib/time";
+import { RuleItems } from "./RuleItems";
 import { Effort, RiskIcons, usePerson, useWho } from "./shared";
-import type { Desk, DeskRow, Section } from "./types";
+import type { Desk, DeskRow, RuleItems as RuleItemsData, Section } from "./types";
 
 export const SELECTABLE: Exclude<Section, "fyi">[] = [
   "decision",
@@ -72,7 +73,11 @@ export function Queue({
   rows,
   selectedId,
   onSelect,
+  ruleItems,
+  onRuleChanged,
 }: {
+  ruleItems: RuleItemsData | null;
+  onRuleChanged: () => void;
   desk: Desk;
   rows: Record<Exclude<Section, "fyi">, DeskRow[]>;
   selectedId: string | null;
@@ -85,11 +90,18 @@ export function Queue({
       {SELECTABLE.map((s) => {
         const list = rows[s];
         if (!list.length && s !== "decision") return null;
+        const ruleCount =
+          s === "decision" && ruleItems
+            ? ruleItems.holds.length + ruleItems.publications.length
+            : 0;
         return (
           <section key={s} aria-labelledby={`rv-sec-${s}`} className="rv-sec" data-section={s}>
             <h2 id={`rv-sec-${s}`}>
-              {t(`v8r.sec.${s}` as never)} <span className="cnt">{list.length}</span>
+              {t(`v8r.sec.${s}` as never)} <span className="cnt">{list.length + ruleCount}</span>
             </h2>
+            {s === "decision" && ruleItems ? (
+              <RuleItems items={ruleItems} onChanged={onRuleChanged} />
+            ) : null}
             {list.length ? (
               <ul>
                 {list.map((r) => (
@@ -101,7 +113,7 @@ export function Queue({
                   />
                 ))}
               </ul>
-            ) : (
+            ) : ruleCount ? null : (
               <p className="muted rv-none">
                 <Inbox size={14} aria-hidden /> {t("v8r.sec.decision.none")}
               </p>

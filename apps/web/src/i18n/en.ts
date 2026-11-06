@@ -5,7 +5,7 @@ import { v4En } from "./v4";
 import { v5En } from "./v5";
 import { v6En } from "./v6";
 import { v7En } from "./v7";
-import { v7groupEn } from "./v7group";
+import { v7deskEn, v7groupEn } from "./v7group";
 import { v7opsEn } from "./v7ops";
 import { v8gEn } from "./v8gaps";
 import { v8LensEn } from "./v8lens";
@@ -17,6 +17,7 @@ export const en = {
   ...v6En,
   ...v7opsEn,
   ...v7groupEn,
+  ...v7deskEn,
   ...v7En,
   ...v8LensEn,
   ...v8gEn,

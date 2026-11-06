@@ -6,7 +6,7 @@ import { v4Fr } from "./v4";
 import { v5Fr } from "./v5";
 import { v6Fr } from "./v6";
 import { v7Fr } from "./v7";
-import { v7groupFr } from "./v7group";
+import { v7deskFr, v7groupFr } from "./v7group";
 import { v7opsFr } from "./v7ops";
 import { v8gFr } from "./v8gaps";
 import { v8LensFr } from "./v8lens";
@@ -18,6 +18,7 @@ export const fr: Record<keyof typeof en, string> = {
   ...v6Fr,
   ...v7opsFr,
   ...v7groupFr,
+  ...v7deskFr,
   ...v7Fr,
   ...v8LensFr,
   ...v8gFr,

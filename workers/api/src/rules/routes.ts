@@ -37,7 +37,7 @@ const FLOOR_ROW = "floor:mcp_review";
 
 type Who = { admin: boolean; view: ReturnType<typeof viewOf> };
 
-const who = (c: C): Who => {
+export const who = (c: C): Who => {
   const view = viewOf(sess(c));
   return { admin: isConfigure(view.roles), view };
 };
@@ -110,7 +110,7 @@ const redactText = (text: string, org: ReturnType<typeof requireOrg>, w: Who): s
     org.nodes.has(tok) && !w.view.nodes.has(tok) ? "restricted" : tok,
   );
 
-async function row(c: C, w: Who, r: StoredRule, cache: Map<string, boolean>) {
+export async function row(c: C, w: Who, r: StoredRule, cache: Map<string, boolean>) {
   const body = r.published ?? r.draft;
   if (!body) throw new Error("rule without a body");
   const can = await editable(c, w, body.scope, cache);
@@ -175,7 +175,7 @@ const holdRow = async (c: C, h: Hold) => {
   };
 };
 
-async function holdsFor(c: C) {
+export async function holdsFor(c: C) {
   const all = await rulesClient(c.env, sess(c).tenantId).holdList(sess(c).ctx.now);
   const out = [];
   for (const h of all) {

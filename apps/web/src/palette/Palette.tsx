@@ -41,8 +41,8 @@ import type { Hit } from "../views/search/types";
 import { rank } from "./match";
 import { pushRecent, type Recent, readRecents } from "./recents";
 
-/** Where the review desk lives. The desk's own route replaces this one when it moves. */
-export const REVIEW_PATH = "/waiting";
+/** Where the review desk lives (`/waiting` still redirects here). */
+export const REVIEW_PATH = "/review";
 export const OPEN_PALETTE = "secondary:palette";
 
 type Group = "recent" | "actions" | "go" | "brains" | "pages" | "settings" | "search";

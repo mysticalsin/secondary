@@ -10,6 +10,7 @@ import { viewOf } from "../auth.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, notFound, sess } from "../ux/util.ts";
 import { rulesClient } from "./client.ts";
+import { holdsFor, row, who } from "./routes.ts";
 
 export function groupsViewRoutes(_deps: AppDeps): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
@@ -32,6 +33,42 @@ export function groupsViewRoutes(_deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "audit_unavailable" }, 503);
     c.header("Cache-Control", "no-store");
     return c.json({ privacy: ids.map((id) => ({ id, email: emails.get(id) ?? null })) });
+  });
+
+  // The Review desk's rule items, only what this person may act on: held actions they may decide, and rule
+  // publications that wait for a second person who is not them. Ids, names and counts; no content.
+  r.get("/rules/desk", async (c) => {
+    const s = sess(c);
+    const me = s.principal.id;
+    const w = who(c);
+    const holds = (await holdsFor(c)).filter((h) => h.canDecide && h.status === "pending");
+    const client = rulesClient(c.env, s.tenantId);
+    const cache = new Map<string, boolean>();
+    const publications: {
+      id: string;
+      name: string;
+      scopeLabel: string;
+      kind: string;
+      version: number;
+      at: string;
+    }[] = [];
+    for (const rule of await client.list()) {
+      if (!(rule.published ?? rule.draft)) continue;
+      const base = await row(c, w, rule, cache);
+      if (!base.editable) continue;
+      const pending = await client.pendingOf(rule.id, s.ctx.now);
+      if (!pending || pending.by === me) continue;
+      publications.push({
+        id: rule.id,
+        name: base.name,
+        scopeLabel: base.scopeLabel,
+        kind: pending.kind,
+        version: pending.version,
+        at: new Date(pending.at).toISOString(),
+      });
+    }
+    c.header("Cache-Control", "no-store");
+    return c.json({ holds, publications });
   });
   return r;
 }

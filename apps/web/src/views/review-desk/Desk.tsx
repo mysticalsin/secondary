@@ -81,6 +81,10 @@ export function Desk() {
   const names = useBrainNames();
   const desk = useApi(() => deskApi.desk(), []);
   const qs = useApi(() => ux2.questions(), []);
+  // Rule items for "Your decision". A failed read means none: the section still works without them.
+  const ruleItems = useApi(() => deskApi.rules().catch(() => null), []);
+  const rules = ruleItems.data;
+  const ruleCount = rules ? rules.holds.length + rules.publications.length : 0;
   const [help, setHelp] = useState(false);
   const actions = useRef<PaneActions | null>(null);
   const rowsAll = desk.data?.sections;
@@ -118,8 +122,9 @@ export function Desk() {
   const refresh = useCallback(() => {
     desk.reload();
     qs.reload();
+    ruleItems.reload();
     window.dispatchEvent(new Event(QUESTIONS_CHANGED));
-  }, [desk.reload, qs.reload]);
+  }, [desk.reload, qs.reload, ruleItems.reload]);
 
   const move = useCallback(
     (by: number) => {
@@ -194,12 +199,14 @@ export function Desk() {
       ) : (
         <>
           <Strip desk={desk.data} />
-          {flat.length || (!brain && desk.data.sections.fyi.length) ? (
+          {flat.length || ruleCount || (!brain && desk.data.sections.fyi.length) ? (
             <div className="rv-grid">
               <Queue
                 desk={desk.data}
                 rows={rows}
                 selectedId={selId}
+                ruleItems={brain ? null : rules}
+                onRuleChanged={refresh}
                 onSelect={(id) => {
                   go(id);
                   requestAnimationFrame(open);

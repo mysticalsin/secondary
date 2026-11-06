@@ -131,3 +131,24 @@ export interface SlaInfo {
   max: number;
   canSet: boolean;
 }
+
+/** Held rule actions and rule publications for the "Your decision" section (GET /v1/rules/desk). */
+export interface RuleItems {
+  holds: {
+    id: string;
+    rule: string;
+    action: string;
+    brain: { id: string; label: string };
+    requestedAt: string;
+    required: number;
+    approvals: number;
+  }[];
+  publications: {
+    id: string;
+    name: string;
+    scopeLabel: string;
+    kind: "publish" | "rollback";
+    version: number;
+    at: string;
+  }[];
+}

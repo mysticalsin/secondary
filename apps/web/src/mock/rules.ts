@@ -613,9 +613,24 @@ export function handleRules(
 ): unknown {
   if (p !== "/v1/rules" && !p.startsWith("/v1/rules/")) return NOT_HANDLED;
   const v = viewerOf(role);
+  const rest = p.slice("/v1/rules".length).replace(/^\//, "");
+  // The Review desk's rule items: what this person may act on, an empty answer for everyone else.
+  if (rest === "desk" && method === "GET")
+    return {
+      holds: holdsFor(v).filter((h) => h.canDecide),
+      publications: rules
+        .filter((r) => r.pending?.by === "other" && editableBy(r, v))
+        .map((r) => ({
+          id: r.id,
+          name: (r.draft ?? r.versions[r.versions.length - 1]?.body)?.name ?? r.id,
+          scopeLabel: "",
+          kind: r.pending?.kind,
+          version: r.pending?.version,
+          at: iso(r.pending?.at ?? 0),
+        })),
+    };
   // A person who is neither an admin nor a steward of any brain: the surface does not exist.
   if (!v.admin && v.brains.size === 0) throw notFound();
-  const rest = p.slice("/v1/rules".length).replace(/^\//, "");
 
   if (rest === "" && method === "GET") {
     const brain = search.get("brain");

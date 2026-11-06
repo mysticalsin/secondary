@@ -115,9 +115,8 @@ describe("Review desk", () => {
     await screen.findByTestId("rv-decide");
     await user.click(screen.getByRole("button", { name: "Reassign" }));
     const dlg = await screen.findByRole("dialog", { name: "Reassign this review" });
-    const options = within(dlg)
-      .getAllByRole("option")
-      .map((o) => o.textContent);
+    // The list comes with the row's detail, which loads after the row: wait for it.
+    const options = (await within(dlg).findAllByRole("option")).map((o) => o.textContent);
     expect(options).toEqual(["Chief Executive", "Head of Bid", "Knowledge Reviewer"]);
   });
 });

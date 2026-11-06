@@ -33,3 +33,25 @@ export const v7groupFr: Record<keyof typeof v7groupEn, string> = {
     "En attente d'un second administrateur : il fait le même changement pour le confirmer.",
   "v7g.failed": "Le groupe n'a pas été modifié.",
 };
+
+export const v7deskEn = {
+  "v7d.hold.title": "Held by a rule: {action}",
+  "v7d.hold.approvals": "{n} of {of} approvals",
+  "v7d.approve": "Approve",
+  "v7d.reject": "Reject",
+  "v7d.pub.publish": 'Rule "{name}": version {v} waits for a second person',
+  "v7d.pub.rollback": 'Rule "{name}": a return to version {v} waits for a second person',
+  "v7d.pub.waiting": "Needs your confirmation",
+  "v7d.pub.open": "Open in Rules",
+} as const;
+
+export const v7deskFr: Record<keyof typeof v7deskEn, string> = {
+  "v7d.hold.title": "Retenu par une règle : {action}",
+  "v7d.hold.approvals": "{n} approbations sur {of}",
+  "v7d.approve": "Approuver",
+  "v7d.reject": "Refuser",
+  "v7d.pub.publish": "Règle « {name} » : la version {v} attend une deuxième personne",
+  "v7d.pub.rollback": "Règle « {name} » : un retour à la version {v} attend une deuxième personne",
+  "v7d.pub.waiting": "Attend votre confirmation",
+  "v7d.pub.open": "Ouvrir dans Règles",
+};
