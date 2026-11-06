@@ -18,18 +18,22 @@ export function PrivacyGroup() {
   const [pick, setPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   const save = async (ids: string[]) => {
     setBusy(true);
     setErr(null);
+    setNote(null);
     try {
-      const out = await request<{ ok?: boolean; pending?: boolean } | null>(
+      const out = await request<{ ok?: boolean; status?: string } | null>(
         "PUT",
         "/v1/rules/groups",
         { privacy: ids },
       );
-      say(out?.pending ? t("v7g.pending") : t("v7g.saved"));
-      setPick("");
+      const msg = out?.status === "pending" ? t("v7g.pending") : t("v7g.saved");
+      setNote(msg);
+      say(msg);
+      if (out?.status !== "pending") setPick("");
       group.reload();
     } catch (e) {
       setErr(e instanceof ApiError ? e.reason : t("v7g.failed"));
@@ -48,6 +52,11 @@ export function PrivacyGroup() {
         <div className="errorbox" role="alert">
           {err}
         </div>
+      ) : null}
+      {note ? (
+        <p role="status" className="muted">
+          {note}
+        </p>
       ) : null}
       <Await state={group}>
         {(d) => {

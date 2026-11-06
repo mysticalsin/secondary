@@ -11,7 +11,7 @@ export const v7groupEn = {
   "v7g.add.btn": "Add",
   "v7g.add.none": "Choose a person",
   "v7g.saved": "Privacy group saved.",
-  "v7g.pending": "Waiting for a second Platform admin to confirm the change.",
+  "v7g.pending": "Waiting for a second Platform admin: they make the same change to confirm it.",
   "v7g.failed": "The group was not changed.",
 } as const;
 
@@ -29,6 +29,7 @@ export const v7groupFr: Record<keyof typeof v7groupEn, string> = {
   "v7g.add.btn": "Ajouter",
   "v7g.add.none": "Choisir une personne",
   "v7g.saved": "Groupe confidentialité enregistré.",
-  "v7g.pending": "En attente d'un second administrateur de la plateforme.",
+  "v7g.pending":
+    "En attente d'un second administrateur : il fait le même changement pour le confirmer.",
   "v7g.failed": "Le groupe n'a pas été modifié.",
 };

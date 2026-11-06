@@ -3,9 +3,12 @@ import { ApiError } from "../api";
 import { NOT_HANDLED } from "./uxv2";
 
 let members: string[] = [];
+// The mock has one person; a change is applied when the same list is sent a second time (the second admin).
+let waiting: string | null = null;
 
 export function resetGroupMock(): void {
   members = [];
+  waiting = null;
 }
 
 export function handleV7Group(
@@ -27,8 +30,16 @@ export function handleV7Group(
     const ids = body.privacy;
     if (!Array.isArray(ids) || ids.some((x) => typeof x !== "string"))
       throw new ApiError(400, "Send a list of ids.", { error: "invalid_privacy" });
-    members = [...new Set(ids as string[])];
-    return { ok: true };
+    const next = [...new Set(ids as string[])];
+    const same = next.length === members.length && next.every((x) => members.includes(x));
+    const key = JSON.stringify([...next].sort());
+    if (!same && waiting !== key) {
+      waiting = key;
+      return { status: "pending", needs: "second_person", sameActor: false };
+    }
+    waiting = null;
+    members = next;
+    return { ok: true, status: "applied" };
   }
   return NOT_HANDLED;
 }

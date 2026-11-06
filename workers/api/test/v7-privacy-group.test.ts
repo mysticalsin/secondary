@@ -9,7 +9,20 @@ const BID = "v7g.bid@example.invalid";
 const CONS = "v7g.cons@example.invalid";
 const KEY_READ = "test-audit-key-read-0123456789abcdef012";
 
+const ADMIN2 = "v7g.admin2@example.invalid";
 const admin = (o: Loose = {}) => as("platform_admin", "/v1/rules/groups", { email: ADMIN, ...o });
+/** Replacing the group is two-person: the first admin's request waits, a different admin repeats it. */
+async function setGroup(ids: string[]): Promise<void> {
+  const first = await admin({ method: "PUT", body: { privacy: ids } });
+  expect(first.status).toBe(202);
+  expect(await json<Loose>(first)).toMatchObject({ status: "pending", needs: "second_person" });
+  const second = await as("platform_admin", "/v1/rules/groups", {
+    email: ADMIN2,
+    method: "PUT",
+    body: { privacy: ids },
+  });
+  expect(second.status).toBe(200);
+}
 const idOf = async (persona: string, email: string) =>
   (await json<Loose>(await as(persona, "/v1/me", { email }))).principal.id as string;
 
@@ -48,26 +61,26 @@ describe("GET and PUT /v1/rules/groups", () => {
     const cons = dir.find((p) => p.roleIds.includes("consultant"))?.id as string;
     const bid = dir.find((p) => p.roleIds.includes("head_bid"))?.id as string;
     expect(cons).toBeTruthy();
-    const put = await admin({ method: "PUT", body: { privacy: [cons, bid] } });
-    expect(put.status).toBe(200);
+    await setGroup([cons, bid]);
     const got = await json<Loose>(await admin());
     expect(got.privacy.map((m: Loose) => m.id).sort()).toEqual([bid, cons].sort());
     expect(got.privacy.find((m: Loose) => m.id === cons).email).toBe(
       dir.find((p) => p.id === cons)?.email,
     );
     // An id the directory does not know is listed without an address, never dropped.
-    await admin({ method: "PUT", body: { privacy: [cons, "u_nobody_known"] } });
+    await setGroup([cons, "u_nobody_known"]);
     const again = await json<Loose>(await admin());
     expect(again.privacy.find((m: Loose) => m.id === "u_nobody_known")).toEqual({
       id: "u_nobody_known",
       email: null,
     });
     // Removing everyone is allowed and shows.
-    await admin({ method: "PUT", body: { privacy: [] } });
+    await setGroup([]);
     expect(await json<Loose>(await admin())).toEqual({ privacy: [] });
     // Receipts: who set it, who looked; ids and counts only.
     const adminId = await idOf("platform_admin", ADMIN);
     const mine = await receiptsOf(adminId);
+    // Three changes, each asked by this admin once (the second admin's receipts are theirs).
     expect(mine.filter((r) => r.action === "rules.groups").length).toBe(3);
     expect(mine.filter((r) => r.action === "rules.groups.read").length).toBeGreaterThanOrEqual(3);
     expect(JSON.stringify(mine)).not.toContain(dir.find((p) => p.id === cons)?.email);

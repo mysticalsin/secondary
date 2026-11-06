@@ -22,16 +22,24 @@ const mount = (ui: JSX.Element, persona: string, path = "/") => {
 };
 
 describe("privacy approver group in Settings", () => {
-  it("an admin sees the empty group, adds a person from the directory and removes them", async () => {
+  it("an admin sees the empty group, adds a person from the directory and removes them", {
+    timeout: 20_000,
+  }, async () => {
     const user = userEvent.setup();
     mount(<PrivacyGroup />, "platform_admin");
     await screen.findByText(/Nobody is named yet/);
     const select = screen.getByLabelText("Add a person");
     await user.selectOptions(select, within(select).getAllByRole("option")[1] as HTMLElement);
     await user.click(screen.getByRole("button", { name: "Add" }));
+    // Two-person: the first request waits for a second admin, who makes the same change.
+    expect(await screen.findByText(/Waiting for a second Platform admin/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add" }));
     const list = await screen.findByRole("list");
     expect(within(list).getAllByRole("listitem")).toHaveLength(1);
     await user.click(within(list).getByRole("button", { name: /Remove/ }));
+    await screen.findByText(/Waiting for a second Platform admin/);
+    await waitFor(() => expect(screen.getByRole("button", { name: /Remove/ })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: /Remove/ }));
     await screen.findByText(/Nobody is named yet/);
   });
 
