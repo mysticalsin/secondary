@@ -8,7 +8,7 @@ import type { BrainRole, Everyone, Publication } from "@secondary/policy";
 import { BRAIN_ROLES } from "@secondary/policy";
 import { WikiBase } from "../wiki/store.ts";
 import { citationsOf, lineDiff } from "../wiki/text.ts";
-import { DEFAULT_SCHEMA, type SchemaType, type WikiSchema } from "../wiki/types.ts";
+import { DEFAULT_SCHEMA, type Proposal, type SchemaType, type WikiSchema } from "../wiki/types.ts";
 import {
   type Collection,
   DAY,
@@ -64,6 +64,27 @@ export interface ChangeRow {
   actor: string | null;
   change: "new" | "updated";
   diff: { type: "add" | "del" | "same"; text: string }[];
+}
+
+export interface InsightRaw {
+  revisions: { pageId: string; at: number }[];
+  proposals: {
+    id: string;
+    kind: string;
+    status: string;
+    createdAt: number;
+    decidedAt: number;
+    origin: string;
+    rationale: string;
+    sources: string[];
+    titleSources: string[];
+    reviewed: boolean;
+  }[];
+  ingested: { sourceId: string; at: number }[];
+  promotions: number;
+  facts: { sourceIds: string[]; verified: boolean; confidence: number }[];
+  sourceKinds: Record<string, "sharepoint" | "meetings" | "manual">;
+  provenance: Record<string, "agents" | "import">;
 }
 
 export interface CoachRow {
@@ -259,6 +280,124 @@ export abstract class BrainBase extends WikiBase {
       });
     }
     return out;
+  }
+
+  // ---- insights (raw aggregates; the API filters them to what the caller may read) ----
+
+  /**
+   * What the Insights views need from this workspace, with no page text: when each published page
+   * was written to, the proposals of the window, sources ingested, promotions, valid facts and the
+   * kind of each cited source. Nothing here is policy-filtered: the API keeps only what the caller
+   * may read before it counts or names anything.
+   */
+  brainInsightRaw(
+    since: number,
+    historyFrom: number,
+    citedIds: string[],
+    light = false,
+  ): InsightRaw {
+    const revisions = this.sql
+      .exec(
+        `SELECT r.page_id AS page_id, r.at AS at FROM wiki_page_revisions r
+         JOIN wiki_pages p ON p.id = r.page_id AND p.status = 'published'
+         WHERE r.at >= ? AND r.hidden_at IS NULL ORDER BY r.at LIMIT 20000`,
+        historyFrom,
+      )
+      .toArray()
+      .map((r) => ({ pageId: r.page_id as string, at: r.at as number }));
+    if (light)
+      return {
+        revisions,
+        proposals: [],
+        ingested: [],
+        promotions: 0,
+        facts: [],
+        sourceKinds: {},
+        provenance: {},
+      };
+    const proposals = this.sql
+      .exec(
+        `SELECT i.id AS id, i.kind AS kind, i.status AS status, i.created_at AS created_at,
+                i.updated_at AS updated_at, i.body AS body,
+                EXISTS (SELECT 1 FROM approvals a WHERE a.item_id = i.id AND a.kind = 'review') AS reviewed
+         FROM items i WHERE i.kind LIKE 'wiki\\_%' ESCAPE '\\' AND i.created_at >= ?
+         ORDER BY i.created_at DESC LIMIT 500`,
+        since,
+      )
+      .toArray()
+      .map((r) => {
+        let p: Partial<Proposal> = {};
+        try {
+          p = JSON.parse((r.body as string | null) ?? "{}") as Partial<Proposal>;
+        } catch {
+          // an unreadable body counts as a proposal with no sources
+        }
+        return {
+          id: r.id as string,
+          kind: r.kind as string,
+          status: r.status as string,
+          createdAt: r.created_at as number,
+          decidedAt: r.updated_at as number,
+          origin: p.origin ?? "human",
+          rationale: String(p.rationale ?? "").slice(0, 80),
+          sources: (p.sources ?? []).map((x) => x.id),
+          titleSources: p.titleSources ?? [],
+          reviewed: !!r.reviewed,
+        };
+      });
+    const ingested = this.sql
+      .exec(
+        "SELECT source_id, ingested_at FROM wiki_sources WHERE ingested_at IS NOT NULL AND ingested_at >= ? LIMIT 2000",
+        since,
+      )
+      .toArray()
+      .map((r) => ({ sourceId: r.source_id as string, at: r.ingested_at as number }));
+    const promotions = this.sql
+      .exec("SELECT COUNT(*) AS n FROM wiki_promotions WHERE at >= ?", since)
+      .one().n as number;
+    const facts = this.wikiFacts({ validOnly: true, limit: 2_000 }).map((f) => ({
+      sourceIds: f.sourceIds,
+      verified: f.verifiedBy !== null,
+      confidence: f.confidence,
+    }));
+    const sourceKinds: Record<string, "sharepoint" | "meetings" | "manual"> = {};
+    for (const id of [...new Set(citedIds)].slice(0, 2_000)) {
+      const it = this.sql.exec("SELECT kind FROM items WHERE id = ?", id).toArray()[0];
+      if (it) sourceKinds[id] = it.kind === "meeting_record" ? "meetings" : "manual";
+      else if (this.sql.exec("SELECT 1 AS x FROM source_items WHERE id = ?", id).toArray()[0])
+        sourceKinds[id] = "sharepoint";
+    }
+    // Where each page's latest text came from, by the words its proposal was filed with.
+    const provenance: Record<string, "agents" | "import"> = {};
+    const why = new Map<string, string>();
+    const latest = this.sql
+      .exec(
+        `SELECT r.page_id AS page_id, r.proposal_id AS proposal_id FROM wiki_page_revisions r
+         JOIN (SELECT page_id, MAX(revision) AS m FROM wiki_page_revisions GROUP BY page_id) x
+           ON x.page_id = r.page_id AND x.m = r.revision
+         JOIN wiki_pages p ON p.id = r.page_id AND p.status = 'published'
+         WHERE r.proposal_id IS NOT NULL LIMIT 5000`,
+      )
+      .toArray();
+    for (const r of latest) {
+      const pid = r.proposal_id as string;
+      if (!why.has(pid)) {
+        const it = this.sql.exec("SELECT body FROM items WHERE id = ?", pid).toArray()[0];
+        let text = "";
+        try {
+          text = String(
+            (JSON.parse((it?.body as string | null) ?? "{}") as Partial<Proposal>).rationale ?? "",
+          );
+        } catch {
+          // no rationale
+        }
+        why.set(pid, text.toLowerCase());
+      }
+      const t = why.get(pid) ?? "";
+      if (t.includes("agent")) provenance[r.page_id as string] = "agents";
+      else if (t.startsWith("imported")) provenance[r.page_id as string] = "import";
+    }
+    return { revisions, proposals, ingested, promotions, facts, sourceKinds, provenance };
   }
 
   // ---- business field values ----

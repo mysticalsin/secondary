@@ -429,3 +429,44 @@ Tools act with the user's rights and name, need the `secondary.read` and `second
 - `propose_change` needs a published page the caller can read (else 404), keeps the page's title and type, and stores `rationale` as the proposal's rationale. A page's cited sources are re-checked for the caller as for any proposal (L-01).
 - A session report is a page of type `session_report` (a collection every brain knows, left out of health and the coach), id `session-report-<person>-<date>-<4 hex>`, title `Session report <Person> <date>`, whose Markdown starts with `Folder: Sources / Session reports / <Person>` (the folder; `<Person>` is the display name derived from the address). Two reports on one day are two pages.
 - `wiki_propose`, `wiki_search`, `wiki_read`, `get_brain_guide` and `coach_propose_structure` are unchanged. The API accepts these MCP calls only for the routes listed in `INTERNAL_ROUTES` (`workers/api/src/auth.ts`).
+
+## v5 Brain Insights (docs/DESIGN-V5-BRAIN-INSIGHTS.md), normative shapes
+
+Both endpoints aggregate on the server, one brain at a time, from the pages the caller may read (a page resting on a source outside their view does not exist for them). No page body leaves the server; a title appears only for a page the caller can read. `Cache-Control: no-store`, same `brains_v3` pilot flag as `/v1/brains`. Code: `workers/api/src/brains/insights*.ts`; tests `v5-insights*.test.ts`.
+
+### `GET /v1/brains/:id/insights?mode=relevance|freshness&q=&window=7d|30d|90d&scoreKind=freshness|confidence|evidence&focus=<pageId>`
+
+Brain opened through the admitted view like every brain route (not readable or not there: 404, byte for byte the same). `mode` defaults to `relevance`, `window` to `30d`, `scoreKind` to `freshness`; anything else is 400 `invalid_mode`, `invalid_window`, `invalid_score_kind`, `invalid_focus`. `q` is trimmed to 120 characters. A `focus` that is not a readable page of this brain is 404.
+
+```
+{ brainId, name, generatedAt, window,
+  constellation: {
+    mode, q, seed,                      // seed (uint32) is the layout seed: same data, same picture
+    sectors: [{id, label, count}],      // one per collection (page type) that holds pages, by label
+    dots: [{pageId: string|null, sector, r, score, k, inZone, label?, highlight?}],
+    rings: [50, 70, 85],                // score rings; r = sqrt((100 - score) / 60) clamped to 0..1
+    legend: {inZone, below, perDot, threshold: 70, total} },
+  focus: { kind: "brain"|"page", pageId: string|null, title, type,
+    coverage: [{key, label, value, target, unit: "pages"|"lines", state: "ok"|"low"|"missing"}],
+    timeline: [{label, start, end, kind}],            // ISO days
+    activity: {from, to, days: [{date, count}]},
+    status: {value: "active"|"watch"|"dormant", since: string|null} | null },  // account brains, brain focus only
+  health: { scoreKind, threshold: 60, total, perPoint,
+    points: [{pageId: string|null, title: string|null, score, scores: {freshness, confidence, evidence}, source, k}],
+    above: {freshness, confidence, evidence},         // pages at or above the threshold, per kind
+    weekDelta: {freshness, confidence, evidence},     // of those, pages written in the last 7 days
+    sources: [{kind: "sharepoint"|"meetings"|"agents"|"manual"|"import", count}] },
+  flow: { window, stages: [{key: "ingested"|"proposed"|"reviewed"|"published"|"promoted", count}],
+    publishRate: number|null, medianDaysToReview: number|null, seenAllRate: number|null },
+  activity: {from, to, days: [{date, count}]},        // 182 days, only days with edits, readable non-generated pages
+  timeline: [{label, start, end, kind}] }              // up to 6 dated pages, oldest first
+```
+
+- **Dots.** `k` is the number of pages a dot stands for and `pageId` is null when `k > 1`. A brain with more than 400 pages is bucketed per sector in score order, `legend.perDot` pages to a dot (`ceil(total / 400)`), so `sum(k) = legend.total`. `highlight` and `label` (a readable page title, up to 40 characters) go to at most five single-page dots scoring 40 or more. Score in relevance mode: with a query, 8 to 20 for no match and 40 to 100 by where the words hit (title, summary, body); without one, centrality (links in, citations). In freshness mode: `100 * (1 - age / (1.5 * freshnessDays))`. `inZone` is `score >= 70`.
+- **Health scores** (0 to 100, review below 60): freshness as above; confidence is the verified share of the valid facts resting on the page's sources, weighted by stored confidence (no such fact: 50 if the page cites, else 30); evidence is the share of content lines carrying a citation. `source` is `agents` for session reports and pages whose latest proposal came from an agent, `import` for imports, else `sharepoint` or `meetings` by the cited readable sources, else `manual`. Above 1200 pages points are bucketed too (`perPoint`).
+- **Flow** counts the proposals created in the window whose title can show only sources the caller may read. `ingested` is at least `proposed`. `promoted` appears for team and account brains only. `medianDaysToReview` is the median of decision time minus creation time of reviewed proposals. `seenAllRate` is 100 when any approval went through review (the server refuses an approval without every change seen), else null.
+- **Focus.** Brain focus: `coverage` is one row per collection the brain's template expects (`target` 3 pages); `status` is derived from the last edit (active within 30 days, watch within 90, else dormant). Page focus: `coverage` is one row per section the page's type requires (`target` 2 lines), `timeline` its revisions. Changing a status in the app files a proposal through `POST /v1/brains/:id/push/page`, so it goes through the brain's review.
+
+### `GET /v1/brains/overview`
+
+`{generatedAt, brains: OverviewTile[]}` for the brains the sidebar would list (Personal, governance brains, account brains, Company Global) that the caller may open, in the sidebar's order. Each tile is computed from that brain only; a brain the caller cannot open adds no tile, count or title. Tile: `{id, type, name, template, pages, health: {score}, zone: {inZone, total}, seed, sectors, dots: [{s, r, z, k}], sparkline: number[12], lastActivityAt}` (a freshness constellation capped at 140 dots; `s` is the sector index, `sparkline` weekly edit counts, oldest first). No titles.
