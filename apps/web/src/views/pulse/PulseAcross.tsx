@@ -10,6 +10,11 @@ import { daysBetween, PULSE_COLOR } from "./colors";
 import { PulseLegend } from "./PulseDots";
 import { CATEGORIES, type PulseRow } from "./types";
 
+const isWeekend = (day: string): boolean => {
+  const d = new Date(`${day}T12:00:00Z`).getUTCDay();
+  return d === 0 || d === 6;
+};
+
 function Row({ row, days }: { row: PulseRow; days: string[] }) {
   const { t } = useI18n();
   const byDay = new Map(row.days.map((d) => [d.date, d.d]));
@@ -27,10 +32,10 @@ function Row({ row, days }: { row: PulseRow; days: string[] }) {
         aria-label={t("v8p.across.row", { name, n: total })}
         style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
       >
-        {days.map((day, i) => {
+        {days.map((day) => {
           const d = byDay.get(day);
           return (
-            <span key={day} className={`pa8-cell${i % 7 === 6 ? " wk" : ""}`}>
+            <span key={day} className={`pa8-cell${isWeekend(day) ? " wk" : ""}`}>
               {CATEGORIES.map((c, k) => {
                 const n = d?.[k] ?? 0;
                 return n > 0 ? (

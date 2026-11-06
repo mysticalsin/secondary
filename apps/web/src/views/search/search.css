@@ -174,7 +174,7 @@
   display: grid;
   gap: 8px;
 }
-.s8-list li {
+.s8-list > li {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--bg);
@@ -183,11 +183,11 @@
     border-color var(--dur) var(--ease),
     background var(--dur) var(--ease);
 }
-.s8-list li.on {
+.s8-list > li.on {
   border-color: var(--purple);
   background: var(--panel);
 }
-:root[data-theme="dark"] .s8-list li.on {
+:root[data-theme="dark"] .s8-list > li.on {
   border-color: var(--lilac-3);
 }
 .s8-row {
@@ -324,4 +324,46 @@
 }
 .pv8 .muted {
   color: #a6a4b2;
+}
+.pv8-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.s8-det > summary {
+  display: none;
+}
+@media (max-width: 900px) {
+  .s8-grid {
+    display: flex;
+    flex-direction: column;
+  }
+  .s8-results {
+    order: -1;
+  }
+  .s8-det > summary {
+    display: block;
+    font-weight: 700;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    cursor: pointer;
+    list-style: none;
+  }
+  .s8-det[open] > summary {
+    margin-bottom: 12px;
+  }
+  .s8-det > summary:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+.pv8-lines p {
+  color: #f4f3f7;
+}
+.pv8-lines .pv8-src {
+  color: #b4b2c0;
 }

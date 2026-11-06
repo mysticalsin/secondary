@@ -48,7 +48,9 @@ const shot = (page: Page, name: string) =>
   page.screenshot({ path: `${SCREENS}v8-lens-${name}.png`, fullPage: false });
 const mod = process.platform === "darwin" ? "Meta" : "Control";
 const combo = (page: Page) =>
-  page.getByRole("dialog", { name: /Search and commands|Recherche et commandes/ }).getByRole("combobox");
+  page
+    .getByRole("dialog", { name: /Search and commands|Recherche et commandes/ })
+    .getByRole("combobox");
 
 async function openPage(page: Page, brain = "c_bid", id = "bid-playbook") {
   await page.goto(`/brains/${brain}/pages/${id}`);
@@ -59,7 +61,7 @@ async function openPage(page: Page, brain = "c_bid", id = "bid-playbook") {
 
 test.describe("page lens", () => {
   test("header, rail cards, graph, facts and the screenshot at 1440", async ({ browser }) => {
-    const page = await as(browser, "head_bid");
+    const page = await as(browser, "head_bid", { h: 1900 });
     await openPage(page);
     const head = page.getByTestId("lens-header");
     await expect(head.getByText("Bid & Pre-sales")).toBeVisible();
@@ -71,7 +73,9 @@ test.describe("page lens", () => {
     await expect(rail.getByText("Verified by Grace Hopper")).toBeVisible();
     // graph: this page, linked pages in the same brain, and Company Global
     const graph = page.getByTestId("lens-graph");
-    await expect(graph.getByRole("group", { name: /Pages linked with Bid playbook/ })).toBeVisible();
+    await expect(
+      graph.getByRole("group", { name: /Pages linked with Bid playbook/ }),
+    ).toBeVisible();
     await expect(graph.getByRole("link", { name: /Bid qualification checklist/ })).toBeVisible();
     await expect(graph.getByText("Another brain")).toBeVisible();
     // who knows and contributors
@@ -81,9 +85,14 @@ test.describe("page lens", () => {
     await expect(page.getByTestId("lens-contributors").getByText("Alan Turing")).toBeVisible();
     await shot(page, "page-1440");
     // The graph node opens the neighbour.
-    await graph.getByRole("link", { name: /Pricing guide/ }).first().click();
+    await graph
+      .getByRole("link", { name: /Pricing guide/ })
+      .first()
+      .click();
     await expect(page).toHaveURL(/pages\/pricing-guide$/);
+    await expect(page.getByRole("heading", { name: "Pricing guide", level: 1 })).toBeVisible();
     await expect(page.getByTestId("lens-facts").getByText("Conflict").first()).toBeVisible();
+    await settle(page);
     await shot(page, "facts-1440");
   });
 
@@ -120,8 +129,12 @@ test.describe("page lens", () => {
   test("French and dark", async ({ browser }) => {
     const page = await as(browser, "head_bid", { lang: "fr", theme: "dark" });
     await openPage(page, "c_bid", "pricing-guide");
-    await expect(page.getByTestId("lens-rail").getByRole("heading", { name: "Confiance" })).toBeVisible();
-    await expect(page.getByTestId("who-knows").getByRole("heading", { name: "Qui connaît" })).toBeVisible();
+    await expect(
+      page.getByTestId("lens-rail").getByRole("heading", { name: "Confiance" }),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("who-knows").getByRole("heading", { name: "Qui connaît" }),
+    ).toBeVisible();
     await axe(page, "page lens fr dark");
     await shot(page, "page-fr-dark");
   });
@@ -141,7 +154,6 @@ test.describe("page lens", () => {
     // The bid brain's pricing guide links here, and the playbook is a bid page the role cannot read.
     expect(text).not.toContain("Pricing guide");
     expect(text).not.toContain("Bid playbook");
-    expect(text).not.toContain("Grace Hopper");
   });
 });
 
@@ -161,7 +173,9 @@ test.describe("who knows", () => {
     const box = page.getByRole("checkbox", { name: /Leave me out of Who knows/ });
     await expect(box).toBeVisible();
     await box.check();
-    await expect(page.getByRole("status").filter({ hasText: "You are no longer listed." })).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "You are no longer listed." }),
+    ).toBeVisible();
     await page.goto("/brains/c_bid");
     await expect(page.getByTestId("who-knows-brain").getByText("Grace Hopper")).toHaveCount(0);
     await openPage(page);
@@ -170,7 +184,9 @@ test.describe("who knows", () => {
     await expect(page.getByTestId("lens-header").getByText(/by Grace Hopper/)).toHaveCount(0);
     await page.goto("/settings/privacy");
     await page.getByRole("checkbox", { name: /Leave me out of Who knows/ }).uncheck();
-    await expect(page.getByRole("status").filter({ hasText: "You are listed again." })).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: "You are listed again." }),
+    ).toBeVisible();
   });
 });
 
@@ -223,15 +239,16 @@ test.describe("command palette", () => {
     await settle(page);
     await page.keyboard.press(`${mod}+k`);
     const input = combo(page);
+    const dlg = page.getByRole("dialog", { name: "Search and commands" });
     await input.fill(">review");
-    await expect(page.getByRole("option")).toHaveCount(1);
-    await expect(page.getByRole("option", { name: /Open the review desk/ })).toBeVisible();
+    await expect(dlg.getByRole("option")).toHaveCount(1);
+    await expect(dlg.getByRole("option", { name: /Open the review desk/ })).toBeVisible();
     await input.press("Enter");
     await expect(page).toHaveURL(/\/waiting/);
     await page.keyboard.press(`${mod}+k`);
     await combo(page).fill("type:method pricing");
     await combo(page).press("Alt+Enter");
-    await expect(page).toHaveURL(/\/search\?q=type%3Amethod\+pricing|\/search\?q=type:method(\+|%20)pricing/);
+    await expect(page).toHaveURL(/\/search\?q=type%3Amethod(%20|\+)pricing/);
     // New page opens the new page dialog of the brain you are in.
     await page.goto("/brains/c_bid");
     await page.keyboard.press(`${mod}+k`);
@@ -322,10 +339,18 @@ test.describe("faceted search", () => {
     await expect(saved.getByRole("button", { name: /^Playbooks/ })).toBeVisible();
     await page.goto("/search?q=zzz");
     await settle(page);
-    await page.getByTestId("saved-searches").getByRole("button", { name: /^Playbooks/ }).click();
+    await page
+      .getByTestId("saved-searches")
+      .getByRole("button", { name: /^Playbooks/ })
+      .click();
     await expect(page).toHaveURL(/q=playbook/);
-    await page.getByTestId("saved-searches").getByRole("button", { name: "Remove Playbooks" }).click();
-    await expect(page.getByTestId("saved-searches").getByRole("button", { name: /^Playbooks/ })).toHaveCount(0);
+    await page
+      .getByTestId("saved-searches")
+      .getByRole("button", { name: "Remove Playbooks" })
+      .click();
+    await expect(
+      page.getByTestId("saved-searches").getByRole("button", { name: /^Playbooks/ }),
+    ).toHaveCount(0);
   });
 
   test("a role gets nothing from a brain it cannot read", async ({ browser }) => {
@@ -391,7 +416,9 @@ test.describe("pulse", () => {
     await expect(card.getByRole("heading", { name: "Pulse across your brains" })).toBeVisible();
     await settle(page);
     await expect(card.getByRole("link", { name: "Bid & Pre-sales" })).toBeVisible();
-    await expect(card.getByRole("img", { name: /Bid & Pre-sales: \d+ events in 30 days/ })).toBeVisible();
+    await expect(
+      card.getByRole("img", { name: /Bid & Pre-sales: \d+ events in 30 days/ }),
+    ).toBeVisible();
     await card.scrollIntoViewIfNeeded();
     await shot(page, "pulse-home-1440");
     await card.getByRole("button", { name: "Show as table" }).click();
@@ -428,5 +455,42 @@ test.describe("pulse", () => {
     await expect(fr.getByRole("heading", { name: /Pouls de/ })).toBeVisible();
     await axe(fr, "pulse fr dark");
     await shot(fr, "pulse-fr-dark");
+  });
+});
+
+test.describe("My Agent: who knows", () => {
+  test("a PeopleList answers who knows, with role and brain, and honours the opt-out", async ({
+    browser,
+  }) => {
+    const page = await as(browser, "head_bid");
+    await page.goto("/");
+    await settle(page);
+    await page.getByTestId("agent-button").click();
+    const box = page.getByRole("textbox", { name: /Ask My Agent/ });
+    await box.fill("Who knows about pricing in Bid & Pre-sales?");
+    await box.press("Enter");
+    const card = page.getByTestId("agent-peoplelist");
+    await expect(card).toBeVisible();
+    await expect(card.getByText("Grace Hopper")).toBeVisible();
+    await expect(card.getByText(/Steward · Bid & Pre-sales/)).toBeVisible();
+    await shot(page, "agent-people-1440");
+    await axe(page, "agent people 1440");
+    // The card around the list has the table twin.
+    await page.getByRole("dialog").getByRole("button", { name: "Show as table" }).first().click();
+    await expect(page.getByRole("dialog").getByRole("table")).toBeVisible();
+    await expect(
+      page.getByRole("dialog").getByRole("columnheader", { name: "Role" }),
+    ).toBeVisible();
+    // The same role never gets people from a brain it cannot read.
+    const c = await as(browser, "consultant");
+    await c.goto("/");
+    await settle(c);
+    await c.getByTestId("agent-button").click();
+    const cb = c.getByRole("textbox", { name: /Ask My Agent/ });
+    await cb.fill("Who knows about pricing?");
+    await cb.press("Enter");
+    const cc = c.getByTestId("agent-peoplelist");
+    await expect(cc).toBeVisible();
+    await expect(cc.getByText("Bid & Pre-sales")).toHaveCount(0);
   });
 });

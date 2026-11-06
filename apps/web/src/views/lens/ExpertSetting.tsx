@@ -37,21 +37,27 @@ export function ExpertSetting() {
   };
   return (
     <section className="setcard expert8" aria-labelledby="expert-h" data-testid="expert-setting">
-      <h3 id="expert-h" className="expert8-h">{t("v8l.expert.title")}</h3>
+      <h3 id="expert-h" className="expert8-h">
+        {t("v8l.expert.title")}
+      </h3>
       <p className="muted">{t("v8l.expert.lead")}</p>
-      <label className="check8" htmlFor="expert-listed">
-        <input
-          id="expert-listed"
-          type="checkbox"
-          checked={listed === false}
-          disabled={busy || listed === null}
-          onChange={(e) => change(!e.target.checked)}
-        />
-        <span>
-          <b>{t("v8l.expert.label")}</b>
-          <span className="muted"> {t("v8l.expert.hint")}</span>
-        </span>
-      </label>
+      {listed === null ? (
+        <div className="skeleton" aria-hidden style={{ height: 28, marginTop: 8 }} />
+      ) : (
+        <label className="check8" htmlFor="expert-listed">
+          <input
+            id="expert-listed"
+            type="checkbox"
+            checked={listed === false}
+            disabled={busy}
+            onChange={(e) => change(!e.target.checked)}
+          />
+          <span>
+            <b>{t("v8l.expert.label")}</b>
+            <span className="muted"> {t("v8l.expert.hint")}</span>
+          </span>
+        </label>
+      )}
     </section>
   );
 }

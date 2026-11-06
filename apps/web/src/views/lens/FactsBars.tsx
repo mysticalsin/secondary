@@ -102,6 +102,24 @@ export function FactsBars({ facts, now = Date.now() }: { facts: FactBar[]; now?:
             <span>{date(new Date(lo).toISOString())}</span>
             <span>{date(new Date(now).toISOString())}</span>
           </div>
+          <ul className="fb8-key" aria-hidden>
+            <li>
+              <i className="sw cur" />
+              {t("v8l.facts.st.current")}
+            </li>
+            <li>
+              <i className="sw end" />
+              {t("v8l.facts.st.ended")}
+            </li>
+            <li>
+              <i className="sw unv" />
+              {t("v8l.facts.st.unverified")}
+            </li>
+            <li>
+              <i className="sw clash" />
+              {t("v8l.facts.st.conflict")}
+            </li>
+          </ul>
           {facts.length > SHOWN ? (
             <p className="fb8-more">{t("v8l.facts.more", { n: facts.length - SHOWN })}</p>
           ) : null}

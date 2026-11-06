@@ -76,12 +76,14 @@ export function LocalGraph({
               ))}
             </g>
             {placed.map((n) => {
-              const right = n.x >= W / 2;
               const r = n.hop === 0 ? 9 : n.hop === 1 ? 6.5 : 4.5;
               const fill =
                 n.hop === 0 ? CARD.yellow : n.brainId === home ? CARD.inZone : OTHER_BRAIN;
-              const label = n.hop < 2 ? clip(n.title, n.hop === 0 ? 22 : 17) : "";
-              const dx = r + 6;
+              const label = n.hop < 2 ? clip(n.title, n.hop === 0 ? 24 : 15) : "";
+              // Names sit above a node on the top half and below it on the bottom half, so a name
+              // never runs into the second ring that fans out beside it.
+              const above = n.hop === 0 ? false : Math.sin(n.a) <= 0.3;
+              const ty = above ? n.y - r - 6 : n.y + r + 14;
               const node = (
                 <>
                   <title>{`${n.title} (${n.collection}, ${brainLabel(n)})`}</title>
@@ -90,9 +92,9 @@ export function LocalGraph({
                   {label ? (
                     <text
                       className={`lg8-t${n.hop === 0 ? " c" : ""}`}
-                      x={n.hop === 0 ? n.x : n.x + (right ? dx : -dx)}
-                      y={n.hop === 0 ? n.y + r + 15 : n.y + 4}
-                      textAnchor={n.hop === 0 ? "middle" : right ? "start" : "end"}
+                      x={n.x}
+                      y={ty}
+                      textAnchor="middle"
                     >
                       {label}
                     </text>
@@ -104,11 +106,7 @@ export function LocalGraph({
                   {node}
                 </g>
               ) : (
-                <Link
-                  key={n.key}
-                  className="lg8-n"
-                  to={pageLink(n.brainId, n.id)}
-                >
+                <Link key={n.key} className="lg8-n" to={pageLink(n.brainId, n.id)}>
                   {node}
                 </Link>
               );

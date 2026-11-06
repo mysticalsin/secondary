@@ -123,6 +123,33 @@
 }
 .pulse-seg {
   align-self: center;
+  display: inline-flex;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 3px;
+}
+.pulse-seg button {
+  background: transparent;
+  border: 0;
+  color: var(--ink-2);
+  padding: 7px 13px;
+  border-radius: 9px;
+  font: inherit;
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+}
+.pulse-seg button[aria-checked="true"] {
+  background: var(--active);
+  color: var(--ink);
+}
+.pulse-seg button:hover:not([aria-checked="true"]) {
+  background: var(--hover);
+}
+.pulse-seg button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* ---------- Home: pulse across your brains ---------- */
@@ -169,6 +196,7 @@
 }
 .pa8-cell.wk {
   background: #26262c;
+  border-radius: 4px;
 }
 .pa8-dot {
   width: 6px;
@@ -191,4 +219,13 @@
   .pa8-axis {
     margin-left: 0;
   }
+}
+
+.pa8-wk {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--ic-faint);
+}
+.bhead-main p.muted {
+  margin: 6px 0 14px;
 }

@@ -573,3 +573,7 @@ Needs the `journal` pilot flag. Built from each brain's own journal pages (`jour
 - `GET /v1/pulse?days=7..90` (default 30): `{categories, from, to, brains: [{brainId, name, type, days: [{date, d: number[5]}]}]}`, one row per brain the caller reads (Personal included), each built only from that brain; `d` is the five counts in category order.
 
 Categories: `published` ("N changes published"), `resolved` ("N older facts ended"), `sources` ("N page proposals filed"), `gaps` ("N gaps closed"), `rules` ("N rules triggered"). The first three are read from the journal as it is written today; `gaps` and `rules` read the journal lines that the knowledge gaps and rules work add and are 0 until a journal carries them.
+
+### My Agent: `PeopleList`
+
+A leaf component of the v6 line language: `PeopleList(q, brain?, limit?)` (`q` 1-120 characters, `limit` 1-8, props are a query, never data). The client resolves it for the viewer with `GET /v1/who-knows?q=&brain=&limit=`, so it lists only people from brains the viewer reads, and not those who left the expert listing. The deterministic planner writes it for "who knows about X (in Y)" and its French forms. `lockTree` replaces it with a locked card when `brain` is not readable.

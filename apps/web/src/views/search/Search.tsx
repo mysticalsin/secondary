@@ -6,8 +6,8 @@ import { type Key, useI18n } from "../../i18n";
 import { pageLink } from "../../lib/links";
 import { ago } from "../../lib/time";
 import { useApi } from "../../useApi";
-import { Avatar } from "../lens/Avatar";
 import { EmptyArt } from "../lens/art";
+import { roleFill } from "../lens/roles";
 import { searchApi } from "./api";
 import type { FacetKey, FacetRow, Hit, Picked, Saved } from "./types";
 
@@ -102,7 +102,7 @@ function Preview({ h }: { h: Hit }) {
       ) : null}
       <p className="pv8-foot">
         <span className="pv8-role">
-          <Avatar name={h.role} role={h.role} size={22} />
+          <span className="pv8-dot" aria-hidden style={{ background: roleFill(h.role) }} />
           {t("v8s.lastby", { role: t(`v8l.role.${h.role}` as "v8l.role.reader") })}
         </span>
         <span>{t("v8s.updated", { when: ago(h.updatedAt) })}</span>
@@ -213,7 +213,7 @@ function useNarrow(): boolean {
 /** Search across the brains the person can read: operators, facets, a preview pane and saved searches. */
 export function SearchPage() {
   const [sp, setSp] = useSearchParams();
-    const { t, tn } = useI18n();
+  const { t, tn } = useI18n();
   const term = sp.get("q") ?? "";
   const fromUrl = useMemo<Picked>(
     () => ({
@@ -236,6 +236,7 @@ export function SearchPage() {
   const saved = useApi(() => searchApi.saved(), []);
   const [sel, setSel] = useState<string | null>(null);
   const narrow = useNarrow();
+  const [showFilters, setShowFilters] = useState(false);
   const data = res.data;
   const results = data?.results ?? [];
   const selected = results.find((h) => `${h.brainId}:${h.id}` === sel) ?? results[0];
@@ -306,33 +307,44 @@ export function SearchPage() {
 
       <div className="s8-grid">
         <aside className="s8-side" aria-label={t("v8s.filters")}>
-          <SavedPanel
-            q={term}
-            saved={saved.data?.saved ?? []}
-            reload={saved.reload}
-            onPick={(s) => put({ q: s.q })}
-          />
-          {data ? (
-            <div className="s8-facets">
-              <div className="s8-fhead">
-                <h2>{t("v8s.filters")}</h2>
-                {pickedCount ? (
-                  <button type="button" className="textlink" onClick={clearFilters}>
-                    {t("common.clear")}
-                  </button>
-                ) : null}
+          {/* On a phone the filters fold away under the results; on a wide screen they stay open. */}
+          <details
+            className="s8-det"
+            open={!narrow || showFilters}
+            onToggle={(e) => narrow && setShowFilters(e.currentTarget.open)}
+          >
+            <summary>
+              {t("v8s.filters")}
+              {pickedCount ? ` (${pickedCount})` : ""}
+            </summary>
+            {data ? (
+              <div className="s8-facets">
+                <div className="s8-fhead">
+                  <h2>{t("v8s.filters")}</h2>
+                  {pickedCount ? (
+                    <button type="button" className="textlink" onClick={clearFilters}>
+                      {t("common.clear")}
+                    </button>
+                  ) : null}
+                </div>
+                {FACETS.map((f) => (
+                  <Facet
+                    key={f.key}
+                    f={f}
+                    rows={data.facets[f.key] ?? []}
+                    picked={picked[f.param] ?? []}
+                    onToggle={(id) => toggle(f.param, id)}
+                  />
+                ))}
               </div>
-              {FACETS.map((f) => (
-                <Facet
-                  key={f.key}
-                  f={f}
-                  rows={data.facets[f.key] ?? []}
-                  picked={picked[f.param] ?? []}
-                  onToggle={(id) => toggle(f.param, id)}
-                />
-              ))}
-            </div>
-          ) : null}
+            ) : null}
+            <SavedPanel
+              q={term}
+              saved={saved.data?.saved ?? []}
+              reload={saved.reload}
+              onPick={(s) => put({ q: s.q })}
+            />
+          </details>
         </aside>
 
         <section className="s8-results" aria-label={t("v8s.results")}>
@@ -367,8 +379,8 @@ export function SearchPage() {
                         <Link className="s8-hit" to={pageLink(h.brainId, h.id)}>
                           <span className="s8-t">{h.title}</span>
                           <span className="s8-m">
-                            {h.brainId === "me" ? t("v4.personal") : h.brainName} · {h.collection}{" "}
-                            · {t("v8s.updated", { when: ago(h.updatedAt) })}
+                            {h.brainId === "me" ? t("v4.personal") : h.brainName} · {h.collection} ·{" "}
+                            {t("v8s.updated", { when: ago(h.updatedAt) })}
                           </span>
                           {h.summary ? <span className="s8-s">{h.summary}</span> : null}
                         </Link>

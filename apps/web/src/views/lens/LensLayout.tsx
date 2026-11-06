@@ -62,7 +62,7 @@ export function StickyHeader({
               {by
                 ? t("v8l.head.last.by", { when: ago(p.lastChange.at), name: by.name })
                 : t("v8l.head.last", { when: ago(p.lastChange.at) })}
-              <span className="sh8-rev"> · r{p.lastChange.revision}</span>
+              <span className="sh8-rev">r{p.lastChange.revision}</span>
             </li>
           </>
         ) : null}
@@ -109,7 +109,7 @@ export function LensLayout({
                 people={d.who}
                 subtitle={t("v8l.who.sub.page")}
                 summaryOf={d.page.title}
-                showBrain={false}
+                showBrain={new Set(d.who.map((x) => x.brainId)).size > 1}
               />
               <ContributorsCard rows={d.contributors} unnamed={d.unnamed} />
               <BacklinksCard rows={d.backlinks} />

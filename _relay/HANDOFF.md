@@ -1,5 +1,19 @@
 # HANDOFF
 
+## v8 lens on branch `v8/lens` (2026-11-06, Claude Opus, not merged, nothing pushed, nothing deployed)
+
+Design `docs/DESIGN-V8-AMAZING.md` sections 3 to 7; shapes `docs/API-CONTRACT.md` "v8 lens". Worktree `.worktrees/v8-lens`.
+
+- **API** (new modules, one mount `lensMount` in `routes.ts`, `Workspace extends LensBase` in `workspace.ts`): `workers/api/src/lens/` (page lens, `store.ts` = `LensBase` between `BrainBase` and `Workspace`), `people/` (Who knows, ranking, expert listing), `search2/` (`GET /v1/search/pages`, operators in `query.ts`, saved searches), `pulse/` (journal read back as dots per day). Rule everywhere: built from brains the caller reads, pages and lines the caller may read; unreadable targets are 404 or absent, never "locked"; an opted-out person is named nowhere. Opt-out and saved searches live in the person's own Personal Brain object (`lens_expert_optout`, `lens_saved_searches` in `wiki_meta`), so no tenant-policy change.
+- **Web**: `views/lens/` (rail cards on `InsightCard`: Trust, Linked pages radial, Facts over time bars with conflict stripes, Who knows, Contributors, Backlinks, Ask this page; `StickyHeader`; role-colour `Avatar`; `art.tsx` brand-safe empty-state SVG; `ExpertSetting`), `palette/` (Cmd or Ctrl+K combobox, `>` commands only, Alt+Enter full search, recents per person in local storage), `views/search/` (facets, operators, preview pane, saved searches), `views/pulse/` (Brain > Pulse and Home "Pulse across your brains"), `mock/v8lens.ts`, `i18n/v8lens.ts`, `styles/v8lens.css`.
+- **One-line mounts in other files**: `App.tsx` (route `brains/:id/pulse`), `Shell.tsx` (Palette and button; the old Ctrl+K focus-the-search-bar handler is gone), `PageView.tsx` (wraps the article in `LensLayout`; the Facts and Linked from tabs are replaced by the rail, History stays as a section), `BrainPage.tsx` (Who knows card, Pulse link, `?new=1` opens New page), `Home.tsx`, `Settings.tsx` (Privacy), `main.tsx` (css), `mock/index.ts`, `mock/uxv2.ts` (exports `PAGES`, `seen`, `WS_LABEL`, `TYPE_LABEL`), `e2e/playwright.mock.config.ts` (testMatch), `e2e/v4.e2e.ts` (Ctrl+K now opens the palette).
+- **My Agent**: `PeopleList` component (contracts `schemas.ts`, `library.ts`, planner "who knows ..." answer, `Renderer.tsx` leaf over `GET /v1/who-knows`).
+- **Dots palette** (dataviz validator, dark surface #1e1e22, all five PASS): published #8b5cf6, resolved #0f9d94, sources #c2820a, gaps #d6336c, rules #3b82f6.
+- **For the other v8 and v7 work**: pulse reads journal lines `N gaps closed` and `N rules triggered` that `brainJournalRun` does not write yet (they show as 0 until it does). The palette's "Open the review desk" goes to `REVIEW_PATH` in `palette/Palette.tsx` (`/waiting` today); change that one constant when the desk moves. `LensBase` and `Workspace extends LensBase` will conflict if another branch also inserts a base class: stack them.
+- **Gaps**: no real-stack (workerd) Playwright spec for these views (the seed has no human authors, so Who knows is empty there); the lens reads all pages of a brain per request (same cost as insights, no cache); "status" facet means a person confirmed a fact the page rests on.
+
+Updated: 2026-11-06. By: Claude (Opus, v8 lens).
+
 ## v6 My Agent and v5 polish on `main` (2026-11-05, Claude, nothing pushed, nothing deployed)
 
 Design `docs/DESIGN-V6-MY-AGENT-GENUI.md` (section 6 is the UI map); shapes `docs/API-CONTRACT.md` "v6 My Agent"; spike and benchmark `docs/research/OPENUI-SPIKE.md`.

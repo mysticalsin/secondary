@@ -160,7 +160,7 @@ export function PulsePage() {
           <p className="muted">{t("v8p.page.lead")}</p>
         </div>
         <div className="bhead-actions">
-          <div className="seg5 pulse-seg" role="radiogroup" aria-label={t("v8p.window")}>
+          <div className="pulse-seg" role="radiogroup" aria-label={t("v8p.window")}>
             {WINDOWS.map((w) => (
               <button
                 key={w}

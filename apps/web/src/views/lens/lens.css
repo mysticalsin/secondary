@@ -117,6 +117,9 @@
   font-family: var(--mono);
   font-size: 12px;
   color: var(--mute);
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
 }
 @media (max-width: 900px) {
   .sh8 {
@@ -382,14 +385,14 @@ a.lg8-n:focus-visible .lg8-hit {
 .pl8-bar {
   height: 6px;
   border-radius: 3px;
-  background: #2a2a30;
+  background: var(--ic-line, #2a2a30);
   overflow: hidden;
 }
 .pl8-bar span {
   display: block;
   height: 100%;
   border-radius: 3px;
-  background: #8b5cf6;
+  background: var(--ic-purple, #8b5cf6);
 }
 .who8-foot {
   font-size: 13px;
@@ -525,4 +528,49 @@ a.lg8-n:focus-visible .lg8-hit {
 .expert8-h {
   margin: 0 0 4px;
   font-size: 17px;
+}
+
+.rd-hist {
+  margin-top: 36px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.rd-hist h2 {
+  font-size: 20px;
+  margin: 0 0 10px;
+}
+
+.fb8-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  font-size: 12.5px;
+  color: var(--ic-mute);
+}
+.fb8-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fb8-key .sw {
+  width: 16px;
+  height: 7px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.fb8-key .sw.cur {
+  background: #8b5cf6;
+}
+.fb8-key .sw.end {
+  background: #6b5aa8;
+  opacity: 0.8;
+}
+.fb8-key .sw.unv {
+  border: 1.5px dashed #b9a3ff;
+}
+.fb8-key .sw.clash {
+  background: repeating-linear-gradient(135deg, #d6336c 0 3px, #7a1b4b 3px 6px);
 }

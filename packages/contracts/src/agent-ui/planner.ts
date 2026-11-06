@@ -29,7 +29,8 @@ type Words = Record<
   | "last30"
   | "open"
   | "focusBtn"
-  | "none",
+  | "none"
+  | "who",
   string
 >;
 
@@ -47,6 +48,7 @@ const WORDS: Record<"en" | "fr", Words> = {
     open: "Open",
     focusBtn: "Focus",
     none: "No brain matched that. Here are your brains.",
+    who: "Who knows",
   },
   fr: {
     flow: "Flux de connaissances",
@@ -61,6 +63,7 @@ const WORDS: Record<"en" | "fr", Words> = {
     open: "Ouvrir",
     focusBtn: "Détail",
     none: "Aucun cerveau ne correspond. Voici vos cerveaux.",
+    who: "Qui connaît",
   },
 };
 
@@ -230,6 +233,37 @@ export function planProgram(i: PlanInput): { title: string; program: string } {
   } else {
     const text = a?.action === "ask" ? (a.values.text ?? "") : (i.text ?? "");
     const hits = text ? matchBrains(text, i.brains) : [];
+    // "Who knows about pricing in Bid?": a people list, for the brain the text names if it names one.
+    const who =
+      /\b(who knows?|who has|who can|who is the expert|qui conna[iî]t|qui sait|qui peut)\b/i.test(
+        text,
+      );
+    if (who && !a) {
+      const topic = tokens(
+        hits[0]
+          ? text.replace(new RegExp(hits[0].name.replace(/[^\p{L}\p{N} ]/gu, "."), "i"), " ")
+          : text,
+      )
+        .filter((t) => !["who", "knows", "know", "qui", "connait", "sait", "peut"].includes(t))
+        .join(" ");
+      if (topic) {
+        const scoped = hits[0];
+        return {
+          title: w.who,
+          program: [
+            "root = Stack([c1, nav])",
+            `c1 = InsightCard(${q(`${w.who}: ${topic}`)}, [p])`,
+            `p = PeopleList(${q(topic)}, ${scoped ? q(scoped.id) : "null"}, 5)`,
+            "nav = Buttons([b0])",
+            ...(scoped
+              ? [
+                  `b0 = Button(${q(`${w.focusBtn}: ${scoped.name}`)}, "focus", {brain: ${q(scoped.id)}})`,
+                ]
+              : [`b0 = Button(${q(w.who)}, "ask", {text: ${q(topic)}})`]),
+          ].join("\n"),
+        };
+      }
+    }
     const two = /\b(compare|versus|vs|compar\w+|entre)\b/i.test(text) && hits.length >= 2;
     if (two) {
       return planProgram({

@@ -183,7 +183,32 @@
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
+.pal8-txt {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 @media (max-width: 600px) {
+  .topbar .searchbar {
+    display: none;
+  }
+  .pal8-btn {
+    flex: 1;
+    max-width: 260px;
+    justify-content: flex-start;
+    height: 38px;
+  }
+  .pal8-txt {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+    color: var(--mute);
+  }
   .pal8-wrap {
     padding-top: 6vh;
   }

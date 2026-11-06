@@ -87,7 +87,7 @@ const brainOfPath = (p: string): string | null => /^\/brains\/([^/]+)/.exec(p)?.
 
 export function Palette() {
   const { t, tn } = useI18n();
-  const { me, theme, setTheme } = useApp();
+  const { me, setTheme } = useApp();
   const { lang, setLang } = useI18n();
   const nav = useNavigate();
   const loc = useLocation();
@@ -133,10 +133,12 @@ export function Palette() {
     };
   }, [open, show, close]);
 
-  // Close when the page changes.
-  const path = loc.pathname + loc.search;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: closing on navigation is the point
-  useEffect(() => setOpen(false), [path]);
+  // Back or forward while it is open closes it. Running an item closes it before it navigates.
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener("popstate", close);
+    return () => window.removeEventListener("popstate", close);
+  }, [open, close]);
 
   useEffect(() => {
     if (!open) return;
@@ -374,7 +376,6 @@ export function Palette() {
   }, [text, actionsOnly, needle, items, hits, recents, go, t, close, host]);
 
   // Keep the active row in range and in view.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the list changes
   useEffect(() => setAt(0), [text, hits.length, brains?.length]);
   useEffect(() => {
     list.current?.querySelector(`[data-i="${at}"]`)?.scrollIntoView?.({ block: "nearest" });
@@ -423,7 +424,6 @@ export function Palette() {
         aria-label={t("v8k.close")}
         onClick={close}
       />
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the keys are handled once for the whole dialog */}
       <div
         ref={box}
         className="pal8"
@@ -461,7 +461,6 @@ export function Palette() {
           aria-label={t("v8k.results")}
         >
           {groups.map(({ g, rows }) => (
-            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: a labelled group inside a listbox
             <div key={g} role="group" aria-labelledby={`pal-g-${g}`}>
               <div id={`pal-g-${g}`} className="pal8-gh" role="presentation">
                 {t(GROUP_KEY[g])}
@@ -530,7 +529,7 @@ export function PaletteButton() {
       data-testid="palette-button"
     >
       <Command size={15} aria-hidden />
-      <span className="sr-only">{t("v8k.open")}</span>
+      <span className="pal8-txt">{t("v8k.btn")}</span>
       <kbd aria-hidden>K</kbd>
     </button>
   );

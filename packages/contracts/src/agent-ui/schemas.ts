@@ -120,6 +120,12 @@ export const PageListProps = z.strictObject({
   limit: z.number().int().min(1).max(12).optional(),
 });
 export const PageCardProps = z.strictObject({ brain: BrainId, page: PageId });
+/** Who knows about q (v8): people ranked by approved work, resolved for the viewer from brains they read. */
+export const PeopleListProps = z.strictObject({
+  q: z.string().min(1).max(120).refine(noControl, "control characters"),
+  brain: BrainId.optional(),
+  limit: z.number().int().min(1).max(8).optional(),
+});
 export const TableProps = z.strictObject({
   source: z.enum(["pages", "brains", "coverage", "sources"]),
   brain: BrainId.optional(),
@@ -167,6 +173,7 @@ const LEAVES = [
   "ActivityGrid",
   "PageList",
   "PageCard",
+  "PeopleList",
   "Table",
   "Callout",
   "Buttons",
@@ -228,6 +235,11 @@ export const COMPONENTS = {
   PageCard: {
     props: PageCardProps,
     description: "One page: title, summary and where it lives.",
+  },
+  PeopleList: {
+    props: PeopleListProps,
+    description:
+      "Who knows about q: people with their role and brain, ranked by approved work, in one brain or in every brain the viewer can read.",
   },
   Table: {
     props: TableProps,

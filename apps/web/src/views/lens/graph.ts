@@ -4,11 +4,13 @@
 import type { GraphNode } from "./types";
 
 export const W = 340;
-export const H = 268;
+export const H = 288;
 const CX = W / 2;
 const CY = H / 2;
-const R1 = 66;
-const R2 = 112;
+const RX1 = 80;
+const RY1 = 76;
+const RX2 = 130;
+const RY2 = 112;
 
 export interface Placed extends GraphNode {
   x: number;
@@ -30,7 +32,7 @@ export function layoutGraph(
   // Start at the top and go clockwise; an ellipse keeps labels clear of the card edges.
   ring1.forEach((n, i) => {
     const a = -Math.PI / 2 + (i / Math.max(1, ring1.length)) * Math.PI * 2;
-    placed.set(n.key, { ...n, x: CX + Math.cos(a) * R1 * 1.35, y: CY + Math.sin(a) * R1, a });
+    placed.set(n.key, { ...n, x: CX + Math.cos(a) * RX1, y: CY + Math.sin(a) * RY1, a });
   });
   const parentOf = (key: string): Placed | undefined => {
     for (const e of edges) {
@@ -52,8 +54,8 @@ export function layoutGraph(
     const a = base + off;
     placed.set(n.key, {
       ...n,
-      x: CX + Math.cos(a) * R2 * 1.45,
-      y: CY + Math.sin(a) * R2 * 0.98,
+      x: CX + Math.cos(a) * RX2,
+      y: CY + Math.sin(a) * RY2,
       a,
     });
   });

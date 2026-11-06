@@ -250,6 +250,26 @@ describe("the parser executes nothing", () => {
 describe("deterministic planner", () => {
   const view = (t: string) => viewOfProgram(planProgram({ text: t, brains }).program);
 
+  it("who knows about a topic in a brain is a PeopleList for that brain", () => {
+    const v = view("Who knows about pricing in Bid & Pre-sales?");
+    expect(types(v.root)).toEqual(expect.arrayContaining(["PeopleList", "Buttons"]));
+    expect(v.dropped).toBe(0);
+    const people = v.root?.children[0]?.children[0];
+    expect(people?.type).toBe("PeopleList");
+    expect(people?.props).toEqual({ q: "pricing", brain: "c_bid", limit: 5 });
+    const any = view("qui connait la gouvernance des données ?");
+    expect(types(any.root)).toContain("PeopleList");
+    expect(any.root?.children[0]?.children[0]?.props.brain).toBeUndefined();
+  });
+
+  it("PeopleList props are strict: a query is required, no data, no extra keys", () => {
+    for (const bad of [
+      'root = Stack([p])\np = PeopleList("")',
+      'root = Stack([p])\np = PeopleList("x", "c_bid", 99)',
+    ])
+      expect(viewOfProgram(bad).root?.children.length ?? 0).toBe(0);
+  });
+
   it("a question about a brain streams a funnel, a swarm and a top-pages list", () => {
     const v = view("Show me where Bid & Pre-sales stands this month");
     expect(types(v.root)).toEqual(
