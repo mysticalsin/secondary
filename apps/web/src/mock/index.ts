@@ -37,6 +37,7 @@ import { canDo, ROLES, roleOf, vis } from "./policy";
 import { detectSensitivity } from "./sensitive";
 import { handleV2, NOT_HANDLED, questionsFor } from "./uxv2";
 import { handleV3 } from "./v3";
+import { handleV7Ops } from "./v7ops";
 
 const notInMock = (method: string, p: string) =>
   new ApiError(501, `Not part of the dev mock (${method} ${p}). Run the live stack for this.`);
@@ -877,6 +878,8 @@ export async function handle(
   const p = url.pathname;
   const b = (body ?? {}) as Record<string, unknown>;
 
+  const ops = handleV7Ops(method, p, url.searchParams, b, role);
+  if (ops !== NOT_HANDLED) return ops;
   const agent = handleAgentViews(method, p, url.searchParams, b, role, persona);
   if (agent !== NOT_HANDLED) return agent;
   const v3 = handleV3(

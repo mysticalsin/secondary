@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../../api";
 import { Await, fmtDate } from "../../components/ui";
 import { type Key, useI18n } from "../../i18n";
+import { ActivityPanel } from "../../ops/ActivityPanel";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { v3 } from "./api";
@@ -238,6 +239,11 @@ export function HostPanel({
         ) : (
           <p className="muted">{t("b3.ag.noconn")}</p>
         )}
+      </section>
+      <section className="agactivity" aria-labelledby={`act-${host.id}`}>
+        <h3 id={`act-${host.id}`}>{t("v7o.ag.activity")}</h3>
+        <p className="muted">{t("v7o.ag.activity.lead")}</p>
+        <ActivityPanel mode="agent" host={host.id} />
       </section>
     </div>
   );

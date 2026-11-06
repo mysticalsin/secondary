@@ -7,6 +7,7 @@ import { Await, ErrorBox, Skeleton } from "../../components/ui";
 import { useI18n } from "../../i18n";
 import { InsightsTab } from "../../insights/InsightsTab";
 import { buildContents } from "../../lib/contents";
+import { ActivityPanel } from "../../ops/ActivityPanel";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
@@ -158,11 +159,13 @@ export function BrainPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
   const [sp, setSp] = useSearchParams();
-  const TABS = ["contents", "insights", "myview"] as const;
-  type Tab = (typeof TABS)[number];
+  const ALL_TABS = ["contents", "insights", "myview", "activity"] as const;
+  type Tab = (typeof ALL_TABS)[number];
+  const home = useApi(() => v3.brain(id), [id]);
+  // Activity (v7 Operate) is for people who manage the brain.
+  const TABS = ALL_TABS.filter((k) => k !== "activity" || home.data?.manages);
   const tab: Tab = TABS.find((k) => k === sp.get("tab")) ?? "contents";
   const pickTab = (next: Tab) => setSp(next === "contents" ? {} : { tab: next }, { replace: true });
-  const home = useApi(() => v3.brain(id), [id]);
   const idx = useApi(() => wikiApi.index(id), [id]);
   const waitingQ = useApi(() => ux2.questions({ brain: id }), [id]);
   const [filters, setFilters] = useState<Filters>(NO_FILTER);
@@ -236,13 +239,22 @@ export function BrainPage() {
                     }
                   }}
                 >
-                  {k === "myview" ? t("v6.tab.myview") : t(`v5.tab.${k}` as "v5.tab.contents")}
+                  {k === "myview"
+                    ? t("v6.tab.myview")
+                    : k === "activity"
+                      ? t("v7o.tab.activity")
+                      : t(`v5.tab.${k}` as "v5.tab.contents")}
                 </button>
               ))}
             </div>
             {tab === "insights" ? (
               <div role="tabpanel" id="bp-insights" aria-labelledby="bt-insights">
                 <InsightsTab brainId={id} />
+              </div>
+            ) : null}
+            {tab === "activity" ? (
+              <div role="tabpanel" id="bp-activity" aria-labelledby="bt-activity">
+                <ActivityPanel mode="brain" brainId={id} />
               </div>
             ) : null}
             {tab === "myview" ? (

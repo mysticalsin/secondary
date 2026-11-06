@@ -1,11 +1,15 @@
 import { Download } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
-import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { ApiError, api } from "../../api";
 import { Await, Empty, fmtDate } from "../../components/ui";
 import { type Key, useI18n } from "../../i18n";
 import { displayName, initialsOf } from "../../lib/people";
 import type { Theme } from "../../lib/theme";
+import { HealthPage } from "../../ops/HealthPage";
+import { useOpsRights } from "../../ops/rights";
+import { SourcePage } from "../../ops/SourcePage";
+import { SourcesList } from "../../ops/SourcesList";
 import { PERSONAS } from "../../personas";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
@@ -283,7 +287,12 @@ export function Settings() {
   const known = !!me && caps !== null;
   const guard = (el: JSX.Element) =>
     admin ? el : known ? <Navigate to="/settings/profile" replace /> : null;
-  const items: { to: string; label: Key; admin?: boolean; gap?: boolean }[] = [
+  // v7 Operate: Sources for admins, Health for admins and stewards.
+  const opsRights = useOpsRights();
+  const wide = /^\/settings\/(sources|health)/.test(useLocation().pathname);
+  const opsGuard = (ok: boolean, el: JSX.Element) =>
+    ok ? el : opsRights.known ? <Navigate to="/settings/profile" replace /> : null;
+  const items: { to: string; label: Key; admin?: boolean; gap?: boolean; show?: boolean }[] = [
     { to: "profile", label: "v4.settings.profile" },
     { to: "brains", label: "v4.settings.brains" },
     { to: "agents", label: "v4.settings.agents" },
@@ -294,16 +303,18 @@ export function Settings() {
     { to: "usage", label: "v4.settings.usage", gap: true },
     { to: "members", label: "v4.settings.members", admin: true, gap: true },
     { to: "pilot", label: "v4.settings.pilot", admin: true },
+    { to: "sources", label: "v7o.nav.sources", show: opsRights.sources },
+    { to: "health", label: "v7o.nav.health", show: opsRights.health },
     { to: "journal", label: "v4.settings.journal" },
   ];
   return (
-    <div className="page v4page settings">
+    <div className={`page v4page settings${wide ? " wide" : ""}`}>
       <h1 className="ptitle">{t("v4.settings")}</h1>
       <div className="setgrid">
         <nav className="setnav" aria-label={t("v4.settings")}>
           <ul>
             {items
-              .filter((i) => !i.admin || admin)
+              .filter((i) => (i.show !== undefined ? i.show : !i.admin || admin))
               .map((i) => (
                 <li key={i.to} className={i.gap ? "gap" : undefined}>
                   <NavLink to={`/settings/${i.to}`}>{t(i.label)}</NavLink>
@@ -331,6 +342,9 @@ export function Settings() {
             <Route path="usage" element={<Usage />} />
             <Route path="members" element={guard(<Admin />)} />
             <Route path="pilot" element={guard(<PilotPage />)} />
+            <Route path="sources" element={opsGuard(opsRights.sources, <SourcesList />)} />
+            <Route path="sources/:id" element={opsGuard(opsRights.sources, <SourcePage />)} />
+            <Route path="health" element={opsGuard(opsRights.health, <HealthPage />)} />
             <Route path="journal" element={<Journal />} />
             <Route path="*" element={<Navigate to="/settings/profile" replace />} />
           </Routes>
