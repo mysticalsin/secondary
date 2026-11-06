@@ -5,11 +5,15 @@ import { v3Fr } from "./v3";
 import { v4Fr } from "./v4";
 import { v5Fr } from "./v5";
 import { v6Fr } from "./v6";
+import { v8gFr } from "./v8gaps";
+import { v8rFr } from "./v8review";
 
 export const fr: Record<keyof typeof en, string> = {
   ...v4Fr,
   ...v5Fr,
   ...v6Fr,
+  ...v8gFr,
+  ...v8rFr,
   ...ux2Fr,
   ...v3Fr,
   "common.cancel": "Annuler",

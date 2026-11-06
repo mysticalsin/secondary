@@ -4,11 +4,15 @@ import { v3En } from "./v3";
 import { v4En } from "./v4";
 import { v5En } from "./v5";
 import { v6En } from "./v6";
+import { v8gEn } from "./v8gaps";
+import { v8rEn } from "./v8review";
 
 export const en = {
   ...v4En,
   ...v5En,
   ...v6En,
+  ...v8gEn,
+  ...v8rEn,
   ...ux2En,
   ...v3En,
   // common
