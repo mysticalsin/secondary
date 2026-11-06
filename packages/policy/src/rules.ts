@@ -85,7 +85,10 @@ export const FIELD_SPEC: Record<
   actor_role: { ops: ["is_any_of", "is_none_of"], values: ROLE_NAMES },
   action: { ops: ["is_any_of", "is_none_of"], values: RULE_ACTIONS },
   brain: { ops: ["is_any_of", "is_none_of"], values: "brain_ids" },
-  brain_type: { ops: ["is_any_of", "is_none_of"], values: ["personal", "team", "account", "global"] },
+  brain_type: {
+    ops: ["is_any_of", "is_none_of"],
+    values: ["personal", "team", "account", "global"],
+  },
   content_flag: { ops: ["is_any_of", "is_none_of"], values: CONTENT_FLAGS },
   size_pages: { ops: ["greater_than"], values: "number" },
   ai_contract: { ops: ["is_any_of", "is_none_of"], values: AI_CONTRACTS },
@@ -290,7 +293,11 @@ export const isOutsideBusinessHours = (t: { weekday: number; hour: number }): bo
   isWeekend(t.weekday) || t.hour < BUSINESS_FROM || t.hour >= BUSINESS_TO;
 
 const actorValues = (a: RuleContext["actor"]): string[] =>
-  a.kind === "human" ? ["human"] : a.kind === "connector" ? ["connector"] : ["agent", ...(a.host ? [a.host] : [])];
+  a.kind === "human"
+    ? ["human"]
+    : a.kind === "connector"
+      ? ["connector"]
+      : ["agent", ...(a.host ? [a.host] : [])];
 
 const timeValues = (t: RuleContext["time"]): string[] => [
   isWeekend(t.weekday) ? "weekend" : "weekdays",
@@ -379,7 +386,8 @@ export function evaluateRules(ctx: RuleContext): RuleResult {
       continue;
     }
     if (effect === "expire" && doc.then.expiresAfterMin != null)
-      expiry = expiry === null ? doc.then.expiresAfterMin : Math.min(expiry, doc.then.expiresAfterMin);
+      expiry =
+        expiry === null ? doc.then.expiresAfterMin : Math.min(expiry, doc.then.expiresAfterMin);
     if (!win || EFFECT_RANK[effect] > EFFECT_RANK[win.effect]) win = { doc, effect, held };
   }
   if (!win) return { ...NONE, would };
@@ -431,7 +439,7 @@ function parseScope(v: unknown, issues: RuleIssue[]): RuleScope | null {
   if (o.kind === "brain_types") {
     const t = strs(o.types);
     const ok = ["personal", "team", "account", "global"];
-    if (!t || !t.length || !t.every((x) => ok.includes(x))) {
+    if (!t?.length || !t.every((x) => ok.includes(x))) {
       issues.push({ code: "invalid_scope", path: "scope.types", message: "Choose brain types" });
       return null;
     }
@@ -448,8 +456,16 @@ function parseScope(v: unknown, issues: RuleIssue[]): RuleScope | null {
   }
   if (o.kind === "brains") {
     const ids = strs(o.ids);
-    if (!ids || !ids.length || ids.length > MAX_VALUES || !ids.every((x) => BRAIN_ID.test(x) || isPersonalBrainId(x))) {
-      issues.push({ code: "invalid_scope", path: "scope.ids", message: "Choose one or more brains" });
+    if (
+      !ids?.length ||
+      ids.length > MAX_VALUES ||
+      !ids.every((x) => BRAIN_ID.test(x) || isPersonalBrainId(x))
+    ) {
+      issues.push({
+        code: "invalid_scope",
+        path: "scope.ids",
+        message: "Choose one or more brains",
+      });
       return null;
     }
     if (ids.some(isPersonalBrainId)) {
@@ -477,19 +493,31 @@ function parseCondition(v: unknown, i: number, issues: RuleIssue[]): Condition |
   }
   const spec = FIELD_SPEC[field as RuleField];
   if (typeof o.op !== "string" || !(spec.ops as readonly string[]).includes(o.op)) {
-    issues.push({ code: "invalid_operator", path: `${path}.op`, message: "That check does not fit this field" });
+    issues.push({
+      code: "invalid_operator",
+      path: `${path}.op`,
+      message: "That check does not fit this field",
+    });
     return null;
   }
   const values = strs(o.values);
-  if (!values || !values.length || values.length > MAX_VALUES) {
-    issues.push({ code: "invalid_values", path: `${path}.values`, message: "Add at least one value" });
+  if (!values?.length || values.length > MAX_VALUES) {
+    issues.push({
+      code: "invalid_values",
+      path: `${path}.values`,
+      message: "Add at least one value",
+    });
     return null;
   }
   const clean = [...new Set(values.map((x) => x.trim()).filter(Boolean))];
   if (spec.values === "number") {
     const n = Number(clean[0]);
     if (clean.length !== 1 || !Number.isInteger(n) || n < 0 || n > 100_000) {
-      issues.push({ code: "invalid_values", path: `${path}.values`, message: "Enter a whole number of pages" });
+      issues.push({
+        code: "invalid_values",
+        path: `${path}.values`,
+        message: "Enter a whole number of pages",
+      });
       return null;
     }
   } else if (spec.values === "brain_ids") {
@@ -498,7 +526,11 @@ function parseCondition(v: unknown, i: number, issues: RuleIssue[]): Condition |
       return null;
     }
   } else if (!clean.length || !clean.every((x) => (spec.values as readonly string[]).includes(x))) {
-    issues.push({ code: "invalid_values", path: `${path}.values`, message: "That value does not fit this field" });
+    issues.push({
+      code: "invalid_values",
+      path: `${path}.values`,
+      message: "That value does not fit this field",
+    });
     return null;
   }
   return { field: field as RuleField, op: o.op as RuleOp, values: clean };
@@ -531,8 +563,12 @@ function parseThen(v: unknown, issues: RuleIssue[]): RuleThen | null {
   const then: RuleThen = { effect: effect as RuleEffect };
   if (effect === "group") {
     const g = strs(o.approvers);
-    if (!g || !g.length || !g.every((x) => (APPROVER_GROUPS as readonly string[]).includes(x))) {
-      issues.push({ code: "invalid_approvers", path: "then.approvers", message: "Choose an approver group" });
+    if (!g?.length || !g.every((x) => (APPROVER_GROUPS as readonly string[]).includes(x))) {
+      issues.push({
+        code: "invalid_approvers",
+        path: "then.approvers",
+        message: "Choose an approver group",
+      });
       return null;
     }
     then.approvers = [...new Set(g)] as ApproverGroup[];
@@ -540,7 +576,11 @@ function parseThen(v: unknown, issues: RuleIssue[]): RuleThen | null {
   if (effect === "expire") {
     const n = o.expiresAfterMin;
     if (typeof n !== "number" || !Number.isInteger(n) || n < 1 || n > 1440) {
-      issues.push({ code: "invalid_expiry", path: "then.expiresAfterMin", message: "Enter minutes, 1 to 1440" });
+      issues.push({
+        code: "invalid_expiry",
+        path: "then.expiresAfterMin",
+        message: "Enter minutes, 1 to 1440",
+      });
       return null;
     }
     then.expiresAfterMin = n;
@@ -548,7 +588,11 @@ function parseThen(v: unknown, issues: RuleIssue[]): RuleThen | null {
   if (effect === "block") {
     const m = typeof o.message === "string" ? o.message.trim() : "";
     if (!m || m.length > 200) {
-      issues.push({ code: "invalid_message", path: "then.message", message: "Write the message people will see (200 characters)" });
+      issues.push({
+        code: "invalid_message",
+        path: "then.message",
+        message: "Write the message people will see (200 characters)",
+      });
       return null;
     }
     then.message = m;
@@ -594,9 +638,23 @@ function weakensFloor(r: RuleDraft): { floor: FloorId; action: RuleAction } | nu
             for (const time of SIM_TIMES)
               for (const flags of SIM_FLAGS)
                 for (const pages of [0, 100_000]) {
-                  const ctx = { action, actor, brain: { id: "x", type }, flags, pages, contract, time, incident: false };
+                  const ctx = {
+                    action,
+                    actor,
+                    brain: { id: "x", type },
+                    flags,
+                    pages,
+                    contract,
+                    time,
+                    incident: false,
+                  };
                   if (!conds.every((c) => conditionHolds(c, ctx))) continue;
-                  const f = floorMin({ action, actor: actorForFloor(actor), brainType: type, contract });
+                  const f = floorMin({
+                    action,
+                    actor: actorForFloor(actor),
+                    brainType: type,
+                    contract,
+                  });
                   if (!f.floor || rank >= f.rank) return null;
                   first ??= { floor: f.floor, action };
                 }
@@ -616,17 +674,30 @@ function weakensFloor(r: RuleDraft): { floor: FloorId; action: RuleAction } | nu
 export function validateRule(input: unknown): RuleValidation {
   const issues: RuleIssue[] = [];
   const o = obj(input);
-  if (!o) return { ok: false, issues: [{ code: "invalid_rule", path: "", message: "Send a rule" }] };
+  if (!o)
+    return { ok: false, issues: [{ code: "invalid_rule", path: "", message: "Send a rule" }] };
   const name = typeof o.name === "string" ? o.name.trim().replace(/\s+/g, " ") : "";
   if (name.length < 3 || name.length > 80)
-    issues.push({ code: "invalid_name", path: "name", message: "Name the rule in 3 to 80 characters" });
+    issues.push({
+      code: "invalid_name",
+      path: "name",
+      message: "Name the rule in 3 to 80 characters",
+    });
   const status = o.status ?? "draft";
   if (status !== "draft" && status !== "monitor" && status !== "enforced")
-    issues.push({ code: "invalid_status", path: "status", message: "Status is draft, monitor or enforced" });
+    issues.push({
+      code: "invalid_status",
+      path: "status",
+      message: "Status is draft, monitor or enforced",
+    });
   const scope = parseScope(o.scope, issues);
   const when: Condition[] = [];
   if (!Array.isArray(o.when) || o.when.length < 1 || o.when.length > MAX_CONDITIONS)
-    issues.push({ code: "invalid_when", path: "when", message: `Add 1 to ${MAX_CONDITIONS} conditions` });
+    issues.push({
+      code: "invalid_when",
+      path: "when",
+      message: `Add 1 to ${MAX_CONDITIONS} conditions`,
+    });
   else
     o.when.forEach((c, i) => {
       const p = parseCondition(c, i, issues);
@@ -644,7 +715,12 @@ export function validateRule(input: unknown): RuleValidation {
       c.op === "is_any_of" &&
       c.values.every((v) => (c.field === "brain_type" ? v === "personal" : isPersonalBrainId(v)))
     )
-      issues.push({ code: "floor", path: `when.${i}`, message: FLOOR_REASON.personal_privacy, floor: "personal_privacy" });
+      issues.push({
+        code: "floor",
+        path: `when.${i}`,
+        message: FLOOR_REASON.personal_privacy,
+        floor: "personal_privacy",
+      });
   }
   if (issues.length || !scope || !then) return { ok: false, issues };
   const rule: RuleDraft = { name, scope, when, then, except, status: status as RuleStatus };
@@ -655,7 +731,10 @@ export function validateRule(input: unknown): RuleValidation {
       issues: [
         {
           code: "floor",
-          path: except.incident && EFFECT_RANK[then.effect] > EFFECT_RANK.notify ? "except" : "then.effect",
+          path:
+            except.incident && EFFECT_RANK[then.effect] > EFFECT_RANK.notify
+              ? "except"
+              : "then.effect",
           message: FLOOR_REASON[weak.floor],
           floor: weak.floor,
         },
@@ -670,7 +749,8 @@ export function affectsProtectedBrains(
   isProtected: (brainId: string) => boolean,
 ): boolean {
   if (scope.kind === "tenant") return true;
-  if (scope.kind === "brain_types") return scope.types.some((t) => t === "account" || t === "global");
+  if (scope.kind === "brain_types")
+    return scope.types.some((t) => t === "account" || t === "global");
   return scope.ids.some(isProtected);
 }
 
@@ -683,10 +763,20 @@ export interface RuleChange {
 }
 
 const scopeText = (s: RuleScope): string =>
-  s.kind === "tenant" ? "whole tenant" : s.kind === "brain_types" ? `types ${s.types.join(", ")}` : `brains ${s.ids.join(", ")}`;
-const condText = (c: Condition): string => `${c.field} ${c.op.replace(/_/g, " ")} ${c.values.join(", ")}`;
+  s.kind === "tenant"
+    ? "whole tenant"
+    : s.kind === "brain_types"
+      ? `types ${s.types.join(", ")}`
+      : `brains ${s.ids.join(", ")}`;
+const condText = (c: Condition): string =>
+  `${c.field} ${c.op.replace(/_/g, " ")} ${c.values.join(", ")}`;
 const thenText = (t: RuleThen): string =>
-  [t.effect, t.approvers?.join("+"), t.expiresAfterMin != null ? `${t.expiresAfterMin} min` : null, t.message ? `"${t.message}"` : null]
+  [
+    t.effect,
+    t.approvers?.join("+"),
+    t.expiresAfterMin != null ? `${t.expiresAfterMin} min` : null,
+    t.message ? `"${t.message}"` : null,
+  ]
     .filter(Boolean)
     .join(" ");
 
@@ -781,7 +871,13 @@ export function simulateRules(
       wait += WAIT_ESTIMATE_MIN[r.effect as "review" | "group" | "two_approvers"];
     } else split.allowed++;
     if (samples.length < (opts.sampleSize ?? 5))
-      samples.push({ at: e.at, actor: e.actor, action: e.action, brainId: e.brain.id, effect: r.effect });
+      samples.push({
+        at: e.at,
+        actor: e.actor,
+        action: e.action,
+        brainId: e.brain.id,
+        effect: r.effect,
+      });
   }
   return {
     total: events.length,

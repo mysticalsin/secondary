@@ -73,7 +73,7 @@ const retire = (who: typeof admin, id: string, scope: Loose) =>
 async function mcp(
   path: string,
   body: Loose,
-  o: { email?: string; persona?: string; tool?: string } = {},
+  o: { email?: string; persona?: string; tool?: string; at?: number } = {},
 ) {
   const url = `https://secondary.example.test${path}`;
   const raw = JSON.stringify(body);
@@ -96,11 +96,12 @@ async function mcp(
     url,
     body: raw,
     principal,
-    now: Math.floor(Date.now() / 1000),
+    now: Math.floor((o.at ?? Date.now()) / 1000),
   });
   return call(path, {
     method: "POST",
     token: null,
+    ...(o.at ? { now: o.at } : {}),
     rawBody: raw,
     headers: { ...headers, "Content-Type": "application/json" },
   });
@@ -477,6 +478,77 @@ describe("approval effects stamp the proposal and the receipt", () => {
   });
 });
 
+describe("expire and notify", () => {
+  it("expire: an agent's write grant stops working N minutes after its first call; humans and reads are not limited", async () => {
+    const r = await create(
+      admin,
+      rule({
+        name: "Agent grants last 15 minutes",
+        when: [
+          when("actor", "is_any_of", "agent"),
+          when("action", "is_any_of", "propose_page", "write_session_report"),
+        ],
+        then: { effect: "expire", expiresAfterMin: 15 },
+      }),
+    );
+    await publish(admin, r.id, {});
+    const first = await mcp("/v1/brains/c_delivery/push/page", {
+      title: "Grant one",
+      markdown: MD("Grant one"),
+    });
+    expect(first.status, await first.clone().text()).toBe(201);
+    const soon = await mcp(
+      "/v1/brains/c_delivery/push/page",
+      { title: "Grant two", markdown: MD("Grant two") },
+      { at: Date.now() + 10 * 60_000 },
+    );
+    expect(soon.status).toBe(201);
+    const late = await mcp(
+      "/v1/brains/c_delivery/push/page",
+      { title: "Grant three", markdown: MD("Grant three") },
+      { at: Date.now() + 20 * 60_000 },
+    );
+    expect(late.status).toBe(403);
+    expect(await json<Loose>(late)).toMatchObject({
+      error: "grant_expired",
+      rule: `${r.id}@1`,
+      minutes: 15,
+    });
+    // A person is not an agent grant.
+    expect((await proposeApi("c_delivery", "Human late", CONS, "consultant")).status).toBe(201);
+    // The accepted proposals carry the limit on their receipt.
+    const rs = await receipts();
+    expect(
+      rs.find((x) => x.action === "brain.push_page" && x.rule === `${r.id}@1`)?.meta
+        ?.expiresAfterMin,
+    ).toBe(15);
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+
+  it("notify: the action goes through and the brain's stewards get a notice, with the rule on the receipt", async () => {
+    const r = await create(
+      admin,
+      rule({
+        name: "Tell stewards about human pages",
+        when: [when("actor", "is_any_of", "human"), when("action", "is_any_of", "propose_page")],
+        then: { effect: "notify" },
+      }),
+    );
+    await publish(admin, r.id, {});
+    const made = await proposeApi("c_delivery", "Notify me");
+    expect(made.status).toBe(201);
+    const inbox = await json<Loose>(
+      await as("reviewer", "/v1/admin/notifications", { email: REV }),
+    );
+    const items = inbox.items as Loose[];
+    expect(items.some((n) => n.kind === "rule_notice")).toBe(true);
+    expect(
+      (await receipts()).find((x) => x.action === "wiki.propose" && x.rule === `${r.id}@1`),
+    ).toBeTruthy();
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+});
+
 describe("held actions: export and share", () => {
   it("an approval effect on export holds the call until an approver decides, once", async () => {
     const r = await create(
@@ -542,6 +614,43 @@ describe("held actions: export and share", () => {
     expect((await exportAs("consultant", CONS, { "X-Rule-Hold": again.holdId })).status).toBe(409);
     await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
     expect((await exportAs("consultant", CONS)).status).toBe(200);
+  });
+});
+
+describe("held actions: sharing a view", () => {
+  it("sharing a plan that names a brain waits for an approver when a rule says so", async () => {
+    const r = await create(admin, rule({
+      name: "Shared views of delivery need a steward",
+      when: [when("action", "is_any_of", "share_view")],
+      then: { effect: "review" },
+    }));
+    await publish(admin, r.id, {});
+    const program = [
+      "root = Stack([c1])",
+      'c1 = InsightCard("Delivery flow", [f1])',
+      'f1 = Funnel("c_delivery", "30d")',
+    ].join("\n");
+    const view = await json<Loose>(
+      await as("consultant", "/v1/views", {
+        email: CONS,
+        body: { name: "Delivery view", program, pin: "home" },
+      }),
+    );
+    const share = (headers: Record<string, string> = {}) =>
+      as("consultant", `/v1/views/${view.id}/share`, { email: CONS, method: "POST", body: {}, headers });
+    const held = await share();
+    expect(held.status).toBe(202);
+    const h = await json<Loose>(held);
+    expect(h).toMatchObject({ status: "needs_approval", rule: `${r.id}@1` });
+    const ok = await as("reviewer", `/v1/rules/holds/${h.holdId}/decide`, {
+      email: REV,
+      body: { decision: "approve" },
+    });
+    expect((await json<Loose>(ok)).status).toBe("approved");
+    const done = await share({ "X-Rule-Hold": h.holdId });
+    expect(done.status, await done.clone().text()).toBe(200);
+    expect((await json<Loose>(done)).shareId).toBeTruthy();
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
   });
 });
 

@@ -56,13 +56,13 @@ describe("hard floors: a rule may only tighten", () => {
   };
 
   it("personal_privacy: a rule cannot be scoped to a Personal Brain", () => {
-    refused(rule({ scope: { kind: "brain_types", types: ["personal", "team"] } }), "personal_privacy");
-    refused(rule({ scope: { kind: "brains", ids: ["me"] } }), "personal_privacy");
-    refused(rule({ scope: { kind: "brains", ids: ["pb:u_1"] } }), "personal_privacy");
     refused(
-      rule({ when: [when("brain_type", "is_any_of", "personal")] }),
+      rule({ scope: { kind: "brain_types", types: ["personal", "team"] } }),
       "personal_privacy",
     );
+    refused(rule({ scope: { kind: "brains", ids: ["me"] } }), "personal_privacy");
+    refused(rule({ scope: { kind: "brains", ids: ["pb:u_1"] } }), "personal_privacy");
+    refused(rule({ when: [when("brain_type", "is_any_of", "personal")] }), "personal_privacy");
   });
 
   it("nda_named_grants: a rule cannot grant access", () => {
@@ -109,7 +109,10 @@ describe("hard floors: a rule may only tighten", () => {
     refused(rule({ then: { effect: "bypass_ai_gate" } }), "ai_gate");
     refused(
       rule({
-        when: [when("actor", "is_any_of", "agent"), when("ai_contract", "is_any_of", "not_allowed")],
+        when: [
+          when("actor", "is_any_of", "agent"),
+          when("ai_contract", "is_any_of", "not_allowed"),
+        ],
         then: { effect: "review" },
       }),
       "ai_gate",
@@ -139,7 +142,10 @@ describe("hard floors: a rule may only tighten", () => {
   it("an EXCEPT that would lower a rule below a floor is refused, and fine elsewhere", () => {
     refused(
       rule({
-        when: [when("action", "is_any_of", "promote_to_global"), when("content_flag", "is_any_of", "client_name")],
+        when: [
+          when("action", "is_any_of", "promote_to_global"),
+          when("content_flag", "is_any_of", "client_name"),
+        ],
         then: { effect: "block", message: "Client names stay out of Global." },
         except: { incident: true },
       }),
@@ -187,7 +193,9 @@ describe("hard floors: a rule may only tighten", () => {
 
 describe("validation", () => {
   it("cleans a good rule", () => {
-    const v = validateRule(rule({ name: "  Big   exports ", when: [when("size_pages", "greater_than", "50")] }));
+    const v = validateRule(
+      rule({ name: "  Big   exports ", when: [when("size_pages", "greater_than", "50")] }),
+    );
     expect(v.ok).toBe(true);
     if (v.ok) expect(v.rule.name).toBe("Big exports");
   });
@@ -241,7 +249,13 @@ describe("evaluateRules composes after the base policy", () => {
 
   it("an enforced match returns the effect and ruleId@version", () => {
     const r = evaluateRules(ctx({ rules: [doc("r1", 3)] }));
-    expect(r).toMatchObject({ effect: "review", ruleId: "r1", version: 3, tag: "r1@3", requiredApprovals: 1 });
+    expect(r).toMatchObject({
+      effect: "review",
+      ruleId: "r1",
+      version: 3,
+      tag: "r1@3",
+      requiredApprovals: 1,
+    });
   });
 
   it("the tightest effect wins, ties go to the lower id", () => {
@@ -280,7 +294,9 @@ describe("evaluateRules composes after the base policy", () => {
     expect(r.effect).toBe("none");
     const typed = doc("t", 1, { scope: { kind: "brain_types", types: ["account"] } });
     expect(evaluateRules(ctx({ rules: [typed] })).effect).toBe("none");
-    expect(evaluateRules(ctx({ brain: { id: "a_x", type: "account" }, rules: [typed] })).effect).toBe("review");
+    expect(
+      evaluateRules(ctx({ brain: { id: "a_x", type: "account" }, rules: [typed] })).effect,
+    ).toBe("review");
     const named = doc("n", 1, { scope: { kind: "brains", ids: ["c_sales"] } });
     expect(evaluateRules(ctx({ rules: [named] })).effect).toBe("none");
   });
@@ -305,14 +321,18 @@ describe("evaluateRules composes after the base policy", () => {
     });
     expect(evaluateRules(base).requiredApprovals).toBe(2);
     expect(evaluateRules({ ...base, time: { weekday: 3, hour: 11 } }).effect).toBe("none");
-    expect(evaluateRules({ ...base, actor: { kind: "agent", host: "dust", roles: [] } }).effect).toBe("none");
+    expect(
+      evaluateRules({ ...base, actor: { kind: "agent", host: "dust", roles: [] } }).effect,
+    ).toBe("none");
     expect(evaluateRules({ ...base, flags: ["client_name"] }).effect).toBe("none");
     const big = doc("p", 1, { when: [when("size_pages", "greater_than", "50")] });
     expect(evaluateRules(ctx({ pages: 51, rules: [big] })).effect).toBe("review");
     expect(evaluateRules(ctx({ pages: 50, rules: [big] })).effect).toBe("none");
     expect(evaluateRules(ctx({ pages: null, rules: [big] })).effect).toBe("none");
     const off = doc("o", 1, { when: [when("time", "is_any_of", "outside_business_hours")] });
-    expect(evaluateRules(ctx({ time: { weekday: 2, hour: 20 }, rules: [off] })).effect).toBe("review");
+    expect(evaluateRules(ctx({ time: { weekday: 2, hour: 20 }, rules: [off] })).effect).toBe(
+      "review",
+    );
     expect(evaluateRules(ctx({ time: { weekday: 2, hour: 9 }, rules: [off] })).effect).toBe("none");
   });
 
@@ -331,7 +351,14 @@ describe("evaluateRules composes after the base policy", () => {
       except: { incident: true },
       status: "enforced",
     };
-    const r = evaluateRules(ctx({ action: "promote_to_global", brain: { id: "a_x", type: "account" }, incident: true, rules: [sneaky] }));
+    const r = evaluateRules(
+      ctx({
+        action: "promote_to_global",
+        brain: { id: "a_x", type: "account" },
+        incident: true,
+        rules: [sneaky],
+      }),
+    );
     expect(r.effect).toBe("block");
     expect(r.floor).toBe("global_two_person");
   });
@@ -402,7 +429,11 @@ describe("diffRules", () => {
     const a = validateRule(rule());
     const b = validateRule(rule({ then: { effect: "two_approvers" }, name: "Renamed rule" }));
     if (!a.ok || !b.ok) throw new Error("bad");
-    expect(diffRules(a.rule, b.rule).map((c) => c.part).sort()).toEqual(["name", "then"]);
+    expect(
+      diffRules(a.rule, b.rule)
+        .map((c) => c.part)
+        .sort(),
+    ).toEqual(["name", "then"]);
     expect(diffRules(null, a.rule).length).toBeGreaterThan(3);
     expect(diffRules(a.rule, a.rule)).toEqual([]);
   });
@@ -411,6 +442,8 @@ describe("diffRules", () => {
     const c: Condition = { field: "action", op: "is_any_of", values: ["export"] };
     const a = validateRule(rule({ when: [c] }));
     if (!a.ok) throw new Error("bad");
-    expect(diffRules(null, a.rule).find((d) => d.part === "when")?.to).toBe("action is any of export");
+    expect(diffRules(null, a.rule).find((d) => d.part === "when")?.to).toBe(
+      "action is any of export",
+    );
   });
 });

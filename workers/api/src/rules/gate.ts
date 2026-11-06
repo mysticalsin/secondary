@@ -14,7 +14,7 @@ import {
   type ViewNode,
 } from "@secondary/policy";
 import type { ReceiptMeta } from "../../../../packages/contracts/src/audit-receipt.ts";
-import type { workspaceStub } from "../stubs.ts";
+import { tenantStub, type workspaceStub } from "../stubs.ts";
 import { notifyRule } from "../ux/notify.ts";
 import { audit, type C, sess } from "../ux/util.ts";
 import { rulesClient } from "./client.ts";
@@ -54,6 +54,14 @@ export interface GateOut {
   /** True when the rules require review, so a direct publish must become a candidate. */
   forceReview: boolean;
 }
+
+const WRITES: ReadonlySet<RuleAction> = new Set([
+  "propose_page",
+  "propose_change",
+  "write_session_report",
+  "import",
+  "promote_to_global",
+]);
 
 const NONE: RuleResult = {
   effect: "none",
@@ -147,6 +155,45 @@ export async function ruleGate(c: C, i: GateInput): Promise<GateOut> {
 
   const tag = result.tag;
   const rx = { rule: tag, ruleMode: "enforced" as const, meta };
+
+  // "Expire grant after N minutes": an agent's write grant stops working N minutes after its first call.
+  // The person connects again to get a fresh one. Only writes are limited; reading is not.
+  if (
+    result.expiresAfterMin !== null &&
+    actor.kind === "agent" &&
+    s.internal?.grantId &&
+    WRITES.has(i.action)
+  ) {
+    const rows = await tenantStub(c.env, s.tenantId).agentList(s.principal.id);
+    const grant = rows.find((g) => g.grantId === s.internal?.grantId);
+    if (grant && s.ctx.now - grant.firstAt > result.expiresAfterMin * 60_000) {
+      const ok = await audit(c, {
+        action: "rule.block",
+        nodeId: i.brain.nodeId,
+        scopeId: null,
+        revision: null,
+        decision: "deny",
+        reason: "agent grant expired",
+        ...rx,
+      });
+      return {
+        ...passthrough(meta),
+        result,
+        rx,
+        response: ok
+          ? c.json(
+              {
+                error: "grant_expired",
+                rule: tag,
+                minutes: result.expiresAfterMin,
+                message: "This connection's write access expired. Connect again to continue.",
+              },
+              403,
+            )
+          : c.json({ error: "audit_unavailable" }, 503),
+      };
+    }
+  }
   const base: GateOut = {
     response: null,
     result,
