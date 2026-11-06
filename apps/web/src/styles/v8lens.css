@@ -1,0 +1,5 @@
+/* v8 lens, search, pulse and palette styles, in one import. */
+@import "../views/lens/lens.css";
+@import "../views/search/search.css";
+@import "../views/pulse/pulse.css";
+@import "../palette/palette.css";

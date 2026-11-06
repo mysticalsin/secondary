@@ -1,0 +1,528 @@
+/* v8 page lens, Who knows and shared bits (docs/DESIGN-V8-AMAZING.md sections 3, 4, 7). Dark instrument
+   cards (v5) on the light shell, in both themes. Everything on a card is checked at 4.5:1 or better. */
+
+.muted8 {
+  color: var(--mute);
+}
+.icard .muted8 {
+  color: var(--ic-mute);
+}
+.lens-note {
+  font-size: 14px;
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ---------- layout ---------- */
+.v4app .main > .v4page.reading-page.wide {
+  max-width: 1240px;
+}
+.lens8 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 32px;
+  align-items: start;
+}
+.lens8-main {
+  min-width: 0;
+}
+.lens8-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .lens8 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lens8-rail {
+    margin-top: 8px;
+  }
+}
+
+/* ---------- the sticky header ---------- */
+.sh8 {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: -28px -32px 22px;
+  padding: 10px 32px;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  min-height: 46px;
+}
+.sh8-crumbs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14.5px;
+  color: var(--mute);
+  min-width: 0;
+}
+.sh8-crumbs a {
+  color: var(--purple);
+  font-weight: 700;
+  text-decoration: none;
+}
+:root[data-theme="dark"] .sh8-crumbs a {
+  color: var(--lilac-3);
+}
+.sh8-crumbs a:hover {
+  text-decoration: underline;
+}
+.sh8-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 15px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.sh8-title.show {
+  opacity: 1;
+}
+.sh8-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  margin-left: auto;
+}
+.sh8-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-2);
+}
+.sh8-rev {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--mute);
+}
+@media (max-width: 900px) {
+  .sh8 {
+    margin: -20px -16px 16px;
+    padding: 8px 16px;
+  }
+}
+
+/* status dots: colour plus the word beside them, never colour alone */
+.dot8 {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  background: #8a8896;
+}
+.dot8.fresh {
+  background: #5be49b;
+}
+.dot8.aging {
+  background: #f8f060;
+}
+.dot8.stale {
+  background: #ff6b8a;
+}
+.sh8 .dot8.fresh {
+  background: var(--st-done);
+}
+
+/* ---------- empty states inside cards ---------- */
+.lens-empty {
+  text-align: center;
+  padding: 10px 6px 6px;
+  color: var(--ic-mute);
+  font-size: 14.5px;
+}
+.lens-empty p {
+  margin: 4px 0 0;
+}
+.lens-empty b {
+  color: var(--ic-ink);
+}
+.art8 {
+  width: 120px;
+  height: 72px;
+  display: block;
+  margin: 0 auto 6px;
+}
+
+/* ---------- avatars ---------- */
+.av8 {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* ---------- trust card ---------- */
+.tr8 {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.tr8 dt {
+  font-size: 13.5px;
+  color: var(--ic-mute);
+  margin-bottom: 2px;
+}
+.tr8 dd {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 15.5px;
+}
+.tr8 dd .muted8 {
+  font-size: 14px;
+}
+
+/* ---------- local graph ---------- */
+.lg8 {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.lg8-lines line {
+  stroke: #5a5a66;
+  stroke-width: 1.2;
+}
+.lg8-hit {
+  fill: transparent;
+}
+.lg8-t {
+  font: 500 11.5px var(--font);
+  fill: #e4e2ec;
+  paint-order: stroke;
+  stroke: #1e1e22;
+  stroke-width: 3.5px;
+}
+.lg8-t.c {
+  font-weight: 700;
+  font-size: 12.5px;
+  fill: #fff;
+}
+a.lg8-n {
+  cursor: pointer;
+}
+a.lg8-n:hover .lg8-dot,
+a.lg8-n:focus-visible .lg8-dot {
+  stroke: #fff;
+  stroke-width: 2.5px;
+}
+a.lg8-n:focus-visible {
+  outline: none;
+}
+a.lg8-n:focus-visible .lg8-hit {
+  stroke: #f8f060;
+  stroke-width: 2px;
+}
+.lg8-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--ic-mute);
+}
+.lg8-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lg8-key .k {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+/* ---------- facts over time ---------- */
+.fb8 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.fb8-l {
+  margin: 0 0 4px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+.fb8-l b {
+  color: var(--ic-ink);
+}
+.fb8-l span {
+  color: var(--ic-mute);
+  font-size: 13.5px;
+}
+.fb8-chip {
+  font-style: normal;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #7a1b4b;
+  color: #fbd0e6;
+}
+.fb8-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: #2a2a30;
+}
+.fb8-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 4px;
+  background: #8b5cf6;
+}
+.fb8-bar.ended {
+  background: #6b5aa8;
+  opacity: 0.8;
+}
+.fb8-bar.unv {
+  background: transparent;
+  border: 1.5px dashed #b9a3ff;
+}
+.fb8-bar.clash {
+  background: repeating-linear-gradient(135deg, #d6336c 0 4px, #7a1b4b 4px 8px);
+  border: 0;
+  opacity: 1;
+}
+.fb8-open {
+  position: absolute;
+  top: 0.5px;
+  width: 6px;
+  height: 6px;
+  transform: translateX(-3px);
+  border-right: 2px solid #f8f060;
+  border-top: 2px solid #f8f060;
+  rotate: 45deg;
+}
+.fb8-d {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--ic-mute);
+}
+.fb8-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid #2a2a30;
+  font-size: 12.5px;
+  color: var(--ic-faint);
+}
+.fb8-more {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ic-mute);
+}
+
+/* ---------- people ---------- */
+.pl8 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.pl8 li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 54px;
+  gap: 12px;
+  align-items: center;
+}
+.pl8-b p {
+  margin: 0;
+}
+.pl8-n {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ic-ink);
+}
+.pl8-m {
+  font-size: 13.5px;
+  color: var(--ic-mute);
+  line-height: 1.35;
+}
+.pl8-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #2a2a30;
+  overflow: hidden;
+}
+.pl8-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: #8b5cf6;
+}
+.who8-foot {
+  font-size: 13px;
+  color: var(--ic-mute);
+}
+.who8-link {
+  color: #c4b5fd;
+}
+
+/* ---------- contributors and backlinks ---------- */
+.ct8,
+.bl8 {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.ct8 li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+.ct8-n {
+  font-weight: 700;
+}
+.bl8 li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 15px;
+}
+.bl8 a {
+  color: #d9ccff;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.bl8 a:hover {
+  color: #fff;
+}
+.bl8 .muted8 {
+  font-size: 13px;
+}
+
+/* ---------- ask this page ---------- */
+.ask8 {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: var(--purple);
+  color: #fff;
+  border: 0;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ask8:hover {
+  background: var(--purple-bright);
+}
+.ask8:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+:root[data-theme="dark"] .ask8 {
+  background: #7f00da;
+}
+
+/* ---------- settings ---------- */
+.check8 {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+.check8 input {
+  margin-top: 4px;
+  width: 18px;
+  height: 18px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lens8-rail .icard {
+    animation: lens-in 360ms var(--ease) both;
+  }
+  .lens8-rail .icard:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  .lens8-rail .icard:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  .lens8-rail .icard:nth-child(4) {
+    animation-delay: 180ms;
+  }
+}
+@keyframes lens-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- brain page: the Who knows card ---------- */
+.bwk8 {
+  margin: 4px 0 18px;
+  max-width: 520px;
+}
+.wk8-select {
+  background: #151518;
+  color: #f4f3f7;
+  border: 1px solid #34343c;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 14.5px;
+  max-width: 160px;
+}
+.wk8-select:focus-visible {
+  outline: 2px solid #f8f060;
+  outline-offset: 2px;
+}
+
+.expert8 {
+  margin-top: 16px;
+}
+.expert8-h {
+  margin: 0 0 4px;
+  font-size: 17px;
+}

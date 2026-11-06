@@ -1,0 +1,199 @@
+/* v8 command palette (docs/DESIGN-V8-AMAZING.md section 5). A light or dark panel that follows the theme,
+   centred near the top; the active row is marked by a bar and a return glyph, not by colour alone. */
+
+.pal8-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: 12vh 16px 16px;
+}
+.pal8-back {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(20, 8, 32, 0.45);
+  backdrop-filter: blur(2px);
+  cursor: default;
+}
+.pal8 {
+  position: relative;
+  width: min(640px, 100%);
+  max-height: min(560px, 78vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pal8 {
+    animation: pal-in 140ms var(--ease) both;
+  }
+}
+@keyframes pal-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pal8-in {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--mute);
+}
+.pal8-in input {
+  flex: 1;
+  min-width: 0;
+  height: 54px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 18px;
+  outline: none;
+}
+.pal8-in input::placeholder {
+  color: var(--mute);
+}
+.pal8-in:focus-within {
+  box-shadow: inset 0 -2px 0 var(--focus);
+}
+.pal8 kbd,
+.pal8-btn kbd {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink-2);
+}
+.pal8-list {
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  min-height: 80px;
+}
+.pal8-gh {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mute);
+  padding: 10px 10px 4px;
+}
+.pal8-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  position: relative;
+}
+.pal8-opt.on {
+  background: var(--active);
+}
+.pal8-opt.on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--purple);
+}
+:root[data-theme="dark"] .pal8-opt.on::before {
+  background: var(--yellow);
+}
+.pal8-ic {
+  display: grid;
+  place-items: center;
+  color: var(--purple);
+  flex: none;
+}
+:root[data-theme="dark"] .pal8-ic {
+  color: var(--lilac-3);
+}
+.pal8-l {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+}
+.pal8-h {
+  font-size: 13px;
+  color: var(--mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+.pal8-ret {
+  color: var(--mute);
+  flex: none;
+}
+.pal8-none {
+  margin: 0;
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--mute);
+}
+.pal8-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--mute);
+  background: var(--panel);
+}
+.pal8-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.pal8-btn:hover {
+  background: var(--hover);
+}
+.pal8-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .pal8-wrap {
+    padding-top: 6vh;
+  }
+  .pal8-h {
+    display: none;
+  }
+  .pal8-foot {
+    display: none;
+  }
+  .pal8-btn kbd {
+    display: none;
+  }
+}

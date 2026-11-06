@@ -10,6 +10,7 @@ import { buildContents } from "../../lib/contents";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
+import { BrainWhoKnows } from "../lens";
 import { QUESTIONS_CHANGED } from "../waiting/events";
 import { wikiApi } from "../wiki/api";
 import { v3 } from "./api";
@@ -144,6 +145,9 @@ function Head({ b }: { b: BrainHome }) {
         <Link className="textlink" to={`/brains/${encodeURIComponent(b.id)}/activity`}>
           {t("v4.activity")}
         </Link>
+        <Link className="textlink" to={`/brains/${encodeURIComponent(b.id)}/pulse`}>
+          {t("v8p.link")}
+        </Link>
         {!personal ? (
           <Link className="btn primary" to={`/brains/${encodeURIComponent(b.id)}/access`}>
             {t("v4.members.access")}
@@ -166,7 +170,9 @@ export function BrainPage() {
   const idx = useApi(() => wikiApi.index(id), [id]);
   const waitingQ = useApi(() => ux2.questions({ brain: id }), [id]);
   const [filters, setFilters] = useState<Filters>(NO_FILTER);
-  const [adding, setAdding] = useState<{ type: string | null } | null>(null);
+  const [adding, setAdding] = useState<{ type: string | null } | null>(
+    sp.has("new") ? { type: null } : null,
+  );
   const tree = useMemo(
     () =>
       idx.data
@@ -240,6 +246,11 @@ export function BrainPage() {
                 </button>
               ))}
             </div>
+            {tab === "contents" && b.type !== "personal" ? (
+              <div className="bwk8">
+                <BrainWhoKnows brain={id} collections={typeOptions} />
+              </div>
+            ) : null}
             {tab === "insights" ? (
               <div role="tabpanel" id="bp-insights" aria-labelledby="bt-insights">
                 <InsightsTab brainId={id} />

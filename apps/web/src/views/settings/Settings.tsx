@@ -14,6 +14,7 @@ import { Admin, useAdminCaps } from "../admin";
 import { AgentsSection } from "../brains/Agents";
 import { v3 } from "../brains/api";
 import { PilotPage } from "../brains/Pilot";
+import { ExpertSetting } from "../lens";
 import { Usage } from "../usage/Usage";
 
 const AgentSettingsSection = lazy(() => import("../../agent/SettingsSection"));
@@ -188,6 +189,7 @@ function Privacy() {
           <Download size={15} aria-hidden /> {t("v4.priv.export")}
         </button>
       </div>
+      <ExpertSetting />
     </section>
   );
 }

@@ -113,12 +113,11 @@ test.describe("shell and sidebar", () => {
     const page = await as(browser, "head_bid");
     await page.goto("/");
     await settle(page);
+    // Ctrl+K opens the command palette (v8); Alt+Enter there runs the full search.
     await page.keyboard.press("Control+k");
-    await expect(
-      page.getByRole("searchbox", { name: "Search pages in your brains" }).first(),
-    ).toBeFocused();
+    await expect(page.getByRole("combobox", { name: /Search pages, brains and commands/ })).toBeFocused();
     await page.keyboard.type("pricing");
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Alt+Enter");
     await expect(page).toHaveURL(/\/search\?q=pricing/);
     await expect(page.getByRole("link", { name: "Pricing guide" })).toBeVisible();
     await shot(page, "search");

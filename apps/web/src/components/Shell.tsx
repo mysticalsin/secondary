@@ -6,6 +6,7 @@ import { MOCK } from "../api";
 import { useI18n } from "../i18n";
 import { displayName, initialsOf } from "../lib/people";
 import { readCollapsed, storeCollapsed } from "../lib/theme";
+import { Palette, PaletteButton } from "../palette";
 import { useApp } from "../state";
 import { ElevationBanner } from "../views/admin";
 import { Sidebar } from "./Sidebar";
@@ -18,17 +19,6 @@ function SearchBar() {
   const loc = useLocation();
   const input = useRef<HTMLInputElement>(null);
   const [q, setQ] = useState(loc.pathname === "/search" ? (sp.get("q") ?? "") : "");
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        input.current?.focus();
-        input.current?.select();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
   const go = (e: FormEvent) => {
     e.preventDefault();
     const term = q.trim();
@@ -116,6 +106,7 @@ export function Shell() {
             </button>
             <SearchBar />
             <span className="sp" />
+            <PaletteButton />
             <AgentButton />
             <Link to="/settings" className="whoami">
               <span className="wname">{name || (meError ? t("shell.unknown") : "")}</span>
@@ -124,6 +115,7 @@ export function Shell() {
               </span>
             </Link>
           </header>
+          <Palette />
           <main className="main" id="main" tabIndex={-1}>
             <Outlet />
           </main>
