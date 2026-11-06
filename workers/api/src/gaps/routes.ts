@@ -8,6 +8,7 @@ import { admittedBrainParams, type Brain, brainOf, needBrain } from "../brains/o
 import { rateLimit } from "../brains/shared.ts";
 import { humanIdsOf } from "../human.ts";
 import { eligiblePeople, notify, type Person } from "../review/eligible.ts";
+import { ruleGate } from "../rules/gate.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, forbidden, notFound, readObject, sess } from "../ux/util.ts";
@@ -265,12 +266,23 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
     const raw = Number.parseInt(c.env.WIKI_WRITE_PER_MIN ?? "", 10);
     const refused = await rateLimit(c, "wiki_write", Number.isFinite(raw) && raw > 0 ? raw : 30);
     if (refused) return refused;
+    // Brain rules (v7): starting a draft from a gap proposes a page, so a rule that blocks or adds approvals
+    // on propose_page reaches it too.
+    const gate = await ruleGate(c, {
+      action: "propose_page",
+      brain: { nodeId: b.nodeId, personal: b.personal, vn: b.vn, role: b.role },
+      text: title,
+      pages: 1,
+      mode: "stamp",
+    });
+    if (gate.response) return gate.response;
     if (
       !(await audit(c, {
         action: "gap.start",
         nodeId: b.nodeId,
         scopeId: b.scope,
         revision: null,
+        ...gate.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -301,12 +313,15 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
       s.ctx.now,
       { plane: b.plane, readable: [] },
     );
-    if (!made.ok)
+    if (!made.ok) {
+      await gate.refund();
       return c.json(
         { error: made.code, reason: made.message },
         made.code === "not_found" ? 404 : 409,
       );
+    }
     if (!made.created) return c.json({ error: "nothing_to_propose", reason: made.reason }, 422);
+    await gate.stamp(b.stub, made.id);
     await putGap(
       b.stub,
       { ...g, status: "drafted", proposalId: made.id, pageId },

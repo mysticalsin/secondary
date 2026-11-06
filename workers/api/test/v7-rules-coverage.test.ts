@@ -81,6 +81,8 @@ const INTAKE: Record<string, Record<string, string>> = {
     "uxv2/ledger.ts": "exempt: a usage ledger row, numbers and ids only",
   },
   comment: {
+    "review/routes.ts":
+      "exempt: a reviewer's note on an item (Review desk), not brain content; it never becomes a page",
     "routes.ts": "exempt: a reviewer's note on an item, not brain content; it never becomes a page",
     "ux/review.ts":
       "exempt: a reviewer's note on an item, not brain content; it never becomes a page",
@@ -88,6 +90,7 @@ const INTAKE: Record<string, Record<string, string>> = {
       "exempt: a reviewer's note on an item, not brain content; it never becomes a page",
   },
   wikiPropose: {
+    "gaps/routes.ts": "gate", // start a draft from a gap
     "brains/data.ts": "gate",
     "brains/push.ts": "gate",
     "wiki/engine.ts": "gate",
@@ -172,6 +175,8 @@ for (const n of ["lensSetOptOut", "lensSavedAdd", "lensSavedRemove"])
     "a person's own choice (who-knows opt-out, saved searches), kept in their Personal Brain: no page text";
 for (const n of ["opsKvSet", "opsRetryClaim"])
   OTHER[n] = "v7 operate bookkeeping (a setting, a retry marker keyed by event id): no page text";
+OTHER.v8Forget =
+  "erasure of one person from the review and gap records (rights erase): it removes or blanks, it adds no text";
 OTHER.scratch = "writes personal-plane rows only; Personal Brains carry no rules";
 
 describe("rule gate coverage, derived from the Workspace object", () => {
