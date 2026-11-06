@@ -75,6 +75,25 @@ export function keepable(raw: string): Keep {
   return { ok: true, text, key };
 }
 
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Does the text name one of these accounts or restricted brains? A label hits as a whole phrase, or by
+ * its first word when that word is a name (four letters or more: "Acme" in "Acme Synthetic SA").
+ * Accents and case are ignored. Used before a question is stored: a hit means it names a client.
+ */
+export function namesHit(text: string, labels: readonly string[]): boolean {
+  const plain = (t: string): string => t.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const hay = plain(text);
+  return labels.some((label) => {
+    const l = plain(label).trim();
+    if (l.length < 3) return false;
+    if (new RegExp(`\\b${escapeRe(l)}\\b`).test(hay)) return true;
+    const first = l.match(/[a-z0-9]+/)?.[0] ?? "";
+    return first.length >= 4 && new RegExp(`\\b${escapeRe(first)}\\b`).test(hay);
+  });
+}
+
 /** The sentence-case title a started page begins with. */
 export function titleOf(text: string): string {
   const t = tidy(text);

@@ -925,6 +925,152 @@ export class Workspace extends BrainBase {
     };
   }
 
+  // ---- v8 sidecar records (review desk state, knowledge gaps) ----
+  // They name people by keyed id only (v8-keys.ts), so the person is found by key: `person` for review
+  // state and assignments, `asker` for the askers of this brain's gaps.
+
+  /** What the v8 records of this workspace hold about one person: their own rows, nobody else's. */
+  v8Subject(
+    person: string,
+    asker: string,
+  ): {
+    review: {
+      proposalId: string;
+      snoozedUntil: number | null;
+      mentionedAt: number | null;
+      lastWroteAt: number | null;
+      assignedToMe: boolean;
+      assignedByMe: boolean;
+      requestedChanges: boolean;
+    }[];
+    gaps: {
+      id: string;
+      text: string;
+      asked: boolean;
+      assignedToMe: boolean;
+      assignedByMe: boolean;
+    }[];
+  } {
+    const review: ReturnType<Workspace["v8Subject"]>["review"] = [];
+    const gaps: ReturnType<Workspace["v8Subject"]>["gaps"] = [];
+    for (const r of this.sql
+      .exec("SELECT id, kind, body FROM items WHERE kind IN ('v8_review', 'v8_gap') ORDER BY id")
+      .toArray()) {
+      let b: Record<string, unknown>;
+      try {
+        b = JSON.parse((r.body as string | null) ?? "{}") as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      const at = (m: unknown): number | null => {
+        const v = (m as Record<string, unknown> | undefined)?.[person];
+        return typeof v === "number" ? v : null;
+      };
+      if (r.kind === "v8_review") {
+        const row = {
+          proposalId: (r.id as string).replace(/^rvx:/, ""),
+          snoozedUntil: at(b.snooze),
+          mentionedAt: at(b.mentions),
+          lastWroteAt: at(b.answered),
+          assignedToMe: b.assignedTo === person,
+          assignedByMe: b.assignedBy === person,
+          requestedChanges: (b.changes as { by?: unknown } | null)?.by === person,
+        };
+        if (
+          row.snoozedUntil !== null ||
+          row.mentionedAt !== null ||
+          row.lastWroteAt !== null ||
+          row.assignedToMe ||
+          row.assignedByMe ||
+          row.requestedChanges
+        )
+          review.push(row);
+      } else {
+        const asked = Array.isArray(b.askerHashes) && b.askerHashes.includes(asker);
+        const row = {
+          id: r.id as string,
+          text: asked ? String(b.text ?? "") : "",
+          asked,
+          assignedToMe: b.assignedTo === person,
+          assignedByMe: b.assignedBy === person,
+        };
+        if (row.asked || row.assignedToMe || row.assignedByMe) gaps.push(row);
+      }
+    }
+    return { review, gaps };
+  }
+
+  /**
+   * Erase one person from the v8 records: their keys leave every map and list, assignments to or by
+   * them are cleared, in the live body and in the first-revision snapshot. Returns how many bodies changed.
+   */
+  v8Forget(person: string, asker: string): number {
+    let changed = 0;
+    const strip = (kind: string, body: string | null): string | null => {
+      if (!body) return null;
+      let b: Record<string, unknown>;
+      try {
+        b = JSON.parse(body) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+      let hit = false;
+      const del = (m: unknown): void => {
+        if (m && typeof m === "object" && person in (m as Record<string, unknown>)) {
+          delete (m as Record<string, unknown>)[person];
+          hit = true;
+        }
+      };
+      if (kind === "v8_review") {
+        del(b.snooze);
+        del(b.mentions);
+        del(b.answered);
+        const ch = b.changes as { by?: unknown } | null;
+        if (ch && ch.by === person) {
+          ch.by = "";
+          hit = true;
+        }
+      } else if (Array.isArray(b.askerHashes) && b.askerHashes.includes(asker)) {
+        b.askerHashes = b.askerHashes.filter((h) => h !== asker);
+        hit = true;
+      }
+      for (const f of ["assignedTo", "assignedBy"] as const)
+        if (b[f] === person) {
+          b[f] = null;
+          if (f === "assignedTo") {
+            b.assignedAt = null;
+            if (kind === "v8_gap") b.due = null;
+          }
+          hit = true;
+        }
+      return hit ? JSON.stringify(b) : null;
+    };
+    this.ctx.storage.transactionSync(() => {
+      for (const r of this.sql
+        .exec("SELECT id, kind, body FROM items WHERE kind IN ('v8_review', 'v8_gap')")
+        .toArray()) {
+        const next = strip(r.kind as string, r.body as string | null);
+        if (next !== null) {
+          this.sql.exec("UPDATE items SET body = ? WHERE id = ?", next, r.id as string);
+          changed++;
+        }
+        for (const v of this.sql
+          .exec("SELECT revision, body FROM revisions WHERE item_id = ?", r.id as string)
+          .toArray()) {
+          const rv = strip(r.kind as string, v.body as string | null);
+          if (rv !== null)
+            this.sql.exec(
+              "UPDATE revisions SET body = ? WHERE item_id = ? AND revision = ?",
+              rv,
+              r.id as string,
+              v.revision as number,
+            );
+        }
+      }
+    });
+    return changed;
+  }
+
   /**
    * Replace a person's id with a pseudonym everywhere this workspace stores it, and drop the search
    * index entries of the items they authored (seeded items stay indexed: they are not personal data).

@@ -51,8 +51,9 @@ describe("signals", () => {
   });
 
   it("a search with no result is a gap too, from its own source", async () => {
-    const r = await as("head_bid", `/v1/wiki/${WS}/search?q=quuxflange%20tolerance`, {
+    const r = await as("head_bid", `/v1/wiki/${WS}/search`, {
       email: STEWARD,
+      body: { q: "quuxflange tolerance" },
     });
     expect((await json<Loose>(r)).results).toEqual([]);
     const g = await findGap("quuxflange");
@@ -102,17 +103,11 @@ describe("signals", () => {
     expect(JSON.stringify(await wsOf(ALPHA, `personal:${id}`).listByKind("v8_gap", 10))).toBe("[]");
   });
 
-  it("a broad question lands only where its words fit, never in every brain", async () => {
-    // Unscoped, mentions the brain's own collection words: "bid".
+  it("a broad question is never filed in a team brain or Company Global, even when its words fit", async () => {
+    // Unscoped, mentions the brain's own collection words: "bid". Only a question scoped to a brain, or
+    // one naming a client, is stored (H-1; the cases are in v8-security.test.ts).
     await ask("head_bid", STEWARD, "bid blorptastic evaluation grid");
-    const hits = await Promise.all(
-      [WS, "core", "c_sales"].map(
-        async (s) => [s, (await stored(s)).includes("blorptastic")] as const,
-      ),
-    );
-    const where = hits.filter(([, h]) => h).map(([s]) => s);
-    expect(where.length).toBeLessThanOrEqual(3);
-    expect(where).toContain(WS);
+    for (const s of [WS, "core", "c_sales"]) expect(await stored(s)).not.toContain("blorptastic");
   });
 });
 

@@ -819,7 +819,9 @@ export function handleV2(
     };
   }
   const wp = p.match(/^\/v1\/wiki\/([^/]+)\/(.*)$/);
-  if (wp && method === "GET") {
+  // Search and ask are POSTs (a miss leaves a gap signal), the rest of the wiki reads are GETs.
+  const isQuery = !!wp && method === "POST" && /^(search|ask)$/.test(wp[2] as string);
+  if (wp && (method === "GET" || isQuery)) {
     const ws = decodeURIComponent(wp[1] as string);
     const rest = wp[2] as string;
     const pg = rest.match(/^pages\/([^/]+)(\/history)?$/);
@@ -897,7 +899,7 @@ export function handleV2(
     if (rest.startsWith("facts")) return FACTS[ws] ?? [];
     if (rest.startsWith("search")) {
       // The real search is text based, so a page's backlinks are the pages that match its title.
-      const term = (search.get("q") ?? "").toLowerCase();
+      const term = String(isQuery ? (body.q ?? "") : (search.get("q") ?? "")).toLowerCase();
       const self = PAGES.find((x) => x.ws === ws && x.title.toLowerCase() === term);
       if (self) return { results: backlinks(role, ws, self.id) };
       return {

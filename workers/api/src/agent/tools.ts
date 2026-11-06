@@ -125,7 +125,8 @@ async function search(env: ToolEnv, q: string, brain: string | undefined): Promi
     out.push(dataBlock(h.b.param, page.id, page.title));
     if (out.length >= MAX_SEARCH_HITS) break;
   }
-  if (!out.length) await recordGaps(env.c, { text: q, targets: scope, source: "agent" });
+  if (!out.length)
+    await recordGaps(env.c, { text: q, targets: scope, source: "agent", scoped: !!brain });
   return ok(out.length ? out.join("\n") : dataBlock("search", null, "no pages"));
 }
 

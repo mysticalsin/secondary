@@ -1,5 +1,16 @@
 # HANDOFF
 
+## v8 review security fixes on `v8/review` (2026-11-06, Claude Opus, not merged, nothing pushed, nothing deployed)
+
+Report `docs/security/V8-SECURITY-REVIEW.md` (vault copy). Tests: `workers/api/test/v8-security.test.ts` (run against the pre-fix code first: 15 of 17 failed there).
+
+- **H-1** `gaps/capture.ts`: no fallback to Company Global or a team brain. Text is stored only in the one brain the call was scoped to (`scoped`, set by Ask with `scope`, wiki `/:ws/`, agent `brain`), or, for a cross-brain question, in an account brain whose client the text names. Text naming any other client, NDA or restricted brain in the asker's view is dropped (`namesHit` in `gaps/model.ts`).
+- **M-1** `v8-keys.ts`: people are stored as HMAC(PSEUDONYM_KEY) keys (`k_...`; askers per brain), v8 items are authored by `svc:v8`. `Workspace.v8Subject` and `v8Forget` feed `exportSubject` (`v8Records`, own rows only), `eraseSubject` and `reapplyErasures`. Without the key nothing per-person is written (desk writes answer 503, gaps drop). Gap `assignedTo` in the item view and desk list resolve through the eligible people; the desk list names only the caller (`assigned` is a flag).
+- **M-2** wiki `GET /search` and `/ask` no longer record; `POST /v1/wiki/:ws/search|ask` with `{q}` does (web client switched). Capture is limited to 20 a minute per person (`GAP_CAPTURE_PER_MIN`), 25 new gaps per person per brain, and a full brain drops its lowest-scored open gap.
+- **L-1** 30 a minute on desk comment, snooze, reassign. **I-5** gap role counts only from 3 askers, else `other`.
+- Deferred with reasons in `docs/security/ACCEPTED-RISKS.md`: L-2 to L-6, I-1 to I-4. Lens items (L-7 to L-9, I-1, I-4) belong to `v8/lens`.
+- Deploy note: `PSEUDONYM_KEY` must be set on the api (it already is for erase); rotating it orphans per-person desk state and gap asker hashes.
+
 ## v8 Review desk and Knowledge gaps on branch `v8/review` (2026-11-06, Claude Opus, not merged, nothing pushed, nothing deployed)
 
 Design `docs/DESIGN-V8-AMAZING.md` sections 1 and 2; shapes `docs/API-CONTRACT.md` "v8 Review desk and Knowledge gaps".

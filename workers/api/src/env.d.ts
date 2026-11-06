@@ -64,5 +64,7 @@ interface Env {
   WIKI_SEED?: string;
   /** Var. Wiki searches per person and minute (default 30), and wiki writes per person and minute (default 30). */
   WIKI_SEARCH_PER_MIN?: string;
+  /** Gap signals one person may record a minute (default 20). */
+  GAP_CAPTURE_PER_MIN?: string;
   WIKI_WRITE_PER_MIN?: string;
 }

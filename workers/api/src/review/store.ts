@@ -1,9 +1,11 @@
 // Review desk state kept in the brain's own workspace: per-item snooze, assignment and "changes
 // requested" (kind v8_review), and the brain's review SLA (kind v8_cfg). They are plain workspace
 // items of their own kinds, so a snapshot, a restore, an erasure and a reseed already cover them and
-// no listing of wiki proposals ever sees them. Ids and times only, never page text.
+// no listing of wiki proposals ever sees them. Keyed person ids and times only, never a principal id
+// and never page text; the items are authored by a service actor (M-1).
 
 import type { workspaceStub } from "../stubs.ts";
+import { V8_ACTOR } from "../v8-keys.ts";
 import { DEFAULT_SLA_DAYS, SLA_MAX_DAYS, SLA_MIN_DAYS } from "./model.ts";
 
 type Stub = ReturnType<typeof workspaceStub>;
@@ -15,16 +17,17 @@ const STATE_PREFIX = "rvx:";
 const MAX_STATES = 1_000;
 
 export interface ReviewState {
-  /** principal id to the instant the item stays out of that person's way. */
+  /** Person key (keyed id, see v8-keys.ts) to the instant the item stays out of that person's way. */
   snooze: Record<string, number>;
+  /** Person keys, never principal ids (M-1). */
   assignedTo: string | null;
   assignedBy: string | null;
   assignedAt: number | null;
   /** Changes were requested on the proposal at this revision hash. */
   changes: { at: number; by: string; hash: string } | null;
-  /** principal id to the instant they were last mentioned in the discussion. */
+  /** person key to the instant they were last mentioned in the discussion. */
   mentions: Record<string, number>;
-  /** principal id to the instant they last wrote in the discussion. */
+  /** person key to the instant they last wrote in the discussion. */
   answered: Record<string, number>;
 }
 
@@ -70,7 +73,6 @@ export async function writeState(
   stub: Stub,
   proposalId: string,
   state: ReviewState,
-  actor: string,
   plane: string,
   now: number,
 ): Promise<void> {
@@ -84,7 +86,7 @@ export async function writeState(
       plane,
       origin: "personal",
       status: "open",
-      authorId: actor,
+      authorId: V8_ACTOR,
       body: JSON.stringify({ ...state, snooze: live }),
     },
     now,
@@ -107,7 +109,6 @@ export async function readSla(stub: Stub): Promise<number> {
 export async function writeSla(
   stub: Stub,
   days: number,
-  actor: string,
   plane: string,
   now: number,
 ): Promise<void> {
@@ -119,7 +120,7 @@ export async function writeSla(
       plane,
       origin: "personal",
       status: "open",
-      authorId: actor,
+      authorId: V8_ACTOR,
       body: JSON.stringify({ days }),
     },
     now,

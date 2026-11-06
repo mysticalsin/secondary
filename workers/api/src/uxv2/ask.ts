@@ -219,7 +219,8 @@ export function askRoutes(deps: AppDeps): Hono<AppEnv> {
     const tokens = askTokens(q);
     if (!tokens.length) throw bad("invalid_query");
     let targets: Target[];
-    if (b.scope === undefined || b.scope === null) {
+    const scoped = !(b.scope === undefined || b.scope === null);
+    if (!scoped) {
       targets = admittedWikis(c).map((w) => ({
         param: w.param,
         nodeId: w.nodeId,
@@ -249,7 +250,7 @@ export function askRoutes(deps: AppDeps): Hono<AppEnv> {
         const send: Send = (event, data) =>
           ctrl.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
         try {
-          await answer(c, deps, q, tokens, targets, send);
+          await answer(c, deps, q, tokens, targets, scoped, send);
         } catch (e) {
           console.warn(JSON.stringify({ at: "ux2_ask", error: String(e).slice(0, 160) }));
           send("error", { error: "internal_error" });
@@ -395,6 +396,7 @@ async function answer(
   q: string,
   tokens: string[],
   targets: Target[],
+  scoped: boolean,
   send: Send,
 ): Promise<void> {
   const s = sess(c);
@@ -424,7 +426,7 @@ async function answer(
   };
 
   if (!supported.length && !got.hits.length) {
-    await recordGaps(c, { text: q, targets, source: "ask" });
+    await recordGaps(c, { text: q, targets, source: "ask", scoped });
     markdown = "The brain holds nothing you may read that answers this.";
     cited = [];
   } else {

@@ -7,6 +7,7 @@
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
 import { type Brain, brainOf, needBrain } from "../brains/open.ts";
+import { rateLimit } from "../brains/shared.ts";
 import { humanIdsOf } from "../human.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
@@ -14,6 +15,7 @@ import { notifyChangesRequested } from "../ux/notify.ts";
 import { audit, bad, type C, forbidden, notFound, readObject, sess, text } from "../ux/util.ts";
 import { type Question, questionsOf, resolveQuestion } from "../uxv2/questions.ts";
 import { safeJson } from "../uxv2/shared.ts";
+import { KeyUnavailable, keyed, keyOf } from "../v8-keys.ts";
 import { readableMany } from "../wiki/routes.ts";
 import { eligiblePeople, notify, type Person } from "./eligible.ts";
 import {
@@ -58,6 +60,8 @@ const ID = /^(?:cand:[a-z0-9][A-Za-z0-9_.:@-]*:[0-9a-f]{8}|ask:[0-9a-f]{16})$/;
 
 /** What the desk knows about one brain, read once per request. */
 interface Ctx {
+  /** The caller's person key, null while PSEUDONYM_KEY is not configured (then no per-person state shows). */
+  meKey: string | null;
   brain: Brain | null;
   sla: number;
   states: Map<string, ReviewState>;
@@ -67,12 +71,22 @@ interface Ctx {
 async function ctxFor(c: C, ids: string[]): Promise<Map<string, Ctx>> {
   const s = sess(c);
   const human = await humanIdsOf(c.env, s);
+  const meKey = await keyOf(c.env, s.tenantId, s.principal.id).catch((e) => {
+    if (e instanceof KeyUnavailable) return null;
+    throw e;
+  });
   const out = new Map<string, Ctx>();
   await Promise.all(
     [...new Set(ids)].map(async (id) => {
       const brain = await brainOf(c, id, human);
       if (!brain) {
-        out.set(id, { brain: null, sla: DEFAULT_SLA_DAYS, states: new Map(), fieldLabels: [] });
+        out.set(id, {
+          meKey,
+          brain: null,
+          sla: DEFAULT_SLA_DAYS,
+          states: new Map(),
+          fieldLabels: [],
+        });
         return;
       }
       const [sla, states, cfg] = await Promise.all([
@@ -81,6 +95,7 @@ async function ctxFor(c: C, ids: string[]): Promise<Map<string, Ctx>> {
         brain.stub.brainConfig(),
       ]);
       out.set(id, {
+        meKey,
         brain,
         sla,
         states,
@@ -155,8 +170,10 @@ function rowOf(c: C, q: Question, x: Ctx) {
     risk: flags,
   });
   const st = x.states.get(q.id) ?? emptyState();
-  const snoozedUntil = st.snooze[me] ?? null;
-  const mentioned = (st.mentions[me] ?? 0) > (st.answered[me] ?? 0);
+  const mk = x.meKey;
+  const snoozedUntil = (mk && st.snooze[mk]) || null;
+  const mentioned = !!mk && (st.mentions[mk] ?? 0) > (st.answered[mk] ?? 0);
+  const assignedToMe = !!mk && st.assignedTo === mk;
   const waitingOnAuthor = !!st.changes && st.changes.hash === (d.revisionHash ?? "");
   const section = sectionOf({
     what,
@@ -190,8 +207,10 @@ function rowOf(c: C, q: Question, x: Ctx) {
     reasons: scored.reasons,
     section,
     snoozedUntil: snoozedUntil && snoozedUntil > now ? new Date(snoozedUntil).toISOString() : null,
-    assignedTo: st.assignedTo,
-    assignedToMe: st.assignedTo === me,
+    // The record holds a keyed id: the list names the caller only. The item view resolves the person.
+    assignedTo: assignedToMe ? me : null,
+    assignedToMe,
+    assigned: !!st.assignedTo,
     waitingOnAuthor,
     summary: {
       text: summaryOf({
@@ -315,6 +334,16 @@ async function findQuestion(c: C, id: string): Promise<{ q: Question; x: Ctx; ro
 
 const refuseOwn = (id: string): boolean => id.startsWith("ask:");
 
+/** The caller's person key for a write, or the 503 that says the secret is not configured. */
+async function myKey(c: C): Promise<string | Response> {
+  try {
+    return await keyOf(c.env, sess(c).tenantId, sess(c).principal.id);
+  } catch (e) {
+    if (e instanceof KeyUnavailable) return c.json({ error: "pseudonym_key_missing" }, 503);
+    throw e;
+  }
+}
+
 export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
 
@@ -426,6 +455,13 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
           )
         : [];
     const names = new Map(people.map((p) => [p.id, p]));
+    const assignee = (
+      await keyed(
+        c.env,
+        s.tenantId,
+        people.map((p) => p.id),
+      ).catch(() => null)
+    )?.idOf(x.states.get(id)?.assignedTo);
     return c.json({
       id,
       summary: row.summary,
@@ -446,9 +482,7 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
       eligible: people.map((p) => ({ id: p.id, name: p.name, handle: p.handle })),
       state: {
         snoozedUntil: row.snoozedUntil,
-        assignedTo: row.assignedTo
-          ? { id: row.assignedTo, name: names.get(row.assignedTo)?.name ?? null }
-          : null,
+        assignedTo: assignee ? { id: assignee, name: names.get(assignee)?.name ?? null } : null,
         waitingOnAuthor: row.waitingOnAuthor,
       },
       slaDays: x.sla,
@@ -463,6 +497,8 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
     if (body.acknowledged !== undefined && typeof body.acknowledged !== "boolean")
       throw bad("invalid_acknowledged");
     if (refuseOwn(id)) throw notFound();
+    const limited = await rateLimit(c, "review_write", 30);
+    if (limited) return limited;
     const { q, x } = await findQuestion(c, id);
     if (!x.brain) throw notFound();
     const flags = detectSensitivity({ body: t });
@@ -485,6 +521,13 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
     );
     const handles = mentionsIn(t);
     const hit = people.filter((p) => handles.includes(p.handle) && p.id !== me);
+    const mine = await myKey(c);
+    if (mine instanceof Response) return mine;
+    const hitKeys = await keyed(
+      c.env,
+      s.tenantId,
+      hit.map((p) => p.id),
+    );
     const unresolved = handles.filter((h) => !people.some((p) => p.handle === h));
     if (
       !(await audit(c, {
@@ -498,9 +541,9 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "audit_unavailable" }, 503);
     const m = await x.brain.stub.comment(id, me, t, s.ctx.now);
     const st = await readState(x.brain.stub, id);
-    st.answered[me] = s.ctx.now;
-    for (const p of hit) st.mentions[p.id] = s.ctx.now;
-    await writeState(x.brain.stub, id, st, me, x.brain.plane, s.ctx.now);
+    st.answered[mine] = s.ctx.now;
+    for (const p of hit) st.mentions[hitKeys.of(p.id)] = s.ctx.now;
+    await writeState(x.brain.stub, id, st, x.brain.plane, s.ctx.now);
     await notify(
       c,
       hit.map((p) => p.id),
@@ -535,6 +578,10 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
       )
         throw bad("invalid_until");
     }
+    const limited = await rateLimit(c, "review_write", 30);
+    if (limited) return limited;
+    const mine = await myKey(c);
+    if (mine instanceof Response) return mine;
     const { x } = await findQuestion(c, id);
     if (!x.brain) throw notFound();
     if (
@@ -548,9 +595,9 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
     )
       return c.json({ error: "audit_unavailable" }, 503);
     const st = await readState(x.brain.stub, id);
-    if (until === null) delete st.snooze[s.principal.id];
-    else st.snooze[s.principal.id] = until;
-    await writeState(x.brain.stub, id, st, s.principal.id, x.brain.plane, s.ctx.now);
+    if (until === null) delete st.snooze[mine];
+    else st.snooze[mine] = until;
+    await writeState(x.brain.stub, id, st, x.brain.plane, s.ctx.now);
     return c.json({
       ok: true,
       snoozedUntil: until === null ? null : new Date(until).toISOString(),
@@ -563,6 +610,8 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
     const body = await readObject(c);
     if (body.to !== null && typeof body.to !== "string") throw bad("invalid_to");
     if (refuseOwn(id)) throw notFound();
+    const limited = await rateLimit(c, "review_write", 30);
+    if (limited) return limited;
     const { q, x } = await findQuestion(c, id);
     if (!x.brain || x.brain.personal) throw notFound();
     const s = sess(c);
@@ -575,6 +624,9 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
     const to = body.to as string | null;
     if (to !== null && !people.some((p) => p.id === to))
       return forbidden(c, "That person cannot review this brain, so the item cannot go to them");
+    const mine = await myKey(c);
+    if (mine instanceof Response) return mine;
+    const toKey = to === null ? null : await keyOf(c.env, s.tenantId, to);
     if (
       !(await audit(c, {
         action: to === null ? "review.unassign" : "review.reassign",
@@ -586,10 +638,10 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
     )
       return c.json({ error: "audit_unavailable" }, 503);
     const st = await readState(x.brain.stub, id);
-    st.assignedTo = to;
-    st.assignedBy = to === null ? null : s.principal.id;
+    st.assignedTo = toKey;
+    st.assignedBy = to === null ? null : mine;
     st.assignedAt = to === null ? null : s.ctx.now;
-    await writeState(x.brain.stub, id, st, s.principal.id, x.brain.plane, s.ctx.now);
+    await writeState(x.brain.stub, id, st, x.brain.plane, s.ctx.now);
     if (to)
       await notify(
         c,
@@ -640,6 +692,8 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
         409,
       );
     const s = sess(c);
+    const mine = await myKey(c);
+    if (mine instanceof Response) return mine;
     if (
       !(await audit(c, {
         action: "review.request_changes",
@@ -651,9 +705,9 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "audit_unavailable" }, 503);
     await x.brain.stub.comment(id, s.principal.id, note, s.ctx.now);
     const st = await readState(x.brain.stub, id);
-    st.changes = { at: s.ctx.now, by: s.principal.id, hash: body.revisionHash };
-    st.answered[s.principal.id] = s.ctx.now;
-    await writeState(x.brain.stub, id, st, s.principal.id, x.brain.plane, s.ctx.now);
+    st.changes = { at: s.ctx.now, by: mine, hash: body.revisionHash };
+    st.answered[mine] = s.ctx.now;
+    await writeState(x.brain.stub, id, st, x.brain.plane, s.ctx.now);
     await notifyChangesRequested(c, x.brain.nodeId, id, dOf(q).authorId ?? null);
     return c.json({ ok: true });
   });
@@ -696,7 +750,7 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
-    await writeSla(b.stub, days, s.principal.id, b.plane, s.ctx.now);
+    await writeSla(b.stub, days, b.plane, s.ctx.now);
     return c.json({
       days,
       defaultDays: DEFAULT_SLA_DAYS,

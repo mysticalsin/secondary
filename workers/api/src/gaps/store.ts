@@ -3,6 +3,7 @@
 // holds the asked text only because the asker could read this brain and no personal data was found.
 
 import type { workspaceStub } from "../stubs.ts";
+import { V8_ACTOR } from "../v8-keys.ts";
 import {
   ASKERS_KEPT,
   DAY,
@@ -101,13 +102,7 @@ export async function getGap(stub: Stub, id: string): Promise<Gap | null> {
   return r && r.kind === GAP_KIND ? parse(r.id, r.body) : null;
 }
 
-export async function putGap(
-  stub: Stub,
-  g: Gap,
-  actor: string,
-  plane: string,
-  now: number,
-): Promise<void> {
+export async function putGap(stub: Stub, g: Gap, plane: string, now: number): Promise<void> {
   const { id, ...rest } = g;
   // Per-day counts older than the window carry no meaning.
   const cut = dayOf(now - DAYS_KEPT * DAY);
@@ -120,7 +115,7 @@ export async function putGap(
       plane,
       origin: "personal",
       status: "open",
-      authorId: actor,
+      authorId: V8_ACTOR,
       body: JSON.stringify(rest),
     },
     now,

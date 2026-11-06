@@ -11,6 +11,7 @@ import { eligiblePeople, notify, type Person } from "../review/eligible.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, forbidden, notFound, readObject, sess } from "../ux/util.ts";
+import { KeyUnavailable, keyOf } from "../v8-keys.ts";
 import { GENERATED, PAGE_ID, slug } from "../wiki/text.ts";
 import {
   closureRate,
@@ -34,13 +35,32 @@ const steward = (b: Brain): boolean => b.can.manage || b.can.decide;
 
 const idOf = (c: C): string => c.req.param("gid") ?? "";
 
+/** People by their person key, the way a gap record names them (M-1). */
+async function byKey(c: C, people: readonly Person[]): Promise<Map<string, Person>> {
+  const s = sess(c);
+  const m = new Map<string, Person>();
+  try {
+    for (const p of people) m.set(await keyOf(c.env, s.tenantId, p.id), p);
+  } catch (e) {
+    if (!(e instanceof KeyUnavailable)) throw e;
+  }
+  return m;
+}
+
+/** Role counts single out an asker in a small brain, so they show only from three askers up (I-5). */
+const rolesShown = (g: Gap): Record<string, number> =>
+  g.askerHashes.length >= 3
+    ? g.byRole
+    : { other: Object.values(g.byRole).reduce((a, b) => a + b, 0) };
+
+/** `names` is keyed by person key, see `byKey`. */
 function out(g: Gap, now: number, names: Map<string, Person>) {
   return {
     id: g.id,
     text: g.text,
     count: g.count,
     askers: g.askerHashes.length,
-    byRole: g.byRole,
+    byRole: rolesShown(g),
     bySource: g.bySource,
     days: daysOf(g.days, now, DAYS_SHOWN),
     firstAt: new Date(g.firstAt).toISOString(),
@@ -48,7 +68,10 @@ function out(g: Gap, now: number, names: Map<string, Person>) {
     score: scoreOf({ count: g.count, askers: g.askerHashes.length, lastAt: g.lastAt }, now),
     status: g.status,
     assignedTo: g.assignedTo
-      ? { id: g.assignedTo, name: names.get(g.assignedTo)?.name ?? null }
+      ? {
+          id: names.get(g.assignedTo)?.id ?? "",
+          name: names.get(g.assignedTo)?.name ?? null,
+        }
       : null,
     due: g.due,
     overdue: !!g.due && g.due < dayOf(now) && ACTIVE.has(g.status),
@@ -64,7 +87,7 @@ function out(g: Gap, now: number, names: Map<string, Person>) {
  * Settle a gap whose draft has been decided: published means closed, rejected means it needs a new
  * attempt. Written back so the next read is cheap.
  */
-async function settle(b: Brain, gaps: Gap[], now: number, actor: string): Promise<Gap[]> {
+async function settle(b: Brain, gaps: Gap[], now: number): Promise<Gap[]> {
   const next: Gap[] = [];
   for (const g of gaps) {
     if (g.status === "drafted" && g.proposalId) {
@@ -74,7 +97,7 @@ async function settle(b: Brain, gaps: Gap[], now: number, actor: string): Promis
           p.status === "approved"
             ? { ...g, status: "closed", closedAt: p.updatedAt }
             : { ...g, status: "open", proposalId: null, pageId: null };
-        await putGap(b.stub, done, actor, b.plane, now);
+        await putGap(b.stub, done, b.plane, now);
         next.push(done);
         continue;
       }
@@ -125,9 +148,9 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
     const s = sess(c);
     const status = c.req.query("status") ?? "active";
     if (!["active", "closed", "dismissed", "all"].includes(status)) throw bad("invalid_status");
-    const all = await settle(b, await listGaps(b.stub), s.ctx.now, s.principal.id);
+    const all = await settle(b, await listGaps(b.stub), s.ctx.now);
     const people = steward(b) ? await contributors(b, c) : [];
-    const names = new Map(people.map((p) => [p.id, p]));
+    const names = await byKey(c, people);
     const shown = all
       .filter((g) =>
         status === "all"
@@ -173,6 +196,15 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
         c,
         "That person cannot contribute to this brain, so the gap cannot go to them",
       );
+    let toKey: string;
+    let byMe: string;
+    try {
+      toKey = await keyOf(c.env, s.tenantId, body.to);
+      byMe = await keyOf(c.env, s.tenantId, s.principal.id);
+    } catch (e) {
+      if (e instanceof KeyUnavailable) return c.json({ error: "pseudonym_key_missing" }, 503);
+      throw e;
+    }
     if (
       !(await audit(c, {
         action: "gap.assign",
@@ -185,12 +217,12 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "audit_unavailable" }, 503);
     const next: Gap = {
       ...g,
-      assignedTo: body.to,
-      assignedBy: s.principal.id,
+      assignedTo: toKey,
+      assignedBy: byMe,
       due,
       status: g.status === "drafted" || g.status === "closed" ? g.status : "assigned",
     };
-    await putGap(b.stub, next, s.principal.id, b.plane, s.ctx.now);
+    await putGap(b.stub, next, b.plane, s.ctx.now);
     await notify(
       c,
       [body.to],
@@ -198,7 +230,7 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
       `A knowledge gap in ${b.label} was assigned to you`,
       `gap:${b.param}`,
     );
-    return c.json({ ok: true, gap: out(next, s.ctx.now, new Map(people.map((p) => [p.id, p]))) });
+    return c.json({ ok: true, gap: out(next, s.ctx.now, await byKey(c, people)) });
   });
 
   // Start a page from a gap: the title is pre-filled and the draft goes to review, never published.
@@ -278,7 +310,6 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
     await putGap(
       b.stub,
       { ...g, status: "drafted", proposalId: made.id, pageId },
-      s.principal.id,
       b.plane,
       s.ctx.now,
     );
@@ -327,12 +358,11 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
       lastAt: Math.max(into.lastAt, from.lastAt),
       mergedFrom: into.mergedFrom + 1 + from.mergedFrom,
     };
-    await putGap(b.stub, merged, s.principal.id, b.plane, s.ctx.now);
+    await putGap(b.stub, merged, b.plane, s.ctx.now);
     // The old record keeps no counts of its own, only where it went, so later asks follow it.
     await putGap(
       b.stub,
       { ...from, status: "merged", mergedInto: into.id, assignedTo: null, due: null },
-      s.principal.id,
       b.plane,
       s.ctx.now,
     );
@@ -373,7 +403,7 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
       dismissedReason: body.reason as DismissReason,
       dismissedNote: note,
     };
-    await putGap(b.stub, next, s.principal.id, b.plane, s.ctx.now);
+    await putGap(b.stub, next, b.plane, s.ctx.now);
     return c.json({ ok: true, gap: out(next, s.ctx.now, new Map()) });
   });
 
@@ -391,7 +421,7 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
       if (p.param === "me") continue;
       const b = await brainOf(c, p.param, human);
       if (!b || b.personal || !steward(b)) continue;
-      const gaps = await settle(b, await listGaps(b.stub), s.ctx.now, s.principal.id);
+      const gaps = await settle(b, await listGaps(b.stub), s.ctx.now);
       all.push(...gaps);
       for (const g of gaps)
         if (ACTIVE.has(g.status))
