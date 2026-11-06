@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { admittedBrainParams, type Brain, brainOf, needBrain } from "../brains/open.ts";
 import { rateLimit } from "../brains/shared.ts";
 import { humanIdsOf } from "../human.ts";
+import { recordGapsClosed } from "../pulse/hooks.ts";
 import { eligiblePeople, notify, type Person } from "../review/eligible.ts";
 import { ruleGate } from "../rules/gate.ts";
 import { detectSensitivity } from "../sensitivity.ts";
@@ -99,6 +100,7 @@ async function settle(b: Brain, gaps: Gap[], now: number): Promise<Gap[]> {
             ? { ...g, status: "closed", closedAt: p.updatedAt }
             : { ...g, status: "open", proposalId: null, pageId: null };
         await putGap(b.stub, done, b.plane, now);
+        if (done.status === "closed") await recordGapsClosed(b.stub, 1, "closed", p.updatedAt);
         next.push(done);
         continue;
       }
@@ -419,6 +421,7 @@ export function gapRoutes(_deps: AppDeps): Hono<AppEnv> {
       dismissedNote: note,
     };
     await putGap(b.stub, next, b.plane, s.ctx.now);
+    if (g.status !== "dismissed") await recordGapsClosed(b.stub, 1, "dismissed", s.ctx.now);
     return c.json({ ok: true, gap: out(next, s.ctx.now, new Map()) });
   });
 

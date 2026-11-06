@@ -1,11 +1,12 @@
 // Pulse "rules triggered": the rules gate writes one id-only line to the brain's log whenever a rule
 // decided something; the journal turns the lines into `N rules triggered`; the pulse dot reads that count.
-// "Gaps closed" has a named hook that does nothing until v8/review is merged.
+// "Gaps closed" comes from the gap review: a published draft or a dismissal writes one line.
 
 import { beforeAll, describe, expect, it } from "vitest";
-import { recordGapsClosedNotConnected } from "../src/pulse/hooks.ts";
+
 import { parseJournal } from "../src/pulse/parse.ts";
 import { ALPHA, as, json, type Loose, seed, wsOf } from "./helpers.ts";
+import { sseOf } from "./uxv2-helpers.ts";
 
 const ADMIN = "v7p.admin@example.invalid";
 const ADMIN2 = "v7p.admin2@example.invalid";
@@ -86,9 +87,30 @@ describe("rules triggered in the journal", () => {
     expect(bid).toHaveLength(0);
   });
 
-  it("the gaps-closed hook is a named no-op until v8/review is connected", async () => {
-    expect(await recordGapsClosedNotConnected(wsOf(ALPHA, "c_delivery"), 3)).toBeUndefined();
-    const log = await wsOf(ALPHA, "c_delivery").wikiLog(100);
-    expect(log.filter((l) => l.kind === "gap.closed")).toHaveLength(0);
+  it("gaps closed: a dismissed gap and a published draft each add one line, counted in the journal", async () => {
+    const ws = wsOf(ALPHA, "c_bid");
+    const bid = ["head_bid", "v7p.steward@example.invalid"] as const;
+    const asBid = (path: string, body?: Loose) =>
+      as(bid[0], path, { email: bid[1], ...(body ? { body } : {}) });
+    for (const q of ["What is our plinth quorum rule?", "How does the plinth quorum work?"])
+      await sseOf(await asBid("/v1/ask", { q, scope: "c_bid" }));
+    const list = await json<Loose>(await asBid("/v1/brains/c_bid/gaps"));
+    const gap = (list.gaps as Loose[]).find((g) => g.text.toLowerCase().includes("plinth"));
+    expect(gap).toBeTruthy();
+    const dismiss = await asBid(`/v1/brains/c_bid/gaps/${encodeURIComponent(gap?.id)}/dismiss`, {
+      reason: "not_relevant",
+    });
+    expect(dismiss.status, await dismiss.clone().text()).toBe(200);
+    // Dismissing again changes nothing and counts nothing.
+    await asBid(`/v1/brains/c_bid/gaps/${encodeURIComponent(gap?.id)}/dismiss`, {
+      reason: "not_relevant",
+    });
+    const rows = (await ws.wikiLog(100)).filter((l) => l.kind === "gap.closed");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.detail).toBe('{"count":1,"how":"dismissed"}');
+    await ws.brainJournalRun(today, Date.now());
+    const page = await json<Loose>(await asBid(`/v1/wiki/c_bid/pages/journal-${today}`));
+    expect(page.markdown).toContain("1 gap closed");
+    expect(parseJournal(`journal-${today}`, page.markdown)?.counts.gaps).toBe(1);
   });
 });

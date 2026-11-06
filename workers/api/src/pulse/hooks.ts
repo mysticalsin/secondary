@@ -24,9 +24,20 @@ export async function recordRuleTriggered(
 }
 
 /**
- * NOT CONNECTED. Knowledge-gap review (v8/review) will call this when it closes gaps in a brain. Until that
- * branch is merged it does nothing, so the Pulse "gaps closed" line stays at 0. To connect it, write one
- * `gap.closed` line per closed gap (`stub.wikiLogAppend("review", "gap.closed", { count: 1 }, now)`) and the
- * journal and the pulse dots pick it up; see brainJournalRun.
+ * Knowledge-gap review calls this when a gap leaves the open list: its draft was published (`closed`) or a
+ * steward dismissed it (`dismissed`). One id-free line with a count; the journal turns the day's lines into
+ * `N gaps closed` and the pulse dots read that.
  */
-export async function recordGapsClosedNotConnected(_stub: Stub, _count: number): Promise<void> {}
+export async function recordGapsClosed(
+  stub: Stub,
+  count: number,
+  how: "closed" | "dismissed",
+  at: number,
+): Promise<void> {
+  if (!Number.isInteger(count) || count < 1) return;
+  try {
+    await stub.wikiLogAppend("review", "gap.closed", { count, how }, at);
+  } catch {
+    // The journal is a summary; closing a gap never fails because a line could not be written.
+  }
+}

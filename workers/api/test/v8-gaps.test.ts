@@ -265,6 +265,10 @@ describe("start page", () => {
     expect(approve.status, await approve.clone().text()).toBe(200);
     const closed = (await findGap("wombatic", "?status=closed")) as Loose;
     expect(closed.status).toBe("closed");
+    // The Pulse journal hears about it once: one `gap.closed` line, and a second read adds none.
+    await findGap("wombatic", "?status=closed");
+    const lines = (await wsOf(ALPHA, WS).wikiLog(500)).filter((l) => l.kind === "gap.closed");
+    expect(lines.filter((l) => l.detail.includes('"how":"closed"'))).toHaveLength(1);
     const d = await gaps(STEWARD, "?status=all");
     expect(d.kpi.closed).toBeGreaterThanOrEqual(1);
     expect(d.kpi.closureRate).toBeGreaterThan(0);
