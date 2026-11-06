@@ -12,7 +12,7 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: [["list"]],
-  outputDir: "../.dev/e2e-results-mock",
+  outputDir: process.env.E2E_OUT ?? "../.dev/e2e-results-mock",
   use: { baseURL: `http://localhost:${PORT}`, trace: "retain-on-failure" },
   webServer: {
     command: `node node_modules/vite/bin/vite.js --port ${PORT} --strictPort`,
