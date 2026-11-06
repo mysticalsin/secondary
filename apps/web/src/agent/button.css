@@ -1,0 +1,55 @@
+/* The My Agent button in the top bar. This is the only My Agent CSS in the main bundle. */
+.agent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--purple);
+  background: var(--purple);
+  color: #fff;
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.agent-btn:hover {
+  background: var(--purple-bright);
+  border-color: var(--purple-bright);
+}
+.agent-btn[aria-expanded="true"] {
+  background: var(--yellow);
+  border-color: var(--yellow);
+  color: #1a0033;
+}
+.agent-btn svg {
+  flex: none;
+}
+@media (max-width: 640px) {
+  /* The extra button must not push the top bar wider than a phone: the search field gives way. */
+  .topbar .searchbar,
+  .topbar .sfield {
+    min-width: 0;
+  }
+  .topbar .sfield {
+    min-width: 96px;
+  }
+  /* Enter still submits the search; the button gives its room to the field. */
+  .topbar .searchbar .btn {
+    display: none;
+  }
+  .agent-btn {
+    width: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  .agent-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}

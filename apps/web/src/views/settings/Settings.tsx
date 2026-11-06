@@ -1,5 +1,5 @@
 import { Download } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ApiError, api } from "../../api";
 import { Await, Empty, fmtDate } from "../../components/ui";
@@ -15,6 +15,8 @@ import { AgentsSection } from "../brains/Agents";
 import { v3 } from "../brains/api";
 import { PilotPage } from "../brains/Pilot";
 import { Usage } from "../usage/Usage";
+
+const AgentSettingsSection = lazy(() => import("../../agent/SettingsSection"));
 
 function Profile() {
   const { t, td } = useI18n();
@@ -288,6 +290,7 @@ export function Settings() {
     { to: "security", label: "v4.settings.security" },
     { to: "privacy", label: "v4.settings.privacy" },
     { to: "appearance", label: "v4.settings.appearance" },
+    { to: "agent-settings", label: "v6.settings" },
     { to: "usage", label: "v4.settings.usage", gap: true },
     { to: "members", label: "v4.settings.members", admin: true, gap: true },
     { to: "pilot", label: "v4.settings.pilot", admin: true },
@@ -317,6 +320,14 @@ export function Settings() {
             <Route path="security" element={<Security />} />
             <Route path="privacy" element={<Privacy />} />
             <Route path="appearance" element={<Appearance />} />
+            <Route
+              path="agent-settings"
+              element={
+                <Suspense fallback={null}>
+                  <AgentSettingsSection />
+                </Suspense>
+              }
+            />
             <Route path="usage" element={<Usage />} />
             <Route path="members" element={guard(<Admin />)} />
             <Route path="pilot" element={guard(<PilotPage />)} />

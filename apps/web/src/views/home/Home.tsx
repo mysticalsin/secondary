@@ -1,5 +1,5 @@
 import { ArrowRight, Search } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, lazy, Suspense, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Await, Empty } from "../../components/ui";
 import { useI18n } from "../../i18n";
@@ -13,6 +13,8 @@ import { ux2 } from "../../uxv2/api";
 import { Ask } from "../ask/Ask";
 import { v3 } from "../brains/api";
 import type { BrainCard, Change, NavBrain } from "../brains/types";
+
+const PinnedGrid = lazy(() => import("../../agent/PinnedGrid"));
 
 interface Recent extends Change {
   brain: NavBrain;
@@ -130,6 +132,10 @@ export function Home() {
       </section>
 
       <Glance />
+
+      <Suspense fallback={null}>
+        <PinnedGrid />
+      </Suspense>
 
       <section className="hsec" aria-labelledby="hr-h">
         <h2 id="hr-h">{t("v4.home.recent")}</h2>

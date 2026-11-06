@@ -1,5 +1,5 @@
 import { FilePlus, FolderPlus, Import, Trash2 } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, lazy, Suspense, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api";
 import { Modal } from "../../components/Modal";
@@ -15,6 +15,8 @@ import { wikiApi } from "../wiki/api";
 import { v3 } from "./api";
 import { ContentsList, type Filters, NO_FILTER } from "./Contents";
 import type { BrainHome } from "./types";
+
+const BrainViews = lazy(() => import("../../agent/BrainViews"));
 
 export function useBrainName(): (b: { id: string; name: string }) => string {
   const { t } = useI18n();
@@ -156,9 +158,10 @@ export function BrainPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
   const [sp, setSp] = useSearchParams();
-  const tab = sp.get("tab") === "insights" ? "insights" : "contents";
-  const pickTab = (next: "contents" | "insights") =>
-    setSp(next === "insights" ? { tab: "insights" } : {}, { replace: true });
+  const TABS = ["contents", "insights", "myview"] as const;
+  type Tab = (typeof TABS)[number];
+  const tab: Tab = TABS.find((k) => k === sp.get("tab")) ?? "contents";
+  const pickTab = (next: Tab) => setSp(next === "contents" ? {} : { tab: next }, { replace: true });
   const home = useApi(() => v3.brain(id), [id]);
   const idx = useApi(() => wikiApi.index(id), [id]);
   const waitingQ = useApi(() => ux2.questions({ brain: id }), [id]);
@@ -196,7 +199,7 @@ export function BrainPage() {
   }, [tree, t]);
   void types;
   return (
-    <div className={`page v4page${tab === "insights" ? " wide" : ""}`}>
+    <div className={`page v4page${tab !== "contents" ? " wide" : ""}`}>
       <Await state={home} skeleton={2}>
         {(b) => (
           <>
@@ -210,7 +213,7 @@ export function BrainPage() {
               </Link>
             </div>
             <div className="tabs" role="tablist" aria-label={t("v5.tabs")}>
-              {(["contents", "insights"] as const).map((k) => (
+              {TABS.map((k) => (
                 <button
                   key={k}
                   type="button"
@@ -224,20 +227,29 @@ export function BrainPage() {
                   onKeyDown={(e) => {
                     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
                       e.preventDefault();
-                      pickTab(k === "contents" ? "insights" : "contents");
-                      document
-                        .getElementById(`bt-${k === "contents" ? "insights" : "contents"}`)
-                        ?.focus();
+                      const at = TABS.indexOf(k);
+                      const to = TABS[
+                        (at + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length
+                      ] as Tab;
+                      pickTab(to);
+                      document.getElementById(`bt-${to}`)?.focus();
                     }
                   }}
                 >
-                  {t(`v5.tab.${k}` as "v5.tab.contents")}
+                  {k === "myview" ? t("v6.tab.myview") : t(`v5.tab.${k}` as "v5.tab.contents")}
                 </button>
               ))}
             </div>
             {tab === "insights" ? (
               <div role="tabpanel" id="bp-insights" aria-labelledby="bt-insights">
                 <InsightsTab brainId={id} />
+              </div>
+            ) : null}
+            {tab === "myview" ? (
+              <div role="tabpanel" id="bp-myview" aria-labelledby="bt-myview">
+                <Suspense fallback={<Skeleton n={2} />}>
+                  <BrainViews brainId={id} />
+                </Suspense>
               </div>
             ) : null}
             <section

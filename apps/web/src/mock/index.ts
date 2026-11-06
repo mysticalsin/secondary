@@ -4,6 +4,9 @@
 // queue, Personal Brain list, create and contribute), GenUI plans, and small stand-ins for the B2
 // reads the shell needs on every page: prefs, drafts, attention, AI status (always "not
 // configured"), and one synced SharePoint file (search "handbook", then open it).
+// v6 My Agent (src/mock/agent.ts): POST /v1/agent/turn as a real streaming Response (deterministic
+// planner, reason ai_disabled) and /v1/views CRUD, share and shared lookup, kept in localStorage and
+// re-resolved per persona with lockTree.
 // What it does not cover, and says so with a 501: the governance console (/v1/admin/*), briefs,
 // personal edit/history/restore, account records, and review detail. Use `pnpm dev:all -- --seed`
 // for those; the mock never pretends to enforce them.
@@ -28,6 +31,7 @@ import type {
   ViewPlan,
 } from "../types";
 import { STAGES } from "../types";
+import { handleAgentViews } from "./agent";
 import { ACCOUNTS, DEPARTMENTS, GOVERNANCES, hash, type Leaf, ORG, REGIONS, THEMES } from "./org";
 import { canDo, ROLES, roleOf, vis } from "./policy";
 import { detectSensitivity } from "./sensitive";
@@ -873,6 +877,8 @@ export async function handle(
   const p = url.pathname;
   const b = (body ?? {}) as Record<string, unknown>;
 
+  const agent = handleAgentViews(method, p, url.searchParams, b, role, persona);
+  if (agent !== NOT_HANDLED) return agent;
   const v3 = handleV3(
     method,
     p,

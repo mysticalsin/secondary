@@ -5,7 +5,7 @@ import { defineConfig } from "@playwright/test";
 const PORT = Number(process.env.MOCK_PORT ?? 5198);
 export default defineConfig({
   testDir: ".",
-  testMatch: /v[45]\.e2e\.ts$/,
+  testMatch: /v[456]\.e2e\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,

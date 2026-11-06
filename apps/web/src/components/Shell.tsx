@@ -1,6 +1,7 @@
 import { Menu, PanelLeftOpen, Search } from "lucide-react";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { AgentButton, AgentHostProvider, AgentPanelSlot } from "../agent/host";
 import { MOCK } from "../api";
 import { useI18n } from "../i18n";
 import { displayName, initialsOf } from "../lib/people";
@@ -80,56 +81,60 @@ export function Shell() {
   };
 
   return (
-    <div className={`v4app${collapsed ? " collapsed" : ""}${phoneOpen ? " phone-open" : ""}`}>
-      <a className="skip-link" href="#main">
-        {t("shell.skip")}
-      </a>
-      <Sidebar onClose={() => setPhoneOpen(false)} onToggle={toggle} />
-      {phoneOpen ? (
-        <button
-          type="button"
-          className="side-backdrop"
-          aria-label={t("v4.sidebar.collapse")}
-          onClick={() => setPhoneOpen(false)}
-        />
-      ) : null}
-      <div className="vstage">
-        {dev ? (
-          <div className="devbar" role="note">
-            <strong>DEV</strong> {t("shell.devbanner")}
-            {MOCK ? <span className="tag-mock">{t("shell.mock")}</span> : null}
-          </div>
-        ) : null}
-        <ElevationBanner />
-        <header className="topbar">
+    <AgentHostProvider>
+      <div className={`v4app${collapsed ? " collapsed" : ""}${phoneOpen ? " phone-open" : ""}`}>
+        <a className="skip-link" href="#main">
+          {t("shell.skip")}
+        </a>
+        <Sidebar onClose={() => setPhoneOpen(false)} onToggle={toggle} />
+        {phoneOpen ? (
           <button
             type="button"
-            className="icon-btn open-side"
-            aria-label={t("v4.sidebar.expand")}
-            aria-expanded={!collapsed || phoneOpen}
-            onClick={toggle}
-          >
-            <PanelLeftOpen size={18} className="ic-wide" aria-hidden />
-            <Menu size={18} className="ic-phone" aria-hidden />
-          </button>
-          <SearchBar />
-          <span className="sp" />
-          <Link to="/settings" className="whoami">
-            <span className="wname">{name || (meError ? t("shell.unknown") : "")}</span>
-            <span className="avatar" aria-hidden>
-              {initialsOf(name)}
-            </span>
-          </Link>
-        </header>
-        <main className="main" id="main" tabIndex={-1}>
-          <Outlet />
-        </main>
-      </div>
-      {toast ? (
-        <div className="toast" role="status">
-          {toast}
+            className="side-backdrop"
+            aria-label={t("v4.sidebar.collapse")}
+            onClick={() => setPhoneOpen(false)}
+          />
+        ) : null}
+        <div className="vstage">
+          {dev ? (
+            <div className="devbar" role="note">
+              <strong>DEV</strong> {t("shell.devbanner")}
+              {MOCK ? <span className="tag-mock">{t("shell.mock")}</span> : null}
+            </div>
+          ) : null}
+          <ElevationBanner />
+          <header className="topbar">
+            <button
+              type="button"
+              className="icon-btn open-side"
+              aria-label={t("v4.sidebar.expand")}
+              aria-expanded={!collapsed || phoneOpen}
+              onClick={toggle}
+            >
+              <PanelLeftOpen size={18} className="ic-wide" aria-hidden />
+              <Menu size={18} className="ic-phone" aria-hidden />
+            </button>
+            <SearchBar />
+            <span className="sp" />
+            <AgentButton />
+            <Link to="/settings" className="whoami">
+              <span className="wname">{name || (meError ? t("shell.unknown") : "")}</span>
+              <span className="avatar" aria-hidden>
+                {initialsOf(name)}
+              </span>
+            </Link>
+          </header>
+          <main className="main" id="main" tabIndex={-1}>
+            <Outlet />
+          </main>
         </div>
-      ) : null}
-    </div>
+        {toast ? (
+          <div className="toast" role="status">
+            {toast}
+          </div>
+        ) : null}
+        <AgentPanelSlot />
+      </div>
+    </AgentHostProvider>
   );
 }

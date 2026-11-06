@@ -1,6 +1,7 @@
+import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import { Shell } from "./components/Shell";
-import { Empty } from "./components/ui";
+import { Empty, Skeleton } from "./components/ui";
 import {
   AccessPage,
   ActivityPage,
@@ -21,6 +22,10 @@ import { Settings } from "./views/settings/Settings";
 import { ProposalPage } from "./views/waiting/Proposal";
 import { Waiting } from "./views/waiting/Waiting";
 
+// My Agent loads on first use: the line parser and Zod stay out of the main bundle.
+const AgentPage = lazy(() => import("./agent/AgentPage"));
+const SharedView = lazy(() => import("./agent/SharedView"));
+
 export function App() {
   return (
     <Routes>
@@ -40,6 +45,22 @@ export function App() {
         <Route path="brains/:id/coach" element={<CoachPage />} />
         <Route path="brains/:id/activity" element={<ActivityPage />} />
         <Route path="brains/:id/trash" element={<TrashPage />} />
+        <Route
+          path="agent"
+          element={
+            <Suspense fallback={<Skeleton n={2} />}>
+              <AgentPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="agent/shared/:shareId"
+          element={
+            <Suspense fallback={<Skeleton n={2} />}>
+              <SharedView />
+            </Suspense>
+          }
+        />
         <Route path="settings/*" element={<Settings />} />
         <Route path="sources/:id" element={<SourceView />} />
         <Route

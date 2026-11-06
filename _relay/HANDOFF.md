@@ -1,5 +1,17 @@
 # HANDOFF
 
+## v6 My Agent and v5 polish on `main` (2026-11-05, Claude, nothing pushed, nothing deployed)
+
+Design `docs/DESIGN-V6-MY-AGENT-GENUI.md` (section 6 is the UI map); shapes `docs/API-CONTRACT.md` "v6 My Agent"; spike and benchmark `docs/research/OPENUI-SPIKE.md`.
+
+- **Spike verdict: adopt `@openuidev/lang-core` 1.1.0 (parser and prompt compiler only), hybrid.** Our Zod validation (`packages/contracts/src/agent-ui/view.ts`) is the security boundary; its runtime is never imported. Its install `postinstall` sends telemetry, so `pnpm-workspace.yaml` denies it in `allowBuilds`. Benchmark (estimate, no API key, js-tiktoken o200k): line format 26% fewer output tokens than minified ViewPlan JSON, 63% fewer than pretty JSON; prompt 22% smaller. Re-run `packages/contracts/scripts/bench-tokens.ts` with `ANTHROPIC_API_KEY` for exact counts.
+- **Gotcha fixed:** the library must be built lazily (it calls `crypto.randomUUID`, forbidden in Worker global scope; unit tests in workerd did not catch it, `pnpm e2e` did). A contracts test now guards the import.
+- **API:** `workers/api/src/agent/` (turn SSE with live line streaming and a `reset` event, read-only tools, saved views, shares, per-viewer `lockTree`). Deterministic planner answers when the AI gate refuses. Tokens go to Usage (capability `agent`), receipts hold ids only. Never run against the live Anthropic API (no key): the stream and tool loop are tested against a stub.
+- **Web:** `apps/web/src/agent/` (lazy chunk; main bundle +5.8 kB gzip), My Agent panel (Cmd/Ctrl+J), `/agent`, `/agent/shared/:id`, pinned grid on Home, Brain My view tab, Settings My Agent (per device), FR/EN, dev mock for turn and views.
+- **v5 polish:** relevance scores now spread (idf, repeats, coverage, links), name pills never touch nodes, centre, collection names or each other (`placePills`, leader lines), denser ring packing with a clear halo at the zone edge, cards in a row align. The full-page "gap" was a screenshot artefact (sticky bar stitched into an element capture); the spec now uses a tall viewport and asserts no empty band.
+- **Gates at the last run:** build, typecheck clean; `biome check .` 0 errors (34 warnings, all but two in files untouched by v6); tests fixtures 23, contracts 114, policy 74, web 115, audit 10, connector 53, ops 16, api 848, mcp 101; Playwright real stack 16 passed (twice), mock stack 45 passed. Screenshots `e2e/screens/v5-*.png`, `v6-*.png` (git-ignored).
+- **Open:** live Anthropic call and exact token counts; the `agent.css` specificity warning; the real-stack personal workspaces survive a reseed (v6-real cleans its own views); planner tie-break picks brains alphabetically.
+
 ## v5 Brain Insights on `main` (2026-11-05, Claude Opus, nothing pushed, nothing deployed)
 
 Design: `docs/DESIGN-V5-BRAIN-INSIGHTS.md`; shapes: `docs/API-CONTRACT.md` "v5 Brain Insights".

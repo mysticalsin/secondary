@@ -101,3 +101,23 @@ Date: 2026-11-05. Plan: Claude Opus. Sponsor: Tony.
 - Unknown components are dropped. No raw HTML renders.
 - Tokens are logged per turn. With AI off, the deterministic answer is still rendered.
 - axe reports zero violations, FR/EN, 400 px, keyboard.
+
+## 6. DESIGN.md for the web UI (built 2026-11-05)
+
+Code: `apps/web/src/agent/`. Strings: `i18n/v6.ts` (EN and FR). Dev mock: `mock/agent.ts`.
+
+**Loading.** Only `host.tsx` and `button.css` are in the main bundle (open state, Ctrl or Cmd+J, the top-bar button, a queue for turns asked from pinned cards). The panel, thread, renderer, parser and Zod load on first use (`React.lazy`): `AgentPanel`, `AgentPage`, `SharedView`, `PinnedGrid`, `BrainViews`, `SettingsSection`.
+
+**Component map.**
+- `stream.ts`: `POST /v1/agent/turn`, SSE reader (`SseParser`, `dispatch`), error wording. In the mock the response comes from `mock/agent.ts`.
+- `useAgentThread.ts`: turns, abort on a new turn or unmount, `newViewStream().set(textSoFar)` on every line, history written on `done`.
+- `Renderer.tsx`: `AgentNode` to React over `insights/*`. Leaves resolve data with `resolve.ts` (cache by key, 20 s, errors never cached; 403 or 404 draws `LockedCard`, other errors a retry). `tree.ts` re-checks any tree that arrives as JSON.
+- `Thread.tsx`, `PinDialog.tsx`: thread, composer, suggestions, Pin, Refine, Show as table.
+- `AgentPanel.tsx` (slide-over), `AgentPage.tsx` (`/agent`), `SharedView.tsx` (`/agent/shared/:shareId`).
+- `PinnedGrid.tsx` (My Home), `BrainViews.tsx` (Brain, My view tab), `ViewCard.tsx` (rename, share, remove), `grid.ts` (pure grid math), `views.ts` (client), `settings.ts` (device settings and history).
+
+**States.** Empty (welcome and suggested prompts built from the person's brains); streaming (status line, skeleton for unfinished nodes, Stop); done; error (plain explanation, Try again); stopped; AI off (quiet note from `meta.mode` and `reason`); locked (generic placeholder, no data); pinned, shared, empty My Home and My view (invitation to ask).
+
+**Keyboard.** Ctrl or Cmd+J toggles the panel, Escape closes it (or the pin dialog first), focus is trapped while open and restored to the opener. Composer: Enter sends, Shift+Enter adds a line, 500 characters. My Home cells are tab stops: arrows move by one cell, Shift+arrows resize, a polite live region announces the new position; the grip and corner handles do the same with the pointer. Every chart has a Show as table twin (per card, and per answer).
+
+**Choices.** The light card theme is a light frame around the same dark chart well (the v5 SVG colours are dark-only). `KpiTile` metrics `pages` and `health` read the brain home, the others the insights call. A brain-scoped `PageList` with no hit shows that brain's pages and says so. The mock keeps views in `localStorage`; a refine of "denser" or "funnel" edits the previous program there.

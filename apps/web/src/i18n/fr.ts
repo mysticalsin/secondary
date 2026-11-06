@@ -4,10 +4,12 @@ import { ux2Fr } from "./ux2";
 import { v3Fr } from "./v3";
 import { v4Fr } from "./v4";
 import { v5Fr } from "./v5";
+import { v6Fr } from "./v6";
 
 export const fr: Record<keyof typeof en, string> = {
   ...v4Fr,
   ...v5Fr,
+  ...v6Fr,
   ...ux2Fr,
   ...v3Fr,
   "common.cancel": "Annuler",
