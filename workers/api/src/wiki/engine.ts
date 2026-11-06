@@ -129,6 +129,7 @@ async function engineRules(
   m: Scope,
   text: string,
   pages: number,
+  action: "propose_page" | "propose_change" = "propose_change",
 ): Promise<ServiceVerdict> {
   if (ctx.seed || isPersonalScope(m.scopeId)) return { stop: false, review: false, stamp: null };
   return ruleServiceCheck(
@@ -138,7 +139,7 @@ async function engineRules(
       principalId: serviceActor(m.scopeId),
       scopeId: m.scopeId,
       nodeId: nodeOfScope(m.scopeId),
-      action: "propose_change",
+      action,
       actor: "agent",
       text,
       cites: 1,
@@ -147,6 +148,14 @@ async function engineRules(
     },
     ctx.now,
   );
+}
+
+async function newPage(
+  api: WikiApi,
+  drafts: PageDraft[],
+): Promise<"propose_page" | "propose_change"> {
+  const have = new Set((await api.wikiPages()).map((p) => p.id));
+  return drafts.some((d) => !have.has(d.pageId)) ? "propose_page" : "propose_change";
 }
 
 const draftText = (pages: PageDraft[]): string => pages.map((p) => p.markdown).join("\n\n");
@@ -496,6 +505,8 @@ async function ingest(
     m,
     `${draftText(pageDrafts)}\n${newFacts.map((f) => `${f.subject} ${f.predicate} ${f.object}`).join("\n")}`,
     Math.max(pageDrafts.length, 1),
+    // A page the wiki does not hold yet is a new page, as it is for a person.
+    await newPage(api, pageDrafts),
   );
   if (verdict.stop) {
     await api.wikiLogAppend(

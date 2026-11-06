@@ -242,6 +242,8 @@ export interface RuleContext {
   time: { weekday: number; hour: number };
   incident: boolean;
   rules: RuleDoc[];
+  /** The save-time floor check asks about one literal action, not the action as a promotion too. */
+  literalAction?: boolean;
 }
 
 export interface RuleMatch {
@@ -305,6 +307,26 @@ const timeValues = (t: RuleContext["time"]): string[] => [
   ...(isOutsideBusinessHours(t) ? ["outside_business_hours"] : []),
 ];
 
+/** Writes and releases that put content into a brain. Into Company Global each one is also a promotion. */
+const INTO_GLOBAL: ReadonlySet<RuleAction> = new Set([
+  "propose_page",
+  "propose_change",
+  "write_session_report",
+  "import",
+  "publish",
+]);
+
+/**
+ * The action names a rule may match for this action. One place decides it, so every path into
+ * Company Global (wiki, push, import, engine, release) meets a rule written for `promote_to_global`
+ * whatever the caller called its action.
+ */
+export function actionsOf(action: RuleAction, brainType: BrainType): RuleAction[] {
+  return brainType === "global" && INTO_GLOBAL.has(action)
+    ? [action, "promote_to_global"]
+    : [action];
+}
+
 /** True when one condition holds in the context. A missing value never matches "is any of". */
 export function conditionHolds(c: Condition, ctx: Omit<RuleContext, "rules" | "base">): boolean {
   if (c.field === "size_pages") {
@@ -320,7 +342,7 @@ export function conditionHolds(c: Condition, ctx: Omit<RuleContext, "rules" | "b
       have = ctx.actor.roles;
       break;
     case "action":
-      have = [ctx.action];
+      have = ctx.literalAction ? [ctx.action] : actionsOf(ctx.action, ctx.brain.type);
       break;
     case "brain":
       have = [ctx.brain.id];
@@ -656,6 +678,7 @@ function weakensFloor(r: RuleDraft): { floor: FloorId; action: RuleAction } | nu
                     contract,
                     time,
                     incident: false,
+                    literalAction: true,
                   };
                   if (!conds.every((c) => conditionHolds(c, ctx))) continue;
                   const f = floorMin({
@@ -780,6 +803,9 @@ export function weakensRule(published: RuleDraft | null, next: RuleDraft): boole
   if (now < was) return true;
   if (now === was && JSON.stringify(next.then) !== JSON.stringify(published.then)) return true;
   if (next.except.incident && !published.except.incident) return true;
+  // Dropping a named approver group is weakening whatever the new effect ranks.
+  const kept = next.then.approvers ?? [];
+  if ((published.then.approvers ?? []).some((g) => !kept.includes(g))) return true;
   if (JSON.stringify(next.when) !== JSON.stringify(published.when)) return true;
   if (
     next.scope.kind !== "tenant" &&

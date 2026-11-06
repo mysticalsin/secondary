@@ -228,7 +228,7 @@ async function detail(c: C, w: Who, r: StoredRule, cache = new Map<string, boole
     editedBy: r.editedBy,
     editedAt: iso(r.editedAt),
     needsSecond: needsTwoPerson(org, r.published, edit),
-    draftHash: base.editable && r.draft ? draftHash(r.draft) : null,
+    draftHash: base.editable && r.draft ? await draftHash(r.draft) : null,
     pending: pending
       ? {
           by: pending.by === s.principal.id ? "you" : "other",
@@ -490,8 +490,15 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
       throw bad("invalid_privacy");
     if (!(await audit(c, { action: "rules.groups", nodeId: null, scopeId: null, revision: null })))
       return c.json({ error: "audit_unavailable" }, 503);
-    await rulesClient(c.env, sess(c).tenantId).groupSet(ids as string[]);
-    return c.json({ ok: true });
+    const s = sess(c);
+    const res = await rulesClient(c.env, s.tenantId).groupSet(ids as string[], {
+      by: s.principal.id,
+      email: s.principal.email,
+      now: s.ctx.now,
+    });
+    if (!res.applied)
+      return c.json({ status: "pending", needs: "second_person", sameActor: res.sameActor }, 202);
+    return c.json({ ok: true, status: "applied" });
   });
 
   r.post("/rules/validate", async (c) => {

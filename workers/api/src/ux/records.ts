@@ -5,6 +5,7 @@
 import { type AdmittedView, canDoInView, type ViewNode } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
+import { ruleGate } from "../rules/gate.ts";
 import { scopeOfNode } from "../scope.ts";
 import { workspaceStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
@@ -215,6 +216,22 @@ export function recordRoutes(): Hono<AppEnv> {
     return { acc, id, stub: workspaceStub(c.env, s.tenantId, acc.scope) } as const;
   };
 
+  /** Brain rules (v7): a record is free text written into an account brain, so a rule can block it. */
+  const guard = (
+    c: C,
+    w: { id: string; acc: { vn: ViewNode } },
+    action: "propose_page" | "propose_change",
+    text: string,
+  ) =>
+    ruleGate(c, {
+      action,
+      brain: { nodeId: w.id, personal: false, vn: w.acc.vn },
+      text,
+      cites: 0,
+      pages: 1,
+      mode: "route",
+    });
+
   r.post("/ux/accounts/:id/records", async (c) => {
     const w = await writer(c);
     if ("deny" in w) return w.deny;
@@ -229,12 +246,20 @@ export function recordRoutes(): Hono<AppEnv> {
         : undefined;
     // A new story has no permission yet, so it cannot carry an external text.
     if (story?.external) throw bad("customer_permission_required", 422);
+    const g = await guard(
+      c,
+      w,
+      "propose_page",
+      [f.title, f.note, story?.internal, story?.lesson].filter(Boolean).join("\n"),
+    );
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "record.create",
         nodeId: w.id,
         scopeId: w.acc.scope,
         revision: 1,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -290,12 +315,22 @@ export function recordRoutes(): Hono<AppEnv> {
       due: f.due === undefined ? st.due : f.due,
       story: st.story ? { ...st.story, ...(story ?? {}) } : null,
     };
+    const g = await guard(
+      c,
+      w,
+      "propose_change",
+      [f.title, next.note, next.story?.internal, next.story?.lesson, next.story?.external]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "record.update",
         nodeId: w.id,
         scopeId: w.acc.scope,
         revision: expected,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -334,12 +369,15 @@ export function recordRoutes(): Hono<AppEnv> {
         ? text(b.text, 1, MAX_BODY_TEXT, "invalid_story")
         : st.story.external;
     if (b.granted && !external) throw bad("external_text_required");
+    const g = await guard(c, w, "propose_change", b.granted ? external : "");
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "record.permission",
         nodeId: w.id,
         scopeId: w.acc.scope,
         revision: expected,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);

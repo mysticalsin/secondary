@@ -499,6 +499,61 @@ describe("review fixes: approvals add up, loosening names are refused cleanly, w
     }
   });
 
+  it("N-1: every write or release into Company Global also meets a rule on promote_to_global", () => {
+    const seedLike = doc("r_seed_like", 1, {
+      when: [
+        when("action", "is_any_of", "promote_to_global"),
+        when("content_flag", "is_any_of", "client_name"),
+      ],
+      then: { effect: "block", message: "No client names in Global." },
+    });
+    for (const action of [
+      "propose_page",
+      "propose_change",
+      "publish",
+      "import",
+      "write_session_report",
+    ] as const) {
+      const hit = evaluateRules(
+        ctx({
+          action,
+          brain: { id: "core", type: "global" },
+          flags: ["client_name"],
+          rules: [seedLike],
+        }),
+      );
+      expect(hit.effect, action).toBe("block");
+      const team = evaluateRules(
+        ctx({
+          action,
+          brain: { id: "c_bid", type: "team" },
+          flags: ["client_name"],
+          rules: [seedLike],
+        }),
+      );
+      expect(team.effect, action).toBe("none");
+    }
+    // An export is not a promotion.
+    expect(
+      evaluateRules(
+        ctx({
+          action: "export",
+          brain: { id: "core", type: "global" },
+          flags: ["client_name"],
+          rules: [seedLike],
+        }),
+      ).effect,
+    ).toBe("none");
+  });
+
+  it("N-3: turning a named-group rule into two approvers drops the group, so it is weakening", () => {
+    const g = validateRule(rule({ then: { effect: "group", approvers: ["privacy"] } }));
+    const t = validateRule(rule({ then: { effect: "two_approvers" } }));
+    if (!g.ok || !t.ok) throw new Error("fixture");
+    expect(weakensRule(g.rule, t.rule)).toBe(true);
+    expect(weakensRule(g.rule, g.rule)).toBe(false);
+  });
+
   it("H-1: weakensRule sees every way of loosening, narrowing or withdrawing a live rule", () => {
     const pub = (over: Record<string, unknown> = {}) => {
       const v = validateRule(rule({ then: { effect: "block", message: "No." }, ...over }));
