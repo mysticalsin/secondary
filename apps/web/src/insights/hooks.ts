@@ -19,6 +19,13 @@ export function useDate(): (iso: string, o?: Intl.DateTimeFormatOptions) => stri
   };
 }
 
+/** An instant as a date in the viewer's own time zone (the lens facts); `useDate` is for calendar days. */
+export function useLocalDate(): (iso: string, o?: Intl.DateTimeFormatOptions) => string {
+  const { locale } = useI18n();
+  return (iso, o) =>
+    new Intl.DateTimeFormat(locale, { dateStyle: "medium", ...o }).format(new Date(iso));
+}
+
 /** Width in CSS pixels of an element, kept up to date. 0 until measured. */
 export function useWidth(ref: RefObject<HTMLElement | null>): number {
   const [w, setW] = useState(0);

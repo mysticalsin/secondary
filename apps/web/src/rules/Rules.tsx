@@ -141,7 +141,6 @@ function Incident({
         weekday: "short",
         hour: "2-digit",
         minute: "2-digit",
-        timeZone: "America/Toronto",
       }).format(new Date(state.until))
     : "";
   const label = state.on

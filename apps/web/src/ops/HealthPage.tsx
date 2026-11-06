@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { useUid } from "../insights/hooks";
 import { TwinTable } from "../insights/InsightCard";
 import { Segmented } from "../insights/Segmented";
+import { zoneName } from "../lib/time";
 import { useApi } from "../useApi";
 import { ops } from "./api";
 import { dayLabel, num, pctL } from "./format";
@@ -36,7 +37,7 @@ export function HealthPage() {
   const range = d
     ? win === "7d"
       ? `${dayLabel(d.heatmap.columns[0] as string, lang)} - ${dayLabel(d.generatedAt, lang)}`
-      : `${dayLabel(d.generatedAt, lang)} · UTC`
+      : `${dayLabel(d.generatedAt, lang)} · ${zoneName(Date.parse(d.generatedAt))}`
     : "";
   return (
     <section aria-labelledby={`${uid}-h`} className="opx-healthpage">

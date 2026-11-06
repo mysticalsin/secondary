@@ -1,4 +1,6 @@
-// Small pure formatters for the v7 Operate views. Times are UTC so charts, tooltips and tests agree.
+// Small pure formatters for the v7 Operate views. Instants come as UTC ISO and are shown in the viewer's
+// own time zone (the tests run in UTC, see vite.config.ts).
+import { localHm, localHms, localParts } from "../lib/time";
 import type { OpsStatus } from "./types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -18,15 +20,15 @@ const MONTHS_FR = [
 ];
 
 /** `11:04:09` */
-export const hms = (iso: string): string => iso.slice(11, 19);
+export const hms = (iso: string): string => localHms(iso);
 /** `11:04` */
-export const hm = (iso: string): string => iso.slice(11, 16);
+export const hm = (iso: string): string => localHm(iso);
 
 /** `Nov 6` or `6 nov.` */
 export function dayLabel(iso: string, lang: "en" | "fr"): string {
-  const m = Number(iso.slice(5, 7)) - 1;
-  const d = Number(iso.slice(8, 10));
-  return lang === "fr" ? `${d} ${MONTHS_FR[m]}` : `${MONTHS[m]} ${d}`;
+  const l = localParts(iso);
+  if (!l) return iso;
+  return lang === "fr" ? `${l.d} ${MONTHS_FR[l.mo - 1]}` : `${MONTHS[l.mo - 1]} ${l.d}`;
 }
 
 /** Latency: `640 ms`, `1.2 s`, `13.9 s`, `15.0 s`. */

@@ -111,6 +111,5 @@ export function shortDate(iso: string, lang: string): string {
   return new Intl.DateTimeFormat(lang === "fr" ? "fr-CA" : "en-CA", {
     month: "short",
     day: "numeric",
-    timeZone: "America/Toronto",
   }).format(d);
 }

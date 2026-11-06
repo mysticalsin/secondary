@@ -2,6 +2,9 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+// Tests read times in one zone so they agree on every machine; time.test.ts checks other zones by name.
+process.env.TZ = "UTC";
+
 export default defineConfig({
   plugins: [react()],
   build: {

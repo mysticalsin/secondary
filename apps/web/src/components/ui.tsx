@@ -131,6 +131,5 @@ export function fmtDate(iso: string): string {
   if (Number.isNaN(d.getTime())) return iso;
   return new Intl.DateTimeFormat(getLang() === "fr" ? "fr-CA" : "en-CA", {
     dateStyle: "medium",
-    timeZone: "America/Toronto",
   }).format(d);
 }

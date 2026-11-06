@@ -13,7 +13,12 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: [["list"]],
   outputDir: "../.dev/e2e-results-mock",
-  use: { baseURL: `http://localhost:${PORT}`, trace: "retain-on-failure" },
+  use: {
+    baseURL: `http://localhost:${PORT}`,
+    trace: "retain-on-failure",
+    // Times are shown in the browser zone; pinned so assertions read the same on every machine.
+    timezoneId: "UTC",
+  },
   webServer: {
     command: `node node_modules/vite/bin/vite.js --port ${PORT} --strictPort`,
     cwd: "../apps/web",

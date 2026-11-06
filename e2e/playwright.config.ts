@@ -19,6 +19,8 @@ export default defineConfig({
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     viewport: { width: 1360, height: 860 },
+    // Times are shown in the browser zone; pinned so assertions read the same on every machine.
+    timezoneId: "UTC",
   },
   webServer: {
     command: "node scripts/dev-all.mjs --no-build",

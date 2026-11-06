@@ -1,6 +1,6 @@
 import { CalendarRange } from "lucide-react";
 import { useI18n } from "../../i18n";
-import { useDate } from "../../insights/hooks";
+import { useLocalDate } from "../../insights/hooks";
 import { InsightCard, TwinTable } from "../../insights/InsightCard";
 import { EmptyArt } from "./art";
 import type { FactBar } from "./types";
@@ -13,7 +13,7 @@ const stripSubject = (s: string): string => s.replace(/^[a-z]+:\s*/i, "");
 /** Facts as bars from valid_from to valid_to. A fact that clashes with another is striped and named. */
 export function FactsBars({ facts, now = Date.now() }: { facts: FactBar[]; now?: number }) {
   const { t } = useI18n();
-  const date = useDate();
+  const date = useLocalDate();
   const rows = facts.slice(0, SHOWN);
   const starts = facts.map((f) => Date.parse(f.validAt));
   const ends = facts.map((f) => (f.invalidAt ? Date.parse(f.invalidAt) : now));
