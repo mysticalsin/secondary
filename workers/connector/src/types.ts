@@ -1,3 +1,9 @@
+import type {
+  CallOutcome,
+  FailureReason,
+  RetryPolicy,
+} from "../../../packages/contracts/src/ops-v7.ts";
+
 export type Provider = "sharepoint_drive" | "onedrive_folder";
 export type AclState = "current" | "stale" | "revoked" | "unknown";
 
@@ -14,6 +20,16 @@ export interface SourceScope {
   ownerRef: string;
 }
 
+/** v7 operate: what an admin tunes per source (Settings, Sources). Absent fields take the defaults. */
+export interface SourceSettings {
+  /** File types and folders the source is limited to ("pdf", "/Proposals"). Empty: everything. */
+  chips: string[];
+  deltaMinutes: number;
+  retry: RetryPolicy;
+  timeoutSeconds: number;
+  aclMaxAgeSeconds: number;
+}
+
 export interface SourceDef {
   /** `^[a-z][a-z0-9_]{5,39}$`, assigned by the caller of the registry API. */
   id: string;
@@ -24,7 +40,29 @@ export interface SourceDef {
   folderPath: string;
   scope: SourceScope;
   enabled: boolean;
+  /** Paused: no cron or manual sync runs, but the synced items stay (unlike `enabled: false`, which purges). */
+  paused?: boolean;
+  /** Display name, no content. */
+  name?: string;
+  settings?: SourceSettings;
   createdAt: number;
+}
+
+/** One Graph call, kept for the latency chart. */
+export interface CallRow {
+  at: number;
+  ms: number;
+  outcome: CallOutcome;
+}
+
+/** One sync attempt. `n` counts consecutive failed runs: 1 is a first try. */
+export interface AttemptRow {
+  at: number;
+  ms: number;
+  outcome: "ok" | "throttled" | "error" | "timeout";
+  reason: FailureReason | null;
+  n: number;
+  retryAfter: number | null;
 }
 
 export interface Cursor {
@@ -103,6 +141,13 @@ export interface Store {
   deleteAclFor(itemId: string): Awaitable<void>;
   countRecords(sourceId: string): Awaitable<number>;
   listFiles(sourceId: string, limit: number): Awaitable<LocalRecord[]>;
+  /** v7: Graph call timings (last 320 per source) and sync attempts (7 days). */
+  recordCall(sourceId: string, c: CallRow): Awaitable<void>;
+  listCalls(sourceId: string, limit: number): Awaitable<CallRow[]>;
+  recordAttempt(sourceId: string, a: Omit<AttemptRow, "n">): Awaitable<void>;
+  listAttempts(sourceId: string, since: number): Awaitable<AttemptRow[]>;
+  /** Cached read decisions for the files of one source. */
+  aclRows(sourceId: string): Awaitable<{ allowed: boolean; checkedAt: number }[]>;
 }
 
 export const NOT_CONFIRMED = "source permission could not be confirmed";

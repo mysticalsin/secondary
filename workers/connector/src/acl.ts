@@ -82,7 +82,6 @@ export async function checkAccess(
   const out: Record<string, AclResult> = {};
   const deny: AclResult = { allowed: false, reason: NOT_CONFIRMED };
   const key = deps.userKeySecret ? await userKey(deps.userKeySecret, user.email) : null;
-  const maxAgeMs = deps.maxAgeSeconds * 1000;
   for (const itemId of itemIds.slice(0, 50)) {
     out[itemId] = deny;
     if (!deps.enabled || key === null) continue;
@@ -92,6 +91,8 @@ export async function checkAccess(
     if (!src?.enabled) continue;
 
     const now = deps.now();
+    // The source's own setting (Settings, Sources) wins over the worker default.
+    const maxAgeMs = (src.settings?.aclMaxAgeSeconds ?? deps.maxAgeSeconds) * 1000;
     const cached = await deps.store.getAcl(itemId, key);
     if (cached && now - cached.checkedAt <= maxAgeMs && cached.checkedAt <= now) {
       out[itemId] = cached.allowed ? { allowed: true } : deny;

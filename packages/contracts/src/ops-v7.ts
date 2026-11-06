@@ -81,8 +81,7 @@ export function retryPlan(p: RetryPolicy): RetryStep[] {
   if (p.kind === "exponential")
     for (let i = 0; i < p.tries - 1; i++)
       waits.push(Math.min(p.maxSeconds, Math.round(p.baseSeconds * EXP_FACTOR ** i)));
-  else if (p.kind === "linear")
-    for (let i = 0; i < p.tries - 1; i++) waits.push(p.everySeconds);
+  else if (p.kind === "linear") for (let i = 0; i < p.tries - 1; i++) waits.push(p.everySeconds);
   else if (p.kind === "fixed") waits.push(...p.times);
   let at = 0;
   return waits.map((afterSeconds, i) => {
@@ -143,7 +142,9 @@ export function latencyStats(points: LatencyPoint[], timeoutSeconds: number): La
     timedOutShare: share,
     hint: {
       raiseTimeout: raise,
-      suggestedSeconds: raise ? Math.min(120, Math.max(timeoutSeconds + 5, Math.ceil(p95 / 1000) + 5)) : null,
+      suggestedSeconds: raise
+        ? Math.min(120, Math.max(timeoutSeconds + 5, Math.ceil(p95 / 1000) + 5))
+        : null,
     },
   };
 }
@@ -262,7 +263,10 @@ export function failuresOf(records: OpRecord[]): FailureRow[] {
       count: counts.get(reason) as number,
       share: total ? (counts.get(reason) as number) / total : 0,
     }))
-    .sort((a, b) => b.count - a.count || FAILURE_REASONS.indexOf(a.reason) - FAILURE_REASONS.indexOf(b.reason));
+    .sort(
+      (a, b) =>
+        b.count - a.count || FAILURE_REASONS.indexOf(a.reason) - FAILURE_REASONS.indexOf(b.reason),
+    );
 }
 
 export type HeatCell = {
@@ -299,7 +303,10 @@ export function heatmapOf(
   const columns = Array.from({ length: n }, (_, i) => new Date(start + i * columnMs).toISOString());
   const out: HeatRow[] = rows.map((r) => ({ ...r, total: 0, failed: 0, cells: [] }));
   const byRow = new Map(out.map((r) => [`${r.kind}:${r.id}`, r]));
-  const acc = new Map<string, { a: number; f: number; why: Map<FailureReason, number>; rule: string | null }[]>();
+  const acc = new Map<
+    string,
+    { a: number; f: number; why: Map<FailureReason, number>; rule: string | null }[]
+  >();
   for (const r of records) {
     if (r.at < now - ms || r.at > now) continue;
     const cols: [string, string][] = [];
@@ -330,8 +337,18 @@ export function heatmapOf(
     const cells = acc.get(`${row.kind}:${row.id}`);
     row.cells = Array.from({ length: n }, (_, i) => {
       const c = cells?.[i];
-      if (!c) return { attempts: 0, delivered: 0, failed: 0, failing: false, topReason: null, ruleRef: null };
-      const top = [...c.why].sort((a, b) => b[1] - a[1] || FAILURE_REASONS.indexOf(a[0]) - FAILURE_REASONS.indexOf(b[0]))[0];
+      if (!c)
+        return {
+          attempts: 0,
+          delivered: 0,
+          failed: 0,
+          failing: false,
+          topReason: null,
+          ruleRef: null,
+        };
+      const top = [...c.why].sort(
+        (a, b) => b[1] - a[1] || FAILURE_REASONS.indexOf(a[0]) - FAILURE_REASONS.indexOf(b[0]),
+      )[0];
       return {
         attempts: c.a,
         delivered: c.a - c.f,
@@ -386,7 +403,12 @@ export function bucketsOf(
   return { buckets, perDot: Math.max(1, Math.ceil(peak / MAX_DOTS)) };
 }
 
-export type Callout = { since: string; kind: "blocked" | "failed"; label: string; count: number } | null;
+export type Callout = {
+  since: string;
+  kind: "blocked" | "failed";
+  label: string;
+  count: number;
+} | null;
 
 /**
  * The failure callout: the start of the current run of failing events (newest first, stopping at the
@@ -405,11 +427,7 @@ export function calloutOf(records: OpRecord[]): Callout {
   }
   const since = run.reduce((m, r) => Math.min(m, r.at), first.at);
   const label =
-    first.ruleRef !== null
-      ? first.ruleRef
-      : first.reason !== null
-        ? first.reason
-        : first.type;
+    first.ruleRef !== null ? first.ruleRef : first.reason !== null ? first.reason : first.type;
   return {
     since: new Date(since).toISOString(),
     kind: first.status === "blocked" ? "blocked" : "failed",

@@ -1,8 +1,60 @@
 // Source registry validation. A source maps one SharePoint/OneDrive drive (optionally one folder) to one
 // Secondary scope. Everything is validated; anything unexpected is refused.
 
+import { DEFAULT_RETRY, parseRetry } from "../../../packages/contracts/src/ops-v7.ts";
 import { NODE_ID, SOURCE_ID } from "./ids.ts";
-import type { Provider, SourceDef, SourceScope } from "./types.ts";
+import type { Provider, SourceDef, SourceScope, SourceSettings } from "./types.ts";
+
+export const DEFAULT_SETTINGS: SourceSettings = {
+  chips: [],
+  deltaMinutes: 15,
+  retry: DEFAULT_RETRY,
+  timeoutSeconds: 15,
+  aclMaxAgeSeconds: 900,
+};
+const CHIP = /^[A-Za-z0-9/._ -]{1,60}$/;
+const NAME = /^[A-Za-z0-9][A-Za-z0-9 &._()/-]{0,79}$/;
+
+/** The settings a source runs with: what was saved over the defaults. */
+export const settingsOf = (s: SourceDef): SourceSettings => ({
+  ...DEFAULT_SETTINGS,
+  ...s.settings,
+});
+
+const int = (v: unknown, min: number, max: number): number | null =>
+  typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : null;
+
+function parseSettings(v: unknown): SourceSettings | string {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return "invalid_settings";
+  const o = v as Record<string, unknown>;
+  const out: SourceSettings = { ...DEFAULT_SETTINGS };
+  if (o.chips !== undefined) {
+    if (!Array.isArray(o.chips) || o.chips.length > 40) return "invalid_chips";
+    if (!o.chips.every((c) => typeof c === "string" && CHIP.test(c))) return "invalid_chips";
+    out.chips = [...new Set(o.chips as string[])];
+  }
+  if (o.deltaMinutes !== undefined) {
+    const n = int(o.deltaMinutes, 5, 1440);
+    if (n === null) return "invalid_schedule";
+    out.deltaMinutes = n;
+  }
+  if (o.retry !== undefined) {
+    const r = parseRetry(o.retry);
+    if (!r) return "invalid_retry";
+    out.retry = r;
+  }
+  if (o.timeoutSeconds !== undefined) {
+    const n = int(o.timeoutSeconds, 1, 120);
+    if (n === null) return "invalid_timeout";
+    out.timeoutSeconds = n;
+  }
+  if (o.aclMaxAgeSeconds !== undefined) {
+    const n = int(o.aclMaxAgeSeconds, 60, 86_400);
+    if (n === null) return "invalid_acl_max_age";
+    out.aclMaxAgeSeconds = n;
+  }
+  return out;
+}
 
 const DRIVE_ID = /^[A-Za-z0-9!_.-]{3,200}$/;
 const SITE_ID = /^[A-Za-z0-9,._-]{3,300}$/;
@@ -78,6 +130,18 @@ export function parseSource(id: string, raw: unknown, now: number): Parsed {
   } else if (s.accountId !== undefined || s.subspaceId !== undefined) {
     return fail("invalid_scope");
   }
+  let name: string | undefined;
+  if (o.name !== undefined) {
+    if (typeof o.name !== "string" || !NAME.test(o.name)) return fail("invalid_name");
+    name = o.name;
+  }
+  if (o.paused !== undefined && typeof o.paused !== "boolean") return fail("invalid_paused");
+  let settings: SourceSettings | undefined;
+  if (o.settings !== undefined) {
+    const parsed = parseSettings(o.settings);
+    if (typeof parsed === "string") return fail(parsed);
+    settings = parsed;
+  }
   return {
     ok: true,
     def: {
@@ -88,6 +152,9 @@ export function parseSource(id: string, raw: unknown, now: number): Parsed {
       folderPath,
       scope,
       enabled: o.enabled !== false,
+      ...(o.paused === true ? { paused: true } : {}),
+      ...(name ? { name } : {}),
+      ...(settings ? { settings } : {}),
       createdAt: now,
     },
   };

@@ -10,6 +10,12 @@
 // Cron (every 15 minutes) enqueues one message per enabled source; the queue starts a Workflow.
 
 import { Hono } from "hono";
+import {
+  aclStrip,
+  latencyStats,
+  nextDelay,
+  retryPlan,
+} from "../../../packages/contracts/src/ops-v7.ts";
 import { keyringFromEnv } from "../../../packages/contracts/src/signed-call.ts";
 import { checkAccess } from "./acl.ts";
 import { meetingWindow } from "./calendar.ts";
@@ -17,10 +23,11 @@ import { graphFromEnv } from "./graph.ts";
 import { SOURCE_ID, sha256Hex, TENANT_ID, userKey } from "./ids.ts";
 import { verifyInternalRequest } from "./internal-auth.ts";
 import { toSourceRecord } from "./records.ts";
-import { parseSource } from "./registry.ts";
+import { parseSource, settingsOf } from "./registry.ts";
 import { aclDeps, isEnabled, log, syncDeps, tenantsOf } from "./runtime.ts";
 import { stateStub } from "./state.ts";
 import { purgeSource } from "./sync.ts";
+import type { SourceDef } from "./types.ts";
 import type { SyncParams } from "./workflow.ts";
 
 /** The Durable Object that holds the replay cache for signed calls from the API (not a real tenant). */
@@ -118,6 +125,8 @@ export function createApp() {
       sources: await Promise.all(
         sources.map(async (s) => ({
           ...s,
+          paused: s.paused === true,
+          settings: settingsOf(s),
           cursor: await store.getCursor(s.id).then((k) => ({
             hasDelta: k.deltaLink !== null,
             full: k.full,
@@ -167,10 +176,75 @@ export function createApp() {
     const id = c.req.param("id");
     if (!tenantId || !SOURCE_ID.test(id)) return c.json({ error: "invalid_request" }, 400);
     if (!isEnabled(c.env)) return c.json({ error: "connector_disabled" }, 503);
-    if (!(await stateStub(c.env, tenantId).getSource(id)))
-      return c.json({ error: "not_found" }, 404);
+    const src = await stateStub(c.env, tenantId).getSource(id);
+    if (!src) return c.json({ error: "not_found" }, 404);
+    if (src.paused) return c.json({ error: "paused" }, 409);
     await c.env.SYNC_QUEUE.send({ tenantId, sourceId: id, reason: "manual" } satisfies QueueMsg);
     return c.json({ ok: true }, 202);
+  });
+
+  // v7 operate: the retry plan, the Graph latency points and the ACL strip of one source. Numbers only.
+  app.get("/internal/sources/:id/stats", async (c) => {
+    const tenantId = tenantOf(c.req.query("tenantId"));
+    const id = c.req.param("id");
+    if (!tenantId || !SOURCE_ID.test(id)) return c.json({ error: "invalid_request" }, 400);
+    const store = stateStub(c.env, tenantId);
+    const src = await store.getSource(id);
+    if (!src) return c.json({ error: "not_found" }, 404);
+    const settings = settingsOf(src);
+    const now = Date.now();
+    const plan = retryPlan(settings.retry);
+    const attempts = await store.listAttempts(id, now - 7 * 86_400_000);
+    const last = attempts[attempts.length - 1];
+    let next: { try: number; inSeconds: number; last: string } | null = null;
+    if (last && last.outcome !== "ok") {
+      const wait = nextDelay(settings.retry, last.n, last.retryAfter ?? undefined);
+      if (wait !== null)
+        next = {
+          try: last.n + 1,
+          inSeconds: Math.max(0, Math.round(wait - (now - last.at) / 1000)),
+          last:
+            last.reason === "graph_429" ? "429" : last.reason === "timeout" ? "timeout" : "error",
+        };
+    }
+    const calls = await store.listCalls(id, 320);
+    return c.json({
+      synthetic: false,
+      retry: {
+        plan,
+        tries: plan.length + 1,
+        totalSeconds: plan[plan.length - 1]?.atSeconds ?? 0,
+        honoursRetryAfter: true,
+        next,
+      },
+      latency: {
+        ...latencyStats(
+          calls.map((k) => ({ ms: k.ms, outcome: k.outcome })),
+          settings.timeoutSeconds,
+        ),
+        points: calls.map((k) => ({ ms: k.ms, outcome: k.outcome })),
+      },
+      acl: aclStrip(await store.aclRows(id), settings.aclMaxAgeSeconds, now),
+    });
+  });
+
+  // v7 operate: sync attempts per source for the activity and health views (no names, no content).
+  app.get("/internal/ops/summary", async (c) => {
+    const tenantId = tenantOf(c.req.query("tenantId"));
+    const since = Number(c.req.query("since"));
+    if (!tenantId || !Number.isFinite(since)) return c.json({ error: "invalid_request" }, 400);
+    const store = stateStub(c.env, tenantId);
+    const sources = await store.listSources();
+    return c.json({
+      sources: await Promise.all(
+        sources.map(async (s) => ({
+          id: s.id,
+          name: s.name ?? s.id,
+          scopeId: s.scope.scopeId,
+          attempts: await store.listAttempts(s.id, since),
+        })),
+      ),
+    });
   });
 
   app.get("/internal/sources/:id/records", async (c) => {
@@ -227,7 +301,16 @@ export default {
   async scheduled(_event: ScheduledController, env: Env) {
     if (!isEnabled(env)) return;
     for (const tenantId of tenantsOf(env)) {
-      const sources = (await stateStub(env, tenantId).listSources()).filter((s) => s.enabled);
+      const store = stateStub(env, tenantId);
+      const now = Date.now();
+      const sources: SourceDef[] = [];
+      for (const s of await store.listSources()) {
+        if (!s.enabled || s.paused) continue;
+        // The cron ticks every 15 minutes; a source with a longer delta interval waits its turn.
+        const every = settingsOf(s).deltaMinutes * 60_000 - 60_000;
+        const last = (await store.getCursor(s.id)).lastSyncAt;
+        if (last === null || now - last >= every) sources.push(s);
+      }
       for (let i = 0; i < sources.length; i += 100)
         await env.SYNC_QUEUE.sendBatch(
           sources.slice(i, i + 100).map((s) => ({
