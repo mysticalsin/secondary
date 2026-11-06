@@ -16,6 +16,7 @@ import {
   VersionsPage,
 } from "./views/brains";
 import { Home } from "./views/home/Home";
+import { PulsePage } from "./views/pulse";
 import { SourceView } from "./views/SourceView";
 import { SearchPage } from "./views/search/Search";
 import { Settings } from "./views/settings/Settings";
@@ -43,6 +44,7 @@ export function App() {
         <Route path="brains/:id/import" element={<ImportPage />} />
         <Route path="brains/:id/journal" element={<JournalPage />} />
         <Route path="brains/:id/coach" element={<CoachPage />} />
+        <Route path="brains/:id/pulse" element={<PulsePage />} />
         <Route path="brains/:id/activity" element={<ActivityPage />} />
         <Route path="brains/:id/trash" element={<TrashPage />} />
         <Route

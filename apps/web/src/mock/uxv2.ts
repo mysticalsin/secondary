@@ -48,7 +48,7 @@ const DIAGRAM = `data:image/svg+xml;utf8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120"><rect width="480" height="120" rx="14" fill="#2a1d38"/><g fill="none" stroke="#d791ff" stroke-width="2"><rect x="24" y="36" width="104" height="48" rx="10"/><rect x="188" y="36" width="104" height="48" rx="10"/><rect x="352" y="36" width="104" height="48" rx="10"/><path d="M128 60h60M292 60h60"/></g><g fill="#fff" font-family="Carlito,Calibri,sans-serif" font-size="16" text-anchor="middle"><text x="76" y="65">Index</text><text x="240" y="65">Pages</text><text x="404" y="65">Answer</text></g></svg>',
 )}`;
 
-interface MockPage {
+export interface MockPage {
   ws: string;
   id: string;
   type: string;
@@ -57,7 +57,7 @@ interface MockPage {
   md: string;
 }
 
-const PAGES: MockPage[] = [
+export const PAGES: MockPage[] = [
   {
     ws: "a_acme",
     id: "acme-overview",
@@ -244,7 +244,7 @@ const SRC_TITLES: Record<string, string> = {
   "doc:ent:1": "Entity register",
 };
 
-const WS_LABEL: Record<string, string> = {
+export const WS_LABEL: Record<string, string> = {
   core: "Company Global",
   a_acme: "Acme",
   me: "Personal Brain",
@@ -253,7 +253,7 @@ const WS_LABEL: Record<string, string> = {
   c_sales: "Sales",
 };
 
-const TYPE_LABEL: Record<string, string> = {
+export const TYPE_LABEL: Record<string, string> = {
   ...FOLDERS,
   overview: "Overview",
   lesson: "Lessons",
@@ -261,9 +261,9 @@ const TYPE_LABEL: Record<string, string> = {
   session_report: "Session reports",
 };
 
-type Seen = "full" | "locked" | "hidden";
+export type Seen = "full" | "locked" | "hidden";
 /** What a role sees per folder type. Contacts are locked or absent, Bids vary. Server enforcement is real, this is a stand-in. */
-function seen(role: string, ws: string, type: string): Seen {
+export function seen(role: string, ws: string, type: string): Seen {
   if (ws === "me") return "full";
   if (ws === "c_bid" && !["ceo", "head_bid", "reviewer", "platform_admin"].includes(role))
     return "hidden";

@@ -606,3 +606,77 @@ An admin is a person with `configure`. A steward is a person who may decide in t
 - `GET /v1/rules/holds` -> `HoldRow[] = {id, rule, action, brain: {id, label}, requestedAt, required, approvals, group: string[], mine: boolean, canDecide: boolean}`; `POST /v1/rules/holds/:id/decide` `{decision: "approve"|"reject"}` -> `{status: "pending"|"approved"|"rejected", approvals, required}`.
 
 Receipts (ids only): `rules.save`, `rules.publish`, `rules.rollback`, `rules.incident`, `rules.hold_decide`, `rule.would_match`, and `rule` on every enforced decision. Seed (dev only, synthetic): the five rules of the design, published as v1 by the system (`rules_seed_version`).
+
+## v8 lens (docs/DESIGN-V8-AMAZING.md sections 3 to 6), normative shapes
+
+Page lens, Who knows, faceted search and pulse. Code: `workers/api/src/lens/`, `people/`, `search2/`, `pulse/` (one mount, `lensMount` in `routes.ts`), `LensBase` in `lens/store.ts` between `BrainBase` and `Workspace`. One rule runs through all of it: **an answer is built only from brains the caller reads, and only from pages and lines the caller may read** (a page is visible when it cites nothing or at least one readable source; a line when every source it cites is readable). Unreadable targets are omitted, never shown as locked: an unreadable page or brain is 404 on a direct call, and absent from every list, graph, count and facet. A person who opted out of expert listing is named nowhere in these answers. All answers are `Cache-Control: no-store`.
+
+### `GET /v1/brains/:id/pages/:pid/lens`
+
+Needs the `brains_v3` pilot flag. 404 for a brain or page the caller cannot read. Answer:
+
+```
+{page: {id, title, type, collection, brainId, brainName, status: "published", revision, updatedAt,
+        lastChange: {at, revision, by: {id, name} | null}},
+ freshness: {state: "fresh" | "aging" | "stale", days, score, freshnessDays},
+ verified: {by: {id, name} | null, at} | null,
+ graph: {nodes: [{key: "<brainId>:<pageId>", brainId, brainName, id, title, type, collection, hop: 0 | 1 | 2}],
+         edges: [{from, to}]},
+ facts: [{id, subject, predicate, object, validAt, invalidAt, unverified, contradiction, replacedBy}],
+ contributors: [{id, name, role, changes, lastAt}], unnamed,
+ backlinks: [{brainId, brainName, id, title, type, collection}],
+ who: PersonRow[]}
+```
+
+- **Graph.** The page (`hop` 0), the pages one link away in either direction (`hop` 1, at most 12), then the pages one more link from those (`hop` 2), at most 24 nodes. A link counts only on a line the caller may read. Neighbours are visible hand-written pages of the same brain, or of Company Global through `[[global:<id>]]` when the caller reads Company Global. Toward a Company Global page, backlinks also come from other brains the caller reads (never Personal). Generated hubs (overview, logs) and journals are not neighbours. `edges` join known nodes only.
+- **Facts** are the facts whose sources the page cites, all of whose sources the caller may read (newest first, at most 24). `contradiction` is true when another fact for the same subject and predicate says something else for an overlapping time; `replacedBy` is the fact that took over when this one ended.
+- **Freshness.** `state` is `fresh` up to half of `freshnessDays`, `aging` up to `freshnessDays`, then `stale`; `score` is the v5 freshness score.
+- **Verified** is the latest confirmation of a fact the page stands on (service actors excluded). `by` is null when that person opted out: the stamp stays, the name goes.
+- **Contributors** come from approved revisions of this page (the author of the approved proposal, else the revision actor; hidden versions and services excluded). `role` is the person's stored brain role there, else `contributor`. `unnamed` counts people left out by their choice.
+- `who` is Who knows for the page and its neighbours (below), top 5.
+
+### Who knows
+
+- `GET /v1/brains/:id/who-knows?page=<id> | collection=<type> | q=<text>&limit=1..20` (default 5, 400 `invalid_limit`): one brain the caller reads (404 otherwise; `brains_v3`). With none of the three, the whole brain. `page` weighs the page 3 and the visible pages it links to or that link to it 1. A `q` hit counts only when a word stands in text the caller can read.
+- `GET /v1/who-knows?q=<text>&brain=<id or name part>&limit=` across the brains the caller reads, Personal Brains never included. 400 `invalid_query` without words. Rate limited (60 a minute a person).
+
+Answer `{scope: {kind: "page" | "collection" | "query" | "brain", label} | null, people: PersonRow[]}`, `PersonRow = {id, name, role, brainId, brainName, contributions, pages, lastAt, score}`: one row per person and brain. Ranked by approved changes in scope with a 180 day half life (`people/rank.ts`); work activity only, no HR data, no Personal Brain. `name` is the directory name, else a name made from the id.
+
+### Expert listing
+
+`GET /v1/me/expert-listing` answers `{listed: boolean}` (default true). `PUT` with `{listed: boolean}` (400 `invalid_listed`) answers the same and writes the receipt `personal.expert_listing` (ids only). The choice lives in the person's own Personal Brain object. Any principal id of the same human that opted out counts for all of them. Opted-out people are left out of Who knows, the page contributors and the verified name, whole, not just from the top.
+
+### `GET /v1/search/pages`
+
+`?q=<words and operators>` and optional `brain`, `type`, `status`, `role`, `age` (comma lists), `fresh` (`<30d`), `limit` (default and cap 50), `facets=0`. Needs a word or at least one filter, else `{results: []}`. 400 `invalid_query` over 300 characters. Rate limited (120 a minute a person).
+
+**Operators** (`search2/query.ts`, pure and total): `brain:<id or name>`, `type:<page type or collection name>`, `fresh:<30d` / `fresh:>2w` / `fresh:30d` (units d w m y, 1 day to 10 years; `<` younger than, `>` older than), `status:verified|unverified`, `role:owner|steward|editor|contributor|reader|system`. At most 8 operators per query; values are 1 to 64 letters, digits and `_ . : -`; quotes keep a space together in the word list. Anything else, including an unknown operator or a malformed value, stays a free word and is listed in `parsed.ignored`. Operators only narrow: an unknown or unreadable `brain:` matches nothing.
+
+Answer:
+
+```
+{q, parsed: {text, brain, type, status, role, fresh, ignored}, total,
+ results: [{brainId, brainName, id, title, type, collection, summary, updatedAt, ageDays,
+            fresh: "lt30" | "lt90" | "lt180" | "older", status: "verified" | "unverified",
+            role, lines: [{text, citations: [{id, title}]}], restricted}],
+ facets: {brain, type, fresh, status, role: [{id, label, n, on}]}}
+```
+
+Each result carries its preview (`summary`, up to 4 readable claim lines with the titles of readable sources; a hit on the title alone previews the first lines). `role` is the role of the person behind the last approved change (`system` for none). `status` is `verified` when a fact the page rests on was confirmed by a person. Facet counts are over the hits after every filter but the facet's own (picking a value never empties the others) and count only hits the caller may read, so a brain the caller cannot read is not there, not even at zero. `type` is the page type; the collection of a page is its type (labelled by the brain's schema).
+
+### Saved searches
+
+`GET /v1/search/saved` answers `{saved: [{id, name, q, at}]}`, newest first. `POST /v1/search/saved {name, q}` (name 1-60, q 1-300, else 400 `invalid_saved_search`) answers 201 with the list; the same `q` replaces the earlier entry; `id` is `s_` plus 12 hex digits of the hash of `q`; at most 25 (409 `too_many_saved`). `DELETE /v1/search/saved/:id` answers 200, or 404 for an id that is not the caller's. Stored in the person's own Personal Brain object; a saved search holds the query text only, and it is run again, as the caller, when opened.
+
+### Pulse
+
+Needs the `journal` pilot flag. Built from each brain's own journal pages (`journal-<date>`), which hold counts and `[[page]]` links only.
+
+- `GET /v1/brains/:id/pulse?days=7..90` (default 60; 400 `invalid_days`; 404 for a brain the caller cannot read): `{brainId, name, from, to, categories, days: [{date, counts: {published, resolved, sources, gaps, rules}, total, pages: [{id, title}]}]}`, newest day first, only days that have a journal. `pages` names only pages the caller may read.
+- `GET /v1/pulse?days=7..90` (default 30): `{categories, from, to, brains: [{brainId, name, type, days: [{date, d: number[5]}]}]}`, one row per brain the caller reads (Personal included), each built only from that brain; `d` is the five counts in category order.
+
+Categories: `published` ("N changes published"), `resolved` ("N older facts ended"), `sources` ("N page proposals filed"), `gaps` ("N gaps closed"), `rules` ("N rules triggered"). The first three are read from the journal as it is written today; `gaps` and `rules` read the journal lines that the knowledge gaps and rules work add and are 0 until a journal carries them.
+
+### My Agent: `PeopleList`
+
+A leaf component of the v6 line language: `PeopleList(q, brain?, limit?)` (`q` 1-120 characters, `limit` 1-8, props are a query, never data). The client resolves it for the viewer with `GET /v1/who-knows?q=&brain=&limit=`, so it lists only people from brains the viewer reads, and not those who left the expert listing. The deterministic planner writes it for "who knows about X (in Y)" and its French forms. `lockTree` replaces it with a locked card when `brain` is not readable.

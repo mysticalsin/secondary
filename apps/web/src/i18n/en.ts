@@ -6,6 +6,7 @@ import { v5En } from "./v5";
 import { v6En } from "./v6";
 import { v7opsEn } from "./v7ops";
 import { v7En } from "./v7";
+import { v8LensEn } from "./v8lens";
 
 export const en = {
   ...v4En,
@@ -13,6 +14,7 @@ export const en = {
   ...v6En,
   ...v7opsEn,
   ...v7En,
+  ...v8LensEn,
   ...ux2En,
   ...v3En,
   // common

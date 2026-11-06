@@ -28,6 +28,7 @@ import {
   KpiTileProps,
   PageCardProps,
   PageListProps,
+  PeopleListProps,
   StackProps,
   TableProps,
   TimelineBarsProps,
@@ -52,6 +53,7 @@ function build() {
   const ActivityGrid = def("ActivityGrid", ActivityGridProps);
   const PageList = def("PageList", PageListProps);
   const PageCard = def("PageCard", PageCardProps);
+  const PeopleList = def("PeopleList", PeopleListProps);
   const Table = def("Table", TableProps);
   const Callout = def("Callout", CalloutProps);
   const leaves = [
@@ -64,6 +66,7 @@ function build() {
     ActivityGrid,
     PageList,
     PageCard,
+    PeopleList,
     Table,
     Callout,
     Buttons,

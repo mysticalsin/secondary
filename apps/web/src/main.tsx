@@ -12,6 +12,7 @@ import "./styles/v4.css";
 import "./styles/v7.css";
 import "./insights/insights.css";
 import "./ops/ops.css";
+import "./styles/v8lens.css";
 import { applyTheme, readTheme } from "./lib/theme";
 import { AppProvider } from "./state";
 

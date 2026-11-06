@@ -1,5 +1,5 @@
 import { FilePlus, FolderPlus, Import, Trash2 } from "lucide-react";
-import { type FormEvent, lazy, Suspense, useMemo, useState } from "react";
+import { type FormEvent, lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api";
 import { Modal } from "../../components/Modal";
@@ -11,6 +11,7 @@ import { ActivityPanel } from "../../ops/ActivityPanel";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
+import { BrainWhoKnows } from "../lens";
 import { QUESTIONS_CHANGED } from "../waiting/events";
 import { wikiApi } from "../wiki/api";
 import { v3 } from "./api";
@@ -145,6 +146,9 @@ function Head({ b }: { b: BrainHome }) {
         <Link className="textlink" to={`/brains/${encodeURIComponent(b.id)}/activity`}>
           {t("v4.activity")}
         </Link>
+        <Link className="textlink" to={`/brains/${encodeURIComponent(b.id)}/pulse`}>
+          {t("v8p.link")}
+        </Link>
         {!personal ? (
           <Link className="btn primary" to={`/brains/${encodeURIComponent(b.id)}/access`}>
             {t("v4.members.access")}
@@ -170,6 +174,14 @@ export function BrainPage() {
   const waitingQ = useApi(() => ux2.questions({ brain: id }), [id]);
   const [filters, setFilters] = useState<Filters>(NO_FILTER);
   const [adding, setAdding] = useState<{ type: string | null } | null>(null);
+  // `?new=1` (the command palette's "New page") opens the new page dialog and leaves the address clean.
+  useEffect(() => {
+    if (!sp.has("new")) return;
+    setAdding({ type: null });
+    const next = new URLSearchParams(sp);
+    next.delete("new");
+    setSp(next, { replace: true });
+  }, [sp, setSp]);
   const tree = useMemo(
     () =>
       idx.data
@@ -247,6 +259,11 @@ export function BrainPage() {
                 </button>
               ))}
             </div>
+            {tab === "contents" && b.type !== "personal" ? (
+              <div className="bwk8">
+                <BrainWhoKnows brain={id} collections={typeOptions} />
+              </div>
+            ) : null}
             {tab === "insights" ? (
               <div role="tabpanel" id="bp-insights" aria-labelledby="bt-insights">
                 <InsightsTab brainId={id} />

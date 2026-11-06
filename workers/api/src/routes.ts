@@ -30,6 +30,7 @@ import { brainsRoutes } from "./brains/index.ts";
 import { checkSourceAccess, NOT_CONFIRMED, SOURCE_ITEM_ID } from "./connector.ts";
 import { MAX_PROMPT, planView } from "./genui.ts";
 import { humanIdsOf } from "./human.ts";
+import { lensMount } from "./lens/index.ts";
 import { readiness } from "./observe.ts";
 import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
 import { PERSONAL_KINDS, type PersonalKind, personalKindOf } from "./personal-kind.ts";
@@ -1194,6 +1195,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.route("/", wikiRoutes(deps, { submitCandidate, parseUserValidated })); // B3 Living Wiki
   v1.route("/", uxRoutes(deps)); // B2 UX: edit, history, drafts, prefs, review detail, records
   v1.route("/", uxv2Routes(deps)); // UX v2: ask, brain tree and export, questions, routines, usage
+  v1.route("/", lensMount(deps)); // v8 lens: page lens, who knows, faceted search, pulse
   v1.route("/", brainsRoutes(deps)); // v3 brains: directory, access, fields, imports, agents, pilot
   v1.route("/", agentRoutes(deps)); // v6 My Agent: turn stream and saved views
   v1.route("/", rulesRoutes(deps)); // v7 brain rules: /v1/rules

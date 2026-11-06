@@ -14,6 +14,7 @@ import {
   Rows3,
   Sparkles,
   TriangleAlert,
+  Users,
 } from "lucide-react";
 import { createContext, type ReactNode, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -31,6 +32,8 @@ import type { Insights, ScoreKind } from "../insights/types";
 import { brainLink, pageLink } from "../lib/links";
 import { v3 } from "../views/brains/api";
 import type { NavBrain } from "../views/brains/types";
+import { lensApi } from "../views/lens/api";
+import { PeopleList } from "../views/lens/PeopleList";
 import { wikiApi } from "../views/wiki/api";
 import { cached, insightsOf, type Resolved, useResolved } from "./resolve";
 import type { CardTheme, Density } from "./settings";
@@ -151,6 +154,7 @@ const CARD_ICON: Record<string, ReactNode> = {
   DotConstellation: <Radar size={20} />,
   ActivityGrid: <Activity size={20} />,
   PageList: <Rows3 size={20} />,
+  PeopleList: <Users size={20} />,
 };
 
 // ---------- data-bearing leaves ----------
@@ -672,6 +676,51 @@ function PageListLeaf({ p }: { p: { q: string; brain?: string; limit?: number } 
   );
 }
 
+/** Who knows about q: the same people, role and brain as the page lens, resolved for this viewer. */
+function PeopleListLeaf({ p }: { p: { q: string; brain?: string; limit?: number } }) {
+  const { t, tn } = useI18n();
+  const res = useResolved(`people|${p.brain ?? ""}|${p.q}|${p.limit ?? 5}`, () =>
+    lensApi.whoKnowsAbout(p.q, p.brain, p.limit ?? 5).then((r) => r.people),
+  );
+  return (
+    <Leaf res={res}>
+      {(rows) => (
+        <Frame
+          testId="agent-peoplelist"
+          icon={<Users size={20} />}
+          title={t("v8l.who.title")}
+          summary={`${t("v8l.who.title")}: ${rows.length}.`}
+          heading={false}
+          chart={
+            rows.length ? (
+              <PeopleList people={rows} label={t("v8l.who.title")} />
+            ) : (
+              <p className="icard-empty">{t("v8l.who.none.t")}</p>
+            )
+          }
+          table={
+            <TwinTable
+              caption={t("v8l.who.table")}
+              head={[
+                t("v8l.who.person"),
+                t("v8l.who.rolecol"),
+                t("v6.col.brain"),
+                t("v8l.who.changes"),
+              ]}
+              rows={rows.map((r) => [
+                r.name,
+                t(`v8l.role.${r.role}` as "v8l.role.reader"),
+                r.brainName,
+                tn(r.contributions, "v8l.who.changes.one", "v8l.who.changes.other"),
+              ])}
+            />
+          }
+        />
+      )}
+    </Leaf>
+  );
+}
+
 function PageCardLeaf({ p }: { p: { brain: string; page: string } }) {
   const { t } = useI18n();
   const { onNavigate, inCard } = useC();
@@ -907,6 +956,8 @@ function NodeView({ node }: { node: AgentNode }) {
       return <PageListLeaf p={p} />;
     case "PageCard":
       return <PageCardLeaf p={p} />;
+    case "PeopleList":
+      return <PeopleListLeaf p={p} />;
     case "Table":
       return <TableLeaf p={p} />;
     case "Callout":

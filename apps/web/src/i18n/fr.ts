@@ -7,6 +7,7 @@ import { v5Fr } from "./v5";
 import { v6Fr } from "./v6";
 import { v7opsFr } from "./v7ops";
 import { v7Fr } from "./v7";
+import { v8LensFr } from "./v8lens";
 
 export const fr: Record<keyof typeof en, string> = {
   ...v4Fr,
@@ -14,6 +15,7 @@ export const fr: Record<keyof typeof en, string> = {
   ...v6Fr,
   ...v7opsFr,
   ...v7Fr,
+  ...v8LensFr,
   ...ux2Fr,
   ...v3Fr,
   "common.cancel": "Annuler",
