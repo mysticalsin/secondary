@@ -630,6 +630,9 @@ h3 {
 .v4app .main > .v4page.narrow {
   max-width: 780px;
 }
+.v4app .main > .v4page.wide {
+  max-width: 1260px;
+}
 .ptitle {
   font-size: 30px;
   margin: 0 0 12px;

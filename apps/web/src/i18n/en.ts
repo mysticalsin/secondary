@@ -2,9 +2,11 @@
 import { ux2En } from "./ux2";
 import { v3En } from "./v3";
 import { v4En } from "./v4";
+import { v5En } from "./v5";
 
 export const en = {
   ...v4En,
+  ...v5En,
   ...ux2En,
   ...v3En,
   // common

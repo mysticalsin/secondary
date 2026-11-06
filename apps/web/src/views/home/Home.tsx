@@ -1,8 +1,9 @@
 import { ArrowRight, Search } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Await, Empty } from "../../components/ui";
 import { useI18n } from "../../i18n";
+import { Glance } from "../../insights/Glance";
 import { pageLink } from "../../lib/links";
 import { displayName } from "../../lib/people";
 import { ago } from "../../lib/time";
@@ -46,6 +47,7 @@ export function Home() {
   const { t, tn } = useI18n();
   const { me } = useApp();
   const nav = useNavigate();
+  const [sp] = useSearchParams();
   const [q, setQ] = useState("");
   const brains = useApi(() => v3.nav(), []);
   const waiting = useApi(() => ux2.questions(), []);
@@ -127,6 +129,8 @@ export function Home() {
         </Await>
       </section>
 
+      <Glance />
+
       <section className="hsec" aria-labelledby="hr-h">
         <h2 id="hr-h">{t("v4.home.recent")}</h2>
         <Await state={recent} skeleton={2}>
@@ -153,7 +157,7 @@ export function Home() {
         </Await>
       </section>
 
-      <details className="quietcard">
+      <details className="quietcard" id="ask" open={sp.has("ask") || undefined}>
         <summary>
           <b>{t("v4.ask.title")}</b> <span className="muted">{t("v4.ask.lead")}</span>
         </summary>

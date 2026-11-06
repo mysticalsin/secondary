@@ -1,10 +1,11 @@
 import { FilePlus, FolderPlus, Import, Trash2 } from "lucide-react";
 import { type FormEvent, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError } from "../../api";
 import { Modal } from "../../components/Modal";
 import { Await, ErrorBox, Skeleton } from "../../components/ui";
 import { useI18n } from "../../i18n";
+import { InsightsTab } from "../../insights/InsightsTab";
 import { buildContents } from "../../lib/contents";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
@@ -154,6 +155,10 @@ function Head({ b }: { b: BrainHome }) {
 export function BrainPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
+  const [sp, setSp] = useSearchParams();
+  const tab = sp.get("tab") === "insights" ? "insights" : "contents";
+  const pickTab = (next: "contents" | "insights") =>
+    setSp(next === "insights" ? { tab: "insights" } : {}, { replace: true });
   const home = useApi(() => v3.brain(id), [id]);
   const idx = useApi(() => wikiApi.index(id), [id]);
   const waitingQ = useApi(() => ux2.questions({ brain: id }), [id]);
@@ -191,7 +196,7 @@ export function BrainPage() {
   }, [tree, t]);
   void types;
   return (
-    <div className="page v4page">
+    <div className={`page v4page${tab === "insights" ? " wide" : ""}`}>
       <Await state={home} skeleton={2}>
         {(b) => (
           <>
@@ -204,7 +209,44 @@ export function BrainPage() {
                 <Trash2 size={15} aria-hidden /> {t("v4.trash")}
               </Link>
             </div>
-            <section aria-labelledby="contents-h" className="contents-sec">
+            <div className="tabs" role="tablist" aria-label={t("v5.tabs")}>
+              {(["contents", "insights"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="tab"
+                  id={`bt-${k}`}
+                  className="tab"
+                  aria-selected={tab === k}
+                  aria-controls={`bp-${k}`}
+                  tabIndex={tab === k ? 0 : -1}
+                  onClick={() => pickTab(k)}
+                  onKeyDown={(e) => {
+                    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                      e.preventDefault();
+                      pickTab(k === "contents" ? "insights" : "contents");
+                      document
+                        .getElementById(`bt-${k === "contents" ? "insights" : "contents"}`)
+                        ?.focus();
+                    }
+                  }}
+                >
+                  {t(`v5.tab.${k}` as "v5.tab.contents")}
+                </button>
+              ))}
+            </div>
+            {tab === "insights" ? (
+              <div role="tabpanel" id="bp-insights" aria-labelledby="bt-insights">
+                <InsightsTab brainId={id} />
+              </div>
+            ) : null}
+            <section
+              aria-labelledby="contents-h"
+              className="contents-sec"
+              role="tabpanel"
+              id="bp-contents"
+              hidden={tab !== "contents"}
+            >
               <div className="sec-head">
                 <div>
                   <h2 id="contents-h">{t("v4.contents")}</h2>

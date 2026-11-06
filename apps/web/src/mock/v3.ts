@@ -28,6 +28,7 @@ import type {
   Version,
 } from "../views/brains/types";
 import { NOT_HANDLED } from "./uxv2";
+import { insightsOf, overviewOf } from "./v5";
 
 const NOW = Date.parse("2026-11-05T18:00:00.000Z");
 const iso = (daysAgo: number, h = 0) =>
@@ -1074,6 +1075,15 @@ export function handleV3(
     return { brains: list.map((x) => card(x, role)) };
   }
 
+  if (p === "/v1/brains/overview" && method === "GET") {
+    const rank = (b: MockBrain) => (b.id === "me" ? 0 : b.id === "core" ? 99 : 1);
+    return overviewOf(
+      BRAINS.filter((x) => x.sees.includes(role))
+        .sort((a, z) => rank(a) - rank(z) || a.name.localeCompare(z.name))
+        .map((b) => ({ ...b, name: b.id === "me" ? "My Personal Brain" : b.name })),
+    );
+  }
+
   const m = p.match(/^\/v1\/brains\/([^/]+)(\/.*)?$/);
   if (!m) return NOT_HANDLED;
   const id = decodeURIComponent(m[1] as string);
@@ -1081,6 +1091,13 @@ export function handleV3(
   const br = brainOf(id, role);
 
   if (rest === "" && method === "GET") return homeOf(br, role);
+  if (rest === "/insights" && method === "GET") {
+    try {
+      return insightsOf(br, search);
+    } catch {
+      throw new ApiError(404, "Not found.", { error: "not_found" });
+    }
+  }
 
   if (rest === "/push/page" && method === "POST") {
     const title = String(body.title ?? "").trim();

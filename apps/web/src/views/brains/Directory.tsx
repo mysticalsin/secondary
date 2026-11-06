@@ -5,6 +5,7 @@ import { ApiError } from "../../api";
 import { Modal } from "../../components/Modal";
 import { Await, Empty } from "../../components/ui";
 import { useI18n } from "../../i18n";
+import { Glance } from "../../insights/Glance";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { v3 } from "./api";
@@ -105,6 +106,7 @@ export function Directory() {
           ))}
         </select>
       </div>
+      <Glance minTiles={2} />
       <Await state={list} skeleton={3}>
         {({ brains }) => {
           const shown = brains.filter(
