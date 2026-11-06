@@ -495,7 +495,7 @@ describe("Sources", () => {
   });
 });
 
-describe("GET /v1/health", () => {
+describe("GET /v1/ops/health (and /v1/health stays liveness)", () => {
   const NOW = Date.UTC(2031, 0, 1, 12, 30, 0);
   const H11 = Date.UTC(2031, 0, 1, 11, 0, 0);
 
@@ -504,9 +504,13 @@ describe("GET /v1/health", () => {
     expect(
       await getJ(await as("consultant", "/v1/health", { email: CONS, token: null })),
     ).toMatchObject({ ok: true });
-    expect((await as("consultant", "/v1/health?window=24h", { token: null })).status).toBe(401);
-    expect((await as("consultant", "/v1/health?window=9d", { email: CONS })).status).toBe(400);
-    expect((await consultant("/v1/health?window=24h")).status).toBe(403);
+    // `/v1/health` is liveness whatever the query says; it never turns into Platform health.
+    expect(
+      await getJ(await as("consultant", "/v1/health?window=24h", { email: CONS, token: null })),
+    ).toEqual({ ok: true, env: expect.any(String), version: expect.any(String) });
+    expect((await as("consultant", "/v1/ops/health?window=24h", { token: null })).status).toBe(401);
+    expect((await as("consultant", "/v1/ops/health?window=9d", { email: CONS })).status).toBe(400);
+    expect((await consultant("/v1/ops/health?window=24h")).status).toBe(403);
   });
 
   it("success, outcomes, failures and the heatmap equal an aggregation of the fixtures", async () => {
@@ -543,7 +547,7 @@ describe("GET /v1/health", () => {
       at(81),
     );
     const env = { OPS_SYNTHETIC: "off" };
-    const res = await admin("/v1/health?window=24h", { now: NOW, env });
+    const res = await admin("/v1/ops/health?window=24h", { now: NOW, env });
     expect(res.status).toBe(200);
     const body = await getJ(res);
     expect(body).toMatchObject({ window: "24h", scope: "tenant", synthetic: false, slo: 0.99 });
@@ -585,32 +589,32 @@ describe("GET /v1/health", () => {
 
     // 1h: 5-minute columns, only the last hour. 7d: the same totals in 6-hour columns.
     const hour = await getJ(
-      await admin("/v1/health?window=1h", { now: H11 + 25 * 60_000 + 1000, env }),
+      await admin("/v1/ops/health?window=1h", { now: H11 + 25 * 60_000 + 1000, env }),
     );
     expect(hour.heatmap.columns).toHaveLength(12);
     expect(hour.totals.attempts).toBe(14);
-    const week = await getJ(await admin("/v1/health?window=7d", { now: NOW, env }));
+    const week = await getJ(await admin("/v1/ops/health?window=7d", { now: NOW, env }));
     expect(week.heatmap.columns).toHaveLength(28);
     expect(week.totals).toEqual(body.totals);
   });
 
   it("a steward sees only their brains; an admin sees the tenant", async () => {
     const env = { OPS_SYNTHETIC: "off" };
-    const steward = await getJ(await headbid("/v1/health?window=24h", { now: NOW, env }));
+    const steward = await getJ(await headbid("/v1/ops/health?window=24h", { now: NOW, env }));
     expect(steward.scope).toBe("stewards");
     expect(steward.heatmap.rows.map((r: Loose) => r.id)).toEqual(["c_bid"]);
     expect(steward.totals).toEqual({ attempts: 13, delivered: 8, failed: 5 });
     expect(JSON.stringify(steward)).not.toContain("c_delivery");
-    const tenant = await getJ(await admin("/v1/health?window=24h", { now: NOW, env }));
+    const tenant = await getJ(await admin("/v1/ops/health?window=24h", { now: NOW, env }));
     expect(tenant.heatmap.rows.map((r: Loose) => r.id).sort()).toEqual(["c_bid", "c_delivery"]);
     expect(tenant.totals.attempts).toBeGreaterThan(steward.totals.attempts);
     // Someone who manages nothing sees nothing.
-    expect((await consultant("/v1/health?window=24h", { now: NOW, env })).status).toBe(403);
+    expect((await consultant("/v1/ops/health?window=24h", { now: NOW, env })).status).toBe(403);
   });
 
   it("with the dev stand-in, the numbers equal an independent count of its attempts", async () => {
     const now = Date.UTC(2031, 3, 1, 12, 0, 0);
-    const body = await getJ(await admin("/v1/health?window=24h", { now }));
+    const body = await getJ(await admin("/v1/ops/health?window=24h", { now }));
     expect(body.synthetic).toBe(true);
     // Independent count: one event per success (first try when it was the first run of a streak,
     // recovered otherwise) and one for a streak still going at the end.

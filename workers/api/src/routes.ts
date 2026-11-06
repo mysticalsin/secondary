@@ -409,13 +409,8 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   const v1 = new Hono<AppEnv>();
   v1.use("*", limitBody, mutationGuard);
 
-  // Unauthenticated: liveness only, no data. With `?window=` the same path is Platform health (v7
-  // operate, signed in, admins and stewards): it passes on to the authenticated route in v7ops.
-  v1.get("/health", (c, next) =>
-    c.req.query("window") === undefined
-      ? c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION })
-      : next(),
-  );
+  // Unauthenticated: liveness only, no data. Platform health (v7 operate, signed in) is `/v1/ops/health`.
+  v1.get("/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION }));
 
   // Readiness: Durable Object and R2 reachability. No data, no identity, answers are cached for 5 s.
   v1.get("/ready", async (c) => {

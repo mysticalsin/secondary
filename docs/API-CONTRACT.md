@@ -31,7 +31,7 @@ Every response is JSON with `Cache-Control: no-store`. Auth comes from the Cloud
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | /v1/health | `{ok, env, version}` (no auth) |
+| GET | /v1/health | liveness only `{ok, env, version}` (no auth) |
 | GET | /v1/me | `{principal:{id,email,roleIds}, persona, describe:{see,do,never}, env}` |
 | GET | /v1/map?lens=departments\|accounts\|topics\|governances | `MapView` (below) |
 | GET | /v1/nodes/:id | `NodeDetail` |
@@ -543,9 +543,9 @@ The caller's own agent connection calls only (receipts with their principal and 
 - `POST /v1/sources/:id/credential/rotate` -> **two people**. First call 202 `{status: "pending", needs: "second_person", name}`; a different admin's call within 24 hours 200 `{status: "rotated", name, rotatedAt}`; the same person twice stays pending. Neither answer, nor any receipt, holds a secret value. Audited `source.rotate_request` and `source.rotate`.
 - `GET /v1/sources/:id/stats?window=24h|7d` -> `{synthetic, retry: {plan: [{try, afterSeconds, atSeconds}], tries, totalSeconds, honoursRetryAfter: true, next: {try, inSeconds, last: "429"|"timeout"|"503"|...}|null}, latency: {n, timeoutSeconds, p50Ms, p95Ms, timedOut, timedOutShare, hint: {raiseTimeout, suggestedSeconds}, points: [{ms, outcome: "ok"|"timeout"|"429"|"error"}]}, acl: {maxAgeSeconds, total, confirmed, stale, failClosed, share}}`. `points` are the last N Graph calls (at most 320), newest last.
 
-### `GET /v1/health?window=1h|24h|7d`
+### `GET /v1/ops/health?window=1h|24h|7d`
 
-`GET /v1/health` without `window` stays the unauthenticated liveness probe `{ok, env, version}`. With `window` it is Platform health and needs a signed-in admin or steward (a 400 `invalid_window` for any other value).
+`GET /v1/health` is only the unauthenticated liveness probe `{ok, env, version}`; a query string never changes it. Platform health is `GET /v1/ops/health` (window defaults to `24h`) and needs a signed-in admin or steward (a 400 `invalid_window` for any other value). It moved here from `/v1/health?window=` because the liveness path must stay probe-safe.
 
 Admins see the tenant; a brain steward (`manage` on one or more brains) sees the same cards limited to those brains; anyone else is 403. `scope` says which.
 

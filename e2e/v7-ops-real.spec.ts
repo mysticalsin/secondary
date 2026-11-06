@@ -35,7 +35,7 @@ test("scope: managers, administrators and people see only their own", async ({ b
   expect(JSON.stringify(act.json)).not.toMatch(/"(title|markdown|body|text)"/);
   expect((await api(bid, "head_bid", "/v1/brains/c_delivery/activity")).status).toBe(404);
   expect((await api(bid, "head_bid", "/v1/sources")).status).toBe(403);
-  const steward = await api(bid, "head_bid", "/v1/health?window=24h");
+  const steward = await api(bid, "head_bid", "/v1/ops/health?window=24h");
   expect(steward.json.scope).toBe("stewards");
   expect(
     steward.json.heatmap.rows.every(
@@ -46,7 +46,7 @@ test("scope: managers, administrators and people see only their own", async ({ b
 
   const cons = await asPersona(browser, "consultant");
   await cons.goto("/");
-  expect((await api(cons, "consultant", "/v1/health?window=24h")).status).toBe(403);
+  expect((await api(cons, "consultant", "/v1/ops/health?window=24h")).status).toBe(403);
   expect((await api(cons, "consultant", "/v1/brains/c_delivery/activity")).status).toBe(403);
   const own = await api(cons, "consultant", "/v1/agents/activity?window=24h");
   expect(own.status).toBe(200);
@@ -54,7 +54,7 @@ test("scope: managers, administrators and people see only their own", async ({ b
 
   const adm = await asPersona(browser, "platform_admin");
   await adm.goto("/");
-  const h = await api(adm, "platform_admin", "/v1/health?window=24h");
+  const h = await api(adm, "platform_admin", "/v1/ops/health?window=24h");
   expect(h.json.scope).toBe("tenant");
   expect(h.json.totals.attempts).toBe(
     h.json.outcomes.firstTry + h.json.outcomes.recovered + h.json.outcomes.failing,

@@ -584,7 +584,7 @@ export function opsRoutes(_deps: AppDeps): Hono<AppEnv> {
 
   // ---- Platform health (admins: the tenant; stewards: their brains) ----
 
-  r.get("/health", async (c) => {
+  r.get("/ops/health", async (c) => {
     const win = pick(
       c.req.query("window"),
       Object.keys(HEALTH_WINDOWS) as HealthWindow[],

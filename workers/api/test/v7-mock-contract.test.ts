@@ -153,8 +153,8 @@ describe("web mock and real API agree on v7 operate", () => {
       [admin, "platform_admin"],
       [head, "head_bid"],
     ] as const) {
-      const real = await json<Loose>(await who("/v1/health?window=24h"));
-      expect(drift(mock("GET", "/v1/health?window=24h", role), [real])).toEqual([]);
+      const real = await json<Loose>(await who("/v1/ops/health?window=24h"));
+      expect(drift(mock("GET", "/v1/ops/health?window=24h", role), [real])).toEqual([]);
     }
   });
 

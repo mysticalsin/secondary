@@ -1209,8 +1209,8 @@ export function handleV7Ops(
     if (!ev) throw missing();
     return { ...detailOf(ev, "agent"), retryable: false };
   }
-  if (p === "/v1/health" && params.has("window") && method === "GET") {
-    const w = params.get("window") as HealthWindow;
+  if (p === "/v1/ops/health" && method === "GET") {
+    const w = (params.get("window") ?? "24h") as HealthWindow;
     if (!(w in HEALTH))
       throw new ApiError(400, "Window must be 1h, 24h or 7d.", { error: "bad_window" });
     return healthOf(w, role);

@@ -370,7 +370,7 @@ describe("mock contract behaviour", () => {
     ).toBe(NOT_HANDLED);
   });
   it("health: 8 rows by 24 columns with a failing hour, steward scope, 403 for others", () => {
-    const h = call("GET", "/v1/health?window=24h");
+    const h = call("GET", "/v1/ops/health?window=24h");
     expect(h.scope).toBe("tenant");
     expect(h.heatmap.rows).toHaveLength(8);
     expect(h.heatmap.columns).toHaveLength(24);
@@ -386,11 +386,12 @@ describe("mock contract behaviour", () => {
       h.outcomes.firstTry + h.outcomes.recovered + h.outcomes.failing,
     );
     expect(h.success.rate).toBeLessThan(h.slo);
-    expect(call("GET", "/v1/health?window=1h").heatmap.columns).toHaveLength(12);
-    expect(call("GET", "/v1/health?window=7d").heatmap.columns).toHaveLength(28);
-    expect(call("GET", "/v1/health?window=24h", {}, "head_bid").scope).toBe("stewards");
-    expect(() => call("GET", "/v1/health?window=24h", {}, "consultant")).toThrow();
+    expect(call("GET", "/v1/ops/health?window=1h").heatmap.columns).toHaveLength(12);
+    expect(call("GET", "/v1/ops/health?window=7d").heatmap.columns).toHaveLength(28);
+    expect(call("GET", "/v1/ops/health?window=24h", {}, "head_bid").scope).toBe("stewards");
+    expect(() => call("GET", "/v1/ops/health?window=24h", {}, "consultant")).toThrow();
     expect(handleV7Ops("GET", "/v1/health", new URLSearchParams(), {}, "ceo")).toBe(NOT_HANDLED);
+    expect(call("GET", "/v1/ops/health").window).toBe("24h");
   });
 });
 
