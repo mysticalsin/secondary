@@ -3,7 +3,18 @@
 // text extracts go to the target Workspace, and binary types never leave Graph.
 
 import { DurableObject } from "cloudflare:workers";
-import type { AclEntry, Cursor, LocalRecord, SourceDef, Store } from "./types.ts";
+import type {
+  AclEntry,
+  AttemptRow,
+  CallRow,
+  Cursor,
+  LocalRecord,
+  SourceDef,
+  Store,
+} from "./types.ts";
+
+const MAX_CALLS = 320;
+const ATTEMPT_KEEP_MS = 7 * 24 * 3_600_000;
 
 const emptyCursor = (sourceId: string): Cursor => ({
   sourceId,
@@ -35,6 +46,15 @@ export class ConnectorState extends DurableObject<Env> implements Store {
         CREATE TABLE IF NOT EXISTS acl (
           item_id TEXT NOT NULL, user_key TEXT NOT NULL, allowed INTEGER NOT NULL,
           checked_at INTEGER NOT NULL, PRIMARY KEY (item_id, user_key));
+        CREATE TABLE IF NOT EXISTS calls (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT NOT NULL, at INTEGER NOT NULL,
+          ms INTEGER NOT NULL, outcome TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS calls_source ON calls (source_id, id);
+        CREATE TABLE IF NOT EXISTS attempts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, source_id TEXT NOT NULL, at INTEGER NOT NULL,
+          ms INTEGER NOT NULL, outcome TEXT NOT NULL, reason TEXT, n INTEGER NOT NULL,
+          retry_after INTEGER);
+        CREATE INDEX IF NOT EXISTS attempts_source ON attempts (source_id, at);
       `);
     });
   }
@@ -64,6 +84,8 @@ export class ConnectorState extends DurableObject<Env> implements Store {
   deleteSource(id: string): void {
     this.sql.exec("DELETE FROM sources WHERE id = ?", id);
     this.sql.exec("DELETE FROM cursors WHERE source_id = ?", id);
+    this.sql.exec("DELETE FROM calls WHERE source_id = ?", id);
+    this.sql.exec("DELETE FROM attempts WHERE source_id = ?", id);
   }
 
   // ---- cursors ----
@@ -216,6 +238,91 @@ export class ConnectorState extends DurableObject<Env> implements Store {
 
   deleteAclFor(itemId: string): void {
     this.sql.exec("DELETE FROM acl WHERE item_id = ?", itemId);
+  }
+
+  // ---- v7 operate: timings and attempts (ids, counts and milliseconds only) ----
+
+  recordCall(sourceId: string, c: CallRow): void {
+    this.sql.exec(
+      "INSERT INTO calls (source_id, at, ms, outcome) VALUES (?, ?, ?, ?)",
+      sourceId,
+      c.at,
+      Math.max(0, Math.round(c.ms)),
+      c.outcome,
+    );
+    this.sql.exec(
+      `DELETE FROM calls WHERE source_id = ? AND id NOT IN
+         (SELECT id FROM calls WHERE source_id = ? ORDER BY id DESC LIMIT ?)`,
+      sourceId,
+      sourceId,
+      MAX_CALLS,
+    );
+  }
+
+  /** Newest last. */
+  listCalls(sourceId: string, limit: number): CallRow[] {
+    return this.sql
+      .exec(
+        "SELECT at, ms, outcome FROM (SELECT * FROM calls WHERE source_id = ? ORDER BY id DESC LIMIT ?) ORDER BY id",
+        sourceId,
+        limit,
+      )
+      .toArray()
+      .map((r) => ({
+        at: r.at as number,
+        ms: r.ms as number,
+        outcome: r.outcome as CallRow["outcome"],
+      }));
+  }
+
+  recordAttempt(sourceId: string, a: Omit<AttemptRow, "n">): void {
+    const prev = this.sql
+      .exec(
+        "SELECT outcome, n FROM attempts WHERE source_id = ? ORDER BY id DESC LIMIT 1",
+        sourceId,
+      )
+      .toArray()[0];
+    const n = prev && prev.outcome !== "ok" ? (prev.n as number) + 1 : 1;
+    this.sql.exec(
+      "INSERT INTO attempts (source_id, at, ms, outcome, reason, n, retry_after) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      sourceId,
+      a.at,
+      Math.max(0, Math.round(a.ms)),
+      a.outcome,
+      a.reason,
+      n,
+      a.retryAfter,
+    );
+    this.sql.exec("DELETE FROM attempts WHERE at < ?", a.at - ATTEMPT_KEEP_MS);
+  }
+
+  listAttempts(sourceId: string, since: number): AttemptRow[] {
+    return this.sql
+      .exec(
+        "SELECT at, ms, outcome, reason, n, retry_after FROM attempts WHERE source_id = ? AND at >= ? ORDER BY id",
+        sourceId,
+        since,
+      )
+      .toArray()
+      .map((r) => ({
+        at: r.at as number,
+        ms: r.ms as number,
+        outcome: r.outcome as AttemptRow["outcome"],
+        reason: (r.reason as AttemptRow["reason"]) ?? null,
+        n: r.n as number,
+        retryAfter: (r.retry_after as number | null) ?? null,
+      }));
+  }
+
+  aclRows(sourceId: string): { allowed: boolean; checkedAt: number }[] {
+    return this.sql
+      .exec(
+        `SELECT a.allowed, a.checked_at FROM acl a JOIN records r ON r.item_id = a.item_id
+         WHERE r.source_id = ?`,
+        sourceId,
+      )
+      .toArray()
+      .map((r) => ({ allowed: r.allowed === 1, checkedAt: r.checked_at as number }));
   }
 
   /** Replay cache for the signed calls from the API: true the first time a key is seen inside its TTL. */

@@ -2,6 +2,7 @@
 // which the Workspace treats as a no-op. State moves only after the page was applied downstream:
 // the delta/next link is saved after the Workspace accepted the page, so a crash replays that page.
 
+import type { CallOutcome, FailureReason } from "../../../packages/contracts/src/ops-v7.ts";
 import { decodeText, EXTRACTOR_VERSION, isTextCandidate, MAX_TEXT_BYTES } from "./extract.ts";
 import {
   GraphAuthError,
@@ -11,6 +12,7 @@ import {
   GraphThrottledError,
 } from "./graph.ts";
 import { itemKey, sha256Hex } from "./ids.ts";
+import { settingsOf } from "./registry.ts";
 import type { ApiItem, ApiSink, Cursor, LocalRecord, SourceDef, Store } from "./types.ts";
 
 export const DEFAULT_MAX_PAGES = 20;
@@ -30,7 +32,7 @@ export type SyncOutcome =
   | { status: "more"; pages: number; upserted: number; deleted: number }
   | { status: "throttled"; retryAfterSeconds: number; pages: number }
   | { status: "error"; error: string; pages: number }
-  | { status: "skipped"; reason: "disabled" | "not_found" };
+  | { status: "skipped"; reason: "disabled" | "not_found" | "paused" };
 
 interface DriveItem {
   id: string;
@@ -77,15 +79,106 @@ export function inFolder(item: DriveItem, folderPath: string): boolean {
   return rel === folder || rel.startsWith(`${folder}/`);
 }
 
+export class GraphTimeoutError extends Error {
+  constructor() {
+    super("graph_timeout");
+  }
+}
+
+/** The failure reason an operator sees for an error code. Codes only, never a response body. */
+export function reasonOf(code: string): FailureReason {
+  if (code === "graph_throttled") return "graph_429";
+  if (code === "graph_timeout") return "timeout";
+  if (code === "graph_auth_failed" || code === "graph_http_401" || code === "graph_http_403")
+    return "permission_denied";
+  if (code === "graph_http_404") return "permission_denied";
+  return "parse_error";
+}
+
+/**
+ * Graph with a per-call timeout (the source's setting) that records how long each call took and how
+ * it ended. A timed-out call is abandoned, not cancelled: the sync sees an error and retries by policy.
+ */
+export function timedGraph(
+  graph: GraphLike,
+  store: Store,
+  sourceId: string,
+  timeoutSeconds: number,
+  now: () => number,
+): GraphLike {
+  return {
+    getBytes: (url, max) => graph.getBytes(url, max),
+    async getJson<T = unknown>(path: string): Promise<T> {
+      const t0 = now();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let outcome: CallOutcome = "ok";
+      try {
+        return await Promise.race([
+          graph.getJson<T>(path),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new GraphTimeoutError()), timeoutSeconds * 1000);
+          }),
+        ]);
+      } catch (e) {
+        outcome =
+          e instanceof GraphTimeoutError
+            ? "timeout"
+            : e instanceof GraphThrottledError
+              ? "429"
+              : "error";
+        throw e;
+      } finally {
+        clearTimeout(timer);
+        await store.recordCall(sourceId, { at: t0, ms: now() - t0, outcome });
+      }
+    },
+  };
+}
+
+/** One run of a source: the delta pass itself, then the attempt is recorded for the operator views. */
 export async function syncSource(
   deps: SyncDeps,
   tenantId: string,
   sourceId: string,
 ): Promise<SyncOutcome> {
-  const { store, graph } = deps;
-  const source = await store.getSource(sourceId);
+  const source = await deps.store.getSource(sourceId);
   if (!source) return { status: "skipped", reason: "not_found" };
   if (!source.enabled) return { status: "skipped", reason: "disabled" };
+  if (source.paused) return { status: "skipped", reason: "paused" };
+  const settings = settingsOf(source);
+  const t0 = deps.now();
+  const out = await runPass(
+    {
+      ...deps,
+      graph: timedGraph(deps.graph, deps.store, sourceId, settings.timeoutSeconds, deps.now),
+    },
+    tenantId,
+    source,
+  );
+  if (out.status === "skipped") return out;
+  const failed = out.status === "error" || out.status === "throttled";
+  const reason =
+    out.status === "throttled" ? "graph_throttled" : out.status === "error" ? out.error : "";
+  await deps.store.recordAttempt(sourceId, {
+    at: t0,
+    ms: deps.now() - t0,
+    outcome:
+      out.status === "throttled"
+        ? "throttled"
+        : out.status === "error"
+          ? out.error === "graph_timeout"
+            ? "timeout"
+            : "error"
+          : "ok",
+    reason: failed ? reasonOf(reason) : null,
+    retryAfter: out.status === "throttled" ? out.retryAfterSeconds : null,
+  });
+  return out;
+}
+
+async function runPass(deps: SyncDeps, tenantId: string, source: SourceDef): Promise<SyncOutcome> {
+  const { store, graph } = deps;
+  const sourceId = source.id;
 
   const maxPages = deps.maxPages ?? DEFAULT_MAX_PAGES;
   let cursor = await store.getCursor(sourceId);

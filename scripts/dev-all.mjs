@@ -66,6 +66,9 @@ writeFileSync(
     BRIEF_PROOF_KEY: secrets.BRIEF_PROOF_KEY,
     DEV_AUTH_BYPASS_EMAIL: "dev@example.invalid",
     DO_JURISDICTION: "off",
+    // No connector runs in this stack: Sources, Activity and Health answer deterministic synthetic
+    // numbers (a mocked Graph), labelled "synthetic". Never set outside local dev.
+    OPS_SYNTHETIC: "on",
     // wrangler.jsonc names the deployed dev MCP host; locally the connect command must point at this one.
     MCP_PUBLIC_URL: `http://localhost:${MCP_PORT}`,
     // wrangler.jsonc carries the deployed dev Access team and AUD tag. Locally there is no Access:

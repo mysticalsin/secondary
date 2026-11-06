@@ -151,7 +151,11 @@ export async function runWikiJobs(
             ? await lint(api, ctx, m)
             : await dream(api, ctx, m);
     } catch (e) {
-      result = { error: e instanceof Error ? e.message.slice(0, 160) : "failed" };
+      result = {
+        error: e instanceof Error ? e.message.slice(0, 160) : "failed",
+        // The source it was reading, so an operator can queue the same ingest again (Brain, Activity).
+        ...(typeof job.payload.sourceId === "string" ? { sourceId: job.payload.sourceId } : {}),
+      };
       await api.wikiLogAppend(serviceActor(m.scopeId), `${job.kind}.failed`, result, ctx.now);
     }
     await api.wikiJobFinish(job.id, result);

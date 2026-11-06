@@ -5,11 +5,13 @@ import { v3Fr } from "./v3";
 import { v4Fr } from "./v4";
 import { v5Fr } from "./v5";
 import { v6Fr } from "./v6";
+import { v7opsFr } from "./v7ops";
 
 export const fr: Record<keyof typeof en, string> = {
   ...v4Fr,
   ...v5Fr,
   ...v6Fr,
+  ...v7opsFr,
   ...ux2Fr,
   ...v3Fr,
   "common.cancel": "Annuler",
