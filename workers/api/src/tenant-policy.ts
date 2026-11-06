@@ -13,6 +13,7 @@ import {
   type UserChange,
 } from "./auth/identity-store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
+import { RULES_METHODS, RULES_TABLES, RulesStore } from "./rules/store.ts";
 import { SecurityJournal } from "./security-journal.ts";
 import { allOn, isSwitchName, SWITCHES, type SwitchName, type SwitchState } from "./switches.ts";
 
@@ -85,6 +86,7 @@ const SNAPSHOT_TABLES = [
   "gov_notifications",
   "pilot_cohorts",
   "open_brains",
+  ...RULES_TABLES,
 ] as const;
 
 /** Features a pilot cohort can switch on. A key no cohort mentions is on for everyone. */
@@ -117,6 +119,7 @@ export class TenantPolicy extends DurableObject<Env> {
   private readonly identity: IdentityStore;
   private readonly journal: SecurityJournal;
   private govStore!: GovStore;
+  private rulesStore!: RulesStore;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -178,7 +181,29 @@ export class TenantPolicy extends DurableObject<Env> {
         },
         ROLE_ORDER.map((r) => ROLES[r]),
       );
+      // Brain rules (v7): definitions, versions, drafts, held actions and the incident switch.
+      this.rulesStore = new RulesStore({
+        sql: this.sql,
+        tx: (fn) => ctx.storage.transactionSync(fn),
+        second: (key, actor, now, email) => this.requestSecond(key, actor, now, email),
+        pending: (key, now) => this.pendingRequester(key, now),
+        same: (a, b) => a === b || this.sameHuman(a, b),
+        remember: (id, email) => this.rememberAddress(id, email),
+      });
     });
+  }
+
+  /** Single entry point for rules/store.ts (brain rules), typed by rules/client.ts. */
+  rules(method: string, args: unknown[]): unknown {
+    if (!(RULES_METHODS as readonly string[]).includes(method))
+      return {
+        ok: false,
+        code: "unknown_rules_method",
+        message: "Not a rules method",
+        status: 400,
+      };
+    const fn = (this.rulesStore as unknown as Record<string, (...a: unknown[]) => unknown>)[method];
+    return (fn as (...a: unknown[]) => unknown).apply(this.rulesStore, args);
   }
 
   /** Single entry point for admin/store.ts, so this class stays small. Typed by admin/client.ts. */
@@ -224,6 +249,7 @@ export class TenantPolicy extends DurableObject<Env> {
       ])
         this.sql.exec(`DELETE FROM ${t}`);
       this.govStore.reset(now);
+      this.rulesStore.reset();
       this.journal.clear();
       // The workspaces are emptied by a reseed, so the wiki seed starts over too.
       this.sql.exec("DELETE FROM config WHERE k IN ('seed_version', 'seed_claim')");

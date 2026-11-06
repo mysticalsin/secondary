@@ -15,6 +15,7 @@ import {
   verifyInternalRequest,
 } from "./internal-auth.ts";
 import { connectorKeys, replayStore } from "./replay.ts";
+import { ruleServiceCheck } from "./rules/service.ts";
 import { workspaceStub } from "./stubs.ts";
 import { wikiNotify } from "./wiki/hooks.ts";
 import type { SourceItem } from "./workspace.ts";
@@ -55,6 +56,34 @@ function parseItem(
   if (typeof eTag !== "string" || eTag.length > 200) return null;
   if (typeof syncedAt !== "number" || !Number.isFinite(syncedAt)) return null;
   return { id, sourceId, gateNodeId, plane, title, body, webUrl, mime, size, eTag, syncedAt };
+}
+
+/**
+ * Do the tenant's brain rules stop this batch? The connector is a machine: `block` and every approval
+ * effect hold the batch back (nothing written, the next sync tries again). Returns `ruleId@version`
+ * of the rule that did, "" when the rules could not be read (fail closed), else null. The batch text
+ * is read for content flags (client names, personal data), never stored.
+ */
+async function connectorRule(
+  env: Env,
+  tenantId: string,
+  scopeId: string,
+  gateNodeId: string,
+  rows: SourceItem[],
+): Promise<string | null> {
+  const v = await ruleServiceCheck(env, {
+    tenantId,
+    principalId: "secondary-connector",
+    scopeId,
+    nodeId: gateNodeId,
+    action: "import",
+    actor: "connector",
+    text: rows.map((x) => `${x.title}\n${x.body ?? ""}`).join("\n\n"),
+    cites: rows.length,
+    pages: rows.length,
+    approval: "hold",
+  });
+  return v.stop ? (v.rule ?? "") : null;
 }
 
 /** Mounted at /internal/connector in index.ts. */
@@ -111,6 +140,9 @@ export function connectorRoutes(): Hono<{ Bindings: Env }> {
       if (!row) return c.json({ error: "invalid_item" }, 400);
       rows.push(row);
     }
+    // Brain rules (v7): a sync cannot wait for a person, so an approval effect holds the batch back.
+    const held = await connectorRule(c.env, tenantId, scopeId, gateNodeId, rows);
+    if (held !== null) return c.json({ ok: true, changed: 0, held: held || "rules_unavailable" });
     const changed = await workspaceStub(c.env, tenantId, scopeId).sourceUpsert(rows);
     if (changed)
       await wikiNotify(

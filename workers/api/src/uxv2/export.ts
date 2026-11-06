@@ -4,9 +4,11 @@
 // written: a page with no readable source is left out, a line that rests on an unreadable source is
 // dropped, and the Personal Brain is only ever the caller's own.
 
+import type { ContentFlag } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
 import { exportProperties } from "../brains/fields.ts";
+import { ruleGate } from "../rules/gate.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
 import { audit, sess } from "../ux/util.ts";
@@ -54,16 +56,6 @@ export function exportRoutes(): Hono<AppEnv> {
       c.header("Retry-After", String(limited.retryAfter));
       return c.json({ error: "rate_limited" }, 429);
     }
-    if (
-      !(await audit(c, {
-        action: "brain.export",
-        nodeId: t.nodeId,
-        scopeId: t.scope,
-        revision: null,
-      }))
-    )
-      return c.json({ error: "audit_unavailable" }, 503);
-
     const view = viewOf(s);
     const stub = stubOf(c, t.scope);
     const [pages, facts, schema, meta, brain, fieldValues] = await Promise.all([
@@ -109,6 +101,35 @@ export function exportRoutes(): Hono<AppEnv> {
           folder: p.type.toLowerCase().replace(FOLDER, "") || "other",
         };
       });
+    // Brain rules (v7): block, or hold the export until an approver says yes. The receipt comes after
+    // the gate and before anything leaves, so an export is never returned without its receipt.
+    const flags: ContentFlag[] = [];
+    if (
+      brain.fields.some(
+        (f) => f.sensitivity === "confidential" && fieldValues.some((v) => v.key === f.key),
+      )
+    )
+      flags.push("confidential_field");
+    const rg = await ruleGate(c, {
+      action: "export",
+      brain: { nodeId: t.nodeId, personal: t.personal, vn: view.nodes.get(t.nodeId) ?? null },
+      pages: shown.length,
+      flags,
+      mode: "hold",
+    });
+    if (rg.response) return rg.response;
+    if (
+      !(await audit(c, {
+        action: "brain.export",
+        nodeId: t.nodeId,
+        scopeId: t.scope,
+        revision: null,
+        ...rg.rx,
+      }))
+    ) {
+      await rg.refund();
+      return c.json({ error: "audit_unavailable" }, 503);
+    }
     const known = new Map(shown.map((x) => [x.p.id, x]));
     const files: { path: string; content: string }[] = [];
     const outs: Out[] = [];

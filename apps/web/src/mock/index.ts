@@ -34,6 +34,7 @@ import { STAGES } from "../types";
 import { handleAgentViews } from "./agent";
 import { ACCOUNTS, DEPARTMENTS, GOVERNANCES, hash, type Leaf, ORG, REGIONS, THEMES } from "./org";
 import { canDo, ROLES, roleOf, vis } from "./policy";
+import { handleRules } from "./rules";
 import { detectSensitivity } from "./sensitive";
 import { handleV2, NOT_HANDLED, questionsFor } from "./uxv2";
 import { handleV3 } from "./v3";
@@ -880,6 +881,8 @@ export async function handle(
 
   const ops = handleV7Ops(method, p, url.searchParams, b, role);
   if (ops !== NOT_HANDLED) return ops;
+  const rules = handleRules(method, p, url.searchParams, b, role);
+  if (rules !== NOT_HANDLED) return rules;
   const agent = handleAgentViews(method, p, url.searchParams, b, role, persona);
   if (agent !== NOT_HANDLED) return agent;
   const v3 = handleV3(

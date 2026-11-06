@@ -76,14 +76,20 @@ export default defineConfig({
               const principal = url.searchParams.get("principal");
               const tenant = url.searchParams.get("tenant");
               return Response.json({
-                // Newest first and at most 200, like the real worker.
+                // Newest first and at most `limit` (default 200, up to 1000), like the real worker.
                 receipts: receipts
                   .filter(
                     (r) =>
                       (principal === null || r.principalId === principal) && r.tenantId === tenant,
                   )
                   .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-                  .slice(0, 200),
+                  .slice(
+                    0,
+                    Math.min(
+                      Math.max(Number(url.searchParams.get("limit") ?? 200) || 200, 1),
+                      1000,
+                    ),
+                  ),
               });
             }
             return Response.json({ error: "not_found" }, { status: 404 });

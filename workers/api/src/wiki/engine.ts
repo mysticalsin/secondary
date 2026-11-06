@@ -9,6 +9,7 @@ import { doBudget, reserve } from "../ai/budget.ts";
 import { estimateTokens, LIMITS } from "../ai/config.ts";
 import { excludePersonalSegments } from "../ai/segments.ts";
 import { getOrg } from "../org.ts";
+import { ruleServiceCheck, type ServiceVerdict } from "../rules/service.ts";
 import { tenantStub } from "../stubs.ts";
 import { recordUsage } from "../uxv2/ledger.ts";
 import type { JobRow, ProposeOpts, ProposeResult } from "./store.ts";
@@ -79,6 +80,11 @@ export interface WikiApi {
     freshnessDays: number;
   }>;
   wikiMarkRun(kind: "lint" | "dream", now: number): Maybe<void>;
+  /** Brain rules (v7): what a rule asked of one proposal. Present on every workspace object. */
+  brainRuleStamp?(
+    id: string,
+    s: { required: number; group: string[]; tag: string; expiresAfterMin: number | null },
+  ): Maybe<void>;
   wikiLogAppend(
     actor: string,
     kind: string,
@@ -111,6 +117,39 @@ type Scope = {
 const WIKI_BUDGET_SHARE = 0.4;
 
 export const serviceActor = (scopeId: string): string => `svc:wiki:${scopeId}`;
+
+/**
+ * Brain rules (v7) for what a job is about to file: the engine writes agent proposals into shared and
+ * account brains, so the rules apply to it as to any agent. Dev seed data is synthetic and exempt.
+ * A block (or a rules read that failed) files nothing; an approval effect keeps the proposal out of
+ * auto-accept and stamps what the rules asked for.
+ */
+async function engineRules(
+  ctx: JobContext,
+  m: Scope,
+  text: string,
+  pages: number,
+): Promise<ServiceVerdict> {
+  if (ctx.seed || isPersonalScope(m.scopeId)) return { stop: false, review: false, stamp: null };
+  return ruleServiceCheck(
+    ctx.env,
+    {
+      tenantId: m.tenantId,
+      principalId: serviceActor(m.scopeId),
+      scopeId: m.scopeId,
+      nodeId: nodeOfScope(m.scopeId),
+      action: "propose_change",
+      actor: "agent",
+      text,
+      cites: 1,
+      pages,
+      approval: "stamp",
+    },
+    ctx.now,
+  );
+}
+
+const draftText = (pages: PageDraft[]): string => pages.map((p) => p.markdown).join("\n\n");
 
 /** Plane and AI contract of the workspace's own node. Fail closed: a node the org does not know gets no proposal. */
 async function nodeOf(
@@ -452,6 +491,21 @@ async function ingest(
     );
     return { triage: "no_new_information", method };
   }
+  const verdict = await engineRules(
+    ctx,
+    m,
+    `${draftText(pageDrafts)}\n${newFacts.map((f) => `${f.subject} ${f.predicate} ${f.object}`).join("\n")}`,
+    Math.max(pageDrafts.length, 1),
+  );
+  if (verdict.stop) {
+    await api.wikiLogAppend(
+      actor,
+      "ingest.blocked",
+      { sourceId, rule: verdict.rule ?? "rules unavailable" },
+      ctx.now,
+    );
+    return { triage: "blocked_by_rule", ...(verdict.rule ? { rule: verdict.rule } : {}) };
+  }
   await api.wikiSupersede(info.id, ctx.now);
   const r = await api.wikiPropose(
     {
@@ -470,10 +524,15 @@ async function ingest(
     },
     actor,
     ctx.now,
-    { plane: node.plane, autoAccept: true, ...(ctx.seed ? { seed: true } : {}) },
+    {
+      plane: node.plane,
+      ...(verdict.review ? {} : { autoAccept: true }),
+      ...(ctx.seed ? { seed: true } : {}),
+    },
   );
   await api.wikiSourceSeen(info.id, info.hash, info.title, gateNode, true, ctx.now);
   if (!("ok" in r) || !r.ok) return { triage: "failed" };
+  if (r.created && verdict.stamp) await api.brainRuleStamp?.(r.id, verdict.stamp);
   return r.created
     ? { triage: "proposed", id: r.id, method, autoAccepted: r.autoAccepted }
     : { triage: "no_new_information", method };
@@ -489,6 +548,8 @@ async function lint(api: WikiApi, ctx: JobContext, m: Scope): Promise<Record<str
   const found = lintFindings({ ...data, now: ctx.now });
   let filed = 0;
   for (const f of found) {
+    const verdict = await engineRules(ctx, m, draftText(f.proposal.pages), f.proposal.pages.length);
+    if (verdict.stop) continue;
     const r = await api.wikiPropose(
       {
         kind: "wiki_lint",
@@ -511,7 +572,10 @@ async function lint(api: WikiApi, ctx: JobContext, m: Scope): Promise<Record<str
       ctx.now,
       { plane: node.plane },
     );
-    if ("ok" in r && r.ok && r.created) filed++;
+    if ("ok" in r && r.ok && r.created) {
+      filed++;
+      if (verdict.stamp) await api.brainRuleStamp?.(r.id, verdict.stamp);
+    }
   }
   await api.wikiMarkRun("lint", ctx.now);
   await api.wikiLogAppend(actor, "lint.run", { found: found.length, filed }, ctx.now);
@@ -525,6 +589,8 @@ async function dream(api: WikiApi, ctx: JobContext, m: Scope): Promise<Record<st
   const drafts = dreamDrafts((await api.wikiPages()).filter((p) => p.type !== "journal"));
   let filed = 0;
   for (const d of drafts) {
+    const verdict = await engineRules(ctx, m, draftText(d.pages), d.pages.length);
+    if (verdict.stop) continue;
     const r = await api.wikiPropose(
       {
         kind: "wiki_dream",
@@ -545,7 +611,10 @@ async function dream(api: WikiApi, ctx: JobContext, m: Scope): Promise<Record<st
       ctx.now,
       { plane: node.plane },
     );
-    if ("ok" in r && r.ok && r.created) filed++;
+    if ("ok" in r && r.ok && r.created) {
+      filed++;
+      if (verdict.stamp) await api.brainRuleStamp?.(r.id, verdict.stamp);
+    }
   }
   await api.wikiMarkRun("dream", ctx.now);
   await api.wikiLogAppend(actor, "dream.run", { drafts: drafts.length, filed }, ctx.now);

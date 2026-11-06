@@ -33,6 +33,8 @@ import { humanIdsOf } from "./human.ts";
 import { readiness } from "./observe.ts";
 import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
 import { PERSONAL_KINDS, type PersonalKind, personalKindOf } from "./personal-kind.ts";
+import { ruleDecideGuard, ruleGate } from "./rules/gate.ts";
+import { rulesRoutes } from "./rules/routes.ts";
 import { candidateId, parseCandidateId, personalScope, scopeOfNode } from "./scope.ts";
 import { limitBody, mutationGuard, safeEqual } from "./security.ts";
 import { seedTenant } from "./seed.ts";
@@ -249,6 +251,16 @@ export async function submitCandidate(
     });
     return forbidden(c, d.reason);
   }
+  // Brain rules (v7): block, or ask for more approvals on the candidate this makes.
+  const g = await ruleGate(c, {
+    action: i.releaseTarget === "global" ? "promote_to_global" : "propose_page",
+    brain: { nodeId: i.targetNodeId, personal: false, vn: target },
+    text: `${i.title}\n${i.body ?? ""}`,
+    cites: 0,
+    pages: 1,
+    mode: "stamp",
+  });
+  if (g.response) return g.response;
   const receipt = await audit(c, {
     action: "contribute",
     nodeId: i.targetNodeId,
@@ -256,6 +268,7 @@ export async function submitCandidate(
     decision: "allow",
     reason: d.reason,
     revision: 1,
+    ...g.rx,
   });
   if (!receipt.ok) return c.json({ error: "audit_unavailable" }, 503);
   const made = await workspaceStub(c.env, s.tenantId, scopeId).create(
@@ -276,6 +289,7 @@ export async function submitCandidate(
     s.ctx.now,
   );
   if ("ok" in made) return failResponse(c, made);
+  await g.stamp(workspaceStub(c.env, s.tenantId, scopeId), made.id);
   await notifyContributed(c, i.targetNodeId, made.id, s.principal.id);
   return c.json(
     {
@@ -940,6 +954,17 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       if (verdict !== "accept" && verdict !== "changes_requested") throw bad("invalid_verdict");
     }
 
+    // Brain rules (v7): a rule can block this release, ask for more approvals or limit who approves.
+    let rx: Awaited<ReturnType<typeof ruleDecideGuard>>["rx"] | undefined;
+    if (action === "approve_release" && cand) {
+      const dg = await ruleDecideGuard(
+        c,
+        { stub: wsFor(c, vn), nodeId: policyNode, personal: false, vn, view },
+        nodeId,
+      );
+      if (dg.response) return dg.response;
+      rx = dg.rx;
+    }
     const receipt = await audit(c, {
       action,
       nodeId,
@@ -947,6 +972,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       decision: "allow",
       reason: d.reason,
       revision,
+      ...(rx ?? {}),
     });
     if (!receipt.ok) return c.json({ error: "audit_unavailable" }, 503);
     const ws = wsFor(c, vn);
@@ -1170,6 +1196,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.route("/", uxv2Routes(deps)); // UX v2: ask, brain tree and export, questions, routines, usage
   v1.route("/", brainsRoutes(deps)); // v3 brains: directory, access, fields, imports, agents, pilot
   v1.route("/", agentRoutes(deps)); // v6 My Agent: turn stream and saved views
+  v1.route("/", rulesRoutes(deps)); // v7 brain rules: /v1/rules
 
   v1.all("*", (c) => c.json({ error: "not_found" }, 404));
   return v1;

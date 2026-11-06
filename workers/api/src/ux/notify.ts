@@ -11,7 +11,8 @@ export type ReviewEvent =
   | "review_second_approval"
   | "review_changes_requested"
   | "review_approved"
-  | "review_released";
+  | "review_released"
+  | "rule_notice";
 
 async function deliver(
   c: C,
@@ -75,6 +76,21 @@ const label = (c: C, nodeId: string): string => {
   const n = sess(c).org?.nodes.get(nodeId);
   return n?.label ?? "a shared space";
 };
+
+/** A brain rule said "allow and notify": tell the people who can decide in that brain. */
+export async function notifyRule(
+  c: C,
+  targetNodeId: string,
+  title: string,
+  ref: string,
+): Promise<void> {
+  try {
+    const to = await reviewersOf(c, targetNodeId, [sess(c).principal.id]);
+    await deliver(c, to, "rule_notice", title, ref);
+  } catch {
+    // Best effort, see above.
+  }
+}
 
 /** A new contribution is waiting: tell the people who can review it. */
 export async function notifyContributed(

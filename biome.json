@@ -16,5 +16,28 @@
       "!pnpm-lock.yaml"
     ]
   },
-  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 }
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "overrides": [
+    {
+      "includes": [
+        "**/rules/seed.ts",
+        "**/v7-rules.test.ts",
+        "**/v7-mock-contract.test.ts",
+        "**/rules.test.ts",
+        "**/v7-rules.e2e.ts",
+        "**/v7-real.spec.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noThenProperty": "off"
+          }
+        }
+      }
+    }
+  ]
 }

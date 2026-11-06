@@ -22,6 +22,7 @@ import { directPublish } from "../brains/open.ts";
 import { checkSourceAccess } from "../connector.ts";
 import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";
+import { ruleDecideGuard, ruleGate } from "../rules/gate.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
@@ -839,12 +840,23 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       const problem = now.status === "candidate" ? seenProblem(now, seen) : null;
       if (problem) return c.json({ error: "changes_not_seen", ...problem }, 409);
     }
+    // Brain rules (v7): a rule can block this publish, ask for more approvals or limit who approves.
+    const dg =
+      b.decision === "approve"
+        ? await ruleDecideGuard(
+            c,
+            { stub: w.stub, nodeId: w.nodeId, personal: w.personal, vn: w.vn, view: w.view },
+            id,
+          )
+        : null;
+    if (dg?.response) return dg.response;
     if (
       !(await audit(c, {
         action: `wiki.${b.decision}`,
         nodeId: id,
         scopeId: w.scope,
         revision: null,
+        ...(dg?.rx ?? {}),
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -873,7 +885,25 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const md = text(b.markdown, 1, MAX_MD, "invalid_markdown");
     const refused = await limited(c, "write");
     if (refused) return refused;
-    if (!(await audit(c, { action: "wiki.edit", nodeId: id, scopeId: w.scope, revision: null })))
+    // Brain rules (v7): the edit changes what will be published, so the rules read the new text again.
+    const g = await ruleGate(c, {
+      action: (await w.stub.wikiPage(pageId)) ? "propose_change" : "propose_page",
+      brain: { nodeId: w.nodeId, personal: w.personal, vn: w.vn },
+      text: md,
+      cites: citationsOf(md).length,
+      pages: 1,
+      mode: "stamp",
+    });
+    if (g.response) return g.response;
+    if (
+      !(await audit(c, {
+        action: "wiki.edit",
+        nodeId: id,
+        scopeId: w.scope,
+        revision: null,
+        ...g.rx,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     // The editor may cite only what they can read themselves.
     const mine = await readableSources(c, w, citationsOf(md));
@@ -881,6 +911,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       ...mine.keys(),
     ]);
     if (!res.ok) return failResponse(c, res);
+    await g.stamp(w.stub, id);
     return c.json({ ok: true, revision: res.revision });
   });
 
@@ -909,12 +940,23 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     if (refused) return refused;
     // A person cites only what they can read themselves (L-01).
     const mine = await readableSources(c, w, citationsOf(md));
+    // Brain rules (v7): block, or ask for more approvals on the proposal this makes.
+    const g = await ruleGate(c, {
+      action: cur ? "propose_change" : "propose_page",
+      brain: { nodeId: w.nodeId, personal: w.personal, vn: w.vn },
+      text: md,
+      cites: citationsOf(md).length,
+      pages: 1,
+      mode: "stamp",
+    });
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "wiki.propose",
         nodeId: w.nodeId,
         scopeId: w.scope,
         revision: null,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -938,11 +980,12 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       {
         plane: w.plane,
         readable: [...mine.keys()],
-        ...((await directPublish(c, w)) ? { publishDirect: true } : {}),
+        ...(!g.forceReview && (await directPublish(c, w)) ? { publishDirect: true } : {}),
       },
     );
     if (!res.ok) return failResponse(c, res);
     if (!res.created) return c.json({ error: "nothing_to_propose", reason: res.reason }, 422);
+    await g.stamp(w.stub, res.id);
     return c.json(
       { ok: true, proposalId: res.id, status: res.autoAccepted ? "published" : "candidate" },
       201,

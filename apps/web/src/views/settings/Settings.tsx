@@ -11,6 +11,7 @@ import { useOpsRights } from "../../ops/rights";
 import { SourcePage } from "../../ops/SourcePage";
 import { SourcesList } from "../../ops/SourcesList";
 import { PERSONAS } from "../../personas";
+import { useRulesAccess } from "../../rules/access";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { downloadExport } from "../../uxv2/api";
@@ -21,6 +22,7 @@ import { PilotPage } from "../brains/Pilot";
 import { Usage } from "../usage/Usage";
 
 const AgentSettingsSection = lazy(() => import("../../agent/SettingsSection"));
+const RulesPage = lazy(() => import("../../rules/Rules"));
 
 function Profile() {
   const { t, td } = useI18n();
@@ -292,7 +294,9 @@ export function Settings() {
   const wide = /^\/settings\/(sources|health)/.test(useLocation().pathname);
   const opsGuard = (ok: boolean, el: JSX.Element) =>
     ok ? el : opsRights.known ? <Navigate to="/settings/profile" replace /> : null;
-  const items: { to: string; label: Key; admin?: boolean; gap?: boolean; show?: boolean }[] = [
+  // Rules is for people with the configure grant, and only where the API says the surface exists.
+  const rules = useRulesAccess(undefined, !!me?.capabilities?.configure);
+  const items: { to: string; label: Key; admin?: boolean; gap?: boolean; show?: boolean; hide?: boolean }[] = [
     { to: "profile", label: "v4.settings.profile" },
     { to: "brains", label: "v4.settings.brains" },
     { to: "agents", label: "v4.settings.agents" },
@@ -305,6 +309,7 @@ export function Settings() {
     { to: "pilot", label: "v4.settings.pilot", admin: true },
     { to: "sources", label: "v7o.nav.sources", show: opsRights.sources },
     { to: "health", label: "v7o.nav.health", show: opsRights.health },
+    { to: "rules", label: "v7.rules", admin: true, hide: rules !== true },
     { to: "journal", label: "v4.settings.journal" },
   ];
   return (
@@ -314,7 +319,7 @@ export function Settings() {
         <nav className="setnav" aria-label={t("v4.settings")}>
           <ul>
             {items
-              .filter((i) => (i.show !== undefined ? i.show : !i.admin || admin))
+              .filter((i) => (i.show !== undefined ? i.show : !i.admin || admin) && !i.hide)
               .map((i) => (
                 <li key={i.to} className={i.gap ? "gap" : undefined}>
                   <NavLink to={`/settings/${i.to}`}>{t(i.label)}</NavLink>
@@ -345,6 +350,18 @@ export function Settings() {
             <Route path="sources" element={opsGuard(opsRights.sources, <SourcesList />)} />
             <Route path="sources/:id" element={opsGuard(opsRights.sources, <SourcePage />)} />
             <Route path="health" element={opsGuard(opsRights.health, <HealthPage />)} />
+            <Route
+              path="rules"
+              element={
+                !me || rules === null ? null : rules ? (
+                  <Suspense fallback={null}>
+                    <RulesPage />
+                  </Suspense>
+                ) : (
+                  <Navigate to="/settings/profile" replace />
+                )
+              }
+            />
             <Route path="journal" element={<Journal />} />
             <Route path="*" element={<Navigate to="/settings/profile" replace />} />
           </Routes>

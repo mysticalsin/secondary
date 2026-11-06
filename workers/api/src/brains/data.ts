@@ -2,6 +2,7 @@
 
 import { roleAllows } from "@secondary/policy";
 import { Hono } from "hono";
+import { type GateOut, ruleGate } from "../rules/gate.ts";
 import { IMPORT_BODY_BYTES } from "../security.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
@@ -258,16 +259,30 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     }
     // A dry run writes nothing (no audit receipt, no proposal): it shows the classifier's verdicts.
     if (dry) return runImport(c, b, format, parsed, true);
+    // Brain rules (v7): block, or ask for more approvals on every proposal the import makes.
+    const g = await ruleGate(c, {
+      action: "import",
+      brain: { nodeId: b.nodeId, personal: b.personal, vn: b.vn, role: b.role },
+      text: parsed.docs
+        .map((d) => d.markdown)
+        .join("\n")
+        .slice(0, 100_000),
+      cites: 1,
+      pages: parsed.docs.length,
+      mode: "stamp",
+    });
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "brain.import",
         nodeId: b.nodeId,
         scopeId: b.scope,
         revision: null,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
-    return runImport(c, b, format, parsed);
+    return runImport(c, b, format, parsed, false, g);
   });
 
   // ---- journal ----
@@ -335,6 +350,7 @@ async function runImport(
   format: ImportFormat,
   parsed: { docs: ImportDoc[]; skipped: { path: string; reason: string }[] },
   dry = false,
+  gate?: GateOut,
 ): Promise<Response> {
   const s = sess(c);
   const schema = await b.stub.wikiSchema();
@@ -375,7 +391,7 @@ async function runImport(
       markdown: verdict.kept,
     };
     // Direct only in the Personal Brain, for a page the classifier is sure about and that replaces nothing.
-    const publishDirect = b.personal && verdict.verdict === "ingest" && !cur;
+    const publishDirect = b.personal && verdict.verdict === "ingest" && !cur && !gate?.forceReview;
     if (dry) {
       pages.push({
         path: d.path,
@@ -413,6 +429,7 @@ async function runImport(
       skipped.push({ path: d.path, reason: res.ok ? res.reason : res.message });
       continue;
     }
+    await gate?.stamp(b.stub, res.id);
     imported.push({
       pageId: d.pageId,
       title: draft.title,

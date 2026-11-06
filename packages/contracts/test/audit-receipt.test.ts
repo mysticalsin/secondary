@@ -43,4 +43,63 @@ describe("audit receipt contract", () => {
     ])
       expect(parseReceipt(bad, "api")).toBeNull();
   });
+
+  it("carries the brain rule and replay metadata, from a fixed vocabulary, and nothing else", () => {
+    const meta = {
+      action: "export",
+      actor: "agent",
+      host: "claude",
+      brainId: "c_bid",
+      brainType: "team",
+      flags: ["client_name"],
+      pages: 60,
+      contract: "unknown",
+      expiresAfterMin: null,
+      content: "SECRET",
+    };
+    const r = parseReceipt({ ...base(), rule: "r_ab12@3", ruleMode: "monitor", meta }, "api");
+    expect(r?.rule).toBe("r_ab12@3");
+    expect(r?.ruleMode).toBe("monitor");
+    expect(r?.meta).toEqual({
+      action: "export",
+      actor: "agent",
+      host: "claude",
+      brainId: "c_bid",
+      brainType: "team",
+      flags: ["client_name"],
+      pages: 60,
+      contract: "unknown",
+      expiresAfterMin: null,
+    });
+    expect(JSON.stringify(r)).not.toContain("SECRET");
+    // Receipts without them still parse, with nulls.
+    expect(parseReceipt(base(), "api")).toMatchObject({ rule: null, ruleMode: null, meta: null });
+    for (const bad of [
+      { rule: "no version" },
+      { ruleMode: "live" },
+      { meta: { ...meta, action: "delete_everything" } },
+      { meta: { ...meta, flags: ["a secret note"] } },
+      { meta: { ...meta, host: "evil" } },
+      { meta: { ...meta, pages: -1 } },
+      { meta: "text" },
+    ])
+      expect(parseReceipt({ ...base(), ...bad }, "api")).toBeNull();
+  });
+
+  it("L-4: only the API's receipts can name a rule or carry replay metadata", () => {
+    const meta = {
+      action: "export",
+      actor: "agent",
+      host: "claude",
+      brainId: "c_bid",
+      brainType: "team",
+      flags: [],
+      pages: 60,
+      contract: null,
+      expiresAfterMin: null,
+    };
+    const forged = { ...base(), rule: "r_ab12@3", ruleMode: "enforced", meta };
+    expect(parseReceipt(forged, "mcp")).toMatchObject({ rule: null, ruleMode: null, meta: null });
+    expect(parseReceipt(forged, "api")).toMatchObject({ rule: "r_ab12@3", ruleMode: "enforced" });
+  });
 });

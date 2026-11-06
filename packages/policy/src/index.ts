@@ -8,4 +8,5 @@ export { isPersonalKind, OWNER_ACTIONS, personalRootId } from "./personal.ts";
 export { PERSONAS, persona, TENANT_ID } from "./personas.ts";
 export type { RoleId } from "./roles.ts";
 export { ACTION_LABEL, ROLE_ORDER, ROLES } from "./roles.ts";
+export * from "./rules.ts";
 export * from "./types.ts";
