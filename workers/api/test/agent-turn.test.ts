@@ -258,16 +258,34 @@ describe("usage and receipts", () => {
 
   it("one receipt per turn, ids only: never the question, a title or page text", async () => {
     const QUESTION = "Zebra quartz question about Bid & Pre-sales pricing";
+    // The AUDIT stand-in is one list for every test file, so the person's receipts can already hold other
+    // receipts that legitimately name a brain ("Granted on Bid & Pre-sales"). Put one there on purpose: the
+    // privacy check below must look at this turn's receipt, not at whatever else the list holds.
+    const other = await as("head_bid", "/v1/actions", {
+      body: {
+        nodeId: "c_bid",
+        action: "contribute",
+        payload: {
+          title: "Receipt scope probe",
+          body: "x",
+          user_validated: { by: "u_head_bid", at: new Date().toISOString(), revision: 1 },
+        },
+      },
+    });
+    expect(other.status).toBe(201);
     const t = await turn("head_bid", { text: QUESTION });
     const all = await receiptsOf("u_head_bid");
+    expect(JSON.stringify(all)).toContain("Granted on Bid & Pre-sales");
     const mine = all.filter((r) => r.action === "agent.turn" && r.nodeId === t.meta.turnId);
     expect(mine).toHaveLength(1);
     expect(mine[0]).toMatchObject({ decision: "allow", scopeId: null });
     expect(mine[0].reason).toMatch(/^mode=deterministic lines=\d+ dropped=0 reason=ai_disabled$/);
+    // The question's own words never reach any receipt; a brain name may appear only in receipts other
+    // actions wrote, so the title check is on this turn's receipt.
     const text = JSON.stringify(all);
     expect(text).not.toContain("Zebra");
     expect(text).not.toContain("quartz");
-    expect(text).not.toContain("Bid & Pre-sales");
+    expect(JSON.stringify(mine)).not.toContain("Bid & Pre-sales");
   });
 
   it("the ledger and the receipt are written even when the client goes away mid-stream", async () => {
