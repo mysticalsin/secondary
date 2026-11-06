@@ -16,7 +16,7 @@
 // A person records at most CAPTURE_PER_MIN signals a minute and opens at most NEW_GAPS_PER_PERSON
 // gaps in one brain; a full brain makes room by dropping its lowest-scored open gap (M-2).
 
-import { opensBrain } from "@secondary/policy";
+import { CLIENT_ALIASES, opensBrain } from "@secondary/policy";
 import { viewOf } from "../auth.ts";
 import { tenantStub } from "../stubs.ts";
 import { type C, sess } from "../ux/util.ts";
@@ -55,7 +55,7 @@ function otherClients(c: C, own: { id: string; account?: string }): string[] {
         (!own.account || n.account !== own.account) &&
         (n.kind === "account" || n.restricted || n.nda),
     )
-    .map((n) => n.label);
+    .flatMap((n) => [n.label, ...(CLIENT_ALIASES[n.id] ?? [])]);
 }
 
 export async function recordGaps(

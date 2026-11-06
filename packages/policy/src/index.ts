@@ -3,7 +3,7 @@ export { admittedView, canDo, canDoInView, describe, type LiveItem } from "./eng
 export type { GovernanceStages } from "./map.ts";
 export { governanceStages, toMapView, toNodeDetail } from "./map.ts";
 export type { BuildOrgOptions } from "./org.ts";
-export { buildOrg, DEFAULT_SEED, GOVERNANCES, GROUP_LABEL, STAGES } from "./org.ts";
+export { buildOrg, CLIENT_ALIASES, DEFAULT_SEED, GOVERNANCES, GROUP_LABEL, STAGES } from "./org.ts";
 export { isPersonalKind, OWNER_ACTIONS, personalRootId } from "./personal.ts";
 export { PERSONAS, persona, TENANT_ID } from "./personas.ts";
 export type { RoleId } from "./roles.ts";

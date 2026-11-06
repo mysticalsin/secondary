@@ -1025,6 +1025,7 @@ export class Workspace extends BrainBase {
         del(b.snooze);
         del(b.mentions);
         del(b.answered);
+        del(b.noticed);
         const ch = b.changes as { by?: unknown } | null;
         if (ch && ch.by === person) {
           ch.by = "";

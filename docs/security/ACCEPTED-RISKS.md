@@ -1,6 +1,6 @@
 # Accepted risks
 
-Findings from the B2 and B3 security reviews that are not fixed in code, with the reason, the owner and when to look again. An item here is a decision, not an oversight. Anything that is fixed is in `_relay/HANDOFF.md` with its test.
+Findings from the B2, B3 and v8 (Review desk, Knowledge gaps) security reviews that are not fixed in code, with the reason, the owner and when to look again. An item here is a decision, not an oversight. Anything that is fixed is in `_relay/HANDOFF.md` with its test.
 
 Owner for every row: Tony Walteur (sponsor and platform owner), until a named security owner exists.
 

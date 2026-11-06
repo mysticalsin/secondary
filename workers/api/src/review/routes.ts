@@ -4,6 +4,7 @@
 // "approve needs every change seen" and the two-person and role rules are enforced there, not here.
 // Everything written here is audited first and refused when the audit worker is down.
 
+import { CLIENT_ALIASES } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
 import { type Brain, brainOf, needBrain } from "../brains/open.ts";
@@ -52,6 +53,7 @@ import {
   writeState,
 } from "./store.ts";
 
+const HOUR = 3_600_000;
 const COMMENT_MAX = 2_000;
 const COMMENTS_SHOWN = 100;
 const FYI_MAX = 10;
@@ -142,7 +144,7 @@ function rowOf(c: C, q: Question, x: Ctx) {
   const brainNode = x.brain?.nodeId ?? q.workspaceId;
   const clientNames = [...view.nodes.values()]
     .filter((n) => n.kind === "account" && n.id !== brainNode)
-    .map((n) => n.label);
+    .flatMap((n) => [n.label, ...(CLIENT_ALIASES[n.id] ?? [])]);
   const risk = riskOf({
     addedText: added.length ? added : candidateText,
     clientNames,
@@ -542,11 +544,18 @@ export function reviewRoutes(_deps: AppDeps): Hono<AppEnv> {
     const m = await x.brain.stub.comment(id, me, t, s.ctx.now);
     const st = await readState(x.brain.stub, id);
     st.answered[mine] = s.ctx.now;
-    for (const p of hit) st.mentions[hitKeys.of(p.id)] = s.ctx.now;
+    // The mention is always recorded; the notice goes out once an hour per person and item.
+    const notice = hit.filter((p) => {
+      const k = hitKeys.of(p.id);
+      st.mentions[k] = s.ctx.now;
+      if (s.ctx.now - (st.noticed[k] ?? 0) < HOUR) return false;
+      st.noticed[k] = s.ctx.now;
+      return true;
+    });
     await writeState(x.brain.stub, id, st, x.brain.plane, s.ctx.now);
     await notify(
       c,
-      hit.map((p) => p.id),
+      notice.map((p) => p.id),
       "review_mention",
       `You were mentioned on a proposal in ${x.brain.label}`,
       id,

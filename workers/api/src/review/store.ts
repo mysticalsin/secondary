@@ -29,6 +29,8 @@ export interface ReviewState {
   mentions: Record<string, number>;
   /** person key to the instant they last wrote in the discussion. */
   answered: Record<string, number>;
+  /** person key to the instant they were last sent a mention notice: one an hour at most. */
+  noticed: Record<string, number>;
 }
 
 export const emptyState = (): ReviewState => ({
@@ -39,6 +41,7 @@ export const emptyState = (): ReviewState => ({
   changes: null,
   mentions: {},
   answered: {},
+  noticed: {},
 });
 
 function parse(body: string | null): ReviewState {
@@ -52,6 +55,7 @@ function parse(body: string | null): ReviewState {
       changes: v.changes && typeof v.changes === "object" ? v.changes : null,
       mentions: v.mentions && typeof v.mentions === "object" ? v.mentions : {},
       answered: v.answered && typeof v.answered === "object" ? v.answered : {},
+      noticed: v.noticed && typeof v.noticed === "object" ? v.noticed : {},
     };
   } catch {
     return emptyState();

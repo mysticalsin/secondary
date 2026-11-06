@@ -3,7 +3,9 @@
 // from POST with a rate limit and a cap one person cannot fill, L-1 review writes are rate limited.
 
 import { beforeAll, describe, expect, it } from "vitest";
+import { namesHit } from "../src/gaps/model.ts";
 import { keyOf } from "../src/v8-keys.ts";
+import { KEY, streamModel, textRound, toolRound, turn } from "./agent-helpers.ts";
 import { ALPHA, as, json, type Loose, seed, testEnv, wsOf } from "./helpers.ts";
 import { meId } from "./uxv2-helpers.ts";
 
@@ -291,5 +293,75 @@ describe("L-1 review writes are rate limited", () => {
         })
       ).status;
     expect(last).toBe(429);
+  });
+});
+
+describe("N-1 My Agent: a brain the model picks is not a brain the asker chose", () => {
+  const search = (q: string, brain: string) =>
+    streamModel((_c, n) =>
+      n === 1
+        ? toolRound([{ type: "tool_use", id: "t1", name: "search", input: { q, brain } }])
+        : textRound("root = Stack([])"),
+    );
+
+  it("a search the model scoped on its own leaves no gap", async () => {
+    const m = search("quuxpicked tolerance", WS);
+    await turn(
+      "head_bid",
+      { text: "what do we know about tolerance" },
+      { env: KEY, fetch: m.fetch },
+    );
+    expect(await keptAnywhere("quuxpicked")).toEqual([]);
+  });
+
+  it("a brain the asker named in their own words still counts", async () => {
+    const m = search("quuxnamed tolerance", WS);
+    await turn(
+      "head_bid",
+      { text: "In Bid & Pre-sales, what do we know about tolerance" },
+      { env: KEY, fetch: m.fetch },
+    );
+    expect(await keptAnywhere("quuxnamed")).toEqual([WS]);
+  });
+});
+
+describe("N-2 client aliases and short names", () => {
+  it("matches an alias on word boundaries, ignoring case and accents", () => {
+    expect(namesHit("renewal for ASA next year", ["ASA"])).toBe(true);
+    expect(namesHit("renewal for asá next year", ["ASA"])).toBe(true);
+    expect(namesHit("the casa renewal", ["ASA"])).toBe(false);
+  });
+
+  it("a question using a client's short name never lands in another brain", async () => {
+    await ask("ASA renewal quuxalias terms", WS);
+    await ask("what did asa agree quuxaliastwo", WS);
+    expect(await keptAnywhere("quuxalias")).toEqual([]);
+  });
+});
+
+describe("L-1 remainder: one mention notice per person per hour", () => {
+  it("a second mention within the hour is recorded but sends no new notice", async () => {
+    const r = await as("head_bid", `/v1/wiki/${WS}/propose`, {
+      email: "v8s.author3@example.invalid",
+      body: { title: "V8s mention", markdown: "# V8s mention\n\n## Summary\n- A note.\n" },
+    });
+    const id = (await json<Loose>(r)).proposalId as string;
+    const detail = await json<Loose>(
+      await as("head_bid", `/v1/review-desk/${encodeURIComponent(id)}`, { email: ASKER }),
+    );
+    const target = (detail.eligible as Loose[])[0] as Loose;
+    const t = Date.now() + 40 * 86_400_000;
+    for (const [i, at] of [t, t + 60_000, t + 4_000_000].entries()) {
+      const res = await as("head_bid", `/v1/review-desk/${encodeURIComponent(id)}/comments`, {
+        email: ASKER,
+        body: { text: `ping @${target.handle} note ${i}` },
+        now: at,
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+    }
+    const inbox = (
+      await json<Loose>(await as(String(target.id).replace(/^u_/, ""), "/v1/admin/notifications"))
+    ).items as Loose[];
+    expect(inbox.filter((n) => n.kind === "review_mention" && n.ref === id)).toHaveLength(2);
   });
 });

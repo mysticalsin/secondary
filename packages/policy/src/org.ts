@@ -354,6 +354,35 @@ const REGIONS: readonly [string, string, string[]][] = [
   ["r_ap", "APAC", ["Vietnam", "China", "Japan", "Thailand", "Singapore"]],
 ];
 
+/**
+ * Short names clients are called by (all synthetic: the initials of each fictional name). Anything that
+ * must not carry a client name into another brain matches these as well as the full label, on word
+ * boundaries, ignoring case and accents.
+ */
+export const CLIENT_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  a_acme: ["ASA"],
+  a_ember: ["ESS"],
+  a_quartz: ["QPS"],
+  a_lumen: ["LFS"],
+  a_solana: ["SDS"],
+  a_ibero: ["IMS"],
+  a_calypso: ["CDS"],
+  a_alpen: ["ASA"],
+  a_flandre: ["FFN"],
+  a_kappa: ["KDS"],
+  a_andes: ["AFS"],
+  a_delta: ["DML"],
+  a_jaguar: ["JSS"],
+  a_pacifico: ["PES"],
+  a_borealis: ["BFI"],
+  a_cedar: ["CMC"],
+  a_azteca: ["APS"],
+  a_lotus: ["LPJ"],
+  a_mekong: ["MSC"],
+  a_merlion: ["MDP"],
+  a_carthage: ["CMS"],
+};
+
 interface AcctOpts {
   bid?: 1;
   nda?: 1;
