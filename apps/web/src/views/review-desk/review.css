@@ -545,6 +545,10 @@
   margin: 0;
   font-size: 14px;
 }
+.rv-seen > .muted {
+  display: block;
+  margin-top: 2px;
+}
 .rv-two {
   display: flex;
   gap: 10px;

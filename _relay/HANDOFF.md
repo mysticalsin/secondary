@@ -1,5 +1,17 @@
 # HANDOFF
 
+## v8 Review desk and Knowledge gaps on branch `v8/review` (2026-11-06, Claude Opus, not merged, nothing pushed, nothing deployed)
+
+Design `docs/DESIGN-V8-AMAZING.md` sections 1 and 2; shapes `docs/API-CONTRACT.md` "v8 Review desk and Knowledge gaps".
+
+- **API:** `workers/api/src/review/*` (priority, SLA, summary, risk, desk, comments with @mentions and the R-110 warning, snooze, reassign to eligible reviewers, request changes, per-brain SLA) and `workers/api/src/gaps/*` (capture from Ask, wiki ask, wiki search and My Agent search; normalise and merge; list, assign, start page, merge, dismiss, steward KPI, Home top gaps). Mounted by two lines in `routes.ts`; capture is one `recordGaps` call at four places. State lives as workspace items of kinds `v8_review`, `v8_cfg`, `v8_gap`. Touched elsewhere: `uxv2/questions.ts` (exports `resolveQuestion`, `detail.pageTypes` and `detail.rationale`), `ask.ts`, `wiki/routes.ts`, `agent/tools.ts` (one gap call each).
+- **Rules kept:** deciding still goes through `POST /v1/questions/:id` (seenChanges + revisionHash, two-person, H-2 role). Gap text is stored only for brains the asker can open, never in a Personal Brain, dropped whole on personal data.
+- **Web:** `views/review-desk/*` replaces Waiting for you (`/review`, `/waiting` redirects; batch triage dropped because a batch cannot carry seenChanges), `views/gaps/*` (Gaps tab `?tab=gaps`, Home "Top gaps"), SLA line on Members and access. FR/EN, table twins, mocks `mock/v8review.ts`, `mock/v8gaps.ts`.
+- **Gates at the last run:** typecheck and build clean; biome 0 errors; tests fixtures 23, contracts 114, policy 74, connector 53, audit 10, ops 16, web 129, mcp 101, api 896; mock e2e 69 passed (v4 to v8, axe at 1280 and 400, EN, FR, dark); real stack (alt ports) v4-real except one test that hard-codes the MCP port 8788, v5-real, v6-real, v8-real passed. Screenshots `e2e/screens/v8-review-*.png`, `v8-gaps-*.png`, `v8-real-*.png` (git-ignored).
+- **Open:** the AI-written "what changed" summary is not built (`source` is always `rules`); the rule matched (`ruleId@v`) is null until v7 rules put it on the proposal detail (`detail.rule`); FYI counts approvals found in the last 400 wiki log lines; gap capture reads then writes across RPCs, so two asks at the same instant can lose one count; the desk is computed per request (no cache); `reviewersOf` in `ux/notify.ts` and `review/eligible.ts` hold the same rule twice.
+
+Updated: 2026-11-06. By: Claude (Opus, v8 review and gaps).
+
 ## v6 My Agent and v5 polish on `main` (2026-11-05, Claude, nothing pushed, nothing deployed)
 
 Design `docs/DESIGN-V6-MY-AGENT-GENUI.md` (section 6 is the UI map); shapes `docs/API-CONTRACT.md` "v6 My Agent"; spike and benchmark `docs/research/OPENUI-SPIKE.md`.
