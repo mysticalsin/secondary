@@ -19,3 +19,5 @@ allowBuilds:
   workerd: true
   sharp: true
   core-js-pure: false
+  # Denied on purpose: its postinstall sends install telemetry (see docs/research/OPENUI-SPIKE.md).
+  "@openuidev/lang-core": false

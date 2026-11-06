@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./agent-ui": "./src/agent-ui/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p .",
@@ -12,7 +13,12 @@
     "build": "tsc --noEmit -p ."
   },
   "dependencies": {
+    "@openuidev/lang-core": "1.1.0",
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "ajv-formats": "3.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "js-tiktoken": "^1.0.21"
   }
 }
