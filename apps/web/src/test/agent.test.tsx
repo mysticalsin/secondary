@@ -18,6 +18,9 @@ import { AppProvider } from "../state";
 
 const persona = (p: string) => window.localStorage.setItem("secondary.persona", p);
 beforeEach(() => {
+  // The dev mock paces its lines in real time (70 ms each), so a long answer took about a second on an idle
+  // machine and longer under load, past Testing Library's one second default wait. Pace is not under test.
+  mockAgent.setMockLinePace(0);
   window.localStorage.clear();
   persona("ceo");
   clearResolveCache();

@@ -28,6 +28,12 @@ const STORE = "secondary.mock.agent.views";
 const MAX_VIEWS = 50;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Real-time pause between streamed lines (a demo feel). Tests set 0: the pace is not what they check. */
+let linePace = 70;
+export const setMockLinePace = (ms: number): void => {
+  linePace = ms;
+};
+
 /** The brains this persona may read, as the planner and lockTree see them. */
 function readable(role: string): BrainRef[] {
   return v3Brains
@@ -109,11 +115,11 @@ export async function agentTurnResponse(
       try {
         send(sse("meta", { turnId, mode: "deterministic", reason: "ai_disabled" }));
         for (const l of lines) {
-          await wait(70);
+          await wait(linePace);
           if (stopped) return;
           send(sse("line", { text: l }));
         }
-        await wait(20);
+        await wait(linePace > 0 ? 20 : 0);
         if (stopped) return;
         send(sse("usage", { inputTokens: 0, outputTokens: 0, model: null }));
         send(sse("done", { turnId, lines: lines.length }));
