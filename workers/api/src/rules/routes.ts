@@ -8,12 +8,14 @@ import {
   type FloorId,
   floorMin,
   type RuleAction,
+  type RuleDraft,
   type RuleEffect,
   type RuleScope,
   type SimEvent,
   scopeReaches,
   simulateRules,
   validateRule,
+  weakensRule,
 } from "@secondary/policy";
 import { Hono } from "hono";
 import type { Receipt as StoredReceipt } from "../../../../packages/contracts/src/audit-receipt.ts";
@@ -26,7 +28,7 @@ import { audit, bad, type C, notFound, readObject, sess } from "../ux/util.ts";
 import { rulesClient } from "./client.ts";
 import { brainTypeFor, tenantTime } from "./context.ts";
 import { approverInGroup } from "./gate.ts";
-import type { Hold, StoredRule } from "./store.ts";
+import { draftHash, type Hold, type StoredRule } from "./store.ts";
 
 const iso = (ms: number): string => new Date(ms).toISOString();
 const DAY = 86_400_000;
@@ -84,6 +86,30 @@ async function editable(
   return true;
 }
 
+/** A brain id this person cannot see is not named to them. */
+const seen = (w: Who, id: string): string => (w.view.nodes.has(id) ? id : "restricted");
+
+function redactScope(scope: RuleScope, w: Who): RuleScope {
+  return scope.kind === "brains" ? { ...scope, ids: scope.ids.map((id) => seen(w, id)) } : scope;
+}
+
+/** A rule as someone who may not edit it is shown it: no id of a brain outside their view. */
+function redactDoc(d: RuleDraft, w: Who): RuleDraft {
+  return {
+    ...d,
+    scope: redactScope(d.scope, w),
+    when: d.when.map((c) =>
+      c.field === "brain" ? { ...c, values: c.values.map((id) => seen(w, id)) } : c,
+    ),
+  };
+}
+
+/** Text of a change (diff lines name brains by id): hide the ids outside the viewer's view. */
+const redactText = (text: string, org: ReturnType<typeof requireOrg>, w: Who): string =>
+  text.replace(/[A-Za-z0-9_.:-]+/g, (tok) =>
+    org.nodes.has(tok) && !w.view.nodes.has(tok) ? "restricted" : tok,
+  );
+
 async function row(c: C, w: Who, r: StoredRule, cache: Map<string, boolean>) {
   const body = r.published ?? r.draft;
   if (!body) throw new Error("rule without a body");
@@ -91,7 +117,7 @@ async function row(c: C, w: Who, r: StoredRule, cache: Map<string, boolean>) {
   return {
     id: r.id,
     name: (can ? (r.draft ?? body) : body).name,
-    scope: body.scope,
+    scope: can ? body.scope : redactScope(body.scope, w),
     scopeLabel: scopeLabel(body.scope, w),
     status: r.published?.status ?? "draft",
     version: r.version,
@@ -177,7 +203,11 @@ async function incidentView(c: C) {
 async function tenantPending(c: C): Promise<string | null> {
   const s = sess(c);
   const { tenantStub } = await import("../stubs.ts");
-  return tenantStub(c.env, s.tenantId).pendingRequester("incident:on", s.ctx.now);
+  const t = tenantStub(c.env, s.tenantId);
+  return (
+    (await t.pendingRequester("incident:on", s.ctx.now)) ??
+    (await t.pendingRequester("incident:extend", s.ctx.now))
+  );
 }
 
 async function detail(c: C, w: Who, r: StoredRule, cache = new Map<string, boolean>()) {
@@ -192,12 +222,13 @@ async function detail(c: C, w: Who, r: StoredRule, cache = new Map<string, boole
   const edit = base.editable ? (r.draft ?? r.published ?? body) : body;
   return {
     ...base,
-    draft: edit,
-    published: r.published,
+    draft: base.editable ? edit : redactDoc(edit, w),
+    published: r.published && !base.editable ? redactDoc(r.published, w) : r.published,
     nextVersion: r.version + 1,
     editedBy: r.editedBy,
     editedAt: iso(r.editedAt),
-    needsSecond: affectsProtectedBrains(edit.scope, (id) => protectedBrain(org, id)),
+    needsSecond: needsTwoPerson(org, r.published, edit),
+    draftHash: base.editable && r.draft ? draftHash(r.draft) : null,
     pending: pending
       ? {
           by: pending.by === s.principal.id ? "you" : "other",
@@ -212,9 +243,34 @@ async function detail(c: C, w: Who, r: StoredRule, cache = new Map<string, boole
       by: v.byLabel,
       at: iso(v.at),
       ...(v.rolledBackFrom !== null ? { rolledBackFrom: v.rolledBackFrom } : {}),
-      changes: v.changes,
+      changes: base.editable
+        ? v.changes
+        : v.changes.map((x) => ({
+            ...x,
+            from: redactText(x.from, org, w),
+            to: redactText(x.to, org, w),
+          })),
     })),
   };
+}
+
+/**
+ * Does publishing `next` over what is enforced now need a second person? Yes when the published
+ * scope OR the new scope reaches an account, Global or restricted brain (so narrowing a rule away
+ * from them is as weighty as widening it), and for any change that loosens, narrows, disables or
+ * withdraws a rule that is live.
+ */
+function needsTwoPerson(
+  org: ReturnType<typeof requireOrg>,
+  published: RuleDraft | null,
+  next: RuleDraft,
+): boolean {
+  const prot = (id: string) => protectedBrain(org, id);
+  return (
+    affectsProtectedBrains(next.scope, prot) ||
+    (published !== null && affectsProtectedBrains(published.scope, prot)) ||
+    weakensRule(published, next)
+  );
 }
 
 const refuse = (c: C, issues: { code: string; path: string; message: string; floor?: FloorId }[]) =>
@@ -238,6 +294,8 @@ export function eventOf(
   typeOf: (nodeId: string) => "team" | "account" | "global" | null,
 ): SimEvent | null {
   if (r.action === "rule.would_match" || r.action === "rule.hold") return null;
+  // Only the API's own receipts describe an action: another key's metadata is not evidence.
+  if (r.source !== "api") return null;
   const at = Date.parse(r.at);
   if (!Number.isFinite(at)) return null;
   const m = r.meta;
@@ -313,7 +371,10 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
           : null;
         if (!type || !scopeReaches(body.scope, { id: g.brain.id, type })) continue;
       }
-      rows.push(await row(c, g.w, rule, cache));
+      const shown = await row(c, g.w, rule, cache);
+      // A rule never published is a draft: only people who may edit it know it exists.
+      if (!rule.published && !shown.editable) continue;
+      rows.push(shown);
     }
     const since = s.ctx.now - 30 * DAY;
     const counts = {
@@ -361,6 +422,7 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
       email: s.principal.email,
       now: s.ctx.now,
     });
+    if (!res.ok) return c.json({ error: res.code, reason: res.message }, 409);
     const view = await incidentView(c);
     if (!res.applied)
       return c.json(
@@ -407,7 +469,13 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
         },
         403,
       );
-    const res = await client.holdDecide(id, body.decision, s.principal.id, s.ctx.now);
+    const res = await client.holdDecide(
+      id,
+      body.decision,
+      s.principal.id,
+      s.ctx.now,
+      s.principal.email,
+    );
     if (!res.ok)
       return c.json({ error: res.code, reason: res.message }, res.status === 404 ? 404 : 409);
     return c.json({ status: res.status, approvals: res.approvals, required: res.required });
@@ -479,6 +547,8 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
     for (const rc of receipts) {
       const e = eventOf(rc, c.env, typeOf);
       if (!e || e.at < since) continue;
+      // Nobody replays a brain they cannot see, an admin included: even a timestamp is a leak.
+      if (!w.view.nodes.has(e.brain.id)) continue;
       // A steward replays only the brains they decide in. An admin replays the tenant (ids only).
       if (!w.admin) {
         let ok = cache.get(e.brain.id);
@@ -533,7 +603,9 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
         if (!reaches) throw notFound();
       }
     }
-    return c.json(await detail(c, w, rule));
+    const view = await detail(c, w, rule);
+    if (!rule.published && !view.editable) throw notFound();
+    return c.json(view);
   });
 
   const save = async (c: C, id: string | null) => {
@@ -620,14 +692,18 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
     const rule = await client.get(id);
     if (!rule?.draft) throw notFound();
     if (!(await mayEdit(c, w, rule.draft.scope))) throw notFound();
+    // A live rule is yours to change only if you could have written it as it stands.
+    if (rule.published && !(await mayEdit(c, w, rule.published.scope))) throw notFound();
+    // The caller names the draft they reviewed; a draft that moved on since is refused.
+    if (typeof body.expectedHash !== "string" || body.expectedHash.length > 64)
+      throw bad("expected_hash_required");
     // "draft" withdraws the rule: a published version that nothing enforces.
     const status = body.status ?? rule.draft.status;
     if (status !== "draft" && status !== "monitor" && status !== "enforced")
       throw bad("choose_status");
     const v = validateRule({ ...rule.draft, status });
     if (!v.ok) return refuse(c, v.issues);
-    const org = requireOrg(s);
-    const twoPerson = affectsProtectedBrains(v.rule.scope, (bid) => protectedBrain(org, bid));
+    const twoPerson = needsTwoPerson(requireOrg(s), rule.published, v.rule);
     if (
       !(await audit(c, {
         action: "rules.publish",
@@ -644,6 +720,7 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
       email: s.principal.email,
       now: s.ctx.now,
       twoPerson,
+      expectedHash: body.expectedHash,
     });
     if (!res.ok)
       return c.json({ error: res.code, reason: res.message }, res.status === 404 ? 404 : 409);
@@ -672,6 +749,10 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
     if (!rule || !was || !(await mayEdit(c, w, was.scope))) throw notFound();
     const old = (await client.history(id)).find((x) => x.version === to);
     if (!old) throw bad("invalid_version");
+    // The version you roll back to must also be one you could write: a steward cannot bring back
+    // an admin's tenant-wide version.
+    const oldBody = await client.versionGet(id, to);
+    if (!oldBody || !(await mayEdit(c, w, oldBody.scope))) throw notFound();
     if (
       !(await audit(c, {
         action: "rules.rollback",
@@ -691,7 +772,7 @@ export function rulesRoutes(_deps: AppDeps): Hono<AppEnv> {
     if (!res.ok)
       return c.json(
         { error: res.code, reason: res.message },
-        res.status === 404 ? 404 : res.status === 400 ? 400 : 409,
+        res.status === 404 ? 404 : res.status === 400 ? 400 : res.status === 422 ? 422 : 409,
       );
     const fresh = await client.get(id);
     if (!fresh) throw notFound();

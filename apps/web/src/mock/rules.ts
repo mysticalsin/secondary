@@ -27,6 +27,7 @@ import {
   scopeReaches,
   simulateRules,
   validateRule,
+  weakensRule,
 } from "@secondary/policy";
 import { ApiError } from "../api";
 import type {
@@ -326,6 +327,23 @@ function floorRow(): RuleRow {
   };
 }
 
+/** A short hash of a draft, as the API hands it out: publishing names the draft that was reviewed. */
+function hashOf(d: RuleDraft): string {
+  const text = JSON.stringify(d);
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(16);
+}
+
+/** Same rule as the API: the live scope or the new one reaches a protected brain, or the change weakens a live rule. */
+function needsTwo(live: RuleDraft | null, next: RuleDraft): boolean {
+  return (
+    affectsProtectedBrains(next.scope, isProtected) ||
+    (live !== null && affectsProtectedBrains(live.scope, isProtected)) ||
+    weakensRule(live, next)
+  );
+}
+
 function detailOf(r: Stored, v: Viewer): RuleDetail {
   const published = live(r);
   const draft = bodyOf(r);
@@ -346,7 +364,8 @@ function detailOf(r: Stored, v: Viewer): RuleDetail {
     nextVersion: (published?.version ?? 0) + 1,
     editedBy: r.editedBy,
     editedAt: iso(r.editedAt),
-    needsSecond: affectsProtectedBrains(draft.scope, isProtected),
+    needsSecond: needsTwo(published?.body ?? null, draft),
+    draftHash: hashOf(draft),
     pending: r.pending
       ? {
           by: r.pending.by,
@@ -703,12 +722,18 @@ export function handleRules(
 
   if (action === "publish" && method === "POST") {
     mayWrite(r, bodyOf(r).scope, v);
+    if (typeof b.expectedHash !== "string")
+      throw new ApiError(400, "Name the draft you reviewed.", { error: "expected_hash_required" });
+    if (b.expectedHash !== hashOf(bodyOf(r)))
+      throw new ApiError(409, "The draft changed since you opened it. Review it again.", {
+        error: "draft_changed",
+      });
     const wanted = (b.status as string | undefined) ?? bodyOf(r).status;
     if (wanted !== "monitor" && wanted !== "enforced")
       throw new ApiError(400, "Choose Monitor or Enforced to publish.", { error: "choose_status" });
     const next = cleanDraft({ ...bodyOf(r), status: wanted });
     const version = (live(r)?.version ?? 0) + 1;
-    const needs = affectsProtectedBrains(next.scope, isProtected);
+    const needs = needsTwo(live(r)?.body ?? null, next);
     if (needs) {
       const step = secondPerson(r, "publish", version);
       if (step !== "done") {

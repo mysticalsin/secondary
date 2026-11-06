@@ -12,6 +12,7 @@ import {
   type SimEvent,
   simulateRules,
   validateRule,
+  weakensRule,
 } from "../src/index.ts";
 
 const rule = (over: Record<string, unknown> = {}) => ({
@@ -445,5 +446,93 @@ describe("diffRules", () => {
     expect(diffRules(null, a.rule).find((d) => d.part === "when")?.to).toBe(
       "action is any of export",
     );
+  });
+});
+
+describe("review fixes: approvals add up, loosening names are refused cleanly, weakening is detected", () => {
+  const live = (id: string, over: Record<string, unknown>) => doc(id, 1, over);
+
+  it("M-4: a group rule and a two-approver rule on the same action both bind", () => {
+    const r = evaluateRules(
+      ctx({
+        rules: [
+          live("r_a_two", { then: { effect: "two_approvers" } }),
+          live("r_b_group", { then: { effect: "group", approvers: ["privacy"] } }),
+        ],
+      }),
+    );
+    expect(r.effect).toBe("two_approvers");
+    expect(r.requiredApprovals).toBe(2);
+    expect(r.approvers).toEqual(["privacy"]);
+    // Order of ids does not matter.
+    const flipped = evaluateRules(
+      ctx({
+        rules: [
+          live("r_a_group", { then: { effect: "group", approvers: ["privacy"] } }),
+          live("r_b_two", { then: { effect: "two_approvers" } }),
+        ],
+      }),
+    );
+    expect(flipped.approvers).toEqual(["privacy"]);
+    expect(flipped.requiredApprovals).toBe(2);
+  });
+
+  it("M-4: a block still wins and asks for nothing else", () => {
+    const r = evaluateRules(
+      ctx({
+        rules: [
+          live("r_a_block", { then: { effect: "block", message: "No." } }),
+          live("r_b_group", { then: { effect: "group", approvers: ["privacy"] } }),
+        ],
+      }),
+    );
+    expect(r.effect).toBe("block");
+    expect(r.approvers).toEqual([]);
+    expect(r.requiredApprovals).toBe(0);
+  });
+
+  it("I-1: an effect named like an object key is refused as an unknown effect", () => {
+    for (const effect of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      const v = validateRule(rule({ then: { effect } }));
+      expect(v.ok).toBe(false);
+      if (!v.ok) expect(v.issues[0]?.code).toBe("invalid_effect");
+    }
+  });
+
+  it("H-1: weakensRule sees every way of loosening, narrowing or withdrawing a live rule", () => {
+    const pub = (over: Record<string, unknown> = {}) => {
+      const v = validateRule(rule({ then: { effect: "block", message: "No." }, ...over }));
+      if (!v.ok) throw new Error(JSON.stringify(v.issues));
+      return v.rule;
+    };
+    const was = pub();
+    expect(weakensRule(null, pub())).toBe(false);
+    expect(weakensRule(was, pub())).toBe(false);
+    expect(weakensRule(was, pub({ name: "Renamed" }))).toBe(false);
+    // Tightening is not weakening.
+    expect(weakensRule(pub({ then: { effect: "review" } }), pub())).toBe(false);
+    expect(weakensRule(pub({ status: "monitor" }), pub())).toBe(false);
+    // Weakening is.
+    expect(weakensRule(was, pub({ status: "draft" }))).toBe(true);
+    expect(weakensRule(was, pub({ status: "monitor" }))).toBe(true);
+    expect(weakensRule(was, pub({ then: { effect: "review" } }))).toBe(true);
+    expect(weakensRule(was, pub({ scope: { kind: "brains", ids: ["c_team"] } }))).toBe(true);
+    expect(weakensRule(was, pub({ when: [when("action", "is_any_of", "import")] }))).toBe(true);
+    expect(weakensRule(was, pub({ except: { incident: true } }))).toBe(true);
+    expect(
+      weakensRule(
+        pub({ then: { effect: "group", approvers: ["privacy", "stewards"] } }),
+        pub({ then: { effect: "group", approvers: ["stewards"] } }),
+      ),
+    ).toBe(true);
+    // A rule that is not live cannot be weakened.
+    expect(weakensRule(pub({ status: "draft" }), pub({ status: "enforced" }))).toBe(false);
+    // Widening to the whole tenant is not narrowing.
+    expect(
+      weakensRule(
+        pub({ scope: { kind: "brains", ids: ["c_team"] } }),
+        pub({ scope: { kind: "tenant" } }),
+      ),
+    ).toBe(false);
   });
 });

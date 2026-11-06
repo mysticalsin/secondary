@@ -23,8 +23,11 @@ export const rulesApi = {
     request<{ ok: true; needsSecond: boolean }>("POST", "/v1/rules/validate", d),
   simulate: (rule: RuleDraft, days: 7 | 30) =>
     request<SimulationView>("POST", "/v1/rules/simulate", { rule, days }),
-  publish: (id: string, status?: "monitor" | "enforced") =>
-    request<PublishResult>("POST", `/v1/rules/${q(id)}/publish`, status ? { status } : {}),
+  publish: (id: string, expectedHash: string, status?: "monitor" | "enforced") =>
+    request<PublishResult>("POST", `/v1/rules/${q(id)}/publish`, {
+      expectedHash,
+      ...(status ? { status } : {}),
+    }),
   rollback: (id: string, toVersion: number) =>
     request<PublishResult>("POST", `/v1/rules/${q(id)}/rollback`, { toVersion }),
   incident: () => request<IncidentState>("GET", "/v1/rules/incident"),

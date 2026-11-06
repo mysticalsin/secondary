@@ -14,6 +14,7 @@ import { doBudget, withUserCap } from "../ai/budget.ts";
 import { excludePersonalSegments } from "../ai/segments.ts";
 import { viewOf } from "../auth.ts";
 import { checkSourceAccess } from "../connector.ts";
+import { ruleGate } from "../rules/gate.ts";
 import { candidateId, personalScope, scopeOfNode } from "../scope.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import { tenantStub } from "../stubs.ts";
@@ -289,6 +290,15 @@ const logTitle = (title: string): string => {
   return !t || excludePersonalSegments(t).excluded.length ? "(title withheld)" : t;
 };
 
+/** The words a rule's refusal gives a routine run (its message, never the content). */
+async function ruleReason(r: Response): Promise<string> {
+  const b = (await r
+    .clone()
+    .json()
+    .catch(() => ({}))) as { message?: string; error?: string };
+  return b.message ?? `A brain rule stopped this (${b.error ?? "held"})`;
+}
+
 export type IngestResult = { ok: true; id: string } | { ok: false; reason: string };
 
 /**
@@ -342,12 +352,23 @@ export async function writeIngest(
     return { ok: false, reason: "Sensitive content remains in the text" };
   const vn = view.nodes.get(t.nodeId);
   if (!vn) return { ok: false, reason: "The scope is not in your view" };
+  // Brain rules (v7): a routine writes to a shared brain like any contribution, so the rules apply.
+  const g = await ruleGate(c, {
+    action: vn.kind === "core" ? "promote_to_global" : "propose_page",
+    brain: { nodeId: t.nodeId, personal: false, vn },
+    text: `${cleanTitle}\n${text}`,
+    cites: 0,
+    pages: 1,
+    mode: "stamp",
+  });
+  if (g.response) return { ok: false, reason: await ruleReason(g.response) };
   if (
     !(await audit(c, {
       action: "routine.ingest",
       nodeId: t.nodeId,
       scopeId: t.scope,
       revision: 1,
+      ...g.rx,
     }))
   )
     return { ok: false, reason: "The audit record could not be written" };
@@ -370,6 +391,7 @@ export async function writeIngest(
     s.ctx.now,
   );
   if ("ok" in made) return { ok: false, reason: made.message };
+  await g.stamp(stubOf(c, t.scope), made.id);
   await notifyContributed(c, t.nodeId, made.id, s.principal.id);
   return { ok: true, id: made.id };
 }

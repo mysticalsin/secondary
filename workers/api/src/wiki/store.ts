@@ -1514,6 +1514,19 @@ export abstract class WikiBase extends DurableObject<Env> {
     return { ok: true, revision };
   }
 
+  /** The text a wiki proposal would publish, for the rules to read content flags from. Never stored. */
+  wikiProposalText(id: string): { text: string; cites: number; pages: number } | null {
+    const item = this.get(id);
+    const p = item && isWikiKind(item.kind) ? this.parse(item) : null;
+    if (!p) return null;
+    const md = p.pages.map((d) => d.markdown);
+    return {
+      text: md.join("\n\n"),
+      cites: new Set(md.flatMap((m) => citationsOf(m))).size,
+      pages: p.pages.length,
+    };
+  }
+
   /** Proposal titles for the log, resolved per viewer by the API. */
   wikiProposalTitles(ids: string[]): { id: string; title: string; titleSources: string[] }[] {
     const out: { id: string; title: string; titleSources: string[] }[] = [];

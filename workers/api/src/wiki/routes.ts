@@ -885,7 +885,25 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const md = text(b.markdown, 1, MAX_MD, "invalid_markdown");
     const refused = await limited(c, "write");
     if (refused) return refused;
-    if (!(await audit(c, { action: "wiki.edit", nodeId: id, scopeId: w.scope, revision: null })))
+    // Brain rules (v7): the edit changes what will be published, so the rules read the new text again.
+    const g = await ruleGate(c, {
+      action: (await w.stub.wikiPage(pageId)) ? "propose_change" : "propose_page",
+      brain: { nodeId: w.nodeId, personal: w.personal, vn: w.vn },
+      text: md,
+      cites: citationsOf(md).length,
+      pages: 1,
+      mode: "stamp",
+    });
+    if (g.response) return g.response;
+    if (
+      !(await audit(c, {
+        action: "wiki.edit",
+        nodeId: id,
+        scopeId: w.scope,
+        revision: null,
+        ...g.rx,
+      }))
+    )
       return c.json({ error: "audit_unavailable" }, 503);
     // The editor may cite only what they can read themselves.
     const mine = await readableSources(c, w, citationsOf(md));
@@ -893,6 +911,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       ...mine.keys(),
     ]);
     if (!res.ok) return failResponse(c, res);
+    await g.stamp(w.stub, id);
     return c.json({ ok: true, revision: res.revision });
   });
 

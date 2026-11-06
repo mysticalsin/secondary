@@ -479,12 +479,26 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
           { error: "not_pending", reason: "The contradiction was already settled" },
           409,
         );
+      // Brain rules (v7): keeping a statement releases a change, so a rule can block it or ask more of it.
+      const kg = await ruleDecideGuard(
+        c,
+        {
+          stub,
+          nodeId: node,
+          personal,
+          vn: personal ? null : (view.nodes.get(node) ?? null),
+          view,
+        },
+        id,
+      );
+      if (kg.response) return kg.response;
       if (
         !(await audit(c, {
           action: "wiki.keep_current",
           nodeId: id,
           scopeId: scope,
           revision: null,
+          ...kg.rx,
         }))
       )
         return c.json({ error: "audit_unavailable" }, 503);
@@ -515,6 +529,7 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
           { error: "not_pending", reason: "The contradiction was already settled" },
           409,
         );
+      if (kg.stamp) await stub.brainRuleStamp(made.id, kg.stamp);
       const rejected = await stub.wikiDecide(id, "reject", s.principal.id, s.ctx.now, {
         sameHuman,
       });

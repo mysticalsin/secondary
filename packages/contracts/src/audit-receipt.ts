@@ -256,8 +256,9 @@ export function parseReceipt(v: unknown, source: ReceiptSource): Receipt | null 
     oauthScopes,
     redirectHost,
     source,
-    rule,
-    ruleMode,
-    meta,
+    // Only the API decides on a rule: a receipt from any other key cannot name one.
+    rule: source === "api" ? rule : null,
+    ruleMode: source === "api" ? ruleMode : null,
+    meta: source === "api" ? meta : null,
   };
 }

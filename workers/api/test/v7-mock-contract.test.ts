@@ -73,9 +73,15 @@ describe("rules: web mock and real API agree", () => {
     const detail = await json<Loose>(await real(`/${made.id}`));
     expect(drift(mock("GET", `/v1/rules/${fake.id}`), [detail])).toEqual([]);
     const pubReal = await json<Loose>(
-      await real(`/${made.id}/publish`, { method: "POST", body: { status: "enforced" } }),
+      await real(`/${made.id}/publish`, {
+        method: "POST",
+        body: { status: "enforced", expectedHash: detail.draftHash },
+      }),
     );
-    const pubFake = mock("POST", `/v1/rules/${fake.id}/publish`, { status: "enforced" });
+    const pubFake = mock("POST", `/v1/rules/${fake.id}/publish`, {
+      status: "enforced",
+      expectedHash: (mock("GET", `/v1/rules/${fake.id}`) as Loose).draftHash,
+    });
     // Whether c_delivery needs a second person differs between the mock's catalogue and the real org; the
     // shape of each answer is what is compared.
     if (pubFake.status === pubReal.status) expect(drift(pubFake, [pubReal])).toEqual([]);

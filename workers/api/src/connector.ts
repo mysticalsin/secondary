@@ -8,19 +8,15 @@
 //     key, a connector that is off, any HTTP or parse problem, and every answer that is not an explicit
 //     `allowed: true` all mean the item stays hidden.
 
-import { brainTypeOf, evaluateRules, needsApproval } from "@secondary/policy";
 import { Hono } from "hono";
-import { appendReceipt, newReceiptId } from "./audit.ts";
 import {
   type InternalPrincipal,
   signInternalRequest,
   verifyInternalRequest,
 } from "./internal-auth.ts";
-import { getOrg } from "./org.ts";
 import { connectorKeys, replayStore } from "./replay.ts";
-import { rulesClient } from "./rules/client.ts";
-import { tenantTime } from "./rules/context.ts";
-import { tenantStub, workspaceStub } from "./stubs.ts";
+import { ruleServiceCheck } from "./rules/service.ts";
+import { workspaceStub } from "./stubs.ts";
 import { wikiNotify } from "./wiki/hooks.ts";
 import type { SourceItem } from "./workspace.ts";
 
@@ -65,83 +61,29 @@ function parseItem(
 /**
  * Do the tenant's brain rules stop this batch? The connector is a machine: `block` and every approval
  * effect hold the batch back (nothing written, the next sync tries again). Returns `ruleId@version`
- * of the rule that did, else null. Fails open on a read error only for the rules, never for permissions.
+ * of the rule that did, "" when the rules could not be read (fail closed), else null. The batch text
+ * is read for content flags (client names, personal data), never stored.
  */
 async function connectorRule(
   env: Env,
   tenantId: string,
   scopeId: string,
   gateNodeId: string,
-  pages: number,
+  rows: SourceItem[],
 ): Promise<string | null> {
-  try {
-    const org = await orgOf(env, tenantId);
-    const node =
-      org?.nodes.get(gateNodeId.split(":")[0] ?? gateNodeId) ?? org?.nodes.get(gateNodeId);
-    const type = node ? brainTypeOf(node.kind) : null;
-    if (!node || !type || type === "personal") return null;
-    const state = await rulesClient(env, tenantId).state(Date.now());
-    const r = evaluateRules({
-      base: "allow",
-      action: "import",
-      actor: { kind: "connector", host: null, roles: [] },
-      brain: { id: node.id, type },
-      flags: [],
-      pages,
-      contract:
-        node.kind === "account"
-          ? node.facts["AI use with client"] === "allowed"
-            ? "allowed"
-            : node.facts["AI use with client"] === "not allowed"
-              ? "not_allowed"
-              : "unknown"
-          : null,
-      time: tenantTime(env, Date.now()),
-      incident: state.incident,
-      rules: state.docs,
-    });
-    if (r.effect === "block" || needsApproval(r.effect)) {
-      const rule = r.tag ?? "";
-      await appendReceipt(env, {
-        receiptId: newReceiptId(),
-        at: new Date().toISOString(),
-        tenantId,
-        principalId: "secondary-connector",
-        action: "rule.block",
-        nodeId: node.id,
-        scopeId,
-        decision: "deny",
-        reason: "sync held by rule",
-        revision: null,
-        requestId: null,
-        clientId: null,
-        tool: null,
-        rule,
-        ruleMode: "enforced",
-        meta: {
-          action: "import",
-          actor: "connector",
-          host: null,
-          brainId: node.id,
-          brainType: type,
-          flags: [],
-          pages,
-          contract: null,
-          expiresAfterMin: null,
-        },
-      });
-      return rule;
-    }
-  } catch {
-    // A rules read that fails must not stop a sync that the policy allows.
-  }
-  return null;
-}
-
-/** The tenant's organisation, from its stored seed configuration. */
-async function orgOf(env: Env, tenantId: string) {
-  const config = await tenantStub(env, tenantId).getConfig();
-  return config ? getOrg(config) : null;
+  const v = await ruleServiceCheck(env, {
+    tenantId,
+    principalId: "secondary-connector",
+    scopeId,
+    nodeId: gateNodeId,
+    action: "import",
+    actor: "connector",
+    text: rows.map((x) => `${x.title}\n${x.body ?? ""}`).join("\n\n"),
+    cites: rows.length,
+    pages: rows.length,
+    approval: "hold",
+  });
+  return v.stop ? (v.rule ?? "") : null;
 }
 
 /** Mounted at /internal/connector in index.ts. */
@@ -199,8 +141,8 @@ export function connectorRoutes(): Hono<{ Bindings: Env }> {
       rows.push(row);
     }
     // Brain rules (v7): a sync cannot wait for a person, so an approval effect holds the batch back.
-    const held = await connectorRule(c.env, tenantId, scopeId, gateNodeId, rows.length);
-    if (held) return c.json({ ok: true, changed: 0, held });
+    const held = await connectorRule(c.env, tenantId, scopeId, gateNodeId, rows);
+    if (held !== null) return c.json({ ok: true, changed: 0, held: held || "rules_unavailable" });
     const changed = await workspaceStub(c.env, tenantId, scopeId).sourceUpsert(rows);
     if (changed)
       await wikiNotify(

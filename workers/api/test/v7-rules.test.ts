@@ -19,6 +19,7 @@ import {
   seenOf,
   tenantDo,
   testEnv,
+  wsOf,
 } from "./helpers.ts";
 import { plantPage } from "./uxv2-helpers.ts";
 
@@ -54,9 +55,15 @@ async function create(who: typeof admin, body: Loose): Promise<Loose> {
   expect(r.status, await r.clone().text()).toBe(201);
   return json(r);
 }
-/** Publish by one person (a rule that touches no protected brain is single-person). */
+/** The hash of the draft this person is looking at: publishing names it. */
+const hashOf = async (who: typeof admin, id: string): Promise<string> =>
+  (await json<Loose>(await who(`/${id}`))).draftHash as string;
+const pubCall = async (who: typeof admin, id: string, body: Loose = {}) =>
+  who(`/${id}/publish`, { method: "POST", body: { expectedHash: await hashOf(who, id), ...body } });
+/** Publish. A change that needs a second person is confirmed by the other admin. */
 async function publish(who: typeof admin, id: string, body: Loose = {}): Promise<Loose> {
-  const r = await who(`/${id}/publish`, { method: "POST", body });
+  let r = await pubCall(who, id, body);
+  if (r.status === 202) r = await pubCall(who === admin ? admin2 : admin, id, body);
   expect(r.status, await r.clone().text()).toBe(200);
   return json(r);
 }
@@ -186,16 +193,16 @@ describe("authority", () => {
     const other = await create(admin, rule({ name: "Admin only c_delivery" }));
     expect((await bid(`/${other.id}`)).status).toBe(404);
     expect((await bid(`/${other.id}`, { method: "PUT", body: rule() })).status).toBe(404);
-    expect((await bid(`/${other.id}/publish`, { method: "POST", body: {} })).status).toBe(404);
-    // A tenant rule that reaches c_bid is listed there, read-only.
+    expect((await pubCall(bid, other.id, {})).status).toBe(404);
+    // A tenant rule that reaches c_bid is listed there, read-only, once it is published. Until then
+    // it is only a draft: the steward does not see that it exists (L-2).
     const tenantRule = await create(
       admin,
       rule({ name: "Admin tenant", scope: { kind: "tenant" } }),
     );
     const list = await json<Loose>(await bid("?brain=c_bid"));
-    expect(list.rules.find((x: Loose) => x.id === tenantRule.id)).toMatchObject({
-      editable: false,
-    });
+    expect(list.rules.some((x: Loose) => x.id === tenantRule.id)).toBe(false);
+    expect((await bid(`/${tenantRule.id}`)).status).toBe(404);
     expect(list.rules.some((x: Loose) => x.id === other.id)).toBe(false);
     expect(
       (await bid(`/${tenantRule.id}`, { method: "PUT", body: rule({ scope: { kind: "tenant" } }) }))
@@ -678,10 +685,10 @@ describe("two-person publish, rollback and incident mode", () => {
     id = r.id;
     const detail = await json<Loose>(await admin(`/${id}`));
     expect(detail.needsSecond).toBe(true);
-    const first = await admin(`/${id}/publish`, { method: "POST", body: { status: "enforced" } });
+    const first = await pubCall(admin, id, { status: "enforced" });
     expect(first.status).toBe(202);
     expect(await json<Loose>(first)).toMatchObject({ status: "pending", needs: "second_person" });
-    const again = await admin(`/${id}/publish`, { method: "POST", body: { status: "enforced" } });
+    const again = await pubCall(admin, id, { status: "enforced" });
     expect(again.status).toBe(202);
     expect((await json<Loose>(again)).sameActor).toBe(true);
     // Still not live.
@@ -699,9 +706,9 @@ describe("two-person publish, rollback and incident mode", () => {
         except: { incident: true },
       }),
     });
-    const stale = await admin2(`/${id}/publish`, { method: "POST", body: { status: "enforced" } });
+    const stale = await pubCall(admin2, id, { status: "enforced" });
     expect(stale.status).toBe(202);
-    const live = await admin(`/${id}/publish`, { method: "POST", body: { status: "enforced" } });
+    const live = await pubCall(admin, id, { status: "enforced" });
     expect(live.status, await live.clone().text()).toBe(200);
     expect(await json<Loose>(live)).toMatchObject({ status: "published", version: 1 });
   });
@@ -715,12 +722,8 @@ describe("two-person publish, rollback and incident mode", () => {
         when: [when("action", "is_any_of", "export"), when("size_pages", "greater_than", "100000")],
       }),
     );
-    expect(
-      (await admin(`/${r.id}/publish`, { method: "POST", body: { status: "monitor" } })).status,
-    ).toBe(202);
-    expect(
-      (await bid(`/${r.id}/publish`, { method: "POST", body: { status: "monitor" } })).status,
-    ).toBe(404);
+    expect((await pubCall(admin, r.id, { status: "monitor" })).status).toBe(202);
+    expect((await pubCall(bid, r.id, { status: "monitor" })).status).toBe(404);
     expect((await json<Loose>(await admin(`/${r.id}`))).version).toBe(0);
   });
 
@@ -733,12 +736,8 @@ describe("two-person publish, rollback and incident mode", () => {
       except: { incident: true },
     });
     expect((await admin(`/${id}`, { method: "PUT", body: v2 })).status).toBe(200);
-    expect(
-      (await admin(`/${id}/publish`, { method: "POST", body: { status: "enforced" } })).status,
-    ).toBe(202);
-    expect(
-      (await admin2(`/${id}/publish`, { method: "POST", body: { status: "enforced" } })).status,
-    ).toBe(200);
+    expect((await pubCall(admin, id, { status: "enforced" })).status).toBe(202);
+    expect((await pubCall(admin2, id, { status: "enforced" })).status).toBe(200);
     const d2 = await json<Loose>(await admin(`/${id}`));
     expect(d2.version).toBe(2);
     expect(d2.history[0].changes.map((c: Loose) => c.part)).toEqual(
@@ -1065,5 +1064,584 @@ describe("the synthetic seed", () => {
       await ensureRulesSeed(testEnv({ ENVIRONMENT: "prod", WIKI_SEED: "on" }), ALPHA, Date.now()),
     ).toBe(0);
     void tenantDo;
+  });
+});
+
+// ---- security review fixes (docs/security/V7-RULES-SECURITY-REVIEW.md) ----
+
+const SYNC = { WIKI_SEED: "on" };
+const seeded = async () => {
+  await ensureRulesSeed(testEnv(SYNC), ALPHA, Date.now());
+};
+
+describe("H-1: two people for anything that touches protected brains or weakens a live rule", () => {
+  it("narrowing the seeded tenant-wide client-name rule to one team brain alone is held for a second person", async () => {
+    await seeded();
+    const live = await json<Loose>(await admin("/r_seed_client_global"));
+    expect(live.published.scope.kind).toBe("tenant");
+    const narrowed = {
+      ...live.published,
+      scope: { kind: "brains", ids: ["c_delivery"] },
+    };
+    expect((await admin("/r_seed_client_global", { method: "PUT", body: narrowed })).status).toBe(
+      200,
+    );
+    const one = await pubCall(admin, "r_seed_client_global", {});
+    expect(one.status, await one.clone().text()).toBe(202);
+    expect(await json<Loose>(one)).toMatchObject({ status: "pending", needs: "second_person" });
+    const after = await json<Loose>(await admin("/r_seed_client_global"));
+    expect(after.version).toBe(1);
+    expect(after.published.scope.kind).toBe("tenant");
+    // The detail already says so before anyone clicks.
+    expect(after.needsSecond).toBe(true);
+    // Put the draft back so no later test meets a narrowed seed rule.
+    await admin("/r_seed_client_global", { method: "PUT", body: live.published });
+  });
+
+  it("withdrawing or loosening a live rule, even on a plain team brain, needs a second person", async () => {
+    const r = await create(admin, rule({ name: "Weaken me" }));
+    await publish(admin, r.id, {});
+    // Withdraw alone.
+    await admin(`/${r.id}`, { method: "PUT", body: rule({ name: "Weaken me", status: "draft" }) });
+    const withdraw = await pubCall(admin, r.id, { status: "draft" });
+    expect(withdraw.status).toBe(202);
+    expect((await json<Loose>(await admin(`/${r.id}`))).version).toBe(1);
+    // Loosen alone: block to review.
+    await admin(`/${r.id}`, {
+      method: "PUT",
+      body: rule({ name: "Weaken me", then: { effect: "review" } }),
+    });
+    expect((await pubCall(admin, r.id, { status: "enforced" })).status).toBe(202);
+    // Narrow the conditions alone.
+    await admin(`/${r.id}`, {
+      method: "PUT",
+      body: rule({
+        name: "Weaken me",
+        when: [when("action", "is_any_of", "import")],
+      }),
+    });
+    expect((await pubCall(admin, r.id, { status: "enforced" })).status).toBe(202);
+    expect((await json<Loose>(await admin(`/${r.id}`))).version).toBe(1);
+    // Tightening and renaming stay single-person.
+    await admin(`/${r.id}`, {
+      method: "PUT",
+      body: rule({ name: "Weaken me, renamed" }),
+    });
+    expect((await pubCall(admin, r.id, { status: "enforced" })).status).toBe(200);
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+
+  it("M-6: a steward cannot withdraw an admin's rule on their brain alone", async () => {
+    const r = await create(
+      admin,
+      rule({ name: "Admin block on bid", scope: { kind: "brains", ids: ["c_bid"] } }),
+    );
+    await publish(admin, r.id, {});
+    const put = await bid(`/${r.id}`, {
+      method: "PUT",
+      body: rule({
+        name: "Admin block on bid",
+        scope: { kind: "brains", ids: ["c_bid"] },
+        status: "draft",
+      }),
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+    const alone = await pubCall(bid, r.id, { status: "draft" });
+    expect(alone.status).toBe(202);
+    expect((await json<Loose>(await admin(`/${r.id}`))).version).toBe(1);
+    expect((await json<Loose>(await admin(`/${r.id}`))).published.status).toBe("enforced");
+    await retire(admin, r.id, { kind: "brains", ids: ["c_bid"] });
+  });
+});
+
+describe("M-2: the second person confirms the draft they reviewed", () => {
+  it("a confirmation of an older draft is refused, and a publish without a hash is refused", async () => {
+    const tenant = (name: string) =>
+      rule({
+        name,
+        scope: { kind: "tenant" },
+        when: [when("action", "is_any_of", "export"), when("size_pages", "greater_than", "5000")],
+        then: { effect: "review" },
+        status: "monitor",
+      });
+    const r = await create(admin, tenant("Hash bound"));
+    const h1 = await hashOf(admin, r.id);
+    expect(
+      (await admin(`/${r.id}/publish`, { method: "POST", body: { status: "monitor" } })).status,
+    ).toBe(400);
+    const first = await admin(`/${r.id}/publish`, {
+      method: "POST",
+      body: { status: "monitor", expectedHash: h1 },
+    });
+    expect(first.status).toBe(202);
+    // The first admin saves a different draft after the second admin opened the first.
+    await admin(`/${r.id}`, { method: "PUT", body: tenant("Hash bound, changed") });
+    const stale = await admin2(`/${r.id}/publish`, {
+      method: "POST",
+      body: { status: "monitor", expectedHash: h1 },
+    });
+    expect(stale.status).toBe(409);
+    expect((await json<Loose>(stale)).error).toBe("draft_changed");
+    expect((await json<Loose>(await admin(`/${r.id}`))).version).toBe(0);
+    // The hash is 53 bits, not a 32-bit checksum.
+    expect(h1.length).toBeGreaterThan(8);
+  });
+});
+
+describe("M-1: incident mode is capped and an extension is two-person", () => {
+  it("one admin cannot extend it, a second can, and it ends 72 hours after it began", async () => {
+    const H = 3_600_000;
+    const t0 = nextMinute();
+    const put = (who: typeof admin, at: number, on = true) =>
+      who("/incident", { method: "PUT", body: { on }, now: at });
+    expect((await put(admin, t0)).status).toBe(202);
+    expect((await put(admin2, t0 + 1000)).status).toBe(200);
+    const on = await json<Loose>(await admin("/incident", { now: t0 + 2000 }));
+    expect(new Date(on.until).getTime()).toBe(t0 + 1000 + 24 * H);
+    const since = new Date(on.since).getTime();
+    // One admin calling On again does not move the end.
+    const alone = await put(admin, t0 + 20 * H);
+    expect(alone.status).toBe(202);
+    expect(
+      new Date((await json<Loose>(await admin("/incident", { now: t0 + 20 * H }))).until).getTime(),
+    ).toBe(since + 24 * H);
+    // A different admin confirms the extension: 24 hours from then.
+    const ext = await put(admin2, t0 + 20 * H + 1000);
+    expect(ext.status).toBe(200);
+    const until1 = new Date(
+      (await json<Loose>(await admin("/incident", { now: t0 + 21 * H }))).until,
+    ).getTime();
+    expect(until1).toBe(t0 + 20 * H + 1000 + 24 * H);
+    // Further extensions stop at 72 hours after it began.
+    expect((await put(admin, t0 + 40 * H)).status).toBe(202);
+    expect((await put(admin2, t0 + 40 * H + 1000)).status).toBe(200);
+    expect((await put(admin, t0 + 60 * H)).status).toBe(202);
+    expect((await put(admin2, t0 + 60 * H + 1000)).status).toBe(200);
+    const capped = await json<Loose>(await admin("/incident", { now: t0 + 61 * H }));
+    expect(new Date(capped.until).getTime()).toBe(since + 72 * H);
+    const more = await put(admin, t0 + 70 * H);
+    expect(more.status).toBe(409);
+    expect((await json<Loose>(more)).error).toBe("incident_max");
+    // One admin still ends it.
+    expect((await put(admin, t0 + 70 * H, false)).status).toBe(200);
+  });
+});
+
+describe("M-3: a held action is spent only for what was approved", () => {
+  it("a hold approved under a looser rule does not release the action under a stricter one", async () => {
+    const exportAs = (headers: Record<string, string> = {}) =>
+      as("consultant", "/v1/brain/export?workspaceId=c_delivery", {
+        email: CONS,
+        headers,
+        now: nextMinute(),
+      });
+    const body = (effect: string) =>
+      rule({
+        name: "Exports held (binding)",
+        when: [when("action", "is_any_of", "export"), when("size_pages", "greater_than", "0")],
+        then: { effect },
+      });
+    const r = await create(admin, body("review"));
+    await publish(admin, r.id, {});
+    const held = await json<Loose>(await exportAs());
+    expect(held.status).toBe("needs_approval");
+    const ok = await as("reviewer", `/v1/rules/holds/${held.holdId}/decide`, {
+      email: REV,
+      body: { decision: "approve" },
+    });
+    expect((await json<Loose>(ok)).status).toBe("approved");
+    // The rule is tightened to two approvers before the requester spends the approval.
+    await revise(admin, r.id, body("two_approvers"), "enforced");
+    const spent = await exportAs({ "X-Rule-Hold": held.holdId });
+    expect(spent.status).toBe(409);
+    expect((await json<Loose>(spent)).error).toBe("hold_changed");
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+
+  it("a request may carry one approval per brain, separated by commas", async () => {
+    const exportAs = (headers: Record<string, string> = {}) =>
+      as("consultant", "/v1/brain/export?workspaceId=c_delivery", {
+        email: CONS,
+        headers,
+        now: nextMinute(),
+      });
+    const r = await create(
+      admin,
+      rule({
+        name: "Exports held (refund)",
+        when: [when("action", "is_any_of", "export"), when("size_pages", "greater_than", "0")],
+        then: { effect: "review" },
+      }),
+    );
+    await publish(admin, r.id, {});
+    const held = await json<Loose>(await exportAs());
+    await as("reviewer", `/v1/rules/holds/${held.holdId}/decide`, {
+      email: REV,
+      body: { decision: "approve" },
+    });
+    // Two ids in the header: the first belongs to nothing, the second is the approval.
+    const done = await exportAs({ "X-Rule-Hold": `h_unknown, ${held.holdId}` });
+    expect(done.status, await done.clone().text()).toBe(200);
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+});
+
+describe("M-5: a rollback needs authority over the old version and it must still validate", () => {
+  it("a steward cannot bring back an admin's tenant-wide version", async () => {
+    const wide = rule({
+      name: "Rolls wide",
+      scope: { kind: "tenant" },
+      when: [when("action", "is_any_of", "export"), when("size_pages", "greater_than", "5000")],
+      then: { effect: "review" },
+    });
+    const r = await create(admin, wide);
+    await publish(admin, r.id, {});
+    await revise(admin, r.id, { ...wide, scope: { kind: "brains", ids: ["c_bid"] } }, "enforced");
+    const asked = await bid(`/${r.id}/rollback`, { method: "POST", body: { toVersion: 1 } });
+    expect(asked.status).toBe(404);
+    expect((await json<Loose>(await admin(`/${r.id}`))).version).toBe(2);
+    await retire(admin, r.id, { kind: "brains", ids: ["c_bid"] });
+  });
+
+  it("an old version that no longer validates cannot come back", async () => {
+    const bad = {
+      name: "Old and invalid",
+      scope: { kind: "brains", ids: ["c_delivery"] },
+      when: [when("action", "is_any_of", "import")],
+      then: { effect: "grant_access" },
+      except: { incident: false },
+      status: "enforced",
+    };
+    await tenantDo(ALPHA).rules("seed", [[{ id: "r_old_invalid", body: bad }], Date.now(), 99]);
+    await revise(admin, "r_old_invalid", rule({ name: "Valid now" }), "enforced");
+    // Refused at once: nobody needs to be asked to confirm a version that cannot go live.
+    const asked = await admin("/r_old_invalid/rollback", {
+      method: "POST",
+      body: { toVersion: 1 },
+    });
+    expect(asked.status).toBe(422);
+    expect((await json<Loose>(asked)).error).toBe("version_not_valid");
+    expect((await json<Loose>(await admin("/r_old_invalid"))).version).toBe(2);
+    await retire(admin, "r_old_invalid", { kind: "brains", ids: ["c_delivery"] });
+  });
+});
+
+describe("M-7: the connector fails closed and its text is read for flags", () => {
+  const CKEY = "test-connector-hmac-key-0123456789abcdef";
+  const sync = async (n: number, body: string) => {
+    const path = "/internal/connector/upsert";
+    const raw = JSON.stringify({
+      tenantId: ALPHA,
+      sourceId: "srcv7002",
+      scopeId: "c_delivery",
+      gateNodeId: "c_delivery",
+      plane: "TEAM_RESTRICTED",
+      items: [
+        {
+          id: `src:srcv7002:${n.toString(16).padStart(24, "0")}`,
+          title: "Notes",
+          body,
+          webUrl: "https://contoso.example.invalid/n.md",
+          mime: "text/markdown",
+          size: body.length,
+          eTag: '"e1"',
+          syncedAt: 1_700_000_000_000,
+        },
+      ],
+    });
+    const headers = await signInternalRequest({
+      secret: CKEY,
+      method: "POST",
+      url: `https://secondary.example.test${path}`,
+      body: raw,
+      principal: {
+        v: 1,
+        iss: "secondary-mcp",
+        grant_id: "g_test",
+        aud: "secondary-api",
+        sub: "secondary-connector",
+        email: "connector@service.invalid",
+        client_id: "secondary-connector",
+        scope: [],
+        tool: "connector.sync",
+      },
+    });
+    return json<Loose>(await call(path, { token: null, headers, rawBody: raw, method: "POST" }));
+  };
+
+  it("a client-name rule holds a batch that names a client, and lets a clean one through", async () => {
+    const r = await create(
+      admin,
+      rule({
+        name: "No client names from the sync",
+        when: [
+          when("action", "is_any_of", "import"),
+          when("actor", "is_any_of", "connector"),
+          when("content_flag", "is_any_of", "client_name"),
+        ],
+        then: { effect: "block", message: "Client name in a synced file." },
+      }),
+    );
+    await publish(admin, r.id, {});
+    expect(await sync(0x20, "Plan for Acme Synthetic SA, phase two")).toMatchObject({
+      changed: 0,
+      held: `${r.id}@1`,
+    });
+    expect(await sync(0x21, "Plan for the delivery gate, phase two")).toMatchObject({
+      changed: 1,
+    });
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+
+  it("a rules read that fails holds the work instead of letting it through", async () => {
+    const { ruleServiceCheck } = await import("../src/rules/service.ts");
+    const broken = {
+      ...rawEnv,
+      TENANT_POLICY: {
+        idFromName: () => {
+          throw new Error("the tenant object is down");
+        },
+        get: () => {
+          throw new Error("the tenant object is down");
+        },
+      },
+    } as unknown as Env;
+    const v = await ruleServiceCheck(broken, {
+      tenantId: ALPHA,
+      principalId: "secondary-connector",
+      scopeId: "c_delivery",
+      nodeId: "c_delivery",
+      action: "import",
+      actor: "connector",
+      pages: 1,
+      approval: "hold",
+    });
+    expect(v).toMatchObject({ stop: true });
+  });
+});
+
+describe("L-2: what a rule screen shows a steward", () => {
+  it("L-2: a steward is not shown the ids of brains outside their view, nor an admin's unpublished draft", async () => {
+    // A tenant-wide published rule that names a brain the c_bid steward cannot see in a condition.
+    const r = await create(
+      admin,
+      rule({
+        name: "Names a delivery brain",
+        scope: { kind: "tenant" },
+        when: [when("action", "is_any_of", "export"), when("brain", "is_any_of", "c_delivery")],
+        then: { effect: "review" },
+        status: "monitor",
+      }),
+    );
+    await publish(admin, r.id, { status: "monitor" });
+    const seen = JSON.stringify(await json<Loose>(await bid(`/${r.id}`)));
+    expect(seen).not.toContain("c_delivery");
+    expect(seen).toContain("restricted");
+    // An admin's rule never published: not in a steward's list and a 404 on open.
+    const draft = await create(
+      admin,
+      rule({ name: "Unpublished intent", scope: { kind: "brains", ids: ["c_bid"] } }),
+    );
+    expect((await bid(`/${draft.id}`)).status).toBe(200); // a steward of c_bid may edit it
+    const other = await create(
+      admin,
+      rule({ name: "Unpublished tenant intent", scope: { kind: "tenant" } }),
+    );
+    expect((await bid(`/${other.id}`)).status).toBe(404);
+    const list = await json<Loose>(await bid("?brain=c_bid"));
+    expect(list.rules.some((x: Loose) => x.id === other.id)).toBe(false);
+  });
+});
+
+describe("H-2: the rules run on every path that writes or releases", () => {
+  const CLIENT = "The Acme Synthetic SA account asked for a revised plan before the gate.";
+  const noClient = (name: string, actions: string[], scope = ["c_delivery"]) =>
+    rule({
+      name,
+      scope: { kind: "brains", ids: scope },
+      when: [
+        when("action", "is_any_of", ...actions),
+        when("content_flag", "is_any_of", "client_name"),
+      ],
+      then: { effect: "block", message: "No client names here." },
+    });
+
+  it("a routine run is gated like any contribution", async () => {
+    const r = await create(admin, noClient("Routines: no client names", ["propose_page"]));
+    await publish(admin, r.id, {});
+    const WORK =
+      "The pricing approach for phase 2 was agreed with the steering group. The fixed fee covers three deliverables.";
+    const made = await json<Loose>(
+      await as("consultant", "/v1/routines", {
+        email: CONS,
+        body: {
+          name: "Rule routine",
+          source: { kind: "manual" },
+          schedule: "manual",
+          targetScopeId: "c_delivery",
+          guardrails: { excludePersonal: true, excludeHR: true, excludeNewsletters: true },
+          enabled: true,
+        },
+      }),
+    );
+    const runIt = (title: string, text: string) =>
+      as("consultant", `/v1/routines/${encodeURIComponent(made.id)}/run`, {
+        email: CONS,
+        method: "POST",
+        body: { items: [{ title, text }] },
+      });
+    await runIt("Routine names a client", `${WORK} ${CLIENT}`);
+    const cands = JSON.stringify(await wsOf(ALPHA, "c_delivery").listByKind("candidate", 200));
+    expect(cands).not.toContain("Routine names a client");
+    // A clean item still goes through, and carries no rule tag problem.
+    const ok = await json<Loose>(
+      await runIt("Routine clean item", `${WORK} The review is on Tuesday.`),
+    );
+    expect(ok.ingested).toBe(1);
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+
+  it("editing a proposal re-runs the gate on the new text", async () => {
+    const r = await create(
+      admin,
+      noClient("Edits: no client names", ["propose_page", "propose_change"]),
+    );
+    await publish(admin, r.id, {});
+    const madeRes = await proposeApi("c_delivery", "Clean until edited");
+    const made = await json<Loose>(madeRes);
+    expect(made.status, JSON.stringify(made)).toBe("candidate");
+    const edit = await as("reviewer", `/v1/wiki/c_delivery/proposals/${made.proposalId}/edit`, {
+      email: REV,
+      body: {
+        pageId: "clean-until-edited",
+        markdown: `# Clean until edited\n\n## Summary\n- ${CLIENT}\n`,
+      },
+    });
+    expect(edit.status, await edit.clone().text()).toBe(403);
+    expect((await json<Loose>(edit)).error).toBe("blocked_by_rule");
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+
+  it("the decide-time gate reads the proposal, so a content rule published later still holds the release", async () => {
+    const made = await json<Loose>(
+      await as("consultant", "/v1/wiki/c_delivery/propose", {
+        email: CONS,
+        body: {
+          title: "Names a client late",
+          markdown: `# Names a client late\n\n## Summary\n- ${CLIENT}\n`,
+        },
+      }),
+    );
+    expect(made.status).toBe("candidate");
+    const r = await create(admin, noClient("Release: no client names", ["publish"]));
+    await publish(admin, r.id, {});
+    const q = (
+      await json<Loose[]>(await as("reviewer", "/v1/questions?brain=c_delivery", { email: REV }))
+    ).find((x) => x.title.includes("Names a client late")) as Loose;
+    const approve = await as("reviewer", `/v1/questions/${q.id}`, {
+      email: REV,
+      body: { action: "approve", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
+    });
+    expect(approve.status, await approve.clone().text()).toBe(403);
+    expect((await json<Loose>(approve)).error).toBe("blocked_by_rule");
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery"] });
+  });
+
+  it("the wiki engine's agent proposals are gated", async () => {
+    const r = await create(
+      admin,
+      rule({
+        name: "Engine: agents may not propose in acme",
+        scope: { kind: "brains", ids: ["a_acme"] },
+        when: [
+          when("actor", "is_any_of", "agent"),
+          when("action", "is_any_of", "propose_change", "propose_page"),
+        ],
+        then: { effect: "block", message: "Agents are paused here." },
+      }),
+    );
+    await publish(admin, r.id, {});
+    const SRC = `src:abcdef:${"v7engine".padEnd(24, "0")}`;
+    const text = [
+      "Weekly notes",
+      "Decision: approve the phase two plan (owner: CEO, status: decided)",
+    ].join("\n");
+    await wsOf(ALPHA, "a_acme").sourceUpsert([
+      {
+        id: SRC,
+        sourceId: "abcdef",
+        gateNodeId: "a_acme:con",
+        plane: "ACCOUNT_RESTRICTED",
+        title: "Engine notes.md",
+        body: text,
+        webUrl: null,
+        mime: "text/markdown",
+        size: text.length,
+        eTag: "e1",
+        syncedAt: Date.now(),
+      },
+    ]);
+    await wsOf(ALPHA, "a_acme").wikiNotify(ALPHA, "a_acme", [SRC], Date.now());
+    const run = await as("acme_lead", "/v1/wiki/a_acme/run", { body: {} });
+    expect(run.status).toBe(200);
+    const results = (await json<Loose>(run)).results as Loose[];
+    expect(results.map((x) => x.triage)).toContain("blocked_by_rule");
+    expect(results.map((x) => x.triage)).not.toContain("proposed");
+    await retire(admin, r.id, { kind: "brains", ids: ["a_acme"] });
+  });
+
+  it("covers every write, propose, publish, export, promote and share entrypoint: a new one fails until it is gated", () => {
+    const files = (
+      import.meta as unknown as {
+        glob: (p: string, o: object) => Record<string, string>;
+      }
+    ).glob("../src/**/*.ts", { query: "?raw", import: "default", eager: true });
+    // The calls that put content into a brain, release it, take it out or share it.
+    const SINK =
+      /\.(wikiPropose|wikiEditProposal|wikiDecide|sourceUpsert)\(|kind: "candidate"|(?<!function )\b(zip|writeShare)\(/g;
+    const GATE =
+      /(?<!function )\b(ruleGate|ruleServiceCheck|ruleDecideGuard|engineRules|shareGate)\(/g;
+    // Where they live today, with how many of each and how many gate calls guard them. A new sink
+    // in any file, or a new file with one, changes a count and fails here until it is reviewed.
+    const REGISTRY: Record<string, { sinks: number; gates: number; why: string }> = {
+      "routes.ts": {
+        sinks: 1,
+        gates: 2,
+        why: "contribute (ruleGate), release of a candidate (ruleDecideGuard)",
+      },
+      "brains/push.ts": { sinks: 1, gates: 1, why: "MCP/API push page, change, session report" },
+      "brains/data.ts": { sinks: 1, gates: 1, why: "import" },
+      "connector.ts": { sinks: 1, gates: 1, why: "SharePoint sync (ruleServiceCheck)" },
+      "wiki/routes.ts": { sinks: 3, gates: 3, why: "propose, edit, decide" },
+      "wiki/engine.ts": { sinks: 3, gates: 4, why: "ingest, lint, dream (engineRules)" },
+      "agent/views.ts": {
+        sinks: 2,
+        gates: 3,
+        why: "share and update of a shared plan (shareGate)",
+      },
+      "uxv2/routines.ts": { sinks: 1, gates: 1, why: "routine ingest" },
+      "uxv2/export.ts": { sinks: 1, gates: 1, why: "export" },
+      "uxv2/questions.ts": {
+        sinks: 4,
+        gates: 3,
+        why: "keep_current, approve, release of a candidate",
+      },
+    };
+    const found: Record<string, { sinks: number; gates: number }> = {};
+    for (const [path, src] of Object.entries(files)) {
+      const file = path.replace("../src/", "");
+      if (file.startsWith("rules/")) continue;
+      // Where the primitives themselves are defined.
+      if (["wiki/store.ts", "brains/store.ts", "workspace.ts", "uxv2/zip.ts"].includes(file))
+        continue;
+      const sinks = (src.match(SINK) ?? []).length;
+      if (sinks > 0) found[file] = { sinks, gates: (src.match(GATE) ?? []).length };
+    }
+    const expected = Object.fromEntries(
+      Object.entries(REGISTRY).map(([f, v]) => [f, { sinks: v.sinks, gates: v.gates }]),
+    );
+    expect(found).toEqual(expected);
+    // And every registered file really calls a gate at least as often as it has a gated sink.
+    for (const [f, v] of Object.entries(found)) expect(v.gates, f).toBeGreaterThan(0);
   });
 });

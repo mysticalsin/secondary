@@ -10,6 +10,7 @@ import {
   type RuleDoc,
   type RuleDraft,
   type RuleStatus,
+  validateRule,
 } from "@secondary/policy";
 
 export interface RulesDeps {
@@ -21,6 +22,8 @@ export interface RulesDeps {
   pending: (key: string, now: number) => string | null;
   /** Do these two principal ids stand for one person? */
   same: (a: string, b: string) => boolean;
+  /** Record the address a principal acted with, so one person holding two ids is recognised. */
+  remember: (principalId: string, email: string) => void;
 }
 
 export const RULES_TABLES = ["rules", "rule_versions", "rule_drafts"] as const;
@@ -28,6 +31,8 @@ export const RULES_TABLES = ["rules", "rule_versions", "rule_drafts"] as const;
 export const RULES_VOLATILE = ["rule_holds", "incident"] as const;
 
 const INCIDENT_MAX_MS = 24 * 3_600_000;
+/** However many times it is extended, an incident ends this long after it began. */
+const INCIDENT_CAP_MS = 72 * 3_600_000;
 const HOLD_TTL_MS = 24 * 3_600_000;
 const MAX_RULES = 200;
 const MAX_VERSIONS = 100;
@@ -82,6 +87,9 @@ export interface Hold {
   status: "pending" | "approved" | "rejected";
   used: boolean;
   expiresAt: number;
+  /** What the approvers were shown: a hold covers no more than this. */
+  pages: number | null;
+  flags: string[];
 }
 
 const hex = (n: number): string =>
@@ -90,13 +98,21 @@ const hex = (n: number): string =>
     .join("");
 
 const parse = <T>(s: unknown): T => JSON.parse(s as string) as T;
+const parseOr = <T>(s: unknown, d: T): T => (typeof s === "string" ? (JSON.parse(s) as T) : d);
 
-/** A short stable hash of a draft, so a second person confirms exactly the draft the first one saw. */
+/** A stable 53-bit hash of a draft, so a second person confirms exactly the draft the first one saw. */
 export function draftHash(d: RuleDraft): string {
   const text = JSON.stringify(d);
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619) >>> 0;
-  return h.toString(16);
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
 
 export const RULES_METHODS = [
@@ -104,6 +120,7 @@ export const RULES_METHODS = [
   "get",
   "state",
   "history",
+  "versionGet",
   "save",
   "remove",
   "publish",
@@ -116,6 +133,7 @@ export const RULES_METHODS = [
   "holdGet",
   "holdDecide",
   "holdUse",
+  "holdRefund",
   "seed",
   "reset",
   "groupGet",
@@ -156,6 +174,13 @@ export class RulesStore {
       CREATE TABLE IF NOT EXISTS incident (
         id INTEGER PRIMARY KEY CHECK (id = 1), on_ INTEGER NOT NULL, since INTEGER, until INTEGER, by_id TEXT);
     `);
+    // Holds created before a hold carried its size and flags: add the columns once.
+    for (const col of ["pages INTEGER", "flags TEXT"])
+      try {
+        d.sql.exec(`ALTER TABLE rule_holds ADD COLUMN ${col}`);
+      } catch {
+        // already there
+      }
   }
 
   private get sql(): SqlStorage {
@@ -213,6 +238,11 @@ export class RulesStore {
       editedAt: edited.at,
       editedBy: edited.by,
     };
+  }
+
+  /** The body of one published version (for the authority and validity checks of a rollback). */
+  versionGet(id: string, version: number): RuleDraft | null {
+    return this.versionBody(id, version)?.body ?? null;
   }
 
   list(): StoredRule[] {
@@ -347,12 +377,21 @@ export class RulesStore {
 
   /**
    * Publish the draft as the next version with `status` (monitor or enforced). With `twoPerson` a
-   * different person must repeat the call for the same draft within 24 hours.
+   * different person must repeat the call for the same draft within 24 hours. `expectedHash` is the
+   * hash of the draft the caller reviewed: a draft that changed since is refused, so nobody confirms
+   * a draft they did not see.
    */
   publish(
     id: string,
     status: RuleStatus,
-    a: { by: string; label: string; email: string; now: number; twoPerson: boolean },
+    a: {
+      by: string;
+      label: string;
+      email: string;
+      now: number;
+      twoPerson: boolean;
+      expectedHash: string;
+    },
   ):
     | { ok: true; applied: true; version: number }
     | { ok: true; applied: false; sameActor: boolean }
@@ -360,6 +399,8 @@ export class RulesStore {
     const r = this.get(id);
     if (!r) return fail("not_found", "No such rule", 404);
     if (!r.draft) return fail("no_draft", "There is no draft to publish", 409);
+    if (draftHash(r.draft) !== a.expectedHash)
+      return fail("draft_changed", "The draft changed since you opened it. Review it again", 409);
     const body: RuleDraft = { ...r.draft, status };
     if (a.twoPerson) {
       const step = this.d.second(`rulepub:${id}:${draftHash(body)}`, a.by, a.now, a.email);
@@ -386,10 +427,18 @@ export class RulesStore {
     const old = this.versionBody(id, toVersion);
     if (!old || toVersion === r.version)
       return fail("invalid_version", "Choose an older version", 400);
+    // An old version may predate a validator fix: it comes back only if it is valid today.
+    const again = validateRule(old.body);
+    if (!again.ok)
+      return fail(
+        "version_not_valid",
+        "That version no longer passes the rules for rules. Edit a new one instead",
+        422,
+      );
     const step = this.d.second(`rulerb:${id}:${toVersion}`, a.by, a.now, a.email);
     if (step !== "second") return { ok: true, applied: false, sameActor: step === "same" };
     return this.d.tx(() => {
-      const version = this.writeVersion(id, old.body, a.by, a.label, a.now, toVersion);
+      const version = this.writeVersion(id, again.rule, a.by, a.label, a.now, toVersion);
       this.sql.exec("DELETE FROM pending_ops WHERE key LIKE ?", `rulerb:${id}:%`);
       return { ok: true as const, applied: true as const, version };
     });
@@ -441,18 +490,37 @@ export class RulesStore {
     return { on: true, since: r.since as number, until: r.until as number, by: r.by_id as string };
   }
 
-  /** On is two-person (the first call is recorded, a different person confirms). Off is one admin. */
+  /**
+   * On is two-person (the first call is recorded, a different person confirms). Calling On while it is
+   * already on is an extension: also two-person, 24 hours more, and never past 72 hours after it began.
+   * Off is one admin.
+   */
   incidentSet(
     on: boolean,
     a: { by: string; email: string; now: number },
   ):
     | { ok: true; applied: true; incident: Incident }
-    | { ok: true; applied: false; sameActor: boolean } {
-    if (on && !this.incident(a.now).on) {
-      const step = this.d.second("incident:on", a.by, a.now, a.email);
-      if (step !== "second") return { ok: true, applied: false, sameActor: step === "same" };
+    | { ok: true; applied: false; sameActor: boolean }
+    | Fail {
+    const cur = this.incident(a.now);
+    if (!on) {
+      this.sql.exec("DELETE FROM incident WHERE id = 1");
+      this.sql.exec("DELETE FROM pending_ops WHERE key LIKE 'incident:%'");
+      return { ok: true, applied: true, incident: this.incident(a.now) };
     }
-    if (on)
+    const extending = cur.on && cur.since !== null;
+    const cap = extending ? (cur.since as number) + INCIDENT_CAP_MS : null;
+    if (cap !== null && (cur.until as number) >= cap)
+      return fail("incident_max", "Incident mode reached its longest duration. End it.", 409);
+    const step = this.d.second(extending ? "incident:extend" : "incident:on", a.by, a.now, a.email);
+    if (step !== "second") return { ok: true, applied: false, sameActor: step === "same" };
+    this.sql.exec("DELETE FROM pending_ops WHERE key LIKE 'incident:%'");
+    if (extending)
+      this.sql.exec(
+        "UPDATE incident SET until = ? WHERE id = 1",
+        Math.min(a.now + INCIDENT_MAX_MS, cap as number),
+      );
+    else
       this.sql.exec(
         `INSERT INTO incident (id, on_, since, until, by_id) VALUES (1, 1, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET on_ = 1, since = excluded.since, until = excluded.until, by_id = excluded.by_id`,
@@ -460,10 +528,6 @@ export class RulesStore {
         a.now + INCIDENT_MAX_MS,
         a.by,
       );
-    else {
-      this.sql.exec("DELETE FROM incident WHERE id = 1");
-      this.sql.exec("DELETE FROM pending_ops WHERE key = 'incident:on'");
-    }
     return { ok: true, applied: true, incident: this.incident(a.now) };
   }
 
@@ -476,24 +540,34 @@ export class RulesStore {
     requestedBy: string;
     required: number;
     group: string[];
+    pages: number | null;
+    flags: string[];
     now: number;
+    email?: string;
   }): string {
+    if (h.email) this.d.remember(h.requestedBy, h.email);
     // The same person asking for the same thing again reuses the open hold.
     const open = this.sql
       .exec(
-        "SELECT id FROM rule_holds WHERE rule = ? AND action = ? AND brain_id = ? AND requested_by = ? AND status = 'pending' AND used = 0 AND expires_at > ?",
+        "SELECT id, pages, flags, required FROM rule_holds WHERE rule = ? AND action = ? AND brain_id = ? AND requested_by = ? AND status = 'pending' AND used = 0 AND expires_at > ?",
         h.rule,
         h.action,
         h.brainId,
         h.requestedBy,
         h.now,
       )
-      .toArray()[0];
+      .toArray()
+      .find(
+        (r) =>
+          ((r.pages as number | null) ?? null) === h.pages &&
+          (r.required as number) === h.required &&
+          JSON.stringify(parseOr<string[]>(r.flags, [])) === JSON.stringify(h.flags),
+      );
     if (open) return open.id as string;
     const id = `h_${hex(6)}`;
     this.sql.exec(
-      `INSERT INTO rule_holds (id, rule, action, brain_id, requested_by, requested_at, required, grp, approvals, status, used, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 'pending', 0, ?)`,
+      `INSERT INTO rule_holds (id, rule, action, brain_id, requested_by, requested_at, required, grp, approvals, status, used, expires_at, pages, flags)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 'pending', 0, ?, ?, ?)`,
       id,
       h.rule,
       h.action,
@@ -503,6 +577,8 @@ export class RulesStore {
       h.required,
       JSON.stringify(h.group),
       h.now + HOLD_TTL_MS,
+      h.pages,
+      JSON.stringify(h.flags),
     );
     return id;
   }
@@ -521,6 +597,8 @@ export class RulesStore {
       status: r.status as Hold["status"],
       used: (r.used as number) === 1,
       expiresAt: r.expires_at as number,
+      pages: (r.pages as number | null) ?? null,
+      flags: parseOr<string[]>(r.flags, []),
     };
   }
 
@@ -545,7 +623,9 @@ export class RulesStore {
     decision: "approve" | "reject",
     by: string,
     now: number,
+    email = "",
   ): { ok: true; status: Hold["status"]; approvals: number; required: number } | Fail {
+    if (email) this.d.remember(by, email);
     const h = this.holdGet(id);
     if (!h || h.expiresAt <= now || h.used) return fail("not_found", "No such held action", 404);
     if (h.status !== "pending") return fail("already_decided", "This action was already decided");
@@ -571,16 +651,22 @@ export class RulesStore {
     return { ok: true, status, approvals: approvals.length, required: h.required };
   }
 
-  /** The requester spends an approved hold. Single use, same person, same action and brain. */
+  /**
+   * The requester spends an approved hold. Single use, same person, same action and brain, and only
+   * for what the approvers saw: the rule in force must be the same one, asking for no more approvals
+   * or groups, and the action no bigger and carrying no flag the hold did not have.
+   */
   holdUse(
     id: string,
     who: string,
     action: string,
     brainId: string,
     now: number,
+    cur: { rule: string; required: number; group: string[]; pages: number | null; flags: string[] },
   ): { ok: true; rule: string } | Fail {
     const h = this.holdGet(id);
-    if (!h || h.expiresAt <= now) return fail("hold_invalid", "That approval is not valid", 409);
+    const invalid = fail("hold_invalid", "That approval is not valid", 409);
+    if (!h || h.expiresAt <= now) return invalid;
     if (
       h.status !== "approved" ||
       h.used ||
@@ -588,13 +674,25 @@ export class RulesStore {
       h.brainId !== brainId ||
       !this.d.same(h.requestedBy, who)
     )
-      return fail("hold_invalid", "That approval is not valid", 409);
+      return invalid;
+    const bigger = cur.pages !== null && (h.pages === null || cur.pages > h.pages);
+    const newFlag = cur.flags.some((f) => !h.flags.includes(f));
+    const newGroup = cur.group.some((g) => !h.group.includes(g));
+    if (cur.rule !== h.rule || cur.required > h.required || newGroup || bigger || newFlag)
+      return fail(
+        "hold_changed",
+        "The rules or the action changed since this was approved. Ask again",
+        409,
+      );
     const done = this.sql
       .exec("UPDATE rule_holds SET used = 1 WHERE id = ? AND used = 0 RETURNING 1", id)
       .toArray();
-    return done.length
-      ? { ok: true, rule: h.rule }
-      : fail("hold_invalid", "That approval is not valid", 409);
+    return done.length ? { ok: true, rule: h.rule } : invalid;
+  }
+
+  /** The action failed after its approval was spent: hand the approval back. */
+  holdRefund(id: string): void {
+    this.sql.exec("UPDATE rule_holds SET used = 0 WHERE id = ?", id);
   }
 
   // ---- the privacy approver group (people an admin named; stewards come from the policy) ----
@@ -650,7 +748,7 @@ export class RulesStore {
   reset(): void {
     for (const t of [...RULES_TABLES, ...RULES_VOLATILE]) this.sql.exec(`DELETE FROM ${t}`);
     this.sql.exec(
-      "DELETE FROM pending_ops WHERE key LIKE 'rulepub:%' OR key LIKE 'rulerb:%' OR key = 'incident:on'",
+      "DELETE FROM pending_ops WHERE key LIKE 'rulepub:%' OR key LIKE 'rulerb:%' OR key LIKE 'incident:%'",
     );
     this.sql.exec("DELETE FROM config WHERE k = 'rules_seed_version'");
   }

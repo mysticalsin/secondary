@@ -69,7 +69,7 @@ test("the dev seed rules are there, a stranger gets 404, and a floor is refused 
   await page.context().close();
 });
 
-test("an enforced rule blocks a real proposal, the receipt names the rule, and a withdrawn rule lets it through", async ({
+test("an enforced rule blocks a real proposal, the receipt names the rule, and one admin cannot withdraw it alone", async ({
   browser,
 }) => {
   const page = await asPersona(browser, "platform_admin");
@@ -77,9 +77,11 @@ test("an enforced rule blocks a real proposal, the receipt names the rule, and a
   const made = await api(page, "platform_admin", "/v1/rules", { method: "POST", body: block() });
   expect(made.status).toBe(201);
   const id = made.json.id as string;
+  const hashOf = async () =>
+    (await api(page, "platform_admin", `/v1/rules/${id}`)).json.draftHash as string;
   const pub = await api(page, "platform_admin", `/v1/rules/${id}/publish`, {
     method: "POST",
-    body: {},
+    body: { expectedHash: await hashOf() },
   });
   expect(pub.status, JSON.stringify(pub.json)).toBe(200);
   const cons = await asPersona(browser, "consultant");
@@ -98,21 +100,23 @@ test("an enforced rule blocks a real proposal, the receipt names the rule, and a
   expect(sim.status).toBe(200);
   expect(sim.json.matches).toBeGreaterThanOrEqual(1);
   expect(sim.json.split.blocked).toBe(sim.json.matches);
-  // Withdraw it: the same proposal goes in.
+  // Withdrawing a live rule is a two-person step (the review's H-1): alone, it stays held and the
+  // rule keeps blocking.
   await api(page, "platform_admin", `/v1/rules/${id}`, {
     method: "PUT",
     body: block({ status: "draft" }),
   });
   const off = await api(page, "platform_admin", `/v1/rules/${id}/publish`, {
     method: "POST",
-    body: { status: "draft" },
+    body: { status: "draft", expectedHash: await hashOf() },
   });
-  expect(off.status).toBe(200);
-  const ok = await api(cons, "consultant", "/v1/wiki/c_delivery/propose", {
+  expect(off.status).toBe(202);
+  expect(off.json).toMatchObject({ status: "pending", needs: "second_person" });
+  const still = await api(cons, "consultant", "/v1/wiki/c_delivery/propose", {
     method: "POST",
     body: { title: "E2E rule page", markdown: "# E2E rule page\n\n## Summary\n- A line.\n" },
   });
-  expect(ok.status).toBe(201);
+  expect(still.status).toBe(403);
   await page.context().close();
   await cons.context().close();
 });

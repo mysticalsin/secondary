@@ -4,8 +4,9 @@
 // compose AFTER the base policy: a base deny always wins and a rule can only tighten (add review,
 // two approvers, a named approver group, a block, a notification or an expiry). Seven hard floors
 // bound what a rule may do. A rule that would loosen one is refused at save with a reason
-// (`validateRule`), and the evaluator clamps again at run time, so a stored rule that slipped past
-// (an old version, a tampered snapshot) still cannot weaken a floor.
+// (`validateRule`). The evaluator does NOT raise an effect to a floor at run time: the floors stay
+// enforced by the base path, which stamps `Math.max(base required, rule required)` on every
+// candidate. A caller must never read `RuleResult.effect` alone as the final answer.
 
 import type { BrainType } from "./brains.ts";
 
@@ -372,6 +373,10 @@ export function evaluateRules(ctx: RuleContext): RuleResult {
   const would: RuleMatch[] = [];
   let win: { doc: RuleDoc; effect: RuleEffect; held: boolean } | null = null;
   let expiry: number | null = null;
+  // Every enforced rule that asks for approval adds to the ask: approver groups are united and the
+  // number of approvals is the highest, so a tighter rule never drops another rule's group.
+  const approvers = new Set<ApproverGroup>();
+  let required = 0;
   for (const doc of [...ctx.rules].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
     if (doc.status === "draft" || !ruleMatches(doc, ctx)) continue;
     let effect = doc.then.effect;
@@ -388,6 +393,10 @@ export function evaluateRules(ctx: RuleContext): RuleResult {
     if (effect === "expire" && doc.then.expiresAfterMin != null)
       expiry =
         expiry === null ? doc.then.expiresAfterMin : Math.min(expiry, doc.then.expiresAfterMin);
+    if (needsApproval(effect)) {
+      required = Math.max(required, effect === "two_approvers" ? 2 : 1);
+      for (const g of doc.then.approvers ?? []) if (effect === "group") approvers.add(g);
+    }
     if (!win || EFFECT_RANK[effect] > EFFECT_RANK[win.effect]) win = { doc, effect, held };
   }
   if (!win) return { ...NONE, would };
@@ -398,8 +407,8 @@ export function evaluateRules(ctx: RuleContext): RuleResult {
     version: doc.version,
     tag: ruleTag(doc.id, doc.version),
     message: effect === "block" ? (doc.then.message ?? null) : null,
-    approvers: effect === "group" ? [...(doc.then.approvers ?? [])] : [],
-    requiredApprovals: effect === "two_approvers" ? 2 : needsApproval(effect) ? 1 : 0,
+    approvers: needsApproval(effect) ? [...approvers] : [],
+    requiredApprovals: needsApproval(effect) ? required : 0,
     expiresAfterMin: expiry,
     would,
     baseDenied: false,
@@ -543,7 +552,7 @@ function parseThen(v: unknown, issues: RuleIssue[]): RuleThen | null {
     issues.push({ code: "invalid_effect", path: "then.effect", message: "Choose what happens" });
     return null;
   }
-  const loose = LOOSENING[effect];
+  const loose = Object.hasOwn(LOOSENING, effect) ? LOOSENING[effect] : undefined;
   if (loose) {
     issues.push({
       code: loose === "tighten_only" ? "loosens_policy" : "floor",
@@ -752,6 +761,32 @@ export function affectsProtectedBrains(
   if (scope.kind === "brain_types")
     return scope.types.some((t) => t === "account" || t === "global");
   return scope.ids.some(isProtected);
+}
+
+/** Statuses from loosest to tightest. */
+const STATUS_RANK: Record<RuleStatus, number> = { draft: 0, monitor: 1, enforced: 2 };
+
+/**
+ * Does publishing `next` over the currently enforced `published` loosen, narrow, disable or withdraw
+ * it? Conservative: any change to the conditions, a scope that is not the same or the whole tenant,
+ * an approver or expiry change at the same strength, a lower effect, a lower status or turning the
+ * incident exception on counts. Only a rule that was enforcing or monitoring can be weakened.
+ */
+export function weakensRule(published: RuleDraft | null, next: RuleDraft): boolean {
+  if (!published || published.status === "draft") return false;
+  if (STATUS_RANK[next.status] < STATUS_RANK[published.status]) return true;
+  const was = EFFECT_RANK[published.then.effect];
+  const now = EFFECT_RANK[next.then.effect];
+  if (now < was) return true;
+  if (now === was && JSON.stringify(next.then) !== JSON.stringify(published.then)) return true;
+  if (next.except.incident && !published.except.incident) return true;
+  if (JSON.stringify(next.when) !== JSON.stringify(published.when)) return true;
+  if (
+    next.scope.kind !== "tenant" &&
+    JSON.stringify(next.scope) !== JSON.stringify(published.scope)
+  )
+    return true;
+  return false;
 }
 
 // ---- diff between two versions ----

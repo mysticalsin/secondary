@@ -85,4 +85,21 @@ describe("audit receipt contract", () => {
     ])
       expect(parseReceipt({ ...base(), ...bad }, "api")).toBeNull();
   });
+
+  it("L-4: only the API's receipts can name a rule or carry replay metadata", () => {
+    const meta = {
+      action: "export",
+      actor: "agent",
+      host: "claude",
+      brainId: "c_bid",
+      brainType: "team",
+      flags: [],
+      pages: 60,
+      contract: null,
+      expiresAfterMin: null,
+    };
+    const forged = { ...base(), rule: "r_ab12@3", ruleMode: "enforced", meta };
+    expect(parseReceipt(forged, "mcp")).toMatchObject({ rule: null, ruleMode: null, meta: null });
+    expect(parseReceipt(forged, "api")).toMatchObject({ rule: "r_ab12@3", ruleMode: "enforced" });
+  });
 });

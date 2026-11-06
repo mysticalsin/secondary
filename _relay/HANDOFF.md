@@ -1,5 +1,17 @@
 # HANDOFF
 
+## v7 Brain rules, security review fixes (2026-11-06, Claude Opus, branch `v7/rules`, not merged, nothing pushed, nothing deployed)
+
+Review: `docs/security/V7-RULES-SECURITY-REVIEW.md` (vault copy). Every fix has a regression test in `workers/api/test/v7-rules.test.ts` (last describes), `packages/policy/test/rules.test.ts` or `packages/contracts/test/audit-receipt.test.ts`. The API tests were run once against the pre-fix `src` and 17 of them failed there. Gates on the branch: build, typecheck, biome (no errors), all tests (api 896, policy 106, contracts 116, web 124, mcp 101, connector 53, ...), e2e mock 59 and real 20.
+
+- **H-1** `publish` needs two people when the published scope OR the new scope touches protected brains, or the change weakens a live rule (`weakensRule` in policy). Narrowing `r_seed_client_global` alone is 202. Also covers M-6 (steward withdraws an admin's rule) and publish authority over the published scope.
+- **H-2** gate on every path: routine ingest, proposal edit (re-stamp or block), wiki engine ingest, lint and dreaming (`rules/service.ts`, no session, fails closed), `keep_current`, a shared plan that gains a brain, and `ruleDecideGuard` now reads the proposal text (`brainRuleText`). Coverage test scans `src` for every write, release, export and share call and fails on a new one (registry in the test).
+- **M-1** incident extension is two-person, +24 h, hard cap 72 h from the start. **M-2** publish carries `expectedHash` (53-bit, in `draftHash` of the detail); web and mock send it. **M-3** a hold stores pages, flags and rule tag; spending needs the same rule, no more approvals or groups, no bigger, no new flag; refunded when the audit write fails; one hold per brain (`X-Rule-Hold: a, b`). **M-4** approvals add up (max count, union of groups). **M-5** rollback needs authority over the old scope and the old body must validate. **M-7** connector check fails closed and reads batch text for flags.
+- **L-1** simulation skips brains outside the viewer's view. **L-2** stewards see no ids outside their view and no never-published draft. **L-3** hold approval remembers addresses. **L-4** only API receipts carry rule fields (parser and simulator). **L-5** comment fixed (floors stay with the base path). **L-6** API side. **I-1** `Object.hasOwn`.
+- Deferred and why: `docs/security/ACCEPTED-RISKS.md`, section "V7 Brain rules".
+- Deploy note: `POST /v1/rules/:id/publish` now requires `expectedHash`; the web app and api deploy together. The `rule_holds` table gains two columns on first start (added in place).
+- Flaky: `agent-turn.test.ts` "one receipt per turn" failed twice in runs under load and passed alone and in a quiet full run; not caused by rules (no rule is involved).
+
 ## v7 section 1, Brain rules (2026-11-06, Claude, branch `v7/rules`, not merged, nothing pushed, nothing deployed)
 
 Design `docs/DESIGN-V7-GOVERN-OPERATE.md` section 1; shapes `docs/API-CONTRACT.md` "v7 Brain rules".
@@ -13,7 +25,7 @@ Design `docs/DESIGN-V7-GOVERN-OPERATE.md` section 1; shapes `docs/API-CONTRACT.m
 - **Web** `apps/web/src/rules/` (Settings › Rules, Brain › Members and access › Rules, editor), mock `mock/rules.ts`, `i18n/v7.ts`, `styles/v7.css`; tests `apps/web/src/test/rules.test.tsx`, `e2e/v7-rules.e2e.ts` (mock) and `e2e/v7-real.spec.ts` (real stack). Screenshots `e2e/screens/v7-rules-*.png`.
 - **Gaps:** the `privacy` approver group has an API (`PUT /v1/rules/groups`) and no UI; a held action is approved from the Rules page, not from Waiting for you; `confidential_field` is a flag on export only; `unsupported_claim` is a heuristic (a long page with figures and no citation); connector sync is held, not queued, by an approval effect; simulation only knows receipts written since this build plus the legacy action names; added wait is an estimate.
 
-Updated: 2026-11-06. By: Claude (v7 rules).
+Updated: 2026-11-06. By: Claude (v7 rules, security fixes).
 
 ## v6 My Agent and v5 polish on `main` (2026-11-05, Claude, nothing pushed, nothing deployed)
 

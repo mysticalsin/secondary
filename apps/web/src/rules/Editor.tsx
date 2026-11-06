@@ -468,7 +468,7 @@ function EditorBody({
     setErr(null);
     try {
       const saved = dirty || !detail ? await persist() : detail;
-      applyResult(await rulesApi.publish(saved.id, status), "publish");
+      applyResult(await rulesApi.publish(saved.id, saved.draftHash ?? "", status), "publish");
     } catch (e) {
       fail(e);
     } finally {

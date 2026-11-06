@@ -218,6 +218,14 @@ export abstract class BrainBase extends WikiBase {
       : null;
   }
 
+  /** What an item would publish, for the rules to read flags from: a wiki proposal's pages or a candidate's text. */
+  brainRuleText(id: string): { text: string; cites: number; pages: number } | null {
+    const w = this.wikiProposalText(id);
+    if (w) return w;
+    const it = this.get(id);
+    return it ? { text: `${it.label}\n${it.body ?? ""}`, cites: 0, pages: 1 } : null;
+  }
+
   /** Approvals a rule asked for on this item (0 when none). */
   protected ruleRequired(id: string): number {
     return (

@@ -188,6 +188,7 @@ export class TenantPolicy extends DurableObject<Env> {
         second: (key, actor, now, email) => this.requestSecond(key, actor, now, email),
         pending: (key, now) => this.pendingRequester(key, now),
         same: (a, b) => a === b || this.sameHuman(a, b),
+        remember: (id, email) => this.rememberAddress(id, email),
       });
     });
   }

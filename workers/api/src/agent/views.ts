@@ -220,6 +220,17 @@ export function viewsHandlers() {
         ...(patch.layout !== undefined ? { layout: patch.layout } : {}),
       };
       await checkedProgram(c, next.program, next.pin);
+      // A share follows the owner's edits, so a brain the edit adds to a shared plan meets the rules
+      // that apply to sharing, as if it had been named at share time.
+      let gated: Awaited<ReturnType<typeof shareGate>> | null = null;
+      if (next.shareId) {
+        const had = new Set(namedBrains(st));
+        gated = await shareGate(
+          c,
+          namedBrains(next).filter((id) => !had.has(id)),
+        );
+        if (gated.response) return gated.response;
+      }
       if (
         !(await audit(c, {
           action: "agent.pin",
@@ -228,8 +239,10 @@ export function viewsHandlers() {
           revision: row.revision,
           reason: "update",
         }))
-      )
+      ) {
+        await gated?.refund();
         return c.json({ error: "audit_unavailable" }, 503);
+      }
       const now = sess(c).ctx.now;
       const saved = await mine(c).scratch(
         {
@@ -269,25 +282,9 @@ export function viewsHandlers() {
     async share(c: C): Promise<Response> {
       const { row, st } = await loadMine(c);
       // Brain rules (v7): sharing a plan that names a brain can be blocked or held for approval there.
-      const v = viewOfProgram(st.program);
-      const named = [
-        ...new Set([
-          ...(v.root ? brainRefs(v.root) : []),
-          ...(st.pin === "home" ? [] : [st.pin.brain]),
-        ]),
-      ];
-      let rx: GateOut["rx"] | undefined;
-      for (const id of named) {
-        const b = await brainOf(c, id);
-        if (!b || b.personal) continue;
-        const g = await ruleGate(c, {
-          action: "share_view",
-          brain: { nodeId: b.nodeId, personal: false, vn: b.vn, role: b.role },
-          mode: "hold",
-        });
-        if (g.response) return g.response;
-        rx ??= g.rx;
-      }
+      const gated = await shareGate(c, namedBrains(st));
+      if (gated.response) return gated.response;
+      const rx = gated.rx;
       if (
         !(await audit(c, {
           action: "agent.share",
@@ -297,8 +294,10 @@ export function viewsHandlers() {
           reason: "share",
           ...(rx ?? {}),
         }))
-      )
+      ) {
+        await gated.refund();
         return c.json({ error: "audit_unavailable" }, 503);
+      }
       const shareId = st.shareId ?? crypto.randomUUID();
       const now = sess(c).ctx.now;
       await writeShare(c, shareId, st, now);
@@ -376,6 +375,49 @@ function sharedOf(row: ItemRecord): SharedRec | null {
   } catch {
     return null;
   }
+}
+
+/** The brains a saved plan names: the ones its program uses and the one it is pinned to. */
+function namedBrains(st: Stored): string[] {
+  const v = viewOfProgram(st.program);
+  return [
+    ...new Set([
+      ...(v.root ? brainRefs(v.root) : []),
+      ...(st.pin === "home" ? [] : [st.pin.brain]),
+    ]),
+  ];
+}
+
+/** Brain rules (v7) for sharing a plan that names these brains: one approval per brain. */
+async function shareGate(
+  c: C,
+  named: string[],
+): Promise<{
+  response: Response | null;
+  rx: GateOut["rx"] | undefined;
+  refund: () => Promise<void>;
+}> {
+  let rx: GateOut["rx"] | undefined;
+  const gates: GateOut[] = [];
+  const refund = async () => {
+    for (const g of gates) await g.refund();
+  };
+  for (const id of named) {
+    const b = await brainOf(c, id);
+    if (!b || b.personal) continue;
+    const g = await ruleGate(c, {
+      action: "share_view",
+      brain: { nodeId: b.nodeId, personal: false, vn: b.vn, role: b.role },
+      mode: "hold",
+    });
+    gates.push(g);
+    if (g.response) {
+      await refund();
+      return { response: g.response, rx, refund };
+    }
+    rx ??= g.rx;
+  }
+  return { response: null, rx, refund };
 }
 
 async function writeShare(c: C, shareId: string, st: Stored, now: number): Promise<void> {

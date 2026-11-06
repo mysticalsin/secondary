@@ -53,6 +53,8 @@ export interface GateOut {
   stamp: (stub: ReturnType<typeof workspaceStub>, itemId: string) => Promise<void>;
   /** True when the rules require review, so a direct publish must become a candidate. */
   forceReview: boolean;
+  /** Hand a spent hold back when the action failed after the gate said yes. */
+  refund: () => Promise<void>;
 }
 
 const WRITES: ReadonlySet<RuleAction> = new Set([
@@ -83,6 +85,7 @@ const passthrough = (meta: ReceiptMeta | null): GateOut => ({
   rx: { rule: null, ruleMode: null, meta },
   stamp: async () => {},
   forceReview: false,
+  refund: async () => {},
 });
 
 /** The replayable metadata of one action: enumerated labels, ids and counts, never content. */
@@ -194,10 +197,14 @@ export async function ruleGate(c: C, i: GateInput): Promise<GateOut> {
       };
     }
   }
+  const spent: string[] = [];
   const base: GateOut = {
     response: null,
     result,
     rx,
+    refund: async () => {
+      for (const id of spent.splice(0)) await rulesClient(c.env, s.tenantId).holdRefund(id);
+    },
     forceReview: needsApproval(result.effect),
     stamp: async (stub, itemId) => {
       if (needsApproval(result.effect) || result.expiresAfterMin !== null)
@@ -232,12 +239,29 @@ export async function ruleGate(c: C, i: GateInput): Promise<GateOut> {
 
   if (needsApproval(result.effect) && i.mode === "hold") {
     const tenant = rulesClient(c.env, s.tenantId);
-    const given = c.req.header("X-Rule-Hold");
-    if (given) {
-      const used = await tenant.holdUse(given, s.principal.id, i.action, i.brain.nodeId, s.ctx.now);
-      if (!used.ok)
-        return { ...base, response: c.json({ error: used.code, reason: used.message }, 409) };
-      return base;
+    // One approval per brain: a request may carry several ids, separated by commas.
+    const given = (c.req.header("X-Rule-Hold") ?? "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+      .slice(0, 10);
+    if (given.length) {
+      let last: { code: string; message: string } = { code: "hold_invalid", message: "" };
+      for (const id of given) {
+        const used = await tenant.holdUse(id, s.principal.id, i.action, i.brain.nodeId, s.ctx.now, {
+          rule: tag ?? "",
+          required: result.requiredApprovals,
+          group: result.approvers,
+          pages: i.pages ?? null,
+          flags,
+        });
+        if (used.ok) {
+          spent.push(id);
+          return base;
+        }
+        last = used;
+      }
+      return { ...base, response: c.json({ error: last.code, reason: last.message }, 409) };
     }
     const id = await tenant.holdCreate({
       rule: tag ?? "",
@@ -246,7 +270,10 @@ export async function ruleGate(c: C, i: GateInput): Promise<GateOut> {
       requestedBy: s.principal.id,
       required: result.requiredApprovals,
       group: result.approvers,
+      pages: i.pages ?? null,
+      flags,
       now: s.ctx.now,
+      email: s.principal.email,
     });
     const ok = await audit(c, {
       action: "rule.hold",
@@ -320,15 +347,23 @@ export async function ruleDecideGuard(
     view: Parameters<typeof canDoInView>[0];
   },
   itemId: string,
-): Promise<{ response: Response | null; rx: GateOut["rx"] }> {
-  const none = { response: null, rx: { rule: null, ruleMode: null, meta: null } };
+): Promise<{
+  response: Response | null;
+  rx: GateOut["rx"];
+  /** What the rules ask of the item, so a follow-on item (a proposal made on its behalf) can carry it. */
+  stamp: { required: number; group: string[]; tag: string; expiresAfterMin: number | null } | null;
+}> {
+  const none = { response: null, rx: { rule: null, ruleMode: null, meta: null }, stamp: null };
   if (w.personal) return none;
+  // The text as it will be released: read for content flags only, never stored or logged.
+  const content = await w.stub.brainRuleText(itemId);
   const g = await ruleGate(c, {
     action: "publish",
     brain: { nodeId: w.nodeId, personal: false, vn: w.vn },
+    ...(content ? { text: content.text, cites: content.cites, pages: content.pages } : {}),
     mode: "stamp",
   });
-  if (g.response) return { response: g.response, rx: g.rx };
+  if (g.response) return { response: g.response, rx: g.rx, stamp: null };
   await g.stamp(w.stub, itemId);
   const stamped = await w.stub.brainRuleOf(itemId);
   const groups = [...new Set([...(stamped?.group ?? []), ...g.result.approvers])];
@@ -342,6 +377,7 @@ export async function ruleDecideGuard(
         403,
       ),
       rx,
+      stamp: stamped,
     };
-  return { response: null, rx };
+  return { response: null, rx, stamp: stamped };
 }

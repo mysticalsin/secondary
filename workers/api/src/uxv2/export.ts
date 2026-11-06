@@ -126,8 +126,10 @@ export function exportRoutes(): Hono<AppEnv> {
         revision: null,
         ...rg.rx,
       }))
-    )
+    ) {
+      await rg.refund();
       return c.json({ error: "audit_unavailable" }, 503);
+    }
     const known = new Map(shown.map((x) => [x.p.id, x]));
     const files: { path: string; content: string }[] = [];
     const outs: Out[] = [];

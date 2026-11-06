@@ -90,6 +90,8 @@ export interface RuleDetail extends RuleRow {
   editedBy: string;
   editedAt: string;
   needsSecond: boolean;
+  /** Names the draft on screen: publishing sends it back, so nobody confirms a draft they did not see. */
+  draftHash: string | null;
   pending: PendingState | null;
   history: VersionRow[];
 }
