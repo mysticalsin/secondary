@@ -20,9 +20,9 @@ import { displayName, initialsOf } from "../lib/people";
 import { PERSONAS } from "../personas";
 import { useApp } from "../state";
 import { useApi } from "../useApi";
-import { ux2 } from "../uxv2/api";
 import { v3 } from "../views/brains/api";
 import type { NavBrain, NavItem } from "../views/brains/types";
+import { deskApi } from "../views/review-desk/api";
 import { QUESTIONS_CHANGED } from "../views/waiting/events";
 import { wikiApi } from "../views/wiki/api";
 
@@ -250,7 +250,7 @@ export function Sidebar({ onClose, onToggle }: { onClose: () => void; onToggle: 
   const { t } = useI18n();
   const { me } = useApp();
   const nav = useApi(() => v3.nav(), []);
-  const waiting = useApi(() => ux2.questions(), []);
+  const waiting = useApi(() => deskApi.desk(), []);
   useEffect(() => {
     const again = () => waiting.reload();
     window.addEventListener(QUESTIONS_CHANGED, again);
@@ -262,7 +262,7 @@ export function Sidebar({ onClose, onToggle }: { onClose: () => void; onToggle: 
   const personal = items.filter((i) => i.group === "personal");
   const governance = items.filter((i) => i.group === "governance");
   const global = items.filter((i) => i.group === "global");
-  const n = waiting.data?.length ?? 0;
+  const n = waiting.data?.counts.waiting ?? 0;
   const brainIcon = (i: NavItem | NavBrain) =>
     i.type === "account" ? <Building2 size={16} aria-hidden /> : <BookOpen size={16} aria-hidden />;
   void me;
@@ -290,7 +290,7 @@ export function Sidebar({ onClose, onToggle }: { onClose: () => void; onToggle: 
             </NavLink>
           </li>
           <li>
-            <NavLink to="/waiting" className="nrow">
+            <NavLink to="/review" className="nrow">
               <ListChecks size={16} aria-hidden />
               <span className="lbl">{t("v4.waiting")}</span>
               {n > 0 ? (

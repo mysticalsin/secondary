@@ -16,11 +16,11 @@ import {
   VersionsPage,
 } from "./views/brains";
 import { Home } from "./views/home/Home";
+import { Desk, WaitingRedirect } from "./views/review-desk/Desk";
 import { SourceView } from "./views/SourceView";
 import { SearchPage } from "./views/search/Search";
 import { Settings } from "./views/settings/Settings";
 import { ProposalPage } from "./views/waiting/Proposal";
-import { Waiting } from "./views/waiting/Waiting";
 
 // My Agent loads on first use: the line parser and Zod stay out of the main bundle.
 const AgentPage = lazy(() => import("./agent/AgentPage"));
@@ -31,8 +31,10 @@ export function App() {
     <Routes>
       <Route element={<Shell />}>
         <Route index element={<Home />} />
-        <Route path="waiting" element={<Waiting />} />
-        <Route path="waiting/:id" element={<ProposalPage />} />
+        <Route path="review/:id?" element={<Desk />} />
+        <Route path="review/:id/full" element={<ProposalPage />} />
+        <Route path="waiting" element={<WaitingRedirect />} />
+        <Route path="waiting/:id" element={<WaitingRedirect />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="brains" element={<Directory />} />
         <Route path="brains/:id" element={<BrainPage />} />

@@ -110,10 +110,10 @@ describe("sidebar: only what the persona can read", () => {
     expect(screen.queryByRole("link", { name: "Sales" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Delivery excellence" })).not.toBeInTheDocument();
   });
-  it("puts the Waiting for you count in a badge", async () => {
+  it("puts the Review desk count in a badge", async () => {
     show("head_bid");
-    const link = await screen.findByRole("link", { name: /Waiting for you/ });
-    await waitFor(() => expect(within(link).getByText("8")).toBeVisible());
+    const link = await screen.findByRole("link", { name: /Review desk/ });
+    await waitFor(() => expect(within(link).getByText("10")).toBeVisible());
   });
 });
 

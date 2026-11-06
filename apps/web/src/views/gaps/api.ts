@@ -11,11 +11,13 @@ export const gapsApi = {
     request<{ ok: boolean; gap: Gap }>("POST", `${base(brain, gap)}/assign`, { to, due }),
   /** 201 with the new draft; 409 `already_started` or `page_exists` come back as ApiError. */
   start: (brain: string, gap: string, title?: string) =>
-    request<{ ok: boolean; proposalId: string; pageId: string; title: string; status: "candidate" }>(
-      "POST",
-      `${base(brain, gap)}/start`,
-      title ? { title } : {},
-    ),
+    request<{
+      ok: boolean;
+      proposalId: string;
+      pageId: string;
+      title: string;
+      status: "candidate";
+    }>("POST", `${base(brain, gap)}/start`, title ? { title } : {}),
   merge: (brain: string, gap: string, into: string) =>
     request<{ ok: boolean; gap: Gap }>("POST", `${base(brain, gap)}/merge`, { into }),
   dismiss: (brain: string, gap: string, reason: DismissReason, note?: string) =>

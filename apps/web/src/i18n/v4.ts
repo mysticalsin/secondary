@@ -1,7 +1,7 @@
 // v4 UI strings (docs/DESIGN-V4-BRAINS-UI.md). Plain verbs, sentence case, no filler.
 export const v4En = {
   "v4.home": "Home",
-  "v4.waiting": "Waiting for you",
+  "v4.waiting": "Review desk",
   "v4.private": "Private",
   "v4.personal": "My Personal Brain",
   "v4.brains": "Brains",
@@ -225,7 +225,7 @@ export const v4En = {
 
 export const v4Fr: Record<keyof typeof v4En, string> = {
   "v4.home": "Accueil",
-  "v4.waiting": "À traiter",
+  "v4.waiting": "Bureau de révision",
   "v4.private": "Privé",
   "v4.personal": "Mon cerveau personnel",
   "v4.brains": "Cerveaux",

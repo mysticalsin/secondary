@@ -19,7 +19,12 @@ export interface DeskRow {
   kind: DeskKind;
   what: What;
   title: string;
-  brain: { id: string; name: string; type: "personal" | "team" | "account" | "global" | null; sensitivity: "low" | "medium" | "high" };
+  brain: {
+    id: string;
+    name: string;
+    type: "personal" | "team" | "account" | "global" | null;
+    sensitivity: "low" | "medium" | "high";
+  };
   author: { id: string; agent: boolean } | null;
   createdAt: string;
   age: { hours: number; businessDays: number; slaDays: number; state: "ok" | "near" | "overdue" };

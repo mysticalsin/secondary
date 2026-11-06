@@ -10,7 +10,10 @@ import { fmtLeft, fmtTime } from "./shared";
 
 /** Where a notice leads. Review events go to the review queue or the contributor's notes. */
 const noticeHref = (kind: string): string | null =>
-  kind === "review_requested" || kind === "review_second_approval"
+  kind === "review_requested" ||
+  kind === "review_second_approval" ||
+  kind === "review_mention" ||
+  kind === "review_assigned"
     ? "/review"
     : kind.startsWith("review_")
       ? "/personal"

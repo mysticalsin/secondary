@@ -146,13 +146,13 @@ test.describe("MCP push lands in the right brain, and is read change by change",
     browser,
   }) => {
     const page = await asPersona(browser, "reviewer");
-    await page.goto("/waiting");
+    await page.goto("/review");
     await settle(page);
-    const group = page.getByRole("region", { name: "Bid & Pre-sales" });
-    await expect(group.getByRole("heading", { name: title })).toBeVisible();
+    const queue = page.getByRole("navigation", { name: "Review queue" });
+    await expect(queue.getByRole("button", { name: new RegExp(title) })).toBeVisible();
     await shot(page, "waiting");
     await axe(page, "waiting");
-    await group.getByRole("link", { name: new RegExp(`Review.*${title}`) }).click();
+    await queue.getByRole("button", { name: new RegExp(title) }).click();
     await settle(page);
     const approve = page.getByRole("button", { name: /^Approve/ });
     await expect(page.getByText(/Seen \d of \d changes/)).toBeVisible();
@@ -169,7 +169,7 @@ test.describe("MCP push lands in the right brain, and is read change by change",
     }
     await expect(approve).toBeEnabled();
     await approve.click();
-    await expect(page).toHaveURL(/\/waiting$/);
+    await expect(page.getByRole("button", { name: new RegExp(title) })).toHaveCount(0);
     await page.goto("/brains/c_bid");
     await settle(page);
     await page.getByLabel("Filter by title, summary or tag").fill(STAMP);
@@ -249,7 +249,7 @@ test.describe("settings and the rest, on real data", () => {
       const page = await asPersona(browser, "head_bid", { width: w, height: 860 });
       for (const p of [
         "/",
-        "/waiting",
+        "/review",
         "/brains",
         "/brains/c_bid",
         "/brains/c_bid/access",

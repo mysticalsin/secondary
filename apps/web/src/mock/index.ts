@@ -38,7 +38,7 @@ import { detectSensitivity } from "./sensitive";
 import { handleV2, NOT_HANDLED, questionsFor } from "./uxv2";
 import { handleV3 } from "./v3";
 import { handleV8Gaps } from "./v8gaps";
-import { handleV8Review } from "./v8review";
+import { handleV8Review, seedReviewMock } from "./v8review";
 
 const notInMock = (method: string, p: string) =>
   new ApiError(501, `Not part of the dev mock (${method} ${p}). Run the live stack for this.`);
@@ -879,6 +879,7 @@ export async function handle(
   const p = url.pathname;
   const b = (body ?? {}) as Record<string, unknown>;
 
+  seedReviewMock(role);
   const agent = handleAgentViews(method, p, url.searchParams, b, role, persona);
   if (agent !== NOT_HANDLED) return agent;
   const v8r = handleV8Review(method, p, url.searchParams, b, role);

@@ -14,13 +14,21 @@ export const deskApi = {
       { text, ...(acknowledged ? { acknowledged: true } : {}) },
     ),
   snooze: (id: string, until: string | null) =>
-    request<{ ok: boolean; snoozedUntil: string | null }>("POST", `/v1/review-desk/${q(id)}/snooze`, {
-      until,
-    }),
+    request<{ ok: boolean; snoozedUntil: string | null }>(
+      "POST",
+      `/v1/review-desk/${q(id)}/snooze`,
+      {
+        until,
+      },
+    ),
   reassign: (id: string, to: string | null) =>
-    request<{ ok: boolean; assignedTo: string | null }>("POST", `/v1/review-desk/${q(id)}/reassign`, {
-      to,
-    }),
+    request<{ ok: boolean; assignedTo: string | null }>(
+      "POST",
+      `/v1/review-desk/${q(id)}/reassign`,
+      {
+        to,
+      },
+    ),
   requestChanges: (id: string, note: string, revisionHash: string, acknowledged = false) =>
     request<{ ok: boolean }>("POST", `/v1/review-desk/${q(id)}/request-changes`, {
       note,

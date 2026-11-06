@@ -149,7 +149,7 @@ function Marker({
   );
 }
 
-function DiffView({
+export function DiffView({
   q,
   seen,
   mark,

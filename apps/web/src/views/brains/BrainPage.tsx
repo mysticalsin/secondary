@@ -10,6 +10,8 @@ import { buildContents } from "../../lib/contents";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
+import { GapsTab } from "../gaps";
+import { gapsApi } from "../gaps/api";
 import { QUESTIONS_CHANGED } from "../waiting/events";
 import { wikiApi } from "../wiki/api";
 import { v3 } from "./api";
@@ -158,8 +160,16 @@ export function BrainPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
   const [sp, setSp] = useSearchParams();
-  const TABS = ["contents", "insights", "myview"] as const;
-  type Tab = (typeof TABS)[number];
+  // Gaps is offered to people who can contribute: the API answers 403 or 404 to everyone else.
+  const gapsProbe = useApi(
+    () => (id === "me" ? Promise.resolve(null) : gapsApi.list(id).catch(() => null)),
+    [id],
+  );
+  const hasGaps = !!gapsProbe.data || (gapsProbe.loading && sp.get("tab") === "gaps");
+  type Tab = "contents" | "insights" | "myview" | "gaps";
+  const TABS: readonly Tab[] = hasGaps
+    ? ["contents", "insights", "myview", "gaps"]
+    : ["contents", "insights", "myview"];
   const tab: Tab = TABS.find((k) => k === sp.get("tab")) ?? "contents";
   const pickTab = (next: Tab) => setSp(next === "contents" ? {} : { tab: next }, { replace: true });
   const home = useApi(() => v3.brain(id), [id]);
@@ -236,13 +246,22 @@ export function BrainPage() {
                     }
                   }}
                 >
-                  {k === "myview" ? t("v6.tab.myview") : t(`v5.tab.${k}` as "v5.tab.contents")}
+                  {k === "myview"
+                    ? t("v6.tab.myview")
+                    : k === "gaps"
+                      ? t("v8g.tab")
+                      : t(`v5.tab.${k}` as "v5.tab.contents")}
                 </button>
               ))}
             </div>
             {tab === "insights" ? (
               <div role="tabpanel" id="bp-insights" aria-labelledby="bt-insights">
                 <InsightsTab brainId={id} />
+              </div>
+            ) : null}
+            {tab === "gaps" ? (
+              <div role="tabpanel" id="bp-gaps" aria-labelledby="bt-gaps">
+                <GapsTab brainId={id} />
               </div>
             ) : null}
             {tab === "myview" ? (

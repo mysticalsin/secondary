@@ -537,3 +537,10 @@ The desk replaces "Waiting for you" (web route `/review`, `/waiting` redirects).
 - `POST .../dismiss {reason: not_relevant|answered_elsewhere|out_of_scope|duplicate|other, note?<=200}` (steward): 400 `invalid_reason`, 400 `personal_data_in_note`; receipt `gap.dismiss`.
 - `GET /v1/gaps/top?limit=5` (Home): the top active gaps across the brains the caller stewards (`brainId`, `brainName` added to each), the closure KPI over those brains, and `stewards: false` when the caller stewards none (the card stays away).
 - Records live in the brain workspace as items of kind `v8_gap`.
+
+### Review desk web behaviour (apps/web/src/views/review-desk)
+
+- Route `/review/:id?` (`/waiting` and `/waiting/:id` redirect, `?brain=` filters). `/review/:id/full` keeps the single-proposal page. The sidebar badge is `counts.waiting`.
+- The desk reads `GET /v1/review-desk` and `GET /v1/questions` (for the diff, options and `revisionHash`) and decides through `POST /v1/questions/:id` with `seenChanges`; Approve is disabled until every change is seen and the server refuses otherwise. Contradictions and routine questions are answered on their card. Batch triage is not on the desk (it cannot carry `seenChanges`).
+- Keyboard: J/K move, Enter focuses the item, A approve (says how many changes are unseen), R request changes, S snooze, M comment box, `?` help; ignored while typing or when a dialog is open.
+- A 409 `personal_data_warning` (comment or request-changes note) shows the kinds in words and offers "Send anyway", which resends with `acknowledged: true`.
