@@ -287,6 +287,21 @@ export const AGENT_TOOLS = {
 export type AgentToolName = keyof typeof AGENT_TOOLS;
 export const AGENT_TOOL_NAMES = Object.keys(AGENT_TOOLS) as AgentToolName[];
 
+/** The tools as the Messages API takes them (`input_schema` is JSON Schema made from the Zod input). */
+export function agentToolDefs(): {
+  name: AgentToolName;
+  description: string;
+  input_schema: Record<string, unknown>;
+}[] {
+  return AGENT_TOOL_NAMES.map((name) => {
+    const { $schema: _s, ...input_schema } = z.toJSONSchema(AGENT_TOOLS[name].input) as Record<
+      string,
+      unknown
+    >;
+    return { name, description: AGENT_TOOLS[name].description, input_schema };
+  });
+}
+
 // ---- the turn request ----
 
 export const TurnRequest = z.strictObject({
@@ -303,6 +318,8 @@ export type TurnRequestValue = z.infer<typeof TurnRequest>;
 export type TurnEvent =
   | { event: "meta"; data: { turnId: string; mode: "ai" | "deterministic"; reason?: string } }
   | { event: "line"; data: { text: string } }
+  /** The lines so far are not the answer (the model went on to call a tool, or failed): clear them. */
+  | { event: "reset"; data: Record<string, never> }
   | { event: "dropped"; data: { count: number } }
   | { event: "usage"; data: { inputTokens: number; outputTokens: number; model: string | null } }
   | { event: "done"; data: { turnId: string; lines: number } }

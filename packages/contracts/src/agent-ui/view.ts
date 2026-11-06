@@ -37,6 +37,10 @@ interface Ctx {
   dropped: number;
   /** Statements the parser itself flagged (wrong type, too many arguments): dropped whole. */
   bad: ReadonlySet<string>;
+  /** Flagged statements the walk reached (and counted). The rest were cut out by the parser itself. */
+  hit: Set<string>;
+  /** The parse left references to other lines unresolved and a card has no child yet: keep it (checking one line alone). */
+  pendingOk: boolean;
 }
 
 interface El {
@@ -80,6 +84,7 @@ function convert(
   }
   const id = raw.statementId ?? path;
   if (raw.statementId && ctx.bad.has(raw.statementId)) {
+    ctx.hit.add(raw.statementId);
     ctx.dropped++;
     return null;
   }
@@ -89,23 +94,31 @@ function convert(
   const given = Object.fromEntries(
     Object.entries(raw.props).filter(([, v]) => v !== null && v !== undefined),
   );
-  const ok = spec.props.safeParse(given);
+  const slot = spec.slot;
+  // Checking one line alone: a child slot waiting on other lines is empty, so give it a stand-in.
+  const toCheck =
+    ctx.pendingOk && depth === 0 && slot && Array.isArray(given[slot]) && given[slot].length === 0
+      ? { ...given, [slot]: [null] }
+      : given;
+  const ok = spec.props.safeParse(toCheck);
   if (!ok.success) {
     ctx.dropped++;
     return null;
   }
-  const slot = spec.slot;
   const rest = { ...(ok.data as Record<string, unknown>) };
   const children: AgentNode[] = [];
   if (slot) {
     delete rest[slot];
+    // (the stand-in above is dropped here: `held` comes from the real props)
     const held = Array.isArray(given[slot]) ? (given[slot] as unknown[]) : [];
     for (const [n, child] of held.entries()) {
       const c = convert(child, type, depth + 1, `${id}.${n}`, ctx);
       if (c) children.push(c);
     }
-    // A card with nothing in it, or a button row with no valid button, is dropped whole.
-    if (!children.length && type !== "Stack" && type !== "Grid") {
+    // A card with nothing in it, or a button row with no valid button, is dropped whole. When one line
+    // is checked alone its children are references to other lines: those are not an empty card.
+    const awaited = ctx.pendingOk && depth === 0;
+    if (!children.length && !awaited && type !== "Stack" && type !== "Grid") {
       ctx.dropped++;
       return null;
     }
@@ -114,9 +127,15 @@ function convert(
 }
 
 /** Build the checked tree from a parse result. */
-export function toView(r: ParseResult): AgentView {
+export function toView(r: ParseResult, opts: { pendingOk?: boolean } = {}): AgentView {
   const bad = new Set(r.meta.errors.flatMap((e) => (e.statementId ? [e.statementId] : [])));
-  const ctx: Ctx = { nodes: 0, dropped: 0, bad };
+  const ctx: Ctx = {
+    nodes: 0,
+    dropped: 0,
+    bad,
+    hit: new Set(),
+    pendingOk: opts.pendingOk === true && r.meta.unresolved.length > 0,
+  };
   const root = convert(r.root, null, 0, "root", ctx);
   const rejected =
     r.queryStatements.length +
@@ -126,8 +145,12 @@ export function toView(r: ParseResult): AgentView {
     root,
     complete: !r.meta.incomplete,
     pending: r.meta.unresolved.length,
+    // A flagged statement the parser cut out before the walk (an unknown component inside a list) still counts.
     dropped:
-      ctx.dropped + r.meta.errors.filter((e) => !e.statementId && e.code !== "no-root").length,
+      ctx.dropped +
+      r.meta.errors.filter(
+        (e) => e.code !== "no-root" && !(e.statementId && ctx.hit.has(e.statementId)),
+      ).length,
     rejected,
   };
 }
@@ -191,8 +214,12 @@ export function lineOk(line: string): boolean {
   const r = parseAgentProgram(one);
   if (r.queryStatements.length || r.mutationStatements.length) return false;
   if (Object.keys(r.stateDeclarations).length) return false;
+  // A statement still open (unbalanced bracket or quote) is not a finished line.
+  if (r.meta.incomplete) return false;
   if (r.meta.errors.some((e) => e.code !== "no-root")) return false;
   if (r.meta.statementCount !== 1) return false;
-  const v = toView(parseAgentProgram(one.replace(/^[a-z][A-Za-z0-9_]*\s*=/, "root =")));
+  const v = toView(parseAgentProgram(one.replace(/^[a-z][A-Za-z0-9_]*\s*=/, "root =")), {
+    pendingOk: true,
+  });
   return !!v.root && v.dropped === 0 && v.rejected === 0;
 }

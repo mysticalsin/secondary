@@ -72,3 +72,15 @@ export function aiState(env: AiEnv): AiState {
 
 /** Rough token estimate (4 characters per token), used for budgets and the evidence ceiling. */
 export const estimateTokens = (s: string): number => Math.ceil(s.length / 4);
+
+/** My Agent (v6): the bounded tool loop and the per-person turn rate. */
+export const AGENT_LIMITS = {
+  /** Model rounds per turn: tool rounds plus the answer. */
+  maxRounds: 4,
+  /** Tool calls the model may make in one round, and in one turn. */
+  maxCallsPerRound: 6,
+  maxCallsPerTurn: 12,
+  /** One round's output cap (thinking plus a program of at most 8 KB). */
+  maxOutputTokens: 3_000,
+  turnsPerMin: 20,
+} as const;

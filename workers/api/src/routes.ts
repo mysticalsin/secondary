@@ -22,6 +22,7 @@ import {
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { adminRoutes } from "./admin/routes.ts";
+import { agentRoutes } from "./agent/index.ts";
 import { aiRoutes } from "./ai/routes.ts";
 import { appendReceipt, fetchReceipts, newReceiptId, type Receipt } from "./audit.ts";
 import { authenticate, requireOrg, viewOf } from "./auth.ts";
@@ -1162,6 +1163,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.route("/", uxRoutes(deps)); // B2 UX: edit, history, drafts, prefs, review detail, records
   v1.route("/", uxv2Routes(deps)); // UX v2: ask, brain tree and export, questions, routines, usage
   v1.route("/", brainsRoutes(deps)); // v3 brains: directory, access, fields, imports, agents, pilot
+  v1.route("/", agentRoutes(deps)); // v6 My Agent: turn stream and saved views
 
   v1.all("*", (c) => c.json({ error: "not_found" }, 404));
   return v1;
