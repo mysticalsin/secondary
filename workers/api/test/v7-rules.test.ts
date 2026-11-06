@@ -619,11 +619,14 @@ describe("held actions: export and share", () => {
 
 describe("held actions: sharing a view", () => {
   it("sharing a plan that names a brain waits for an approver when a rule says so", async () => {
-    const r = await create(admin, rule({
-      name: "Shared views of delivery need a steward",
-      when: [when("action", "is_any_of", "share_view")],
-      then: { effect: "review" },
-    }));
+    const r = await create(
+      admin,
+      rule({
+        name: "Shared views of delivery need a steward",
+        when: [when("action", "is_any_of", "share_view")],
+        then: { effect: "review" },
+      }),
+    );
     await publish(admin, r.id, {});
     const program = [
       "root = Stack([c1])",
@@ -637,7 +640,12 @@ describe("held actions: sharing a view", () => {
       }),
     );
     const share = (headers: Record<string, string> = {}) =>
-      as("consultant", `/v1/views/${view.id}/share`, { email: CONS, method: "POST", body: {}, headers });
+      as("consultant", `/v1/views/${view.id}/share`, {
+        email: CONS,
+        method: "POST",
+        body: {},
+        headers,
+      });
     const held = await share();
     expect(held.status).toBe(202);
     const h = await json<Loose>(held);
