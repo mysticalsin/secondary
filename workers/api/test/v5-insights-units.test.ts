@@ -50,12 +50,15 @@ describe("constellation", () => {
     const pages = Array.from({ length: 1_500 }, (_, n) => page(n, ["a", "b", "c", "d"][n % 4]));
     const c = buildConstellation({ ...base, pages, cap: 400 });
     expect(c.legend.perDot).toBe(4);
-    expect(c.dots.length).toBeLessThanOrEqual(400 + 4);
+    expect(c.dots.length).toBeLessThanOrEqual(400 + 4 + 5);
     expect(c.dots.reduce((n, d) => n + d.k, 0)).toBe(1_500);
     expect(c.legend.total).toBe(1_500);
     expect(c.dots.every((d) => d.k === 1 || d.pageId === null)).toBe(true);
-    // Bucketed dots are never named.
-    expect(c.dots.some((d) => d.label)).toBe(false);
+    // Bucketed dots are never named; the five named pages keep a dot of their own.
+    expect(c.dots.filter((d) => d.k > 1).some((d) => d.label || d.title)).toBe(false);
+    const named = c.dots.filter((d) => d.highlight);
+    expect(named).toHaveLength(5);
+    expect(named.every((d) => d.k === 1 && d.label && d.pageId)).toBe(true);
   });
 
   it("names at most five single pages and the radius falls as the score rises", () => {
@@ -73,7 +76,11 @@ describe("constellation", () => {
   });
 
   it("with a query the matching page is nearer the centre than the rest", () => {
-    const pages = [page(1), page(2), { ...page(3), title: "Pricing method" }];
+    const pages = [
+      page(1),
+      page(2),
+      { ...page(3), title: "Pricing method", markdown: "# Pricing method\n\n- Pricing steps\n" },
+    ];
     const c = buildConstellation({ ...base, mode: "relevance", q: "pricing", pages, cap: 400 });
     const hit = c.dots.find((d) => d.pageId === "p3");
     expect(hit?.score).toBeGreaterThanOrEqual(ZONE);

@@ -173,6 +173,11 @@ describe("GET /v1/brains/:id/insights", () => {
     const miss = rel.constellation.dots.find((d: Loose) => d.pageId === "v5x-checklist");
     expect(hit.score).toBeGreaterThan(miss.score);
     expect(hit.r).toBeLessThan(miss.r);
+    expect(rel.constellation.terms).toEqual([
+      { term: "gate", hits: 2 },
+      { term: "review", hits: 1 },
+    ]);
+    expect(hit.title).toBe("Gate review cadence");
     expect(hit.highlight).toBe(true);
     expect(hit.label).toBe("Gate review cadence");
     const fresh = await json<Loose>(await insights("consultant", A, X, "?mode=freshness"));

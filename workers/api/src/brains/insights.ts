@@ -8,14 +8,16 @@ import type { InsightRaw } from "./store.ts";
 
 export const RINGS = [50, 70, 85] as const;
 /** A page scoring this or more is "in the zone" of the constellation. */
-export const ZONE = 70;
+export const ZONE = 85;
 /** A page below this health score is due for review ("Review below 60%"). */
 export const THRESHOLD = 60;
 export const ACTIVITY_DAYS = 182;
-export const DOT_CAP = 400;
+export const DOT_CAP = 640;
 export const MINI_DOT_CAP = 140;
 export const HEALTH_CAP = 1_200;
 const MAX_LABELS = 5;
+/** A page is named on the map from this score up. */
+const NAME_MIN = 60;
 
 export type Mode = "relevance" | "freshness";
 export type ScoreKind = "freshness" | "confidence" | "evidence";
@@ -44,6 +46,8 @@ export interface Dot {
   /** Pages this dot stands for. */
   k: number;
   inZone: boolean;
+  /** The page's title, for a single-page dot (a page the caller can read). */
+  title?: string;
   label?: string;
   highlight?: boolean;
 }
@@ -52,6 +56,8 @@ export interface Constellation {
   mode: Mode;
   q: string;
   seed: number;
+  /** The words of the query, each with the pages it hits. */
+  terms: { term: string; hits: number }[];
   sectors: { id: string; label: string; count: number }[];
   dots: Dot[];
   rings: number[];
@@ -191,21 +197,95 @@ export function confidenceScore(p: PageIn, facts: InsightRaw["facts"]): number {
   return Math.round(clamp((sum / mine.length) * 100));
 }
 
-function relevanceScore(p: PageIn, tokens: string[], inbound: number): number {
-  const centrality = Math.min(55, inbound * 12 + citedIn(p.markdown).length * 6);
-  if (!tokens.length) return Math.round(40 + centrality);
-  const title = p.title.toLowerCase();
-  const summary = p.summary.toLowerCase();
-  const body = p.markdown.toLowerCase();
-  let hits = 0;
-  for (const t of tokens)
-    hits +=
-      (title.includes(t) ? 3 : 0) + (summary.includes(t) ? 2 : 0) + (body.includes(t) ? 1 : 0);
-  // Any hit puts a page in the zone; more hits (title, summary, body, more words) move it inward.
-  return Math.round(clamp(hits ? 40 + (60 * hits) / (6 * tokens.length) : 8 + centrality / 8));
+/**
+ * Relevance of a page to a query. A page that hits a word scores 55 to 98 by where it hits (title 5,
+ * summary 3, body 2 points per word). One that hits nothing scores 28 to about 87 by how near it is:
+ * central pages, pages in a collection that holds hits and pages linked with a hit sit closer.
+ * Without a query every page scores by centrality alone.
+ */
+function relevanceScores(pages: PageIn[], tokens: string[]): Map<string, number> {
+  const inbound = inboundOf(pages);
+  const out = new Map<string, number>();
+  const centrality = (p: PageIn): number =>
+    Math.min(55, (inbound.get(p.id) ?? 0) * 12 + citedIn(p.markdown).length * 6);
+  if (!tokens.length) {
+    for (const p of pages) out.set(p.id, Math.round(40 + centrality(p)));
+    return out;
+  }
+  const hitsOf = (p: PageIn): number => {
+    const title = p.title.toLowerCase();
+    const summary = p.summary.toLowerCase();
+    const body = p.markdown.toLowerCase();
+    let hits = 0;
+    for (const t of tokens)
+      hits +=
+        (title.includes(t) ? 5 : 0) + (summary.includes(t) ? 3 : 0) + (body.includes(t) ? 2 : 0);
+    return hits;
+  };
+  const hits = new Map(pages.map((p) => [p.id, hitsOf(p)]));
+  const bySector = new Map<string, { hit: number; all: number }>();
+  for (const p of pages) {
+    const s = bySector.get(p.type) ?? { hit: 0, all: 0 };
+    s.all++;
+    if (hits.get(p.id)) s.hit++;
+    bySector.set(p.type, s);
+  }
+  const linked = new Set<string>();
+  const ids = new Set(pages.map((p) => p.id));
+  for (const p of pages)
+    for (const m of p.markdown.matchAll(LINK)) {
+      const t = m[1] as string;
+      if (!ids.has(t) || t === p.id) continue;
+      if (hits.get(p.id)) linked.add(t);
+      if (hits.get(t)) linked.add(p.id);
+    }
+  for (const p of pages) {
+    const h = hits.get(p.id) ?? 0;
+    if (h) {
+      out.set(p.id, Math.round(clamp(55 + (45 * h) / (10 * tokens.length), 0, 98)));
+      continue;
+    }
+    const sec = bySector.get(p.type) ?? { hit: 0, all: 1 };
+    const jitter = seedOf(p.id) % 9;
+    out.set(
+      p.id,
+      Math.round(
+        clamp(
+          28 +
+            centrality(p) * 0.45 +
+            14 * (sec.hit / sec.all) +
+            (linked.has(p.id) ? 12 : 0) +
+            jitter,
+          0,
+          84,
+        ),
+      ),
+    );
+  }
+  return out;
 }
 
 // ---- constellation ----
+
+/** Up to `n` pages scoring NAME_MIN or more: the best of each collection, then the second best of each, and so on. */
+function nameBest<T extends { p: PageIn; score: number }>(scored: T[], n: number): T[] {
+  const lists = new Map<string, T[]>();
+  for (const s of scored)
+    if (s.score >= NAME_MIN) lists.set(s.p.type, [...(lists.get(s.p.type) ?? []), s]);
+  const sorted = [...lists.values()]
+    .map((l) => l.sort((a, z) => z.score - a.score || a.p.id.localeCompare(z.p.id)))
+    .sort(
+      (a, z) =>
+        (z[0] as T).score - (a[0] as T).score || (a[0] as T).p.id.localeCompare((z[0] as T).p.id),
+    );
+  const out: T[] = [];
+  for (let rank = 0; out.length < n && sorted.some((l) => l[rank]); rank++)
+    for (const l of sorted) {
+      const x = l[rank];
+      if (x && out.length < n) out.push(x);
+    }
+  return out;
+}
 
 export function buildConstellation(i: {
   brainId: string;
@@ -218,14 +298,15 @@ export function buildConstellation(i: {
   cap: number;
 }): Constellation {
   const tokens = tokensOf(i.q);
-  const inbound = inboundOf(i.pages);
+  const relevance = i.mode === "relevance" ? relevanceScores(i.pages, tokens) : null;
   const scored = i.pages.map((p) => ({
     p,
-    score:
-      i.mode === "freshness"
-        ? freshnessScore(p, i.now, i.freshnessDays)
-        : relevanceScore(p, tokens, inbound.get(p.id) ?? 0),
+    score: relevance ? (relevance.get(p.id) ?? 0) : freshnessScore(p, i.now, i.freshnessDays),
   }));
+  // The best pages are named, one collection at a time (best of each first), so the names spread
+  // around the map. They stay out of the buckets so each keeps a dot of its own.
+  const named = nameBest(scored, MAX_LABELS);
+  const namedIds = new Set(named.map((n) => n.p.id));
   const bySector = new Map<string, typeof scored>();
   for (const s of scored) {
     const list = bySector.get(s.p.type) ?? [];
@@ -235,15 +316,28 @@ export function buildConstellation(i: {
   const types = [...bySector.keys()].sort((a, z) => i.labelOf(a).localeCompare(i.labelOf(z)));
   const perDot = Math.max(1, Math.ceil(scored.length / i.cap));
   const dots: Dot[] = [];
+  const single = (c: (typeof scored)[0]): Dot => ({
+    pageId: c.p.id,
+    sector: c.p.type,
+    r: radiusOf(c.score),
+    score: c.score,
+    k: 1,
+    inZone: c.score >= ZONE,
+    title: trim(c.p.title, 60),
+  });
   for (const type of types) {
-    const list = (bySector.get(type) ?? []).sort(
-      (a, z) => z.score - a.score || a.p.id.localeCompare(z.p.id),
-    );
+    const list = (bySector.get(type) ?? [])
+      .filter((x) => !namedIds.has(x.p.id))
+      .sort((a, z) => z.score - a.score || a.p.id.localeCompare(z.p.id));
     for (let at = 0; at < list.length; at += perDot) {
       const chunk = list.slice(at, at + perDot);
+      if (chunk.length === 1) {
+        dots.push(single(chunk[0] as (typeof chunk)[0]));
+        continue;
+      }
       const score = Math.round(chunk.reduce((n, c) => n + c.score, 0) / chunk.length);
       dots.push({
-        pageId: chunk.length === 1 ? (chunk[0] as (typeof chunk)[0]).p.id : null,
+        pageId: null,
         sector: type,
         r: radiusOf(score),
         score,
@@ -251,25 +345,20 @@ export function buildConstellation(i: {
         inZone: score >= ZONE,
       });
     }
-  }
-  // The best single pages are named. A name is a page title the caller may read.
-  const named = scored
-    .filter((s) => perDot === 1 && s.score >= 40)
-    .sort((a, z) => z.score - a.score || a.p.id.localeCompare(z.p.id))
-    .slice(0, MAX_LABELS);
-  const byId = new Map(dots.filter((d) => d.pageId).map((d) => [d.pageId as string, d]));
-  for (const n of named) {
-    const d = byId.get(n.p.id);
-    if (d) {
-      d.highlight = true;
-      d.label = trim(n.p.title, 40);
-    }
+    for (const n of named.filter((x) => x.p.type === type))
+      dots.push({ ...single(n), highlight: true, label: trim(n.p.title, 40) });
   }
   const inZone = dots.reduce((n, d) => n + (d.inZone ? d.k : 0), 0);
   return {
     mode: i.mode,
     q: i.q,
     seed: seedOf(`${i.brainId}|${i.mode}|${tokens.join(" ")}`),
+    terms: tokens.map((term) => ({
+      term,
+      hits: i.pages.filter((p) =>
+        `${p.title}\n${p.summary}\n${p.markdown}`.toLowerCase().includes(term),
+      ).length,
+    })),
     sectors: types.map((type) => ({
       id: type,
       label: i.labelOf(type),
