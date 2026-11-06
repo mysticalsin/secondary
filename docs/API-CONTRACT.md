@@ -471,3 +471,28 @@ Brain opened through the admitted view like every brain route (not readable or n
 ### `GET /v1/brains/overview`
 
 `{generatedAt, brains: OverviewTile[]}` for the brains the sidebar would list (Personal, governance brains, account brains, Company Global) that the caller may open, in the sidebar's order. Each tile is computed from that brain only; a brain the caller cannot open adds no tile, count or title. Tile: `{id, type, name, template, pages, health: {score}, zone: {inZone, total}, seed, sectors, dots: [{s, r, z, k}], sparkline: number[12], lastActivityAt}` (a freshness constellation capped at 140 dots; `s` is the sector index, `sparkline` weekly edit counts, oldest first). No titles.
+
+## v6 My Agent (docs/DESIGN-V6-MY-AGENT-GENUI.md), normative shapes
+
+The line language, component registry, Zod props, planner and re-resolution live in `packages/contracts/src/agent-ui/` (import `@secondary/contracts/agent-ui`; deep-import in the Worker). Findings: `docs/research/OPENUI-SPIKE.md`. An answer is a program of lines `id = Component(arg1, ...)` with positional arguments in the key order of `schemas.ts`; `root = Stack([...])` comes first. Props are queries and ids, never data: every number, title and list is resolved server-side for the viewer by the existing endpoints (`/v1/brains/:id/insights`, search, pages).
+
+### `POST /v1/agent/turn` (server-sent events)
+
+Request (`TurnRequest`, strict): `{text?: string(1-500), action?: {action, values}, previous?: string, lang?: "en"|"fr", density?: "compact"|"comfortable"}`. One of `text` or `action` is required. `action` is the structured event of a button click (`focus {brain, page?}`, `compare {a, b}`, `filter {brain, q}`, `ask {text}`); anything else is 400. `previous` is the last answer's program, so "make it denser" or "add the funnel" edits a plan. History is kept in the browser, never on the server.
+
+Response `200 text/event-stream`, events in this order: `meta {turnId, mode: "ai"|"deterministic", reason?}`, zero or more `line {text}` (one finished statement each, already checked by `lineOk` and by the caller's admitted brains), optional `dropped {count}`, `usage {inputTokens, outputTokens, model: string|null}`, `done {turnId, lines}`; or `error {code}` instead of the rest. A refused AI gate is not an error: the turn answers with `mode: "deterministic"` and `reason` (`ai_disabled`, `ai_not_configured`, `ai_budget_exhausted`, `ai_unavailable`, `ai_constraint`). The deterministic planner (`planProgram`) writes the same lines. 400 invalid body, 401, 403 (`brains_v3` flag off), 429 rate limit.
+
+AI path: the Worker streams the Anthropic Messages API (system prompt = `agentSystemPrompt()`, frozen and cached) with these read-only tools, all run with the caller's rights and name: `list_brains`, `search`, `read_page`, `brain_insights`, `wiki_facts` (`AGENT_TOOLS` in the contract). Retrieved page text goes back inside `<data ...>...</data>` with `<` escaped, as data, never instructions. No write tool exists. The gate is the usual one (tenant `ai` switch, `AI_ENABLED`, `AI_PROCESSOR_CONTRACT=approved`, daily tenant and per-user budgets, the account contract check before reading an account page). Each turn writes tokens to Usage (capability `agent`, `runs` 1, `answers` 1, `tokens` 0 for a deterministic answer) and one receipt with ids only (`agent.turn`, never text).
+
+### Saved views `/v1/views`
+
+Plan and layout only, never data. Personal by default (the caller's own scope). A view: `{id, name, pin: "home" | {brain}, layout?: {x, y, w, h} (12-column grid), program, updatedAt, shared: boolean}`.
+
+- `GET /v1/views[?pin=home|<brainId>]` lists the caller's views, each with `tree` (below). `GET /v1/views/:id` one view. `POST /v1/views` (`SavedViewInput`: name 1-60, program up to 8 KB that must parse to at least one valid component, pin, layout) answers 201. `PUT /v1/views/:id` changes any of name, program, pin, layout. `DELETE /v1/views/:id` answers 204. At most 50 per person (409 `too_many_views`). Another person's id is 404.
+- `tree` is the program parsed, validated and **re-resolved for the viewer**: `lockTree` replaces every card that names a brain the viewer cannot read with `{type: "Locked", props: {reason: "no_access"}}` carrying no title, id or text, and drops buttons that name one. The same happens when the owner opens a view after losing access.
+- `POST /v1/views/:id/share` returns `{shareId, path: "/agent/shared/<shareId>"}`; `DELETE /v1/views/:id/share` revokes it. `GET /v1/views/shared/:shareId` returns `{name, tree}` for any signed-in person of the tenant, re-resolved for that person: a lower-privilege person gets less or locked cards, never more. A share is a link to the plan, never a snapshot of data.
+- Receipts (`agent.pin`, `agent.unpin`, `agent.share`) hold ids only.
+
+### Settings
+
+Density, card theme, language, token display and the cleared history are per device (local storage); the server stores none of them.
