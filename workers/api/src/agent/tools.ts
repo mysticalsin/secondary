@@ -21,6 +21,7 @@ import {
 import { DAY } from "../brains/model.ts";
 import type { Brain } from "../brains/open.ts";
 import { SKIP_TYPES, seeBrains } from "../brains/shared.ts";
+import { recordGaps } from "../gaps/index.ts";
 import type { C } from "../ux/util.ts";
 import { canGlobal, filterMarkdown, pageVisible, readableMany } from "../wiki/routes.ts";
 import {
@@ -124,6 +125,7 @@ async function search(env: ToolEnv, q: string, brain: string | undefined): Promi
     out.push(dataBlock(h.b.param, page.id, page.title));
     if (out.length >= MAX_SEARCH_HITS) break;
   }
+  if (!out.length) await recordGaps(env.c, { text: q, targets: scope, source: "agent" });
   return ok(out.length ? out.join("\n") : dataBlock("search", null, "no pages"));
 }
 

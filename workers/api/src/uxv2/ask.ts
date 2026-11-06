@@ -14,6 +14,7 @@ import { doBudget, reserve, withUserCap } from "../ai/budget.ts";
 import { estimateTokens, LIMITS } from "../ai/config.ts";
 import { excludePersonalSegments, maskContacts } from "../ai/segments.ts";
 import { viewOf } from "../auth.ts";
+import { recordGaps } from "../gaps/index.ts";
 import { planView } from "../genui.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
@@ -423,6 +424,7 @@ async function answer(
   };
 
   if (!supported.length && !got.hits.length) {
+    await recordGaps(c, { text: q, targets, source: "ask" });
     markdown = "The brain holds nothing you may read that answers this.";
     cited = [];
   } else {

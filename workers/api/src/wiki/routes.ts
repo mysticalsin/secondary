@@ -20,6 +20,7 @@ import { viewOf } from "../auth.ts";
 import { fieldsFor } from "../brains/fields.ts";
 import { directPublish } from "../brains/open.ts";
 import { checkSourceAccess } from "../connector.ts";
+import { recordGaps } from "../gaps/index.ts";
 import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
@@ -691,11 +692,15 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const results = out
       .sort((a, b) => a.rank - b.rank || a.pageId.localeCompare(b.pageId))
       .slice(0, 15);
-    if (mode === "search") return c.json({ results: results.map(({ rank: _r, ...x }) => x) });
+    if (mode === "search") {
+      if (!results.length) await recordGaps(c, { text: q, targets, source: "search" });
+      return c.json({ results: results.map(({ rank: _r, ...x }) => x) });
+    }
     const lines = results.flatMap((x) =>
       x.lines.map((l) => ({ ...l, ws: x.ws, pageId: x.pageId, page: x.title })),
     );
     const supported = lines.filter((l) => l.citations.length > 0).slice(0, 6);
+    if (!supported.length) await recordGaps(c, { text: q, targets, source: "ask" });
     return c.json({
       unknown: supported.length === 0,
       answer: supported.length ? supported : null,
