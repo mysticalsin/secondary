@@ -169,8 +169,9 @@ export async function runTurn({ c, deps, req, turnId, send }: TurnInput): Promis
         .filter((b) => b.facts.type === "account" && contractGate(view, b.nodeId) !== null)
         .map((b) => b.param),
     );
+    const asked = namedBrains(req, refs);
     if (!g.ok) reason = g.error;
-    else if ([...namedBrains(req, refs)].some((id) => refused.has(id))) reason = "ai_constraint";
+    else if ([...asked].some((id) => refused.has(id))) reason = "ai_constraint";
     else ai = g;
 
     if (ai) {
@@ -185,7 +186,16 @@ export async function runTurn({ c, deps, req, turnId, send }: TurnInput): Promis
           ai,
           budget,
           user: promptOf(req),
-          runTool: (name, input) => runTool({ c, brains: reach }, name, input),
+          runTool: (name, input) =>
+            runTool(
+              {
+                c,
+                brains: reach,
+                ...(asked.size === 1 ? { askedBrain: [...asked][0] as string } : {}),
+              },
+              name,
+              input,
+            ),
           onText,
           onToolUse: reset,
           ...(deps.fetch ? { fetch: deps.fetch } : {}),

@@ -20,6 +20,7 @@ import { viewOf } from "../auth.ts";
 import { fieldsFor } from "../brains/fields.ts";
 import { directPublish } from "../brains/open.ts";
 import { checkSourceAccess } from "../connector.ts";
+import { recordGaps } from "../gaps/index.ts";
 import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";
 import { ruleDecideGuard, ruleGate } from "../rules/gate.ts";
@@ -620,8 +621,14 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
   // Search and ask: index first (page titles and summaries), then the pages, then the citations, all for
   // this caller. One query reads at most MAX_HIT_PAGES pages and asks the connector once (M-05).
   type Target = { param: string; nodeId: string; scope: string; label: string };
-  async function query(c: C, mode: "search" | "ask") {
-    const q = c.req.query("q") ?? "";
+  // A GET only reads. Only a POST (same-origin, JSON, like every write) may leave a knowledge-gap
+  // signal behind: a cross-site navigation must not be able to plant text or fill a brain (M-2).
+  async function query(c: C, mode: "search" | "ask", fromBody = false) {
+    let q: string;
+    if (fromBody) {
+      const b = await readObject(c);
+      q = typeof b.q === "string" ? b.q : "";
+    } else q = c.req.query("q") ?? "";
     const tokens = tokensOf(q);
     if (!tokens.length || q.length > 300) throw bad("invalid_query");
     const param = c.req.param("ws") ?? "";
@@ -692,11 +699,17 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     const results = out
       .sort((a, b) => a.rank - b.rank || a.pageId.localeCompare(b.pageId))
       .slice(0, 15);
-    if (mode === "search") return c.json({ results: results.map(({ rank: _r, ...x }) => x) });
+    if (mode === "search") {
+      if (fromBody && !results.length)
+        await recordGaps(c, { text: q, targets, source: "search", scoped: param !== "all" });
+      return c.json({ results: results.map(({ rank: _r, ...x }) => x) });
+    }
     const lines = results.flatMap((x) =>
       x.lines.map((l) => ({ ...l, ws: x.ws, pageId: x.pageId, page: x.title })),
     );
     const supported = lines.filter((l) => l.citations.length > 0).slice(0, 6);
+    if (fromBody && !supported.length)
+      await recordGaps(c, { text: q, targets, source: "ask", scoped: param !== "all" });
     return c.json({
       unknown: supported.length === 0,
       answer: supported.length ? supported : null,
@@ -709,6 +722,8 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
 
   r.get("/wiki/:ws/search", (c) => query(c, "search"));
   r.get("/wiki/:ws/ask", (c) => query(c, "ask"));
+  r.post("/wiki/:ws/search", (c) => query(c, "search", true));
+  r.post("/wiki/:ws/ask", (c) => query(c, "ask", true));
 
   // ---- proposals (the wiki review) ----
 

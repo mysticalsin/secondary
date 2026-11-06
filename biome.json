@@ -27,6 +27,7 @@
         "**/rules/seed.ts",
         "**/v7-rules.test.ts",
         "**/v7-rules-mock-contract.test.ts",
+        "**/v7-rules-pulse.test.ts",
         "**/rules.test.ts",
         "**/v7-rules.e2e.ts",
         "**/v7-real.spec.ts"

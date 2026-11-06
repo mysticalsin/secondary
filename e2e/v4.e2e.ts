@@ -55,7 +55,7 @@ test.describe("shell and sidebar", () => {
     const nav = side(ceo);
     for (const n of [
       "Home",
-      "Waiting for you",
+      "Review desk",
       "My Personal Brain",
       "Bid & Pre-sales",
       "Sales",
@@ -143,7 +143,7 @@ test.describe("home", () => {
     await page.goto("/");
     await settle(page);
     await expect(page.getByRole("heading", { name: "Hello, Sam" })).toBeVisible();
-    await expect(page.getByText("8 reviews are waiting for you.")).toBeVisible();
+    await expect(page.getByText("11 reviews are waiting for you.")).toBeVisible();
     const brains = page
       .getByRole("heading", { name: "Your brains", exact: true })
       .locator("xpath=ancestor::section");
@@ -220,9 +220,9 @@ test.describe("brain page", () => {
     await expect(page.getByText("Sent. The page waits for a review.")).toBeVisible();
     // The dev mock keeps its state in memory, so move around inside the app.
     await side(page)
-      .getByRole("link", { name: /Waiting for you/ })
+      .getByRole("link", { name: /Review desk/ })
       .click();
-    await expect(page.getByRole("heading", { name: "Tender debrief template" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Tender debrief template/ })).toBeVisible();
     await page.goto("/brains/c_bid/pages/bid-playbook");
     await settle(page);
     await expect(page.getByRole("heading", { name: "Bid playbook", level: 1 })).toBeVisible();
@@ -277,7 +277,7 @@ test.describe("members and access", () => {
     await expect(page.getByRole("heading", { name: /Who has access/ })).toContainText("4 people");
     // Publication, business fields and hidden versions.
     await expect(page.getByRole("heading", { name: "Publication" })).toBeVisible();
-    await expect(page.getByText("3 still waiting")).toBeVisible();
+    await expect(page.getByText("6 still waiting")).toBeVisible();
     await expect(page.getByRole("link", { name: "Publish them" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Business fields" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Hidden versions" })).toBeVisible();
@@ -295,29 +295,16 @@ test.describe("members and access", () => {
   });
 });
 
-test.describe("waiting for you", () => {
-  test("find, group by brain, select all, badges, Review", async ({ browser }) => {
+test.describe("review desk (old Waiting for you flows)", () => {
+  test("the old address lands on the Review desk", async ({ browser }) => {
     const page = await as(browser, "head_bid");
-    await page.goto("/waiting");
+    await page.goto("/waiting?brain=c_bid");
     await settle(page);
-    await expect(page.getByRole("heading", { name: "Waiting for you", level: 1 })).toBeVisible();
-    await expect(page.getByLabel("Find a review")).toBeVisible();
-    const bid = page.getByRole("region", { name: "Bid & Pre-sales" });
-    await expect(bid.getByRole("heading", { name: /Bid & Pre-sales/ })).toContainText("3");
-    await expect(bid.getByText("Change", { exact: true })).toBeVisible();
-    await expect(bid.getByText("New page", { exact: true })).toBeVisible();
-    await expect(bid.getByRole("link", { name: /Review/ }).first()).toBeVisible();
-    await bid.getByLabel("Select all").check();
-    await expect(page.getByRole("region", { name: "Selected reviews" })).toContainText(
-      "3 selected",
-    );
-    await shot(page, "waiting");
-    await page.getByLabel("Find a review").fill("playbook");
-    await expect(
-      page.getByRole("heading", { name: "Bid playbook: price with a written range" }),
-    ).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Acme renewal date" })).toHaveCount(0);
-    await axe(page, "waiting");
+    await expect(page).toHaveURL(/\/review\?brain=c_bid$/);
+    await expect(page.getByRole("heading", { name: "Review desk", level: 1 })).toBeVisible();
+    await page.goto("/waiting/q_prop_2");
+    await settle(page);
+    await expect(page).toHaveURL(/\/review\/q_prop_2$/);
     await page.context().close();
   });
 
@@ -325,10 +312,7 @@ test.describe("waiting for you", () => {
     browser,
   }) => {
     const page = await as(browser, "head_bid");
-    await page.goto("/waiting");
-    await page
-      .getByRole("link", { name: /Review.*Bid playbook: price with a written range/ })
-      .click();
+    await page.goto("/review/q_prop_1/full");
     await settle(page);
     await expect(
       page.getByRole("heading", { name: "Bid playbook: price with a written range" }),
@@ -355,16 +339,16 @@ test.describe("waiting for you", () => {
     await expect(approve).toHaveText("Approve");
     await shot(page, "proposal-ready");
     await approve.click();
-    await expect(page).toHaveURL(/\/waiting$/);
+    await expect(page).toHaveURL(/\/review/);
     await expect(
-      page.getByRole("heading", { name: "Bid playbook: price with a written range" }),
+      page.getByRole("button", { name: /Bid playbook: price with a written range/ }),
     ).toHaveCount(0);
     await page.context().close();
   });
 
   test("reject asks for a reason in a dialog", async ({ browser }) => {
     const page = await as(browser, "head_bid");
-    await page.goto("/waiting/q_prop_2");
+    await page.goto("/review/q_prop_2");
     await settle(page);
     await page.getByRole("button", { name: "Reject…" }).click();
     const dlg = page.getByRole("dialog", { name: "Reject this change" });
@@ -374,7 +358,7 @@ test.describe("waiting for you", () => {
     await expect(dlg).toBeHidden();
     await page.getByRole("button", { name: "Reject…" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Reject", exact: true }).click();
-    await expect(page).toHaveURL(/\/waiting$/);
+    await expect(page.getByRole("button", { name: /Session report Grace Hopper/ })).toHaveCount(0);
     await page.context().close();
   });
 });
@@ -513,8 +497,8 @@ test.describe("settings", () => {
 test.describe("every view at 1280 and 400, in French", () => {
   const paths = [
     "/",
-    "/waiting",
-    "/waiting/q_prop_1",
+    "/review",
+    "/review/q_prop_1",
     "/brains",
     "/brains/c_bid",
     "/brains/c_bid/access",
@@ -546,9 +530,9 @@ test.describe("every view at 1280 and 400, in French", () => {
     const page = await as(browser, "head_bid", { lang: "fr" });
     await page.goto("/");
     await settle(page);
-    await expect(side(page).getByText("À traiter")).toBeVisible();
+    await expect(side(page).getByText("Bureau de révision")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bonjour Sam" })).toBeVisible();
-    await page.goto("/waiting/q_prop_1");
+    await page.goto("/review/q_prop_1");
     await settle(page);
     await expect(page.getByText("Changement 1 sur 3").first()).toBeVisible();
     await shot(page, "proposal-fr");
@@ -563,28 +547,19 @@ test.describe("every view at 1280 and 400, in French", () => {
     await expect(side(page)).not.toBeInViewport();
     await page.getByRole("button", { name: "Open the sidebar" }).click();
     await expect(side(page)).toBeInViewport();
-    await side(page).getByRole("link", { name: "Waiting for you" }).click();
-    await expect(page).toHaveURL(/\/waiting/);
+    await side(page).getByRole("link", { name: "Review desk" }).click();
+    await expect(page).toHaveURL(/\/review/);
     await expect(side(page)).not.toBeInViewport();
     await page.context().close();
   });
 });
 
 test.describe("removed from the product", () => {
-  test("no Studio, Digest, Map, Today, Governances, Review or Routines route remains", async ({
+  test("no Studio, Digest, Map, Today, Governances or Routines route remains", async ({
     browser,
   }) => {
     const page = await as(browser, "ceo");
-    for (const p of [
-      "/map",
-      "/today",
-      "/governances",
-      "/review",
-      "/routines",
-      "/studio",
-      "/digest",
-      "/lp",
-    ]) {
+    for (const p of ["/map", "/today", "/governances", "/routines", "/studio", "/digest", "/lp"]) {
       await page.goto(p);
       await expect(page.getByText("Page not found"), p).toBeVisible();
     }

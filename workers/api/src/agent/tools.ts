@@ -21,6 +21,7 @@ import {
 import { DAY } from "../brains/model.ts";
 import type { Brain } from "../brains/open.ts";
 import { SKIP_TYPES, seeBrains } from "../brains/shared.ts";
+import { recordGaps } from "../gaps/index.ts";
 import type { C } from "../ux/util.ts";
 import { canGlobal, filterMarkdown, pageVisible, readableMany } from "../wiki/routes.ts";
 import {
@@ -46,6 +47,8 @@ export interface ToolEnv {
   c: C;
   /** The brains this turn's tools may reach: opened for the caller, minus Personal and contract-refused accounts. */
   brains: readonly Brain[];
+  /** The one brain the asker named (an action value or a brain name in their own words). A brain the model picks never counts (N-1). */
+  askedBrain?: string;
 }
 
 /** Every `<` becomes `&lt;`, so text cannot close or open anything. */
@@ -124,6 +127,13 @@ async function search(env: ToolEnv, q: string, brain: string | undefined): Promi
     out.push(dataBlock(h.b.param, page.id, page.title));
     if (out.length >= MAX_SEARCH_HITS) break;
   }
+  if (!out.length)
+    await recordGaps(env.c, {
+      text: q,
+      targets: scope,
+      source: "agent",
+      scoped: !!brain && brain === env.askedBrain,
+    });
   return ok(out.length ? out.join("\n") : dataBlock("search", null, "no pages"));
 }
 

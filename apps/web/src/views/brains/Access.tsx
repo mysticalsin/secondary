@@ -9,6 +9,7 @@ import { useRulesAccess } from "../../rules/access";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
+import { ReviewSla } from "../review-desk/ReviewSla";
 import { wikiApi } from "../wiki/api";
 import { v3 } from "./api";
 import { Choice, type ChoiceOption } from "./Choice";
@@ -496,6 +497,7 @@ export function AccessPage() {
                     reload={access.reload}
                     onPending={() => setPendingNow(true)}
                   />
+                  <ReviewSla id={id} />
                   <BusinessFields id={id} b={b} />
                   <HiddenVersions id={id} />
                 </div>

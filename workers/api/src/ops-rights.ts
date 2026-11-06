@@ -9,11 +9,13 @@
 import type { Org } from "@secondary/policy";
 import { fetchReceipts, pseudonymiseReceipts } from "./audit.ts";
 import { forgetSourceAccess } from "./connector.ts";
+import { MIN_PSEUDONYM_KEY } from "./pseudonym-key.ts";
 import { scopeOfNode } from "./scope.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
+import { KeyUnavailable, keyOf } from "./v8-keys.ts";
 
 export const SUBJECT_PARAM = /^[A-Za-z0-9_.:@+-]{1,254}$/;
-const MIN_KEY = 32;
+const MIN_KEY = MIN_PSEUDONYM_KEY;
 /** How long an erasure is remembered for a restore: twice the 35 day backup retention, plus margin. */
 export const TOMBSTONE_DAYS = 90;
 
@@ -71,6 +73,8 @@ export async function exportSubject(env: Env, tenantId: string, org: Org, princi
     })),
   );
   const receipts = await fetchReceipts(env, tenantId, principalId, 30);
+  // The v8 records name people by keyed id: this person's own rows only, never anyone else's.
+  const v8Records = await v8RecordsOf(env, tenantId, org, principalId);
   return {
     format: "secondary-subject-export/1",
     generatedAt: new Date().toISOString(),
@@ -100,8 +104,42 @@ export async function exportSubject(env: Env, tenantId: string, org: Org, princi
         a.wiki.factsVerified.length ||
         a.wiki.log.length,
     ),
+    v8Records,
     receipts: { windowDays: 30, available: receipts !== null, items: receipts ?? [] },
   };
+}
+
+/** The review desk state and knowledge-gap rows of one person, per company brain. */
+async function v8RecordsOf(env: Env, tenantId: string, org: Org, principalId: string) {
+  try {
+    const person = await keyOf(env, tenantId, principalId);
+    const rows = await Promise.all(
+      companyScopes(org).map(async (scope) => ({
+        scope,
+        ...(await workspaceStub(env, tenantId, scope).v8Subject(
+          person,
+          await keyOf(env, tenantId, principalId, `asker:${scope}`),
+        )),
+      })),
+    );
+    return rows.filter((r) => r.review.length || r.gaps.length);
+  } catch (e) {
+    if (e instanceof KeyUnavailable) return [];
+    throw e;
+  }
+}
+
+/** Remove one person from the v8 records of a workspace (idempotent). */
+async function forgetV8(env: Env, tenantId: string, scope: string, principalId: string) {
+  try {
+    await workspaceStub(env, tenantId, scope).v8Forget(
+      await keyOf(env, tenantId, principalId),
+      await keyOf(env, tenantId, principalId, `asker:${scope}`),
+    );
+  } catch (e) {
+    // Without the secret no key was ever written, so there is nothing to remove.
+    if (!(e instanceof KeyUnavailable)) throw e;
+  }
 }
 
 export type EraseSummary = {
@@ -148,6 +186,7 @@ export async function eraseSubject(
     authored.comments += r.comments;
     authored.approvals += r.approvals;
     authored.edits += r.edits;
+    await forgetV8(env, tenantId, scope, principalId);
   }
   const personalItemsDeleted = await workspaceStub(env, tenantId, `personal:${principalId}`).wipe();
   const connectorCacheForgotten = email
@@ -183,8 +222,10 @@ export async function reapplyErasures(
     }
     const w = workspaceStub(env, tenantId, scope);
     if (scope === `personal:${s.principalId}`) await w.wipe();
-    else if (!scope.startsWith("personal:"))
+    else if (!scope.startsWith("personal:")) {
       await w.pseudonymise(s.principalId, s.pseudonym, s.aliases);
+      await forgetV8(env, tenantId, scope, s.principalId);
+    }
   }
   return stones.length;
 }

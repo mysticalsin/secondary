@@ -205,6 +205,10 @@ export async function questionsOf(c: C): Promise<Question[]> {
         approvals: r.approvals,
         required: r.required,
         authorId: r.authorId,
+        // For the Review desk: what kind of text this is. Page types and the filing reason are not
+        // personal text, and the reason is left out when a source is restricted.
+        pageTypes: pv.pages.map((p) => p.type),
+        rationale: whole ? short(pv.rationale, 80) : "",
       };
       if (kind === "contradiction") {
         const sides = await contradictionSides(stub, r, ok, whole);
@@ -335,7 +339,11 @@ const deny = async (c: C, action: string, id: string, scope: string | null, reas
 };
 
 /** Resolve one question: the single-item rules, shared by POST /questions/:id and the batch. */
-async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Promise<Response> {
+export async function resolveQuestion(
+  c: C,
+  id: string,
+  b: Record<string, unknown>,
+): Promise<Response> {
   const s = sess(c);
   if (!QID.test(id)) throw notFound();
   if (typeof b.action !== "string" || b.action.length > 40) throw bad("invalid_action");

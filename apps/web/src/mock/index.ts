@@ -40,7 +40,9 @@ import { handleV2, NOT_HANDLED, questionsFor } from "./uxv2";
 import { handleV3 } from "./v3";
 import { handleV7Group } from "./v7group";
 import { handleV7Ops } from "./v7ops";
+import { handleV8Gaps } from "./v8gaps";
 import { handleV8Lens } from "./v8lens";
+import { handleV8Review, seedReviewMock } from "./v8review";
 
 const notInMock = (method: string, p: string) =>
   new ApiError(501, `Not part of the dev mock (${method} ${p}). Run the live stack for this.`);
@@ -881,6 +883,7 @@ export async function handle(
   const p = url.pathname;
   const b = (body ?? {}) as Record<string, unknown>;
 
+  seedReviewMock(role);
   const ops = handleV7Ops(method, p, url.searchParams, b, role);
   if (ops !== NOT_HANDLED) return ops;
   const grp = handleV7Group(method, p, b, role);
@@ -891,6 +894,10 @@ export async function handle(
   if (agent !== NOT_HANDLED) return agent;
   const lens = handleV8Lens(method, p, url.searchParams, b, role, persona);
   if (lens !== NOT_HANDLED) return lens;
+  const v8r = handleV8Review(method, p, url.searchParams, b, role);
+  if (v8r !== NOT_HANDLED) return v8r;
+  const v8g = handleV8Gaps(method, p, url.searchParams, b, role);
+  if (v8g !== NOT_HANDLED) return v8g;
   const v3 = handleV3(
     method,
     p,

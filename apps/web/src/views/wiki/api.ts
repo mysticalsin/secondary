@@ -41,9 +41,11 @@ export const wikiApi = {
     request<WikiRevision[]>("GET", `${base(ws)}/pages/${q(id)}/history`),
   facts: (ws: string) => request<WikiFact[]>("GET", `${base(ws)}/facts?all=1`),
   log: (ws: string) => request<WikiLogEntry[]>("GET", `${base(ws)}/log`),
+  // POST, not GET: a search or question that finds nothing leaves a knowledge-gap signal, and only a
+  // same-origin write may do that (M-2).
   search: (ws: string, text: string) =>
-    request<{ results: WikiSearchHit[] }>("GET", `${base(ws)}/search?q=${q(text)}`),
-  ask: (ws: string, text: string) => request<WikiAnswer>("GET", `${base(ws)}/ask?q=${q(text)}`),
+    request<{ results: WikiSearchHit[] }>("POST", `${base(ws)}/search`, { q: text }),
+  ask: (ws: string, text: string) => request<WikiAnswer>("POST", `${base(ws)}/ask`, { q: text }),
   proposals: (ws: string) => request<WikiProposalRow[]>("GET", `${base(ws)}/proposals`),
   proposal: (ws: string, id: string) =>
     request<WikiProposal>("GET", `${base(ws)}/proposals/${q(id)}`),

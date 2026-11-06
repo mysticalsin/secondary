@@ -13,6 +13,7 @@ import { ux2 } from "../../uxv2/api";
 import { Ask } from "../ask/Ask";
 import { v3 } from "../brains/api";
 import type { BrainCard, Change, NavBrain } from "../brains/types";
+import { TopGaps } from "../gaps";
 import { PulseAcross } from "../pulse";
 
 const PinnedGrid = lazy(() => import("../../agent/PinnedGrid"));
@@ -135,6 +136,7 @@ export function Home() {
       <Glance />
 
       <PulseAcross />
+      <TopGaps />
 
       <Suspense fallback={null}>
         <PinnedGrid />

@@ -11,6 +11,8 @@ import { ActivityPanel } from "../../ops/ActivityPanel";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
+import { GapsTab } from "../gaps";
+import { gapsApi } from "../gaps/api";
 import { BrainWhoKnows } from "../lens";
 import { QUESTIONS_CHANGED } from "../waiting/events";
 import { wikiApi } from "../wiki/api";
@@ -163,11 +165,19 @@ export function BrainPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
   const [sp, setSp] = useSearchParams();
-  const ALL_TABS = ["contents", "insights", "myview", "activity"] as const;
+  const ALL_TABS = ["contents", "insights", "myview", "activity", "gaps"] as const;
   type Tab = (typeof ALL_TABS)[number];
   const home = useApi(() => v3.brain(id), [id]);
+  // Gaps is offered to people who can contribute: the API answers 403 or 404 to everyone else.
+  const gapsProbe = useApi(
+    () => (id === "me" ? Promise.resolve(null) : gapsApi.list(id).catch(() => null)),
+    [id],
+  );
+  const hasGaps = !!gapsProbe.data || (gapsProbe.loading && sp.get("tab") === "gaps");
   // Activity (v7 Operate) is for people who manage the brain.
-  const TABS = ALL_TABS.filter((k) => k !== "activity" || home.data?.manages);
+  const TABS = ALL_TABS.filter((k) =>
+    k === "activity" ? home.data?.manages : k === "gaps" ? hasGaps : true,
+  );
   const tab: Tab = TABS.find((k) => k === sp.get("tab")) ?? "contents";
   const pickTab = (next: Tab) => setSp(next === "contents" ? {} : { tab: next }, { replace: true });
   const idx = useApi(() => wikiApi.index(id), [id]);
@@ -255,7 +265,9 @@ export function BrainPage() {
                     ? t("v6.tab.myview")
                     : k === "activity"
                       ? t("v7o.tab.activity")
-                      : t(`v5.tab.${k}` as "v5.tab.contents")}
+                      : k === "gaps"
+                        ? t("v8g.tab")
+                        : t(`v5.tab.${k}` as "v5.tab.contents")}
                 </button>
               ))}
             </div>
@@ -272,6 +284,11 @@ export function BrainPage() {
             {tab === "activity" ? (
               <div role="tabpanel" id="bp-activity" aria-labelledby="bt-activity">
                 <ActivityPanel mode="brain" brainId={id} />
+              </div>
+            ) : null}
+            {tab === "gaps" ? (
+              <div role="tabpanel" id="bp-gaps" aria-labelledby="bt-gaps">
+                <GapsTab brainId={id} />
               </div>
             ) : null}
             {tab === "myview" ? (

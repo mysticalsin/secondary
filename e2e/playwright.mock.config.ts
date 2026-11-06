@@ -5,14 +5,14 @@ import { defineConfig } from "@playwright/test";
 const PORT = Number(process.env.MOCK_PORT ?? 5198);
 export default defineConfig({
   testDir: ".",
-  testMatch: /(v[456]|v7-[a-z]+|v8-[a-z]+)\.e2e\.ts$/,
+  testMatch: /v[45678](-[a-z]+)?\.e2e\.ts$/,
   fullyParallel: false,
   workers: 1,
   retries: 0,
   timeout: 45_000,
   expect: { timeout: 10_000 },
   reporter: [["list"]],
-  outputDir: "../.dev/e2e-results-mock",
+  outputDir: process.env.E2E_OUT ?? "../.dev/e2e-results-mock",
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",

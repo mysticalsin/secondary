@@ -173,8 +173,9 @@ function activityBody(
   >;
   for (const r of inWin) counts[r.status]++;
   // Newest first, ties by id. A cursor continues after the last event the caller already has.
-  const rest = qy.after
-    ? matching.filter((r) => r.at < qy.after.at || (r.at === qy.after.at && r.id > qy.after.id))
+  const after = qy.after;
+  const rest = after
+    ? matching.filter((r) => r.at < after.at || (r.at === after.at && r.id > after.id))
     : matching;
   const page = rest.slice(0, MAX_EVENTS);
   const last = page.at(-1);
