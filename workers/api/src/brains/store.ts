@@ -622,7 +622,16 @@ export abstract class BrainBase extends WikiBase {
         return !k.startsWith("journal.") && !k.startsWith("brain.");
       });
     if (!rows.length) return { pageId: null, created: false };
-    const n = { filed: 0, published: 0, approved: 0, rejected: 0, contradictions: 0, resolved: 0 };
+    const n = {
+      filed: 0,
+      published: 0,
+      approved: 0,
+      rejected: 0,
+      contradictions: 0,
+      resolved: 0,
+      rules: 0,
+      gaps: 0,
+    };
     const c = { lintRuns: 0, found: 0, verified: 0, unchanged: 0, edited: 0, dreams: 0 };
     const touched = new Set<string>();
     const detail = (s: string): Record<string, unknown> => {
@@ -656,6 +665,8 @@ export abstract class BrainBase extends WikiBase {
       else if (kind === "fact.verified") c.verified++;
       else if (kind === "ingest.triage") c.unchanged++;
       else if (kind === "proposal.edited") c.edited++;
+      else if (kind === "rule.triggered") n.rules++;
+      else if (kind === "gap.closed") n.gaps += Math.max(1, Number(d.count ?? 1) || 1);
     }
     const linked = [...touched]
       .filter(
@@ -680,6 +691,10 @@ export abstract class BrainBase extends WikiBase {
       "## Contradicted",
       `- ${s(n.contradictions, "contradiction raised", "contradictions raised")}`,
       `- ${s(n.resolved, "older fact ended", "older facts ended")}`,
+      "",
+      "## Governed",
+      `- ${s(n.rules, "rule triggered", "rules triggered")}`,
+      `- ${s(n.gaps, "gap closed", "gaps closed")}`,
       "",
       "## Checks",
       `- ${s(c.lintRuns, "lint run", "lint runs")} found ${c.found}`,

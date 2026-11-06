@@ -14,7 +14,9 @@ import {
   type ViewNode,
 } from "@secondary/policy";
 import type { ReceiptMeta } from "../../../../packages/contracts/src/audit-receipt.ts";
-import { tenantStub, type workspaceStub } from "../stubs.ts";
+import { recordRuleTriggered } from "../pulse/hooks.ts";
+import { scopeOfNode } from "../scope.ts";
+import { tenantStub, workspaceStub } from "../stubs.ts";
 import { notifyRule } from "../ux/notify.ts";
 import { audit, type C, sess } from "../ux/util.ts";
 import { rulesClient } from "./client.ts";
@@ -158,6 +160,15 @@ export async function ruleGate(c: C, i: GateInput): Promise<GateOut> {
 
   const tag = result.tag;
   const rx = { rule: tag, ruleMode: "enforced" as const, meta };
+  // The Pulse journal counts rules that decided something: one id-only line in this brain's log.
+  const scope = i.brain.vn ? scopeOfNode(i.brain.vn) : null;
+  if (scope && result.ruleId !== null && result.version !== null)
+    await recordRuleTriggered(
+      workspaceStub(c.env, s.tenantId, scope),
+      result.ruleId,
+      result.version,
+      s.ctx.now,
+    );
 
   // "Expire grant after N minutes": an agent's write grant stops working N minutes after its first call.
   // The person connects again to get a fresh one. Only writes are limited; reading is not.

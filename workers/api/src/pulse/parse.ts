@@ -1,6 +1,7 @@
 // The journal of a brain as a day of dots. A journal page holds counts and `[[page]]` links only
 // (brainJournalRun), so this reads those counts back. Pure. Two kinds of dot, "gaps" and "rules", come
-// from journal lines that the knowledge-gaps and rules work add (`N gaps closed`, `N rules triggered`);
+// from journal lines (`N gaps closed`, `N rules triggered`): the rules gate writes the second through
+// pulse/hooks.ts; the first has a named no-op hook until v8/review is merged;
 // until a journal carries them they stay zero.
 
 export const CATEGORIES = ["published", "resolved", "sources", "gaps", "rules"] as const;
