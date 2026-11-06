@@ -91,7 +91,33 @@ test.describe("insights tab", () => {
     await expect(page.getByTestId("kpi-review")).toContainText("1.8 d");
     await expect(page.getByTestId("kpi-seen")).toContainText("100%");
     for (const n of ["constellation", "health", "flow"]) await shot(page, n);
-    await page.getByTestId("insights").screenshot({ path: `${SCREENS}v5-insights-1440.png` });
+    // The whole tab in one frame: a viewport tall enough for it, so the app bar and banner are not
+    // stitched into the middle of the capture, and a check that the grid has no empty band in it.
+    const tab = page.getByTestId("insights");
+    const height = Math.ceil((await tab.evaluate((el) => el.getBoundingClientRect().height)) + 220);
+    await page.setViewportSize({ width: 1440, height });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    const gaps = await tab.evaluate((el) => {
+      const rows = [...el.querySelectorAll<HTMLElement>("[data-testid^='insight-']")]
+        .map((c) => c.getBoundingClientRect())
+        .filter((r) => r.height > 40 && r.width > 200)
+        .sort((a, z) => a.top - z.top || a.left - z.left);
+      const box = el.getBoundingClientRect();
+      let worst = rows.length ? rows[0].top - box.top : 0;
+      let reach = rows.length ? rows[0].bottom : 0;
+      for (const r of rows.slice(1)) {
+        worst = Math.max(worst, r.top - reach);
+        reach = Math.max(reach, r.bottom);
+      }
+      return { worst: Math.round(worst), tail: Math.round(box.bottom - reach) };
+    });
+    // Cards sit in a grid with a 16 to 20 px gap; anything near a card's height would be a hole.
+    expect(
+      gaps.worst,
+      `empty band inside the insights grid: ${JSON.stringify(gaps)}`,
+    ).toBeLessThanOrEqual(24);
+    expect(gaps.tail).toBeLessThanOrEqual(24);
+    await tab.screenshot({ path: `${SCREENS}v5-insights-1440.png` });
     await page.context().close();
   });
 

@@ -52,7 +52,13 @@ export interface Geometry {
   labels: SectorLabel[];
 }
 
-export const CANVAS = { w: 720, h: 560, cx: 360, cy: 280, R: 236, inner: 36, pitch: 8.6 } as const;
+export const CANVAS = { w: 720, h: 560, cx: 360, cy: 280, R: 236, inner: 36, pitch: 9 } as const;
+
+/** Dot radius: full size near the centre, shrinking toward the rim, as in the reference. */
+export const dotRadius = (dist: number): number => {
+  const t = Math.max(0, Math.min(1, (dist - CANVAS.inner) / (CANVAS.R - CANVAS.inner)));
+  return Math.round((3.3 - 1.3 * t) * 100) / 100;
+};
 
 /** Radius (px) of a 0..1 relative radius. */
 export const rho = (r: number, R: number = CANVAS.R, inner: number = CANVAS.inner): number =>
@@ -79,6 +85,16 @@ export function layoutConstellation(
   const cap = (j: number) => Math.max(1, Math.floor((span * bandRho(j) * 0.92) / pitch));
   const sectorIndex = new Map(sectorIds.map((s, n) => [s, n]));
 
+  // The last ring is the edge of the zone. In-zone dots may not spill past it and the others may not
+  // spill into it, so a clear halo (about one band) separates purple from grey, as in the reference.
+  const zoneScore = rings.length ? (rings[rings.length - 1] as number) : 85;
+  const zoneRho = rho(radiusOfScore(zoneScore));
+  const zoneBand = Math.max(
+    0,
+    Math.min(bandCount - 1, Math.floor((zoneRho - inner) / pitch - 0.5)),
+  );
+  const lowestOut = Math.min(bandCount - 1, zoneBand + 2);
+
   // 1. Each dot goes to the band its radius asks for, or the nearest band with room.
   const order = dots.map((d, i) => ({ d, i })).sort((a, z) => a.d.r - z.d.r || a.i - z.i);
   const used = Array.from({ length: nSec }, () => new Array<number>(bandCount).fill(0));
@@ -87,15 +103,22 @@ export function layoutConstellation(
   for (const { d, i } of order) {
     const s = sectorIndex.get(d.sector) ?? 0;
     const row = used[s] as number[];
-    const want = Math.max(0, Math.min(bandCount - 1, Math.round((rho(d.r) - inner) / pitch)));
+    const natural = rho(d.r);
+    let want = Math.max(0, Math.min(bandCount - 1, Math.round((natural - inner) / pitch)));
+    // Keep the halo: a dot near the zone edge steps back to its own side of it.
+    if (d.inZone && natural <= zoneRho + pitch) want = Math.min(want, zoneBand);
+    else if (!d.inZone && natural >= zoneRho - pitch) want = Math.max(want, lowestOut);
+    // Where this dot may go when its own band is full.
+    const lo = d.inZone ? 0 : Math.min(lowestOut, want);
+    const hi = d.inZone ? Math.max(zoneBand, want) : bandCount - 1;
     let j = want;
     if ((row[want] as number) >= cap(want)) {
       j = -1;
       for (let step = 1; step < bandCount && j < 0; step++) {
         const out = want + step;
         const inn = want - step;
-        if (out < bandCount && (row[out] as number) < cap(out)) j = out;
-        else if (inn >= 0 && (row[inn] as number) < cap(inn)) j = inn;
+        if (out <= hi && (row[out] as number) < cap(out)) j = out;
+        else if (inn >= lo && (row[inn] as number) < cap(inn)) j = inn;
       }
       if (j < 0) j = want;
     }
@@ -105,34 +128,25 @@ export function layoutConstellation(
     cells.set(key, [...(cells.get(key) ?? []), i]);
   }
 
-  // 2. Inside a band the dots take a seeded subset of the band's evenly spaced slots.
+  // 2. Inside a band the dots are spaced evenly along the arc, each ring turned a golden step from
+  // the last so the rings read as rings, not as radial stripes. A band never has more members than
+  // slots, so the spacing is never tighter than the pitch.
   const placed: Placed[] = new Array(dots.length);
   for (const [key, members] of cells) {
     const [sRaw, jRaw] = key.split(":");
     const s = Number(sRaw);
     const j = Number(jRaw);
-    const c = cap(j);
-    const rand = rng(seed ^ Math.imul(s + 1, 0x9e3779b1) ^ Math.imul(j + 1, 0x85ebca6b));
-    // Evenly spaced slots with a small seeded wobble: a band thins out, it does not clump.
-    const take: number[] = [];
-    if (members.length >= c) for (let n = 0; n < c; n++) take.push(n);
-    else {
-      let last = -1;
-      // A random phase per band, so the thinned bands do not line up into radial stripes.
-      const phase = 0.15 + rand() * 0.7;
-      for (let n = 0; n < members.length; n++) {
-        const want = Math.floor(((n + phase + (rand() - 0.5) * 0.3) * c) / members.length);
-        const slot = Math.min(c - (members.length - n), Math.max(last + 1, want));
-        take.push(slot);
-        last = slot;
-      }
-    }
+    const m = members.length;
+    const arc = span * 0.92;
     const a0 = start + s * span + span * 0.04;
     const rr = bandRho(j);
+    // A seeded turn per ring (up to a quarter step each way) plus a half step on odd rings (hex-like),
+    // so neighbouring rings do not line up.
+    const gap = arc / m;
+    const rand = rng(seed ^ Math.imul(s + 1, 0x9e3779b1) ^ Math.imul(j + 1, 0x85ebca6b));
+    const turn = (rand() - 0.5) * gap * 0.5 + (j % 2 ? gap * 0.25 : 0);
     members.forEach((i, n) => {
-      const slot = take[n] as number;
-      const stagger = j % 2 ? 0.5 : 0;
-      const a = a0 + ((slot + 0.5 + stagger * 0.5) / c) * span * 0.92;
+      const a = a0 + Math.min(arc, Math.max(0, (n + 0.5) * gap + turn));
       placed[i] = {
         i,
         x: round(cx + rr * Math.cos(a)),
@@ -359,3 +373,170 @@ export function timeDomain(
 }
 
 export const dayNumber = parse;
+
+// ---------- name pills ----------
+
+export interface PillIn {
+  id: number;
+  /** The node's centre. */
+  x: number;
+  y: number;
+  /** Width of the pill, from its text. */
+  w: number;
+  priority: number;
+}
+
+export interface PillOut {
+  id: number;
+  /** Left edge and vertical centre of the pill. */
+  l: number;
+  y: number;
+  w: number;
+  /** A leader line from the node to the pill, drawn when the pill is not touching its node. */
+  leader: { x1: number; y1: number; x2: number; y2: number } | null;
+}
+
+export interface Box {
+  l: number;
+  r: number;
+  t: number;
+  b: number;
+}
+
+export const PILL_H = 28;
+const NODE_R = 15;
+
+const hitsBox = (a: Box, b: Box, pad = 0): boolean =>
+  a.l < b.r + pad && b.l < a.r + pad && a.t < b.b + pad && b.t < a.b + pad;
+
+/** Does the circle (cx, cy, r) touch the box? */
+const hitsCircle = (b: Box, cx: number, cy: number, r: number): boolean => {
+  const x = Math.max(b.l, Math.min(cx, b.r));
+  const y = Math.max(b.t, Math.min(cy, b.b));
+  return (x - cx) ** 2 + (y - cy) ** 2 < r * r;
+};
+
+/** Does the segment pass through the box? Sampled every few pixels, which is enough for a 1 px line. */
+const segHitsBox = (
+  s: { x1: number; y1: number; x2: number; y2: number },
+  b: Box,
+  pad = 1,
+): boolean => {
+  const n = Math.max(2, Math.ceil(Math.hypot(s.x2 - s.x1, s.y2 - s.y1) / 4));
+  for (let k = 0; k <= n; k++) {
+    const x = s.x1 + ((s.x2 - s.x1) * k) / n;
+    const y = s.y1 + ((s.y2 - s.y1) * k) / n;
+    if (x > b.l - pad && x < b.r + pad && y > b.t - pad && y < b.b + pad) return true;
+  }
+  return false;
+};
+
+/**
+ * Places a name pill beside each named node so that no pill touches a node, the centre badge, a
+ * collection name or another pill, and none leaves the canvas. Each node tries pills around it at
+ * growing distances (nearest, then outward, then the side gutters) and takes the cheapest free place;
+ * a pill that is not beside its node gets a leader line. Pure and deterministic.
+ */
+export function placePills(
+  nodes: readonly PillIn[],
+  o: { w: number; h: number; cx: number; cy: number; centreR: number; avoid: readonly Box[] },
+): PillOut[] {
+  const out: PillOut[] = [];
+  const taken: Box[] = [];
+  const leaders: { x1: number; y1: number; x2: number; y2: number }[] = [];
+  const nodeDiscs = nodes.map((n) => ({ x: n.x, y: n.y }));
+  const free = (b: Box, ownId: number): boolean => {
+    if (b.l < 4 || b.r > o.w - 4 || b.t < 4 || b.b > o.h - 4) return false;
+    if (hitsCircle(b, o.cx, o.cy, o.centreR)) return false;
+    if (o.avoid.some((a) => hitsBox(a, b, 2))) return false;
+    if (taken.some((a) => hitsBox(a, b, 4))) return false;
+    return !nodes.some(
+      (n, k) =>
+        n.id !== ownId &&
+        hitsCircle(
+          b,
+          (nodeDiscs[k] as { x: number }).x,
+          (nodeDiscs[k] as { y: number }).y,
+          NODE_R + 3,
+        ),
+    );
+  };
+  const order = [...nodes].sort((a, z) => z.priority - a.priority || a.id - z.id);
+  for (const n of order) {
+    let best: { cost: number; box: Box; leader: boolean } | null = null;
+    const leaderOf = (box: Box): { x1: number; y1: number; x2: number; y2: number } => {
+      const right = box.l >= n.x;
+      const ex = right ? box.l : box.r;
+      const ey = Math.max(box.t + 6, Math.min(box.b - 6, n.y));
+      const ang = Math.atan2(ey - n.y, ex - n.x);
+      return {
+        x1: round(n.x + NODE_R * Math.cos(ang)),
+        y1: round(n.y + NODE_R * Math.sin(ang)),
+        x2: round(ex),
+        y2: round(ey),
+      };
+    };
+    const consider = (l: number, y: number, leader: boolean, cost: number) => {
+      const box = { l, r: l + n.w, t: y - PILL_H / 2, b: y + PILL_H / 2 };
+      if (!free(box, n.id)) return;
+      if (leader) {
+        const seg = leaderOf(box);
+        // The line may not run through another pill or over another node.
+        if (taken.some((t) => segHitsBox(seg, t))) return;
+        const others = nodes.filter((m) => m.id !== n.id);
+        if (
+          others.some((m) =>
+            segHitsBox(
+              seg,
+              { l: m.x - NODE_R, r: m.x + NODE_R, t: m.y - NODE_R, b: m.y + NODE_R },
+              0,
+            ),
+          )
+        )
+          return;
+        cost += Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) * 0.3;
+      }
+      if (!best || cost < best.cost) best = { cost, box, leader };
+    };
+    // Outward from the centre is cheaper: the names then stay off the dense middle.
+    const outward = Math.atan2(n.y - o.cy, n.x - o.cx);
+    for (const d of [NODE_R + 6, NODE_R + 20, NODE_R + 40, NODE_R + 68, NODE_R + 104]) {
+      for (let k = 0; k < 24; k++) {
+        const a = (k / 24) * TAU;
+        const dx = Math.cos(a);
+        const dy = Math.sin(a);
+        const px = n.x + d * dx;
+        const py = n.y + d * dy;
+        const l = dx >= 0 ? px : px - n.w;
+        const away = 0.5 - 0.5 * Math.cos(a - outward);
+        const adj = d <= NODE_R + 6 ? Math.abs(dy) * 4 : 0;
+        consider(l, py, d > NODE_R + 6, d + away * 14 + adj);
+      }
+    }
+    // Last resort: the side gutters, level with the node or as near as a free slot allows.
+    for (const side of [0, 1]) {
+      for (let step = 0; step < 18; step++) {
+        const dy = Math.ceil(step / 2) * (PILL_H + 4) * (step % 2 ? 1 : -1);
+        consider(
+          side ? o.w - 6 - n.w : 6,
+          n.y + dy,
+          true,
+          400 + Math.abs(dy) + Math.abs((side ? o.w : 0) - n.x) * 0.2,
+        );
+      }
+    }
+    const pick = best as { cost: number; box: Box; leader: boolean } | null;
+    if (!pick) continue;
+    taken.push(pick.box);
+    const seg = pick.leader ? leaderOf(pick.box) : null;
+    if (seg) leaders.push(seg);
+    out.push({
+      id: n.id,
+      l: pick.box.l,
+      y: (pick.box.t + pick.box.b) / 2,
+      w: n.w,
+      leader: seg,
+    });
+  }
+  return out.sort((a, z) => a.id - z.id);
+}

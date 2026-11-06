@@ -254,7 +254,11 @@ function score(pg: P, mode: "relevance" | "freshness", tokens: string[], fd: num
   for (const k of tokens) hits += (t.includes(k) ? 5 : 0) + (s.includes(k) ? 3 : 0);
   // The mock blends a page's hidden affinity with where the words hit, so the map has a full spread.
   const hitFrac = hits / (10 * tokens.length);
-  return Math.round(clamp(36 + 64 * Math.min(0.96, pg.u ** 1.2 + 0.5 * hitFrac)));
+  // Smooth saturation, not a hard cap, so the best pages do not all land on the same number.
+  const fit = pg.u ** 1.2 + 0.5 * hitFrac;
+  const raw = 36 + 64 * (1 - Math.exp(-1.75 * fit));
+  // Stretch the in-zone end so purple dots fill toward the centre instead of piling on the rim.
+  return Math.round(clamp(raw >= 85 ? 85 + (raw - 85) * 1.5 : raw, 0, 98));
 }
 
 interface BrainIn {

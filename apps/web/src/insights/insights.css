@@ -231,7 +231,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 20px;
-  align-items: start;
+  /* Cards in a row end on the same line. */
+  align-items: stretch;
 }
 @media (max-width: 1000px) {
   .ins-row {
@@ -264,6 +265,12 @@
 .dc-sector {
   font: 18.5px var(--font);
   fill: #b9b7c6;
+}
+.dc-leader {
+  stroke: #8a8896;
+  stroke-width: 1.2;
+  stroke-opacity: 0.75;
+  fill: none;
 }
 .dc-pill {
   fill: #2b2b32;

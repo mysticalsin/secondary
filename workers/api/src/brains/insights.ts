@@ -199,7 +199,8 @@ export function confidenceScore(p: PageIn, facts: InsightRaw["facts"]): number {
 
 /**
  * Relevance of a page to a query. A page that hits a word scores 55 to 98 by where it hits (title 5,
- * summary 3, body 2 points per word). One that hits nothing scores 28 to about 87 by how near it is:
+ * summary 3, body up to 2 points per word), how many words hit, how rare the words are and a little for
+ * being well linked. One that hits nothing scores 28 to about 87 by how near it is:
  * central pages, pages in a collection that holds hits and pages linked with a hit sit closer.
  * Without a query every page scores by centrality alone.
  */
@@ -212,16 +213,57 @@ function relevanceScores(pages: PageIn[], tokens: string[]): Map<string, number>
     for (const p of pages) out.set(p.id, Math.round(40 + centrality(p)));
     return out;
   }
-  const hitsOf = (p: PageIn): number => {
-    const title = p.title.toLowerCase();
-    const summary = p.summary.toLowerCase();
-    const body = p.markdown.toLowerCase();
-    let hits = 0;
-    for (const t of tokens)
-      hits +=
-        (title.includes(t) ? 5 : 0) + (summary.includes(t) ? 3 : 0) + (body.includes(t) ? 2 : 0);
-    return hits;
+  // Field weights: a hit in the title is worth 5, in the summary 3, in the body up to 2 (more
+  // occurrences count more, with diminishing returns). A word that few pages carry counts more
+  // than one every page carries (idf), so pages hitting the same words still land on different scores.
+  const lower = new Map(
+    pages.map((p) => [
+      p.id,
+      { t: p.title.toLowerCase(), s: p.summary.toLowerCase(), b: p.markdown.toLowerCase() },
+    ]),
+  );
+  const occurrences = (hay: string, needle: string): number => {
+    let n = 0;
+    for (
+      let at = hay.indexOf(needle);
+      at >= 0 && n < 16;
+      at = hay.indexOf(needle, at + needle.length)
+    )
+      n++;
+    return n;
   };
+  const df = new Map<string, number>();
+  for (const t of tokens)
+    df.set(
+      t,
+      pages.reduce((n, p) => {
+        const f = lower.get(p.id) as { t: string; s: string; b: string };
+        return n + (f.t.includes(t) || f.s.includes(t) || f.b.includes(t) ? 1 : 0);
+      }, 0),
+    );
+  const idf = (t: string): number => Math.log(1 + pages.length / (1 + (df.get(t) ?? 0)));
+  const idfSum = tokens.reduce((n, t) => n + idf(t), 0) || 1;
+  const fit = (p: PageIn): { hits: number; raw: number; coverage: number } => {
+    const f = lower.get(p.id) as { t: string; s: string; b: string };
+    let hits = 0;
+    let weighted = 0;
+    let matched = 0;
+    for (const t of tokens) {
+      const body = occurrences(f.b, t);
+      const field =
+        (f.t.includes(t) ? 5 : 0) +
+        (f.s.includes(t) ? 3 : 0) +
+        (body ? 2 * Math.min(1, Math.log2(1 + body) / Math.log2(9)) : 0);
+      if (field > 0) {
+        matched++;
+        hits += (f.t.includes(t) ? 5 : 0) + (f.s.includes(t) ? 3 : 0) + (body ? 2 : 0);
+      }
+      weighted += idf(t) * (field / 10);
+    }
+    return { hits, raw: weighted / idfSum, coverage: matched / tokens.length };
+  };
+  const fits = new Map(pages.map((p) => [p.id, fit(p)]));
+  const hitsOf = (p: PageIn): number => (fits.get(p.id) as { hits: number }).hits;
   const hits = new Map(pages.map((p) => [p.id, hitsOf(p)]));
   const bySector = new Map<string, { hit: number; all: number }>();
   for (const p of pages) {
@@ -242,7 +284,10 @@ function relevanceScores(pages: PageIn[], tokens: string[]): Map<string, number>
   for (const p of pages) {
     const h = hits.get(p.id) ?? 0;
     if (h) {
-      out.set(p.id, Math.round(clamp(55 + (45 * h) / (10 * tokens.length), 0, 98)));
+      const f = fits.get(p.id) as { raw: number; coverage: number };
+      // 55 to 98: how well the words fit, how many of them hit, and a little for being well linked.
+      const base = 55 + 43 * f.raw ** 0.6 * (0.8 + 0.2 * f.coverage);
+      out.set(p.id, Math.round(clamp(base + Math.min(3, centrality(p) / 18), 0, 98)));
       continue;
     }
     const sec = bySector.get(p.type) ?? { hit: 0, all: 1 };

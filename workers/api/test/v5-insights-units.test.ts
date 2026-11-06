@@ -174,3 +174,29 @@ describe("flow and activity", () => {
     ]);
   });
 });
+
+describe("relevance spread", () => {
+  it("pages that hit the same words land on different scores, not all at the cap", () => {
+    // Fifty pages that all carry both words in the title; they differ in the summary, in how often the
+    // words occur in the body and in how well linked they are.
+    const pages = Array.from({ length: 50 }, (_, i) => ({
+      ...page(i + 1),
+      title: i % 2 ? `Pricing method ${i}` : `Pricing ${i}`,
+      summary: i % 3 === 0 ? "pricing and method" : i % 3 === 1 ? "pricing" : "",
+      markdown: `# T\n\n${"- pricing method step\n".repeat((i % 11) + 1)}${i % 5 === 0 ? "[[p1]]" : ""}`,
+    }));
+    const c = buildConstellation({
+      ...base,
+      mode: "relevance",
+      q: "pricing method",
+      pages,
+      cap: 400,
+    });
+    const scores = c.dots.filter((d) => d.k === 1).map((d) => d.score);
+    expect(Math.max(...scores)).toBeLessThanOrEqual(98);
+    expect(new Set(scores).size).toBeGreaterThanOrEqual(8);
+    const named = c.dots.filter((d) => d.highlight).map((d) => d.score);
+    expect(named.length).toBe(5);
+    expect(new Set(named).size).toBeGreaterThanOrEqual(2);
+  });
+});

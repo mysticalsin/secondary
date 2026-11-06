@@ -7,6 +7,9 @@ import {
   layoutConstellation,
   layoutFunnel,
   nearest,
+  PILL_H,
+  type PillIn,
+  placePills,
   radiusOfScore,
   rng,
 } from "../insights/layout";
@@ -126,5 +129,103 @@ describe("activity and funnel layout", () => {
     expect(bars[1]?.w).toBeLessThan(500);
     expect(bars[2]?.w).toBeCloseTo(100);
     expect(bars[1]?.y).toBe(60);
+  });
+});
+
+describe("name pills", () => {
+  const opts = { w: CANVAS.w, h: CANVAS.h, cx: CANVAS.cx, cy: CANVAS.cy, centreR: 34 };
+  const box = (p: { l: number; y: number; w: number }) => ({
+    l: p.l,
+    r: p.l + p.w,
+    t: p.y - PILL_H / 2,
+    b: p.y + PILL_H / 2,
+  });
+  const overlap = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) =>
+    a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+  const near = (b: ReturnType<typeof box>, x: number, y: number, r: number) => {
+    const cx = Math.max(b.l, Math.min(x, b.r));
+    const cy = Math.max(b.t, Math.min(y, b.b));
+    return (cx - x) ** 2 + (cy - y) ** 2 < r * r;
+  };
+
+  const scenes: PillIn[][] = [
+    // Five nodes close together near the centre: the worst case for collisions.
+    [
+      { id: 1, x: 300, y: 250, w: 200, priority: 5 },
+      { id: 2, x: 330, y: 300, w: 220, priority: 4 },
+      { id: 3, x: 410, y: 270, w: 190, priority: 3 },
+      { id: 4, x: 380, y: 330, w: 150, priority: 2 },
+      { id: 5, x: 290, y: 310, w: 210, priority: 1 },
+    ],
+    // Nodes at the canvas edge.
+    [
+      { id: 1, x: 60, y: 40, w: 230, priority: 3 },
+      { id: 2, x: 690, y: 520, w: 230, priority: 2 },
+      { id: 3, x: 40, y: 280, w: 230, priority: 1 },
+    ],
+  ];
+
+  it("no pill touches a node, the centre badge, a collection name, another pill or the canvas edge", () => {
+    const avoid = [
+      { l: 150, r: 300, t: 40, b: 70 },
+      { l: 560, r: 700, t: 250, b: 280 },
+    ];
+    for (const nodes of scenes) {
+      const out = placePills(nodes, { ...opts, avoid });
+      expect(out).toHaveLength(nodes.length);
+      for (const p of out) {
+        const b = box(p);
+        expect(b.l).toBeGreaterThanOrEqual(4);
+        expect(b.r).toBeLessThanOrEqual(CANVAS.w - 4);
+        expect(b.t).toBeGreaterThanOrEqual(4);
+        expect(b.b).toBeLessThanOrEqual(CANVAS.h - 4);
+        expect(near(b, CANVAS.cx, CANVAS.cy, 34)).toBe(false);
+        for (const a of avoid) expect(overlap(b, a)).toBe(false);
+        for (const n of nodes) if (n.id !== p.id) expect(near(b, n.x, n.y, 15)).toBe(false);
+        for (const q of out) if (q.id !== p.id) expect(overlap(b, box(q))).toBe(false);
+      }
+    }
+  });
+
+  it("a pill that is not beside its node gets a leader line, and a close one does not", () => {
+    const [alone] = placePills([{ id: 1, x: 500, y: 200, w: 180, priority: 1 }], {
+      ...opts,
+      avoid: [],
+    });
+    expect(alone?.leader).toBeNull();
+    const crowd = placePills(scenes[0] as PillIn[], { ...opts, avoid: [] });
+    expect(crowd.some((p) => p.leader !== null)).toBe(true);
+    for (const p of crowd) if (p.leader) expect(Number.isFinite(p.leader.x2)).toBe(true);
+  });
+
+  it("is deterministic", () => {
+    const a = placePills(scenes[0] as PillIn[], { ...opts, avoid: [] });
+    const b = placePills(scenes[0] as PillIn[], { ...opts, avoid: [] });
+    expect(b).toEqual(a);
+  });
+});
+
+describe("the in-zone halo", () => {
+  it("keeps grey dots out of the zone ring and purple dots inside it", () => {
+    const rings = [50, 70, 85];
+    const r = rng(3);
+    const d: Dot[] = Array.from({ length: 640 }, (_, i) => {
+      const score = Math.round(38 + 62 * r() ** 1.6);
+      return {
+        pageId: `p${i}`,
+        sector: ["a", "b", "c", "d", "e"][i % 5] as string,
+        r: radiusOfScore(score),
+        score,
+        k: 1,
+        inZone: score >= 85,
+      };
+    });
+    const g = layoutConstellation(d, ["a", "b", "c", "d", "e"], rings, 9);
+    const zoneR = g.ringR[2] as number;
+    for (const p of g.placed) {
+      const dist = Math.hypot(p.x - CANVAS.cx, p.y - CANVAS.cy);
+      if (d[p.i]?.inZone) expect(dist).toBeLessThanOrEqual(zoneR + 1);
+      else expect(dist).toBeGreaterThan(zoneR + 2);
+    }
   });
 });

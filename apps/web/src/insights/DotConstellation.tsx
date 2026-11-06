@@ -10,85 +10,69 @@ import {
 } from "react";
 import { useI18n } from "../i18n";
 import { initials, useUid } from "./hooks";
-import { buildGrid, CANVAS, type Geometry, layoutConstellation, nearest } from "./layout";
+import {
+  type Box,
+  buildGrid,
+  CANVAS,
+  dotRadius,
+  type Geometry,
+  layoutConstellation,
+  nearest,
+  PILL_H,
+  type PillIn,
+  placePills,
+} from "./layout";
 import { CARD, cat } from "./palette";
 import type { Constellation } from "./types";
 
 /** Above this many dots the dot layer is drawn on a canvas; rings, names and hover stay SVG. */
 export const CANVAS_ABOVE = 2000;
-const DOT_R = 3.7;
 const pct = (n: number): string => `${n}%`;
-const PILL_H = 28;
-
 interface Pill {
   id: number;
-  x: number;
+  l: number;
   y: number;
   w: number;
-  anchor: "start" | "end";
   text: string;
   score: number;
+  leader: { x1: number; y1: number; x2: number; y2: number } | null;
 }
 
-/** Puts each name beside its node, away from the centre, and nudges pills apart so none overlap. */
+/** Name pills for the named nodes: none touches a node, the centre, a collection name or another pill. */
 function pillsFor(
   g: Geometry,
   data: Constellation,
   named: number[],
   names: Map<string, string>,
 ): Pill[] {
-  const labelBoxes = g.labels.map((l) => {
-    const w = (names.get(l.id)?.length ?? 6) * 8.4;
+  const avoid: Box[] = g.labels.map((l) => {
+    const w = (names.get(l.id)?.length ?? 6) * 8.6;
     const left = l.anchor === "start" ? l.x : l.anchor === "end" ? l.x - w : l.x - w / 2;
     return { l: left - 4, r: left + w + 4, t: l.y - 16, b: l.y + 6 };
   });
-  const hits = (p: Pill, boxes: { l: number; r: number; t: number; b: number }[]) => {
-    const l = p.anchor === "start" ? p.x : p.x - p.w;
-    const r = l + p.w;
-    return boxes.some(
-      (b) => l < b.r && b.l < r && p.y - PILL_H / 2 < b.b && b.t < p.y + PILL_H / 2,
-    );
-  };
-  const pills = named.map((i): Pill => {
+  const info = new Map<number, { text: string; score: number }>();
+  const ins: PillIn[] = named.map((i, rank) => {
     const p = g.placed[i] as (typeof g.placed)[0];
     const d = data.dots[i] as (typeof data.dots)[0];
     const full = d.label ?? d.title ?? "";
-    const text = full.length > 30 ? `${full.slice(0, 29)}\u2026` : full;
-    const w = Math.min(330, 26 + text.length * 7.9 + pct(d.score).length * 8.5);
-    // Toward the outer edge, unless the name would run off the card: then toward the centre.
-    let right = p.x >= g.cx;
-    if (right && p.x + 20 + w > g.w - 6) right = false;
-    else if (!right && p.x - 20 - w < 6) right = true;
+    const text = full.length > 26 ? `${full.slice(0, 25)}\u2026` : full;
+    info.set(i, { text, score: d.score });
     return {
       id: i,
-      x: right ? p.x + 20 : p.x - 20,
+      x: p.x,
       y: p.y,
-      w,
-      anchor: right ? "start" : "end",
-      text,
-      score: d.score,
+      w: Math.min(290, 28 + text.length * 7.9 + pct(d.score).length * 8.5),
+      priority: named.length - rank,
     };
   });
-  const box = (p: Pill) => ({
-    l: p.anchor === "start" ? p.x : p.x - p.w,
-    r: p.anchor === "start" ? p.x + p.w : p.x,
-  });
-  pills.sort((a, z) => a.y - z.y);
-  const placed: { l: number; r: number; t: number; b: number }[] = [];
-  for (const cur of pills) {
-    // Keep clear of the collection names and of the pills already placed: shift down, else up.
-    for (let step = 0; step < 8; step++) {
-      const off = Math.ceil(step / 2) * (PILL_H + 6) * (step % 2 ? 1 : -1);
-      const y0 = cur.y;
-      cur.y = y0 + off;
-      if (!hits(cur, labelBoxes) && !hits(cur, placed)) break;
-      cur.y = y0;
-      if (step === 7) break;
-    }
-    const b = box(cur);
-    placed.push({ l: b.l, r: b.r, t: cur.y - PILL_H / 2, b: cur.y + PILL_H / 2 });
-  }
-  return pills;
+  return placePills(ins, {
+    w: g.w,
+    h: g.h,
+    cx: g.cx,
+    cy: g.cy,
+    centreR: 34,
+    avoid,
+  }).map((p) => ({ ...p, ...(info.get(p.id) as { text: string; score: number }) }));
 }
 
 const DotsLayer = memo(function DotsLayer({
@@ -126,7 +110,7 @@ const DotsLayer = memo(function DotsLayer({
                 key={i}
                 cx={p.x}
                 cy={p.y}
-                r={DOT_R}
+                r={dotRadius(Math.hypot(p.x - g.cx, p.y - g.cy))}
                 fill={d.inZone ? CARD.inZone : CARD.below}
                 opacity={
                   d.inZone
@@ -159,8 +143,9 @@ function CanvasDots({ g, data }: { g: Geometry; data: Constellation }) {
       ctx.beginPath();
       g.placed.forEach((p, i) => {
         if ((data.dots[i] as (typeof data.dots)[0]).inZone !== zone) return;
-        ctx.moveTo(p.x + DOT_R, p.y);
-        ctx.arc(p.x, p.y, DOT_R, 0, Math.PI * 2);
+        const dr = dotRadius(Math.hypot(p.x - g.cx, p.y - g.cy));
+        ctx.moveTo(p.x + dr, p.y);
+        ctx.arc(p.x, p.y, dr, 0, Math.PI * 2);
       });
       ctx.fill();
     }
@@ -352,21 +337,30 @@ export function DotConstellation({
           </g>
         ) : null}
 
+        {pills.map((p) =>
+          p.leader ? (
+            <line
+              key={`lead${p.id}`}
+              className="dc-leader"
+              x1={p.leader.x1}
+              y1={p.leader.y1}
+              x2={p.leader.x2}
+              y2={p.leader.y2}
+              aria-hidden
+            />
+          ) : null,
+        )}
         {pills.map((p) => (
           <g key={`pill${p.id}`} aria-hidden pointerEvents="none">
             <rect
-              x={p.anchor === "start" ? p.x : p.x - p.w}
+              x={p.l}
               y={p.y - PILL_H / 2}
               width={p.w}
               height={PILL_H}
               rx={8}
               className="dc-pill"
             />
-            <text
-              x={p.anchor === "start" ? p.x + 10 : p.x - p.w + 10}
-              y={p.y + 5}
-              className="dc-pilltext"
-            >
+            <text x={p.l + 10} y={p.y + 5} className="dc-pilltext">
               {p.text} <tspan className="dc-pillscore">{pct(p.score)}</tspan>
             </text>
           </g>
