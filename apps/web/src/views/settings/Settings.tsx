@@ -21,6 +21,7 @@ import { v3 } from "../brains/api";
 import { PilotPage } from "../brains/Pilot";
 import { ExpertSetting } from "../lens";
 import { Usage } from "../usage/Usage";
+import { PrivacyGroup } from "./PrivacyGroup";
 
 const AgentSettingsSection = lazy(() => import("../../agent/SettingsSection"));
 const RulesPage = lazy(() => import("../../rules/Rules"));
@@ -319,6 +320,7 @@ export function Settings() {
     { to: "sources", label: "v7o.nav.sources", show: opsRights.sources },
     { to: "health", label: "v7o.nav.health", show: opsRights.health },
     { to: "rules", label: "v7.rules", admin: true, hide: rules !== true },
+    { to: "privacy-group", label: "v7g.nav", show: !!me?.capabilities?.configure },
     { to: "journal", label: "v4.settings.journal" },
   ];
   return (
@@ -366,6 +368,16 @@ export function Settings() {
                   <Suspense fallback={null}>
                     <RulesPage />
                   </Suspense>
+                ) : (
+                  <Navigate to="/settings/profile" replace />
+                )
+              }
+            />
+            <Route
+              path="privacy-group"
+              element={
+                !me ? null : me.capabilities?.configure ? (
+                  <PrivacyGroup />
                 ) : (
                   <Navigate to="/settings/profile" replace />
                 )

@@ -35,6 +35,7 @@ import { readiness } from "./observe.ts";
 import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
 import { PERSONAL_KINDS, type PersonalKind, personalKindOf } from "./personal-kind.ts";
 import { ruleDecideGuard, ruleGate } from "./rules/gate.ts";
+import { groupsViewRoutes } from "./rules/groups-view.ts";
 import { rulesRoutes } from "./rules/routes.ts";
 import { candidateId, parseCandidateId, personalScope, scopeOfNode } from "./scope.ts";
 import { limitBody, mutationGuard, safeEqual } from "./security.ts";
@@ -1193,6 +1194,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.route("/", lensMount(deps)); // v8 lens: page lens, who knows, faceted search, pulse
   v1.route("/", brainsRoutes(deps)); // v3 brains: directory, access, fields, imports, agents, pilot
   v1.route("/", agentRoutes(deps)); // v6 My Agent: turn stream and saved views
+  v1.route("/", groupsViewRoutes(deps)); // read the privacy approver group (before /rules/:id)
   v1.route("/", rulesRoutes(deps)); // v7 brain rules: /v1/rules
 
   v1.all("*", (c) => c.json({ error: "not_found" }, 404));

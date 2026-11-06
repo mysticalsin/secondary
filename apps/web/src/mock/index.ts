@@ -38,6 +38,7 @@ import { handleRules } from "./rules";
 import { detectSensitivity } from "./sensitive";
 import { handleV2, NOT_HANDLED, questionsFor } from "./uxv2";
 import { handleV3 } from "./v3";
+import { handleV7Group } from "./v7group";
 import { handleV7Ops } from "./v7ops";
 import { handleV8Lens } from "./v8lens";
 
@@ -882,6 +883,8 @@ export async function handle(
 
   const ops = handleV7Ops(method, p, url.searchParams, b, role);
   if (ops !== NOT_HANDLED) return ops;
+  const grp = handleV7Group(method, p, b, role);
+  if (grp !== NOT_HANDLED) return grp;
   const rules = handleRules(method, p, url.searchParams, b, role);
   if (rules !== NOT_HANDLED) return rules;
   const agent = handleAgentViews(method, p, url.searchParams, b, role, persona);
