@@ -6,8 +6,12 @@ import { ALPHA, as, json, type Loose, rawEnv, seed, wsOf } from "./helpers.ts";
 
 const HEAD = "v7p.headbid@example.invalid"; // manages c_bid
 const KEY_API = "test-audit-key-api-0123456789abcdef0123";
-/** A clock of its own (2034), so receipts other files wrote at real time stay out of the window. */
-const T = Date.UTC(2034, 2, 1, 12, 0, 0);
+/**
+ * A clock of its own in the past (2020). The AUDIT stand-in is one list for every test file and answers
+ * newest first, so 1100 receipts planted at a later time than real time would crowd out the receipts
+ * other files read back; planted before them they sort last and never reach those files' newest 200.
+ */
+const T = Date.UTC(2020, 2, 1, 12, 0, 0);
 const N = 1100;
 const headbid = (path: string) => as("head_bid", path, { email: HEAD, now: T });
 

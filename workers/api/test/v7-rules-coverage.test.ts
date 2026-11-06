@@ -167,6 +167,11 @@ for (const n of ["brainDaily", "brainJournalRun"])
   OTHER[n] = "a journal built from audit ids and counts by the system";
 for (const n of ["seed", "wikiSeedRun"])
   OTHER[n] = "dev seed of synthetic data, refused outside dev";
+for (const n of ["lensSetOptOut", "lensSavedAdd", "lensSavedRemove"])
+  OTHER[n] =
+    "a person's own choice (who-knows opt-out, saved searches), kept in their Personal Brain: no page text";
+for (const n of ["opsKvSet", "opsRetryClaim"])
+  OTHER[n] = "v7 operate bookkeeping (a setting, a retry marker keyed by event id): no page text";
 OTHER.scratch = "writes personal-plane rows only; Personal Brains carry no rules";
 
 describe("rule gate coverage, derived from the Workspace object", () => {
