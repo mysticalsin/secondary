@@ -1033,8 +1033,24 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       risks: list(b.risks, ["severity", "status"]),
       ...(notes ? { notes } : {}),
     });
+    // Brain rules (v7): a meeting record is free text written into a shared brain.
+    const g = await ruleGate(c, {
+      action: "propose_page",
+      brain: { nodeId: w.nodeId, personal: w.personal, vn: w.vn },
+      text: [title, notes, body].join("\n"),
+      cites: 0,
+      pages: 1,
+      mode: "route",
+    });
+    if (g.response) return g.response;
     if (
-      !(await audit(c, { action: "wiki.meeting", nodeId: w.nodeId, scopeId: w.scope, revision: 1 }))
+      !(await audit(c, {
+        action: "wiki.meeting",
+        nodeId: w.nodeId,
+        scopeId: w.scope,
+        revision: 1,
+        ...g.rx,
+      }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
     const made = await w.stub.create(

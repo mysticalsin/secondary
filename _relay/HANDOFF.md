@@ -1,5 +1,12 @@
 # HANDOFF
 
+## v7 Brain rules, re-verification fixes N-1 to N-5 (2026-11-06, Claude Opus, branch `v7/rules`, not merged, nothing pushed, nothing deployed)
+
+- **N-1** `actionsOf` (policy): every write or release (`propose_page`, `propose_change`, `write_session_report`, `import`, `publish`) into a Global brain also matches `promote_to_global`, decided once inside `conditionHolds`, so wiki propose, edit, release, push, import, engine and the connector all meet the seed rule. The save-time floor check stays literal (`literalAction`). The engine presents `propose_page` for a page the wiki does not hold. Candidate edit (`/actions` edit) is now gated too.
+- **N-2** `PUT /v1/rules/groups` is two-person (a different admin repeats the same list; 202 first) and audited. **N-3** dropping a named approver group counts as weakening (`weakensRule`). **N-4** `draftHash` is SHA-256 (WebCrypto); `publish` and `pendingOf` are async.
+- **N-5** account records (create, update, permission), meeting records and page field values go through `ruleGate` (mode `route`). The coverage test (`workers/api/test/v7-rules-coverage.test.ts`) now derives the writers from the Workspace Durable Object (every public method reaching INSERT, UPDATE or DELETE) and the callers by scanning the source; a new writer or caller fails until it is gated or exempted with a reason.
+- Tests fail on `2050e31` and pass now: `v7-rules.test.ts` (N-1 to N-5 describes, group test), `v7-rules-coverage.test.ts`, `packages/policy/test/rules.test.ts`. Risks: `docs/security/ACCEPTED-RISKS.md`.
+
 ## v7 Brain rules, security review fixes (2026-11-06, Claude Opus, branch `v7/rules`, not merged, nothing pushed, nothing deployed)
 
 Review: `docs/security/V7-RULES-SECURITY-REVIEW.md` (vault copy). Every fix has a regression test in `workers/api/test/v7-rules.test.ts` (last describes), `packages/policy/test/rules.test.ts` or `packages/contracts/test/audit-receipt.test.ts`. The API tests were run once against the pre-fix `src` and 17 of them failed there. Gates on the branch: build, typecheck, biome (no errors), all tests (api 896, policy 106, contracts 116, web 124, mcp 101, connector 53, ...), e2e mock 59 and real 20.

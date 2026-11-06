@@ -959,6 +959,20 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       if (dg.response) return dg.response;
       rx = dg.rx;
     }
+    // Brain rules (v7): editing a candidate changes what will be released, so the rules read the new text.
+    let editGate: Awaited<ReturnType<typeof ruleGate>> | undefined;
+    if (action === "edit" && cand) {
+      editGate = await ruleGate(c, {
+        action: "propose_change",
+        brain: { nodeId: policyNode, personal: false, vn },
+        text: `${patch.title ?? ""}\n${patch.body ?? ""}`,
+        cites: 0,
+        pages: 1,
+        mode: "stamp",
+      });
+      if (editGate.response) return editGate.response;
+      rx = editGate.rx;
+    }
     const receipt = await audit(c, {
       action,
       nodeId,
@@ -990,6 +1004,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
       }
       case "edit": {
         const r = await ws.edit(nodeId, revision as number, patch, now, s.principal.id);
+        if ("ok" in r && r.ok) await editGate?.stamp(ws, nodeId);
         return "ok" in r && r.ok
           ? c.json({
               ok: true,

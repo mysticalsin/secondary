@@ -456,10 +456,10 @@ describe("approval effects stamp the proposal and the receipt", () => {
       groups: ["privacy"],
     });
     // An admin names the privacy group; a steward who is in it may approve.
-    const put = await admin("/groups", {
-      method: "PUT",
-      body: { privacy: [await meId("reviewer", REV)] },
-    });
+    // Replacing the group is two-person (N-2): a different admin repeats the same list.
+    const list = { privacy: [await meId("reviewer", REV)] };
+    expect((await admin("/groups", { method: "PUT", body: list })).status).toBe(202);
+    const put = await admin2("/groups", { method: "PUT", body: list });
     expect(put.status).toBe(200);
     const ok = await approve(REV);
     expect(ok.status, await ok.clone().text()).toBe(200);
@@ -1034,6 +1034,96 @@ describe("the connector path", () => {
   });
 });
 
+describe("N-1: every path into Company Global meets a rule written for promote_to_global", () => {
+  const CLIENT = "The Acme Synthetic SA account asked for a revised plan before the gate.";
+  const toCore = (persona: string, email: string, title: string, markdown: string) =>
+    as(persona, "/v1/wiki/core/propose", { email, body: { title, markdown } });
+  const clean = `# Global note\n\n## Summary\n- The delivery gate is signed before release.\n`;
+  const named = (t: string) => `# ${t}\n\n## Summary\n- ${CLIENT}\n`;
+  let editable = "";
+
+  it("a client name proposed into Global is blocked, edited in is blocked, and a release re-reads it", async () => {
+    // Proposals made before any rule exists: one that already names a client, one that is clean.
+    const p1 = await json<Loose>(
+      await toCore("head_bid", BID, "Named early", named("Named early")),
+    );
+    expect(p1.status, JSON.stringify(p1)).toBe("candidate");
+    const p2 = await json<Loose>(await toCore("head_bid", BID, "Clean early", clean));
+    expect(p2.status, JSON.stringify(p2)).toBe("candidate");
+    editable = p2.proposalId;
+    // A rule written for promote_to_global, as the seed rule is.
+    const r = await create(
+      admin,
+      rule({
+        name: "Global: no client names",
+        scope: { kind: "brains", ids: ["core"] },
+        when: [
+          when("action", "is_any_of", "promote_to_global"),
+          when("content_flag", "is_any_of", "client_name"),
+        ],
+        then: { effect: "block", message: "No client names in Global." },
+      }),
+    );
+    await publish(admin, r.id, {});
+    // propose
+    const refused = await toCore("head_bid", BID, "Named late", named("Named late"));
+    expect(refused.status).toBe(403);
+    expect(await json<Loose>(refused)).toMatchObject({
+      error: "blocked_by_rule",
+      rule: `${r.id}@1`,
+    });
+    expect((await toCore("head_bid", BID, "Clean late", clean)).status).toBe(201);
+    // edit
+    const edit = await as("reviewer", `/v1/wiki/core/proposals/${editable}/edit`, {
+      email: "v7.rev@example.invalid",
+      body: { pageId: "clean-early", markdown: named("Clean early") },
+    });
+    expect(edit.status, await edit.clone().text()).toBe(403);
+    expect((await json<Loose>(edit)).error).toBe("blocked_by_rule");
+    // release of the proposal that named a client before the rule existed
+    const qs = await json<Loose[]>(
+      await as("reviewer", "/v1/questions?brain=core", { email: "v7.rev@example.invalid" }),
+    );
+    const q = qs.find((x) => x.title.includes("Named early")) as Loose;
+    expect(q, JSON.stringify(qs.map((x) => x.title))).toBeTruthy();
+    const approve = await as("reviewer", `/v1/questions/${q.id}`, {
+      email: "v7.rev@example.invalid",
+      body: { action: "approve", revisionHash: q.detail.revisionHash, seenChanges: seenOf(q) },
+    });
+    expect(approve.status, await approve.clone().text()).toBe(403);
+    expect((await json<Loose>(approve)).error).toBe("blocked_by_rule");
+    // the wiki engine: a source in Global that names a client
+    const SRC = `src:abcdef:${"v7global".padEnd(24, "0")}`;
+    const text = ["Plan notes", `Decision: ${CLIENT} (owner: CEO, status: decided)`].join("\n");
+    await wsOf(ALPHA, "global").sourceUpsert([
+      {
+        id: SRC,
+        sourceId: "abcdef",
+        gateNodeId: "core",
+        plane: "COMPANY_GLOBAL",
+        title: "Global notes.md",
+        body: text,
+        webUrl: null,
+        mime: "text/markdown",
+        size: text.length,
+        eTag: "e1",
+        syncedAt: Date.now(),
+      },
+    ]);
+    await wsOf(ALPHA, "global").wikiNotify(ALPHA, "global", [SRC], Date.now());
+    const run = await as("reviewer", "/v1/wiki/core/run", {
+      email: "v7.rev@example.invalid",
+      body: {},
+    });
+    expect(run.status, await run.clone().text()).toBe(200);
+    const out = await json<Loose>(run);
+    const triage = (out.results as Loose[]).map((x) => x.triage);
+    expect(triage).toContain("blocked_by_rule");
+    expect(triage).not.toContain("proposed");
+    await retire(admin, r.id, { kind: "brains", ids: ["core"] });
+  });
+});
+
 describe("the synthetic seed", () => {
   it("seeds the design rules once, they validate, and they show with their statuses", async () => {
     expect(SEED_RULES).toHaveLength(4);
@@ -1589,59 +1679,92 @@ describe("H-2: the rules run on every path that writes or releases", () => {
     expect(results.map((x) => x.triage)).not.toContain("proposed");
     await retire(admin, r.id, { kind: "brains", ids: ["a_acme"] });
   });
+});
 
-  it("covers every write, propose, publish, export, promote and share entrypoint: a new one fails until it is gated", () => {
-    const files = (
-      import.meta as unknown as {
-        glob: (p: string, o: object) => Record<string, string>;
-      }
-    ).glob("../src/**/*.ts", { query: "?raw", import: "default", eager: true });
-    // The calls that put content into a brain, release it, take it out or share it.
-    const SINK =
-      /\.(wikiPropose|wikiEditProposal|wikiDecide|sourceUpsert)\(|kind: "candidate"|(?<!function )\b(zip|writeShare)\(/g;
-    const GATE =
-      /(?<!function )\b(ruleGate|ruleServiceCheck|ruleDecideGuard|engineRules|shareGate)\(/g;
-    // Where they live today, with how many of each and how many gate calls guard them. A new sink
-    // in any file, or a new file with one, changes a count and fails here until it is reviewed.
-    const REGISTRY: Record<string, { sinks: number; gates: number; why: string }> = {
-      "routes.ts": {
-        sinks: 1,
-        gates: 2,
-        why: "contribute (ruleGate), release of a candidate (ruleDecideGuard)",
-      },
-      "brains/push.ts": { sinks: 1, gates: 1, why: "MCP/API push page, change, session report" },
-      "brains/data.ts": { sinks: 1, gates: 1, why: "import" },
-      "connector.ts": { sinks: 1, gates: 1, why: "SharePoint sync (ruleServiceCheck)" },
-      "wiki/routes.ts": { sinks: 3, gates: 3, why: "propose, edit, decide" },
-      "wiki/engine.ts": { sinks: 3, gates: 4, why: "ingest, lint, dream (engineRules)" },
-      "agent/views.ts": {
-        sinks: 2,
-        gates: 3,
-        why: "share and update of a shared plan (shareGate)",
-      },
-      "uxv2/routines.ts": { sinks: 1, gates: 1, why: "routine ingest" },
-      "uxv2/export.ts": { sinks: 1, gates: 1, why: "export" },
-      "uxv2/questions.ts": {
-        sinks: 4,
-        gates: 3,
-        why: "keep_current, approve, release of a candidate",
-      },
-    };
-    const found: Record<string, { sinks: number; gates: number }> = {};
-    for (const [path, src] of Object.entries(files)) {
-      const file = path.replace("../src/", "");
-      if (file.startsWith("rules/")) continue;
-      // Where the primitives themselves are defined.
-      if (["wiki/store.ts", "brains/store.ts", "workspace.ts", "uxv2/zip.ts"].includes(file))
-        continue;
-      const sinks = (src.match(SINK) ?? []).length;
-      if (sinks > 0) found[file] = { sinks, gates: (src.match(GATE) ?? []).length };
-    }
-    const expected = Object.fromEntries(
-      Object.entries(REGISTRY).map(([f, v]) => [f, { sinks: v.sinks, gates: v.gates }]),
+describe("N-2, N-3, N-4: group changes, dropped groups and the draft hash", () => {
+  it("N-2: replacing the privacy group needs a second admin, and an empty list too", async () => {
+    const a = [await meId("consultant", CONS)];
+    const b = [await meId("reviewer", REV2)];
+    expect((await admin("/groups", { method: "PUT", body: { privacy: b } })).status).toBe(202);
+    // The same admin again is still one person.
+    const again = await admin("/groups", { method: "PUT", body: { privacy: b } });
+    expect(again.status).toBe(202);
+    expect((await json<Loose>(again)).sameActor).toBe(true);
+    // A different list is a different request: the second admin is first for it.
+    expect((await admin2("/groups", { method: "PUT", body: { privacy: a } })).status).toBe(202);
+    expect(await tenantDo(ALPHA).rules("groupGet", [])).not.toEqual(b);
+    // A steward cannot touch it at all.
+    expect((await bid("/groups", { method: "PUT", body: { privacy: b } })).status).toBe(404);
+    expect((await admin2("/groups", { method: "PUT", body: { privacy: b } })).status).toBe(200);
+    expect(await tenantDo(ALPHA).rules("groupGet", [])).toEqual(b);
+    // The change is on the record.
+    expect((await receipts()).some((x) => x.action === "rules.groups")).toBe(true);
+  });
+
+  it("N-3: a steward cannot turn a named-group rule into two approvers alone", async () => {
+    const group = rule({
+      name: "Privacy on bid",
+      scope: { kind: "brains", ids: ["c_bid"] },
+      when: [when("action", "is_any_of", "export"), when("size_pages", "greater_than", "5000")],
+      then: { effect: "group", approvers: ["privacy"] },
+    });
+    const r = await create(admin, group);
+    await publish(admin, r.id, {});
+    await bid(`/${r.id}`, { method: "PUT", body: { ...group, then: { effect: "two_approvers" } } });
+    const alone = await pubCall(bid, r.id, { status: "enforced" });
+    expect(alone.status).toBe(202);
+    expect((await json<Loose>(await admin(`/${r.id}`))).published.then.effect).toBe("group");
+    await retire(admin, r.id, { kind: "brains", ids: ["c_bid"] });
+  });
+
+  it("N-4: the draft hash is the SHA-256 of the draft", async () => {
+    const r = await create(admin, rule({ name: "Hash is sha256", status: "monitor" }));
+    const detail = await json<Loose>(await admin(`/${r.id}`));
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(JSON.stringify(detail.draft)),
     );
-    expect(found).toEqual(expected);
-    // And every registered file really calls a gate at least as often as it has a gated sink.
-    for (const [f, v] of Object.entries(found)) expect(v.gates, f).toBeGreaterThan(0);
+    const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    expect(detail.draftHash).toBe(hex);
+    expect(detail.draftHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("N-5: account records and meeting records meet the rules", () => {
+  it("a record or a meeting record that names a client is blocked by a content rule", async () => {
+    const r = await create(
+      admin,
+      rule({
+        name: "Records: no client names",
+        scope: { kind: "brains", ids: ["c_delivery", "a_acme"] },
+        when: [
+          when("action", "is_any_of", "propose_page", "propose_change"),
+          when("content_flag", "is_any_of", "client_name"),
+        ],
+        then: { effect: "block", message: "No client names here." },
+      }),
+    );
+    await publish(admin, r.id, {});
+    const meeting = await as("acme_lead", "/v1/wiki/a_acme/meetings", {
+      email: "v7.lead@example.invalid",
+      body: { title: "Weekly", notes: "Acme Synthetic SA asked for a new plan." },
+    });
+    expect(meeting.status, await meeting.clone().text()).toBe(403);
+    expect((await json<Loose>(meeting)).error).toBe("blocked_by_rule");
+    const record = await as("acme_lead", "/v1/ux/accounts/a_acme/records", {
+      body: { section: "risk", title: "Acme risk", note: "Acme Synthetic SA may leave." },
+    });
+    expect(record.status, await record.clone().text()).toBe(403);
+    expect((await json<Loose>(record)).error).toBe("blocked_by_rule");
+    // Without a client name both still work.
+    expect(
+      (
+        await as("acme_lead", "/v1/wiki/a_acme/meetings", {
+          email: "v7.lead@example.invalid",
+          body: { title: "Weekly", notes: "The delivery gate is next week." },
+        })
+      ).status,
+    ).toBe(201);
+    await retire(admin, r.id, { kind: "brains", ids: ["c_delivery", "a_acme"] });
   });
 });

@@ -136,12 +136,23 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     const res = checkWrite(b, config.fields, page.type, body.values, ack);
     if (!res.ok) return c.json(res.body, res.status);
     const s = sess(c);
+    // Brain rules (v7): field values are free text written into the brain's page.
+    const fg = await ruleGate(c, {
+      action: "propose_change",
+      brain: { nodeId: b.nodeId, personal: b.personal, vn: b.vn, role: b.role },
+      text: JSON.stringify(body.values ?? {}),
+      cites: 0,
+      pages: 1,
+      mode: "route",
+    });
+    if (fg.response) return fg.response;
     if (
       !(await audit(c, {
         action: "brain.fields_write",
         nodeId: b.nodeId,
         scopeId: b.scope,
         revision: page.revision,
+        ...fg.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);

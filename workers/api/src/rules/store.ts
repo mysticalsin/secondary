@@ -100,20 +100,14 @@ const hex = (n: number): string =>
 const parse = <T>(s: unknown): T => JSON.parse(s as string) as T;
 const parseOr = <T>(s: unknown, d: T): T => (typeof s === "string" ? (JSON.parse(s) as T) : d);
 
-/** A stable 53-bit hash of a draft, so a second person confirms exactly the draft the first one saw. */
-export function draftHash(d: RuleDraft): string {
-  const text = JSON.stringify(d);
-  let h1 = 0xdeadbeef;
-  let h2 = 0x41c6ce57;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+/** SHA-256 of a text, as hex. */
+async function sha256(text: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/** A hash of a draft (SHA-256), so a second person confirms exactly the draft the first one saw. */
+export const draftHash = (d: RuleDraft): Promise<string> => sha256(JSON.stringify(d));
 
 export const RULES_METHODS = [
   "list",
@@ -381,7 +375,7 @@ export class RulesStore {
    * hash of the draft the caller reviewed: a draft that changed since is refused, so nobody confirms
    * a draft they did not see.
    */
-  publish(
+  async publish(
     id: string,
     status: RuleStatus,
     a: {
@@ -392,18 +386,19 @@ export class RulesStore {
       twoPerson: boolean;
       expectedHash: string;
     },
-  ):
+  ): Promise<
     | { ok: true; applied: true; version: number }
     | { ok: true; applied: false; sameActor: boolean }
-    | Fail {
+    | Fail
+  > {
     const r = this.get(id);
     if (!r) return fail("not_found", "No such rule", 404);
     if (!r.draft) return fail("no_draft", "There is no draft to publish", 409);
-    if (draftHash(r.draft) !== a.expectedHash)
+    if ((await draftHash(r.draft)) !== a.expectedHash)
       return fail("draft_changed", "The draft changed since you opened it. Review it again", 409);
     const body: RuleDraft = { ...r.draft, status };
     if (a.twoPerson) {
-      const step = this.d.second(`rulepub:${id}:${draftHash(body)}`, a.by, a.now, a.email);
+      const step = this.d.second(`rulepub:${id}:${await draftHash(body)}`, a.by, a.now, a.email);
       if (step !== "second") return { ok: true, applied: false, sameActor: step === "same" };
     }
     return this.d.tx(() => {
@@ -445,19 +440,14 @@ export class RulesStore {
   }
 
   /** The two-person step waiting on this rule, if any. */
-  pendingOf(id: string, now: number): Pending | null {
+  async pendingOf(id: string, now: number): Promise<Pending | null> {
     const r = this.get(id);
     if (!r) return null;
     if (r.draft) {
       for (const status of ["draft", "monitor", "enforced"] as const) {
-        const by = this.d.pending(`rulepub:${id}:${draftHash({ ...r.draft, status })}`, now);
-        if (by)
-          return {
-            by,
-            at: this.pendingAt(`rulepub:${id}:${draftHash({ ...r.draft, status })}`),
-            kind: "publish",
-            version: r.version + 1,
-          };
+        const key = `rulepub:${id}:${await draftHash({ ...r.draft, status })}`;
+        const by = this.d.pending(key, now);
+        if (by) return { by, at: this.pendingAt(key), kind: "publish", version: r.version + 1 };
       }
     }
     for (const v of this.history(id)) {
@@ -702,11 +692,28 @@ export class RulesStore {
     return r ? parse<string[]>(r.v) : [];
   }
 
-  groupSet(ids: string[]): void {
+  /**
+   * Replace the privacy group. Group rules rest on this list, so changing it is two-person, like
+   * weakening a rule: a different admin repeats the same list.
+   */
+  async groupSet(
+    ids: string[],
+    a: { by: string; email: string; now: number },
+  ): Promise<{ ok: true; applied: true } | { ok: true; applied: false; sameActor: boolean }> {
+    const next = [...new Set(ids)].slice(0, 100);
+    const key = `rulegrp:${await sha256(JSON.stringify([...next].sort()))}`;
+    const cur = this.groupGet();
+    const same = cur.length === next.length && next.every((x) => cur.includes(x));
+    if (!same) {
+      const step = this.d.second(key, a.by, a.now, a.email);
+      if (step !== "second") return { ok: true, applied: false, sameActor: step === "same" };
+    }
     this.sql.exec(
       "INSERT INTO config (k, v) VALUES ('rule_group_privacy', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-      JSON.stringify([...new Set(ids)].slice(0, 100)),
+      JSON.stringify(next),
     );
+    this.sql.exec("DELETE FROM pending_ops WHERE key LIKE 'rulegrp:%'");
+    return { ok: true, applied: true };
   }
 
   // ---- seed (dev only; the caller decides) ----
@@ -748,7 +755,7 @@ export class RulesStore {
   reset(): void {
     for (const t of [...RULES_TABLES, ...RULES_VOLATILE]) this.sql.exec(`DELETE FROM ${t}`);
     this.sql.exec(
-      "DELETE FROM pending_ops WHERE key LIKE 'rulepub:%' OR key LIKE 'rulerb:%' OR key LIKE 'incident:%'",
+      "DELETE FROM pending_ops WHERE key LIKE 'rulepub:%' OR key LIKE 'rulerb:%' OR key LIKE 'incident:%' OR key LIKE 'rulegrp:%'",
     );
     this.sql.exec("DELETE FROM config WHERE k = 'rules_seed_version'");
   }

@@ -17,7 +17,7 @@ Owner for every row: Tony Walteur (sponsor and platform owner), until a named se
 
 ## V7 Brain rules (review of `v7/rules`, 2026-11-06)
 
-All High and Medium findings and the Low findings below are fixed in code with a regression test each (see `_relay/HANDOFF.md`). What stays:
+The High and Medium findings of the first review were fixed in commit `2050e31`. The re-verification found that H-2 was only partly fixed (N-1, Global paths) and added N-2 to N-5; those are fixed in the commit after it, each with a regression test (see `_relay/HANDOFF.md`). What stays:
 
 | ID | What stays | Why it is acceptable now | Condition that ends the acceptance | Review by |
 |---|---|---|---|---|
@@ -26,3 +26,4 @@ All High and Medium findings and the Low findings below are fixed in code with a
 | L-6 (UI) | The web app does not yet send `X-Rule-Hold` after an approval, so a held export or share is completed by calling the API with the header. | The API side is fixed (one approval per brain, comma separated; refunded when the audit write fails). The UI step is a feature, not an exposure: without the header the action stays held. | The first pilot that exports or shares under a hold rule. | Before the staging pilot |
 | H-2 (dev seed) | The wiki engine's dev seed (`ctx.seed`, synthetic pages marked as seed) skips the rules. | It exists only in the dev environment, writes synthetic data, and is switched off with `WIKI_SEED=off`. Every other engine run (ingest, lint, dreaming) is gated and fails closed. | Never run the seed in staging or prod (it is refused there). | Before any pilot |
 | M-3 (late spend) | An approved hold is spent when the gate passes and is handed back only if the audit write fails. A failure after that point (for example while building the zip) does not hand it back. | The requester can ask again and the approvers decide again. It costs a second approval and never releases anything extra. | A report of lost approvals in practice. Move the spend to after the response is built. | Next rules review |
+| N-5 (records) | Account records, meeting records and field values are gated in `route` mode: a rule can block or notify, but an approval effect (review, two approvers, group) does nothing on them. | These writes go straight into the brain with no proposal to hold, as before. A block (the case that matters for client names and personal data) works. | A product decision to put records through review. Then route them through `wikiPropose`. | Next rules review |
