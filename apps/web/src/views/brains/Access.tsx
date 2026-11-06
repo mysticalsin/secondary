@@ -1,10 +1,11 @@
 import { Building2, Lock } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { type FormEvent, lazy, Suspense, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, request } from "../../api";
 import { Await } from "../../components/ui";
 import { type Key, useI18n } from "../../i18n";
 import { initialsOf, nameOfEmail } from "../../lib/people";
+import { useRulesAccess } from "../../rules/access";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { ux2 } from "../../uxv2/api";
@@ -21,6 +22,8 @@ const ROLE_KEY: Record<BrainRole, [Key, Key]> = {
   steward: ["v4.role.steward", "v4.role.steward.d"],
   owner: ["v4.role.owner", "v4.role.owner.d"],
 };
+
+const RulesPage = lazy(() => import("../../rules/Rules"));
 
 function useRoleOptions(view: AccessView): ChoiceOption[] {
   const { t } = useI18n();
@@ -381,50 +384,121 @@ function HiddenVersions({ id }: { id: string }) {
   );
 }
 
+/** Members and Rules, as two tabs. Arrow keys move between them. */
+function AccessTabs({
+  tab,
+  onPick,
+}: {
+  tab: "members" | "rules";
+  onPick: (t: "members" | "rules") => void;
+}) {
+  const { t } = useI18n();
+  const order = ["members", "rules"] as const;
+  return (
+    <div className="v7tabs" role="tablist" aria-label={t("v7.tabs")}>
+      {order.map((k) => (
+        <button
+          key={k}
+          type="button"
+          role="tab"
+          id={`acc-tab-${k}`}
+          aria-selected={tab === k}
+          aria-controls="acc-panel"
+          tabIndex={tab === k ? 0 : -1}
+          className={tab === k ? "on" : ""}
+          onClick={() => onPick(k)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+              e.preventDefault();
+              const next = order[(order.indexOf(k) + 1) % order.length] as "members" | "rules";
+              onPick(next);
+              requestAnimationFrame(() => document.getElementById(`acc-tab-${next}`)?.focus());
+            }
+          }}
+        >
+          {t(k === "members" ? "v7.tab.members" : "v7.tab.rules")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function AccessPage() {
   const { id = "" } = useParams();
   const { t } = useI18n();
   const access = useApi(() => v3.access(id), [id]);
   const [pendingNow, setPendingNow] = useState(false);
+  const [sp, setSp] = useSearchParams();
+  // Stewards of this brain get a Rules tab. Anyone else gets a 404 from the API and no tab.
+  const hasRules = useRulesAccess(id) === true;
+  const tab = hasRules && sp.get("tab") === "rules" ? "rules" : "members";
+  const pick = (next: "members" | "rules") => {
+    const p = new URLSearchParams(sp);
+    if (next === "rules") p.set("tab", "rules");
+    else p.delete("tab");
+    setSp(p, { replace: true });
+  };
   return (
-    <BrainFrame id={id} title={t("v4.members.access")} width="narrow">
+    <BrainFrame
+      id={id}
+      title={t("v4.members.access")}
+      width={tab === "rules" ? undefined : "narrow"}
+    >
       {(b) => (
         <Await state={access} skeleton={3}>
           {(view) => {
             const waiting = (view.members ?? []).filter((m) => m.state === "pending").length;
+            if (tab === "rules")
+              return (
+                <div className="stack access4">
+                  <AccessTabs tab={tab} onPick={pick} />
+                  <div id="acc-panel" role="tabpanel" aria-labelledby="acc-tab-rules">
+                    <Suspense fallback={null}>
+                      <RulesPage key={id} brain={id} />
+                    </Suspense>
+                  </div>
+                </div>
+              );
             return (
               <div className="stack access4">
-                {waiting > 0 || pendingNow ? (
-                  <div className="banner" role="status" data-testid="pending-banner">
-                    <b>{t("b3.acc.banner.title")}</b>{" "}
-                    <span>{t("b3.acc.banner.lead", { n: Math.max(waiting, 1) })}</span>{" "}
-                    <Link to="/settings/members">{t("b3.acc.banner.link")}</Link>
-                  </div>
-                ) : null}
-                {view.type === "personal" ? (
-                  <div className="banner info" role="note">
-                    {t("b3.acc.personal")}
-                  </div>
-                ) : null}
-                {!view.canManage ? (
-                  <p className="muted" role="note">
-                    {t("b3.acc.readonly")}
-                  </p>
-                ) : null}
-                <Members
-                  id={id}
-                  view={view}
-                  reload={access.reload}
-                  onPending={() => setPendingNow(true)}
-                />
-                <PublicationSection
-                  id={id}
-                  view={view}
-                  reload={access.reload}
-                  onPending={() => setPendingNow(true)}
-                />
-                <BusinessFields id={id} b={b} />
-                <HiddenVersions id={id} />
+                {hasRules ? <AccessTabs tab={tab} onPick={pick} /> : null}
+                <div
+                  id="acc-panel"
+                  className="stack"
+                  {...(hasRules ? { role: "tabpanel", "aria-labelledby": "acc-tab-members" } : {})}
+                >
+                  {waiting > 0 || pendingNow ? (
+                    <div className="banner" role="status" data-testid="pending-banner">
+                      <b>{t("b3.acc.banner.title")}</b>{" "}
+                      <span>{t("b3.acc.banner.lead", { n: Math.max(waiting, 1) })}</span>{" "}
+                      <Link to="/settings/members">{t("b3.acc.banner.link")}</Link>
+                    </div>
+                  ) : null}
+                  {view.type === "personal" ? (
+                    <div className="banner info" role="note">
+                      {t("b3.acc.personal")}
+                    </div>
+                  ) : null}
+                  {!view.canManage ? (
+                    <p className="muted" role="note">
+                      {t("b3.acc.readonly")}
+                    </p>
+                  ) : null}
+                  <Members
+                    id={id}
+                    view={view}
+                    reload={access.reload}
+                    onPending={() => setPendingNow(true)}
+                  />
+                  <PublicationSection
+                    id={id}
+                    view={view}
+                    reload={access.reload}
+                    onPending={() => setPendingNow(true)}
+                  />
+                  <BusinessFields id={id} b={b} />
+                  <HiddenVersions id={id} />
+                </div>
               </div>
             );
           }}

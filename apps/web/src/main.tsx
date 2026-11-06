@@ -9,6 +9,7 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/uxv2.css";
 import "./styles/v4.css";
+import "./styles/v7.css";
 import "./insights/insights.css";
 import { applyTheme, readTheme } from "./lib/theme";
 import { AppProvider } from "./state";

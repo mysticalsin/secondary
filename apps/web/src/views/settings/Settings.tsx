@@ -7,6 +7,7 @@ import { type Key, useI18n } from "../../i18n";
 import { displayName, initialsOf } from "../../lib/people";
 import type { Theme } from "../../lib/theme";
 import { PERSONAS } from "../../personas";
+import { useRulesAccess } from "../../rules/access";
 import { useApp } from "../../state";
 import { useApi } from "../../useApi";
 import { downloadExport } from "../../uxv2/api";
@@ -17,6 +18,7 @@ import { PilotPage } from "../brains/Pilot";
 import { Usage } from "../usage/Usage";
 
 const AgentSettingsSection = lazy(() => import("../../agent/SettingsSection"));
+const RulesPage = lazy(() => import("../../rules/Rules"));
 
 function Profile() {
   const { t, td } = useI18n();
@@ -283,7 +285,9 @@ export function Settings() {
   const known = !!me && caps !== null;
   const guard = (el: JSX.Element) =>
     admin ? el : known ? <Navigate to="/settings/profile" replace /> : null;
-  const items: { to: string; label: Key; admin?: boolean; gap?: boolean }[] = [
+  // Rules is for people with the configure grant, and only where the API says the surface exists.
+  const rules = useRulesAccess(undefined, !!me?.capabilities?.configure);
+  const items: { to: string; label: Key; admin?: boolean; gap?: boolean; hide?: boolean }[] = [
     { to: "profile", label: "v4.settings.profile" },
     { to: "brains", label: "v4.settings.brains" },
     { to: "agents", label: "v4.settings.agents" },
@@ -294,6 +298,7 @@ export function Settings() {
     { to: "usage", label: "v4.settings.usage", gap: true },
     { to: "members", label: "v4.settings.members", admin: true, gap: true },
     { to: "pilot", label: "v4.settings.pilot", admin: true },
+    { to: "rules", label: "v7.rules", admin: true, hide: rules !== true },
     { to: "journal", label: "v4.settings.journal" },
   ];
   return (
@@ -303,7 +308,7 @@ export function Settings() {
         <nav className="setnav" aria-label={t("v4.settings")}>
           <ul>
             {items
-              .filter((i) => !i.admin || admin)
+              .filter((i) => (!i.admin || admin) && !i.hide)
               .map((i) => (
                 <li key={i.to} className={i.gap ? "gap" : undefined}>
                   <NavLink to={`/settings/${i.to}`}>{t(i.label)}</NavLink>
@@ -331,6 +336,18 @@ export function Settings() {
             <Route path="usage" element={<Usage />} />
             <Route path="members" element={guard(<Admin />)} />
             <Route path="pilot" element={guard(<PilotPage />)} />
+            <Route
+              path="rules"
+              element={
+                !me || rules === null ? null : rules ? (
+                  <Suspense fallback={null}>
+                    <RulesPage />
+                  </Suspense>
+                ) : (
+                  <Navigate to="/settings/profile" replace />
+                )
+              }
+            />
             <Route path="journal" element={<Journal />} />
             <Route path="*" element={<Navigate to="/settings/profile" replace />} />
           </Routes>
