@@ -64,6 +64,29 @@ Date: 2026-11-06. Plan: Claude Opus. Sponsor: Tony ("use these to push the visua
 - Agent components never offer "act", "always allow" or write tools beyond the existing review flow.
 - Accessibility: TUFFUI ships keyboard and ARIA support. We still run axe at zero violations at 1280 and 400, in FR/EN and dark mode, with table twins for every chart.
 
+## 3b. Operate console (from TUFFUI "Agent Console" screen, source shared by Tony)
+
+**Layout to reproduce:**
+- A collapsible sidebar from 56rem (232 to 64 px with tooltips), an in-place drawer below that.
+- A header with title, environment tag and incident pill.
+- One vertical scroll.
+- From 64rem, a right side column of 21rem.
+- Container queries (`@container`), motion with `MotionConfig reducedMotion="user"`, and toasts inside the screen.
+
+**Where:** Settings › Operate (admins). Stewards get the same console filtered to their brains.
+
+| Console section | Secondary use case (real data, no content) |
+|---|---|
+| **Incident banner + ToolApprovalQueue (flat)** | Incident mode on (the v7 EXCEPT switch), or a kill switch tripped. Shows pending items that need a decision now: rule publications awaiting a second person, credential rotations, restore requests, and rights export/erase. Each still follows its own two-person rule. There is no "always allow". |
+| **StatGrid with sparklines** | Ingest success %, agent turns/day, proposals waiting, median time to decision, knowledge gaps open, ACL freshness %. |
+| **BackgroundAgents grid** | Live tiles for what runs in the background: connector syncs per source, nightly lint/dreaming per brain, journal job, retention job, backups. Each shows status and last/next run. Clicking opens the Activity log. |
+| **RunTrace (flame)** | One selected run broken into spans: an agent turn (tools: list_brains, search, read_page, insights) or an ingest (fetch, ACL check, classifier, rule eval, review enqueue). Time, tokens and cost per span. |
+| **EvalResults (compare)** | **New, real need: brain answer evals.** Per brain, a set of golden questions with expected cited pages, written by stewards. Each night Ask and My Agent are run against them, showing pass, fail or regressed against the last baseline. This catches answer quality drops after imports, rule changes or model changes. Runs only on synthetic or approved questions. Results show ids and pass/fail, not page content beyond titles the viewer can read. |
+| **Side: UsageSummary, RateLimits, ContextWindowMeter** | Tokens and cost by capability and model against the tenant monthly budget. Agent rate limits (20 turns/min per person) with retry-after. The context meter for the last agent turn (system, history, evidence, tools). |
+| **Team list (avatars with presence)** | Connected agent hosts (Claude Code, Codex, Dust, Copilot, Claude.ai, ChatGPT) with connection state from Settings › Agents. Never people's activity. |
+
+The reference source is kept at `docs/design-refs/tuffui/agent-console.reference.tsx` under the MIT licence of TUFFUI contributors. It is for reference only, and is not imported until the v9 platform upgrade.
+
 ## 4. Sequencing
 
 1. Merge the in-flight branches first: v7 rules, v7 ops, v8 review and v8 lens.
