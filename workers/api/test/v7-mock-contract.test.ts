@@ -72,13 +72,20 @@ describe("rules: web mock and real API agree", () => {
     expect(drift(fake, [made])).toEqual([]);
     const detail = await json<Loose>(await real(`/${made.id}`));
     expect(drift(mock("GET", `/v1/rules/${fake.id}`), [detail])).toEqual([]);
-    const pubReal = await json<Loose>(await real(`/${made.id}/publish`, { method: "POST", body: { status: "enforced" } }));
+    const pubReal = await json<Loose>(
+      await real(`/${made.id}/publish`, { method: "POST", body: { status: "enforced" } }),
+    );
     const pubFake = mock("POST", `/v1/rules/${fake.id}/publish`, { status: "enforced" });
     // Whether c_delivery needs a second person differs between the mock's catalogue and the real org; the
     // shape of each answer is what is compared.
     if (pubFake.status === pubReal.status) expect(drift(pubFake, [pubReal])).toEqual([]);
-    else expect(["pending", "published"]).toEqual(expect.arrayContaining([pubFake.status, pubReal.status]));
-    const sim = await json<Loose>(await real("/simulate", { method: "POST", body: { rule, days: 7 } }));
+    else
+      expect(["pending", "published"]).toEqual(
+        expect.arrayContaining([pubFake.status, pubReal.status]),
+      );
+    const sim = await json<Loose>(
+      await real("/simulate", { method: "POST", body: { rule, days: 7 } }),
+    );
     expect(drift(mock("POST", "/v1/rules/simulate", { rule, days: 7 }), [sim])).toEqual([]);
     const inc = await json<Loose>(await real("/incident"));
     expect(drift(mock("GET", "/v1/rules/incident"), [inc])).toEqual([]);
