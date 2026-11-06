@@ -333,3 +333,48 @@ describe("re-resolving a plan for a viewer", () => {
     expect(none).not.toMatch(/a_acme|c_bid|Acme|Bids|focus/);
   });
 });
+
+describe("lineOk on container lines (children are other lines)", () => {
+  it("accepts a card or button row whose children are still to come, and still refuses a bad one", () => {
+    expect(lineOk('c1 = InsightCard("Flow", [f1], "30d")')).toBe(true);
+    expect(lineOk("nav = Buttons([b1, b2])")).toBe(true);
+    expect(lineOk('c1 = InsightCard("Flow", [])')).toBe(false);
+    expect(lineOk("nav = Buttons([])")).toBe(false);
+    expect(lineOk('c1 = InsightCard("", [f1])')).toBe(false);
+    // an unfinished statement is not a finished line
+    expect(lineOk("root = Stack([c1")).toBe(false);
+    expect(lineOk('c1 = InsightCard("Cut of')).toBe(false);
+  });
+});
+
+describe("statements the parser cut out are still counted as dropped", () => {
+  it("an unknown component referenced from a list", () => {
+    const v = viewOfProgram('root = Stack([k])\nk = Script("alert(1)")');
+    expect(v.root?.children).toHaveLength(0);
+    expect(v.dropped).toBe(1);
+    expect(viewOfProgram(GOOD).dropped).toBe(0);
+  });
+});
+
+describe("the Worker must start", () => {
+  it("importing the module makes nothing random: workerd refuses random values in global scope", async () => {
+    vi.resetModules();
+    const uuid = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
+      throw new Error("random value in global scope");
+    });
+    const rnd = vi.spyOn(Math, "random").mockImplementation(() => {
+      throw new Error("random value in global scope");
+    });
+    try {
+      const m = await import("../src/agent-ui/index.ts");
+      expect(typeof m.agentSystemPrompt).toBe("function");
+      // The first use is where it is built: that is a request handler in the Worker.
+      uuid.mockRestore();
+      rnd.mockRestore();
+      expect(m.agentSystemPrompt()).toContain("Funnel(");
+    } finally {
+      uuid.mockRestore();
+      rnd.mockRestore();
+    }
+  });
+});
