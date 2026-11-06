@@ -1,5 +1,17 @@
 # HANDOFF
 
+## v5 Brain Insights on `main` (2026-11-05, Claude Opus, nothing pushed, nothing deployed)
+
+Design: `docs/DESIGN-V5-BRAIN-INSIGHTS.md`; shapes: `docs/API-CONTRACT.md` "v5 Brain Insights".
+
+- API: `GET /v1/brains/:id/insights` and `GET /v1/brains/overview` (`workers/api/src/brains/insights.ts` pure aggregation, `insights-routes.ts`, `BrainBase.brainInsightRaw` in `store.ts`). Per brain, from pages the caller can read only; proposals count only when every source their title could show is readable; Personal is the owner's; overview adds no tile for a brain the caller cannot open. Constellation zone is 85, dots bucketed above 640 pages (`legend.perDot`), five named pages kept out of buckets, seeded layout (`seed`). Extra query params beyond the design: `scoreKind`, `focus`, `window`. Tests `v5-insights.test.ts`, `v5-insights-units.test.ts`.
+- Web: `apps/web/src/insights/` (InsightCard, DotConstellation with canvas above 2000 dots, FitBars, TimelineBars, ActivityGrid, Beeswarm, SegmentBar, Funnel, KpiTile, QueryChips, Segmented, FocusPanel, InsightsTab, Glance, `layout.ts` seeded geometry). Brain page has Contents and Insights tabs (`?tab=insights`); "Your brains at a glance" on Home and All brains (2+ brains). FR/EN in `i18n/v5.ts`. Mock data `mock/v5.ts` (larger page counts than the brain pages show; localStorage `secondary.mock.dots` makes `c_bid` 1500 dots for the perf check).
+- Choices to know: click on a named node selects it (focus panel for that page, "Open page" in the panel), it does not navigate. Account status select files a proposal ("Account status" page via push/page) so it goes through review; the shown status is derived from the last edit. "Ask this brain" opens the Home Ask card (Ask is not brain scoped). `seenAllRate` is 100 when any approval went through review (server enforces seen changes).
+- Gates: build, typecheck, biome clean. Tests: web 77, api 769, mcp 101, policy 74, contracts 91, fixtures 23, connector 53, audit 10, ops 16. Mock e2e 31 (`e2e/v5.e2e.ts`: axe 1280/400, FR+dark, keyboard, table twins, hover timing at 1500 dots p95 under 1 ms of main-thread work), real stack 13 (`e2e/v5-real.spec.ts`). Screenshots `e2e/screens/v5-*-1440.png`, `v5-insights-400.png`, `v5-insights-fr-dark.png`, `v5-real-home-*.png`; compared with the references twice (constellation radius and density, pill size, funnel taper, type size).
+- Gaps: no pinned "best page" tooltip on a bucketed beeswarm; ring labels sit on one diagonal; `/v1/brains/:id/insights` is computed per request (no cache).
+
+Updated: 2026-11-05. By: Claude (Opus, v5 insights).
+
 ## v4 UI on `main` (2026-11-05, Claude Opus, nothing pushed, nothing deployed)
 
 Design: `docs/DESIGN-V4-BRAINS-UI.md` (normative). Shapes: `docs/API-CONTRACT.md` "v4".

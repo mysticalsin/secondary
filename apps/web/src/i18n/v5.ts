@@ -146,7 +146,6 @@ export const v5En = {
   "v5.glance.pages.one": "{n} page",
   "v5.glance.pages.other": "{n} pages",
   "v5.glance.spark": "Edits per week, last 12 weeks",
-  "v5.glance.open": "Open insights for {name}",
   "v5.glance.map": "Freshness map of {name}: {z} of {t} pages are fresh",
   "v5.glance.none": "No brain to show.",
 };
@@ -300,7 +299,6 @@ export const v5Fr: Record<keyof typeof v5En, string> = {
   "v5.glance.pages.one": "{n} page",
   "v5.glance.pages.other": "{n} pages",
   "v5.glance.spark": "Modifications par semaine, 12 dernières semaines",
-  "v5.glance.open": "Ouvrir l'aperçu de {name}",
   "v5.glance.map": "Carte de fraîcheur de {name} : {z} pages sur {t} sont récentes",
   "v5.glance.none": "Aucun cerveau à afficher.",
 };

@@ -77,11 +77,7 @@ function Tile({ b, name }: { b: OverviewTile; name: string }) {
   const { t, tn } = useI18n();
   return (
     <li className="gl-tile">
-      <Link
-        to={`${brainLink(b.id)}?tab=insights`}
-        className="gl-link"
-        aria-label={t("v5.glance.open", { name })}
-      >
+      <Link to={`${brainLink(b.id)}?tab=insights`} className="gl-link">
         <div className="gl-h">
           <b>{name}</b>
           <span className="gl-score mono">{t("v5.glance.health", { n: b.health.score })}</span>

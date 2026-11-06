@@ -16,9 +16,9 @@ import type { Constellation } from "./types";
 
 /** Above this many dots the dot layer is drawn on a canvas; rings, names and hover stay SVG. */
 export const CANVAS_ABOVE = 2000;
-const DOT_R = 3.5;
+const DOT_R = 3.7;
 const pct = (n: number): string => `${n}%`;
-const PILL_H = 24;
+const PILL_H = 28;
 
 interface Pill {
   id: number;
@@ -54,8 +54,11 @@ function pillsFor(
     const d = data.dots[i] as (typeof data.dots)[0];
     const full = d.label ?? d.title ?? "";
     const text = full.length > 30 ? `${full.slice(0, 29)}\u2026` : full;
-    const right = p.x >= g.cx;
-    const w = Math.min(330, 24 + text.length * 7.3 + pct(d.score).length * 8);
+    const w = Math.min(330, 26 + text.length * 7.9 + pct(d.score).length * 8.5);
+    // Toward the outer edge, unless the name would run off the card: then toward the centre.
+    let right = p.x >= g.cx;
+    if (right && p.x + 20 + w > g.w - 6) right = false;
+    else if (!right && p.x - 20 - w < 6) right = true;
     return {
       id: i,
       x: right ? p.x + 20 : p.x - 20,
@@ -393,13 +396,22 @@ export function DotConstellation({
               onPointerMove={(e) => e.stopPropagation()}
             >
               <circle cx={p.x} cy={p.y} r={16} fill="transparent" />
-              <circle className="dc-ava" cx={p.x} cy={p.y} r={12.5} fill={tone.fill} />
-              <text x={p.x} y={p.y + 4} textAnchor="middle" className="dc-ini">
-                {initials(label)}
-              </text>
+              <circle className="dc-ava" cx={p.x} cy={p.y} r={14} fill={tone.fill} />
             </g>
           );
         })}
+        {/* The initials sit outside the buttons: they are decoration, the button's name is the title. */}
+        <g aria-hidden pointerEvents="none">
+          {named.map((i) => {
+            const p = g.placed[i] as (typeof g.placed)[0];
+            const d = data.dots[i] as (typeof data.dots)[0];
+            return (
+              <text key={`ini${i}`} x={p.x} y={p.y + 4} textAnchor="middle" className="dc-ini">
+                {initials(d.label ?? d.title ?? "")}
+              </text>
+            );
+          })}
+        </g>
       </svg>
       <p id={`${uid}-keys`} className="sr-only">
         {t("v5.con.keys")}

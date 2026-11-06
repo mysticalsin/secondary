@@ -262,7 +262,7 @@
   stroke-width: 5px;
 }
 .dc-sector {
-  font: 16.5px var(--font);
+  font: 18.5px var(--font);
   fill: #b9b7c6;
 }
 .dc-pill {
@@ -270,7 +270,7 @@
   stroke: #44444d;
 }
 .dc-pilltext {
-  font: 700 14px var(--font);
+  font: 500 15.5px var(--font);
   fill: #fff;
 }
 .dc-pillscore {
@@ -280,7 +280,7 @@
   font-size: 13px;
 }
 .dc-ini {
-  font: 700 11px var(--font);
+  font: 700 12px var(--font);
   fill: #fff;
   pointer-events: none;
 }
@@ -489,7 +489,7 @@
 .fit-h h4,
 .tl-h h4,
 .act-h h4 {
-  font-size: 17px;
+  font-size: 18.5px;
   font-weight: 700;
 }
 .fit-hl,
@@ -517,7 +517,7 @@
 }
 .fit-l {
   color: #cfcdd8;
-  font-size: 16px;
+  font-size: 17px;
   overflow-wrap: anywhere;
   line-height: 1.2;
 }
@@ -544,7 +544,7 @@
 .fit-v {
   text-align: right;
   color: #e8e6ef;
-  font-size: 14px;
+  font-size: 15.5px;
   white-space: nowrap;
 }
 .fit-v.warn {
@@ -558,11 +558,11 @@
 }
 .tl-yr,
 .act-mo {
-  font: 12.5px var(--mono);
+  font: 14px var(--mono);
   fill: var(--ic-faint);
 }
 .tl-bar {
-  font: 700 14px var(--font);
+  font: 600 16px var(--font);
   fill: #fff;
   pointer-events: none;
 }
@@ -736,11 +736,13 @@
   margin: 14px 0 6px;
 }
 .fn-t {
-  font: 600 17px var(--font);
+  font-family: var(--font);
+  font-weight: 500;
+  font-size: 19px;
   fill: #fff;
 }
 .fn-n {
-  font: 400 16px var(--mono);
+  font: 400 18px var(--mono);
   fill: #dfe4ff;
 }
 .kpis {

@@ -367,7 +367,7 @@ describe("views against the mock", () => {
   it("the Glance grid shows one tile per brain the persona can open, each a link to its Insights", async () => {
     persona("consultant");
     wrap(<Glance />);
-    const tiles = await screen.findAllByRole("link", { name: /Open insights for/ });
+    const tiles = await screen.findAllByRole("link");
     expect(tiles.length).toBeGreaterThanOrEqual(2);
     for (const t of tiles)
       expect(t.getAttribute("href")).toMatch(/^\/brains\/[^?]+\?tab=insights$/);

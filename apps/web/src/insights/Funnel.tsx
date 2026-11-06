@@ -5,7 +5,7 @@ import { STAGE_FILL } from "./palette";
 import type { Flow } from "./types";
 
 const W = 560;
-const BAR = 46;
+const BAR = 50;
 const GAP = 38;
 
 /**
@@ -15,7 +15,7 @@ const GAP = 38;
 export function Funnel({ stages, label }: { stages: Flow["stages"]; label: string }) {
   const { t } = useI18n();
   const bars = useMemo(
-    () => layoutFunnel(stages, { w: W, bar: BAR, gap: GAP, min: 0.16 }),
+    () => layoutFunnel(stages, { w: W, bar: BAR, gap: GAP, min: 0.1 }),
     [stages],
   );
   const h = bars.length * (BAR + GAP) - GAP;

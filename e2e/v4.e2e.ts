@@ -144,7 +144,7 @@ test.describe("home", () => {
     await expect(page.getByRole("heading", { name: "Hello, Sam" })).toBeVisible();
     await expect(page.getByText("8 reviews are waiting for you.")).toBeVisible();
     const brains = page
-      .getByRole("heading", { name: "Your brains" })
+      .getByRole("heading", { name: "Your brains", exact: true })
       .locator("xpath=ancestor::section");
     await expect(brains.getByRole("link", { name: /Bid & Pre-sales/ })).toBeVisible();
     await expect(
@@ -384,7 +384,7 @@ test.describe("all brains", () => {
     await page.goto("/brains");
     await settle(page);
     await expect(
-      page.locator("#main").getByRole("link", { name: "Delivery excellence" }),
+      page.locator(".dirlist").getByRole("link", { name: "Delivery excellence" }),
     ).toBeVisible();
     const sales = page.getByRole("listitem").filter({ hasText: "Sales" }).first();
     await expect(sales).toContainText("You cannot open it yet");

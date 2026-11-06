@@ -52,7 +52,7 @@ export interface Geometry {
   labels: SectorLabel[];
 }
 
-export const CANVAS = { w: 720, h: 560, cx: 360, cy: 280, R: 224, inner: 34, pitch: 8.2 } as const;
+export const CANVAS = { w: 720, h: 560, cx: 360, cy: 280, R: 236, inner: 36, pitch: 8.6 } as const;
 
 /** Radius (px) of a 0..1 relative radius. */
 export const rho = (r: number, R: number = CANVAS.R, inner: number = CANVAS.inner): number =>
@@ -341,7 +341,7 @@ export function layoutFunnel(
   const max = Math.max(1, ...counts.map((c) => c.count));
   const min = o.min ?? 0.2;
   return counts.map((c, n) => {
-    const frac = Math.max(min, (c.count / max) ** 0.7);
+    const frac = Math.max(min, c.count / max);
     const w = o.w * frac;
     return { key: c.key, count: c.count, x: (o.w - w) / 2, w, y: n * (o.bar + o.gap), h: o.bar };
   });

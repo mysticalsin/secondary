@@ -5,7 +5,7 @@ import { CATEGORY } from "./palette";
 import type { TimelineBar } from "./types";
 
 const W = 330;
-const BAR = 26;
+const BAR = 30;
 const GAP = 10;
 const LEFT = 6;
 
@@ -76,7 +76,7 @@ export function TimelineBars({
               </rect>
               <text
                 x={Math.min(x1, W - need - LEFT) + 10}
-                y={n * (BAR + GAP) + 17}
+                y={n * (BAR + GAP) + 20}
                 className="tl-bar"
               >
                 {b.label}
