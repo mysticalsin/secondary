@@ -3,7 +3,7 @@
 // allow is asked for, so a brain outside the set contributes nothing.
 
 import { retryPlan } from "../../../../packages/contracts/src/ops-v7.ts";
-import { fetchReceipts } from "../audit.ts";
+import { fetchReceiptsSince } from "../audit.ts";
 import { HOSTS } from "../brains/model.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
 import { type C, sess } from "../ux/util.ts";
@@ -38,10 +38,11 @@ export async function collect(
   const out: Rec[] = [];
   let partial = false;
 
-  // Receipts. The audit worker returns the newest 200 of the tenant (or of the person) for the days asked.
+  // Receipts, paged back through the audit worker to the start of the window (capped: `partial` then).
   const days = Math.max(1, Math.ceil((now - o.sinceMs) / DAY));
-  const receipts = await fetchReceipts(c.env, s.tenantId, o.principalId, days);
-  if (!receipts) partial = true;
+  const got = await fetchReceiptsSince(c.env, s.tenantId, o.principalId, days, o.sinceMs);
+  if (!got || got.truncated) partial = true;
+  const receipts = got?.receipts ?? null;
   const hosts = new Map<string, string>();
   if (o.principalId !== null) {
     for (const g of await tenantStub(c.env, s.tenantId).agentList(o.principalId))

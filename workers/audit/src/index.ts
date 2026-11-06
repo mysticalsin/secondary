@@ -19,6 +19,9 @@ import {
 } from "../../../packages/contracts/src/audit-receipt.ts";
 
 const MAX_BYTES = 4_096;
+/** Receipt objects listed and read for one answer. */
+const MAX_KEYS = 10_000;
+const MAX_READ = 2_000;
 
 /** Constant-time string comparison (length is not secret here, the content is). */
 function safeEqual(a: string, b: string): boolean {
@@ -104,28 +107,50 @@ app.get("/receipts", async (c) => {
     1000,
   );
 
-  const keys: string[] = [];
-  for (let d = 0; d < days && keys.length < 1000; d++) {
+  // Paging: `before` is the `next` of the previous answer, `<date>/<file>` of the last receipt looked at.
+  // Receipts are walked newest first (date, then the millisecond prefix of the file) and an answer holds
+  // at most `limit` of them for the principal asked, so a busy tenant can be read all the way back.
+  const before = c.req.query("before");
+  if (before !== undefined && !/^\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_.-]{1,100}$/.test(before))
+    return c.json({ error: "invalid_query" }, 400);
+  const keys: { key: string; order: string }[] = [];
+  for (let d = 0; d < days && keys.length < MAX_KEYS; d++) {
     const date = new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10);
+    if (before !== undefined && date > before.slice(0, 10)) continue;
     let cursor: string | undefined;
     do {
       const page = await c.env.AUDIT_LOG.list({
         prefix: `${date}/${tenant}/`,
         ...(cursor ? { cursor } : {}),
       });
-      keys.push(...page.objects.map((o) => o.key));
+      for (const o of page.objects) {
+        const order = `${date}/${o.key.slice(o.key.lastIndexOf("/") + 1)}`;
+        if (before === undefined || order < before) keys.push({ key: o.key, order });
+      }
       cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor && keys.length < 1000);
+    } while (cursor && keys.length < MAX_KEYS);
   }
-  const lines = await Promise.all(
-    keys.slice(0, 1000).map(async (k) => (await (await c.env.AUDIT_LOG.get(k))?.text()) ?? ""),
-  );
-  const receipts = lines
-    .flatMap((l) => (l.trim() ? [JSON.parse(l) as { principalId: string; at: string }] : []))
-    .filter((r) => principal === null || r.principalId === principal)
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, limit);
-  return c.json({ receipts });
+  keys.sort((a, b) => (a.order < b.order ? 1 : a.order > b.order ? -1 : 0));
+  const found: { principalId: string; at: string }[] = [];
+  let read = 0;
+  let lastOrder: string | null = null;
+  while (read < keys.length && read < MAX_READ && found.length < limit) {
+    const batch = keys.slice(read, read + 50);
+    const lines = await Promise.all(
+      batch.map(async (k) => (await (await c.env.AUDIT_LOG.get(k.key))?.text()) ?? ""),
+    );
+    for (const [i, l] of lines.entries()) {
+      read++;
+      lastOrder = (batch[i] as { order: string }).order;
+      const r = l.trim() ? (JSON.parse(l) as { principalId: string; at: string }) : null;
+      if (r && (principal === null || r.principalId === principal)) found.push(r);
+      if (found.length >= limit) break;
+    }
+  }
+  const receipts = found.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+  // `next` is set only when older receipts remain after the last one looked at.
+  const more = read < keys.length || keys.length >= MAX_KEYS;
+  return c.json({ receipts, next: more && lastOrder !== null ? lastOrder : null });
 });
 
 // Right to erasure. The only route that rewrites a receipt, and only the principal id (and the

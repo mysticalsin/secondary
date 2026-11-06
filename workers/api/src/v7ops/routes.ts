@@ -101,7 +101,26 @@ type Query = {
   filters: Filters;
   from: number | null;
   to: number | null;
+  /** Position after which the table continues: `{at, id}` of the last event of the page before. */
+  after: { at: number; id: string } | null;
 };
+
+/** Opaque page cursor of the events table: the time and id of the last event shown. */
+export const cursorOf = (e: { at: number; id: string }): string =>
+  btoa(`${e.at}.${e.id}`).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+function parseCursor(raw: string | undefined): Query["after"] {
+  if (raw === undefined || raw === "") return null;
+  try {
+    const m = /^(\d{1,15})\.(evt_[0-9a-f]{16})$/.exec(
+      atob(raw.replace(/-/g, "+").replace(/_/g, "/")),
+    );
+    if (m) return { at: Number(m[1]), id: m[2] as string };
+  } catch {
+    // falls through to the refusal
+  }
+  throw bad("invalid_cursor");
+}
 
 function activityQuery(c: C): Query {
   const window = pick(
@@ -125,7 +144,13 @@ function activityQuery(c: C): Query {
     if (!Number.isFinite(n)) throw bad(`invalid_${name}`);
     return n;
   };
-  return { window, filters: { status, q }, from: t("from"), to: t("to") };
+  return {
+    window,
+    filters: { status, q },
+    from: t("from"),
+    to: t("to"),
+    after: parseCursor(c.req.query("cursor")),
+  };
 }
 
 /** The shared body of a brain's or a person's activity answer. */
@@ -147,6 +172,12 @@ function activityBody(
     number
   >;
   for (const r of inWin) counts[r.status]++;
+  // Newest first, ties by id. A cursor continues after the last event the caller already has.
+  const rest = qy.after
+    ? matching.filter((r) => r.at < qy.after.at || (r.at === qy.after.at && r.id > qy.after.id))
+    : matching;
+  const page = rest.slice(0, MAX_EVENTS);
+  const last = page.at(-1);
   return {
     window: qy.window,
     from: iso(from),
@@ -158,7 +189,8 @@ function activityBody(
     buckets,
     callout: calloutOf(inWin),
     totals: { all: inWin.length, ...counts, matching: matching.length },
-    events: matching.slice(0, MAX_EVENTS).map(eventOut),
+    events: page.map(eventOut),
+    nextCursor: rest.length > page.length && last ? cursorOf(last) : null,
   };
 }
 

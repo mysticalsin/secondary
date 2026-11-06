@@ -188,3 +188,42 @@ describe("right to erasure walk (M-03)", () => {
     ).toBe(400);
   });
 });
+
+describe("receipt paging", () => {
+  it("walks a tenant newest first with `before`, every receipt once, `next` null at the end", async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const r = receipt({ tenantId: "tenant_paging", principalId: i % 2 ? "u_odd" : "u_even" });
+      expect((await append(r)).status).toBe(202);
+      ids.push(r.receiptId);
+      await new Promise((ok) => setTimeout(ok, 3));
+    }
+    const seen: string[] = [];
+    let before: string | null = null;
+    let pages = 0;
+    do {
+      const q: string = `/receipts?tenant=tenant_paging&limit=2${before ? `&before=${encodeURIComponent(before)}` : ""}`;
+      const body = (await (await call(q)).json()) as {
+        receipts: { receiptId: string }[];
+        next: string | null;
+      };
+      expect(body.receipts.length).toBeLessThanOrEqual(2);
+      seen.push(...body.receipts.map((r) => r.receiptId));
+      before = body.next;
+      pages++;
+    } while (before && pages < 10);
+    expect(pages).toBe(3);
+    expect([...seen].sort()).toEqual([...ids].sort());
+    expect(seen).toEqual([...ids].reverse());
+    // One person's receipts page the same way.
+    const odd = (await (
+      await call("/receipts?tenant=tenant_paging&principal=u_odd&limit=1")
+    ).json()) as {
+      receipts: unknown[];
+      next: string | null;
+    };
+    expect(odd.receipts).toHaveLength(1);
+    expect(odd.next).not.toBeNull();
+    expect((await call("/receipts?tenant=tenant_paging&before=../x")).status).toBe(400);
+  });
+});

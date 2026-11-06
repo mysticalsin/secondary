@@ -28,6 +28,7 @@ const activityQs = (a: ActivityQuery) =>
     from: a.from,
     to: a.to,
     host: a.host,
+    cursor: a.cursor,
   });
 
 export const ops = {
@@ -53,5 +54,6 @@ export const ops = {
   sourceStats: (id: string, window: "24h" | "7d" = "24h") =>
     request<SourceStats>("GET", `/v1/sources/${q(id)}/stats${qs({ window })}`),
   // Platform health (admins and stewards)
-  health: (window: HealthWindow) => request<HealthResponse>("GET", `/v1/ops/health${qs({ window })}`),
+  health: (window: HealthWindow) =>
+    request<HealthResponse>("GET", `/v1/ops/health${qs({ window })}`),
 };

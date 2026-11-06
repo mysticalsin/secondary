@@ -9,7 +9,7 @@ import { EventDetailPanel } from "./EventDetail";
 import { EventsTable } from "./EventsTable";
 import { num } from "./format";
 import { type Range, rangeText, Timeline, TimelineTwin, useStamp } from "./Timeline";
-import type { ActivityWindow, StatusFilter } from "./types";
+import type { ActivityWindow, OpEvent, StatusFilter } from "./types";
 import { StateBox, Swatch, SyntheticChip, useDebounced } from "./ui";
 
 type Props =
@@ -50,11 +50,48 @@ export function ActivityPanel(props: Props) {
 
   // The brush selects columns of the last answer. Its span goes to the API as from/to.
   const [span, setSpan] = useState<{ from: string; to: string } | null>(null);
-  const act = useApi(() => {
-    const base = { window: win, status, q, from: span?.from, to: span?.to, host };
-    return agent ? ops.agentActivity(base) : ops.brainActivity(brainId as string, base);
-  }, [agent, brainId, host, win, status, q, span?.from, span?.to]);
+  const queryOf = (cursor?: string) => ({
+    window: win,
+    status,
+    q,
+    from: span?.from,
+    to: span?.to,
+    host,
+    cursor,
+  });
+  const fetchPage = (cursor?: string) =>
+    agent
+      ? ops.agentActivity(queryOf(cursor))
+      : ops.brainActivity(brainId as string, queryOf(cursor));
+  const act = useApi(
+    () => fetchPage(),
+    [agent, brainId, host, win, status, q, span?.from, span?.to],
+  );
   const data = act.data;
+  // Later pages, following the cursor. A new answer (other filter or window) starts again from page one.
+  const [more, setMore] = useState<{ events: OpEvent[]; next: string | null } | null>(null);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreError, setMoreError] = useState<string | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the first page changes
+  useEffect(() => {
+    setMore(null);
+    setMoreError(null);
+  }, [data]);
+  const next = more ? more.next : (data?.nextCursor ?? null);
+  const events = useMemo(() => [...(data?.events ?? []), ...(more?.events ?? [])], [data, more]);
+  const loadMore = async () => {
+    if (!next || moreBusy) return;
+    setMoreBusy(true);
+    setMoreError(null);
+    try {
+      const page = await fetchPage(next);
+      setMore({ events: [...(more?.events ?? []), ...page.events], next: page.nextCursor });
+    } catch (e) {
+      setMoreError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMoreBusy(false);
+    }
+  };
 
   // "/" focuses search, as in the reference.
   useEffect(() => {
@@ -91,8 +128,8 @@ export function ActivityPanel(props: Props) {
   };
 
   const selectedEvent = useMemo(
-    () => data?.events.find((e) => e.id === selected) ?? null,
-    [data, selected],
+    () => events.find((e) => e.id === selected) ?? null,
+    [events, selected],
   );
   const winLabel = t(`v7o.win.${win}` as "v7o.win.60m");
   const filters: { value: StatusFilter; label: string }[] = [
@@ -237,8 +274,27 @@ export function ActivityPanel(props: Props) {
               }
             />
           ) : (
-            <EventsTable events={data.events} selectedId={selected} onSelect={setSelected} />
+            <EventsTable events={events} selectedId={selected} onSelect={setSelected} />
           )}
+          {next ? (
+            <p className="opx-more">
+              <button
+                type="button"
+                className="icard-btn"
+                data-testid="load-more"
+                onClick={loadMore}
+                disabled={moreBusy}
+                aria-busy={moreBusy}
+              >
+                {moreBusy ? t("v7o.act.moreBusy") : t("v7o.act.more")}
+              </button>
+            </p>
+          ) : null}
+          {moreError ? (
+            <p className="opx-err" role="alert">
+              {moreError}
+            </p>
+          ) : null}
           {act.error ? (
             <p className="opx-err" role="alert">
               {act.error}
@@ -271,7 +327,7 @@ export function ActivityPanel(props: Props) {
             </ul>
             <p className="mute mono" data-testid="shown-count">
               {t("v7o.act.count", {
-                n: num(data.events.length, locale),
+                n: num(events.length, locale),
                 total: num(data.totals.matching, locale),
                 win: winLabel,
               })}

@@ -68,6 +68,8 @@ export interface ActivityResponse {
   callout: Callout | null;
   totals: ActivityTotals;
   events: OpEvent[];
+  /** Pass as `cursor` for the next page of events; null on the last page. */
+  nextCursor: string | null;
   /** Agent activity only. */
   hosts?: { id: string; label: string; count: number }[];
 }
@@ -101,6 +103,8 @@ export interface ActivityQuery {
   from?: string | undefined;
   to?: string | undefined;
   host?: string | undefined;
+  /** `nextCursor` of the page before. */
+  cursor?: string | undefined;
 }
 
 // ---- sources ----

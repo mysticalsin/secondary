@@ -2,12 +2,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { en } from "../i18n/en";
 import { fr } from "../i18n/fr";
 import { v7opsEn, v7opsFr } from "../i18n/v7ops";
 import { NOT_HANDLED } from "../mock/uxv2";
-import { handleV7Ops } from "../mock/v7ops";
+import { handleV7Ops, setMockActivityPage } from "../mock/v7ops";
 import { ActivityPanel, isSlashTarget } from "../ops/ActivityPanel";
 import { Heatmap, HeatTwin } from "../ops/Heatmap";
 import { defaultOf, parseTimes, retryPlan } from "../ops/retry";
@@ -201,6 +201,43 @@ describe("activity panel", () => {
     await user.click(row);
     await screen.findByText("Copy event id");
     expect(screen.queryByRole("button", { name: "Retry ingest" })).not.toBeInTheDocument();
+  });
+});
+
+describe("activity paging", () => {
+  afterEach(() => setMockActivityPage(200));
+
+  it("shows more events by following the cursor, once each, until the end", {
+    timeout: 30_000,
+  }, async () => {
+    setMockActivityPage(40);
+    const first = call("GET", "/v1/brains/c_bid/activity?window=24h", {}, "head_bid");
+    expect(first.events).toHaveLength(40);
+    expect(first.totals.matching).toBeGreaterThan(40);
+    const user = userEvent.setup();
+    mount(<ActivityPanel mode="brain" brainId="c_bid" />);
+    // The panel starts on the last hour; switch to a window with more than one page.
+    await user.click(await screen.findByRole("radio", { name: "24 h" }));
+    const count = () => document.querySelectorAll("tr[data-event]").length;
+    await waitFor(() => expect(count()).toBe(40));
+    let guard = 0;
+    while (screen.queryByTestId("load-more") && guard++ < 50) {
+      const before = count();
+      await user.click(screen.getByTestId("load-more"));
+      await waitFor(() => expect(count()).toBeGreaterThan(before));
+    }
+    expect(count()).toBe(first.totals.matching);
+    const ids = [...document.querySelectorAll("tr[data-event]")].map((r) =>
+      r.getAttribute("data-event"),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(screen.queryByTestId("load-more")).not.toBeInTheDocument();
+  });
+
+  it("the mock refuses a cursor that is not one", () => {
+    expect(() =>
+      call("GET", "/v1/brains/c_bid/activity?window=24h&cursor=%25%25", {}, "head_bid"),
+    ).toThrow();
   });
 });
 

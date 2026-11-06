@@ -75,21 +75,25 @@ export default defineConfig({
             if (url.pathname === "/receipts") {
               const principal = url.searchParams.get("principal");
               const tenant = url.searchParams.get("tenant");
+              const limit = Math.min(
+                Math.max(Number(url.searchParams.get("limit") ?? 200) || 200, 1),
+                1000,
+              );
+              // Newest first and at most `limit` (default 200, up to 1000), like the real worker. `before`
+              // is the receipt id of the last receipt of the previous page; `next` is set while more remain.
+              const sorted = receipts
+                .filter(
+                  (r) =>
+                    (principal === null || r.principalId === principal) && r.tenantId === tenant,
+                )
+                .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+              const before = url.searchParams.get("before");
+              const from =
+                before === null ? 0 : sorted.findIndex((r) => r.receiptId === before) + 1;
+              const page = sorted.slice(from, from + limit);
               return Response.json({
-                // Newest first and at most `limit` (default 200, up to 1000), like the real worker.
-                receipts: receipts
-                  .filter(
-                    (r) =>
-                      (principal === null || r.principalId === principal) && r.tenantId === tenant,
-                  )
-                  .sort((a, b) => String(b.at).localeCompare(String(a.at)))
-                  .slice(
-                    0,
-                    Math.min(
-                      Math.max(Number(url.searchParams.get("limit") ?? 200) || 200, 1),
-                      1000,
-                    ),
-                  ),
+                receipts: page,
+                next: from + limit < sorted.length ? (page.at(-1)?.receiptId ?? null) : null,
               });
             }
             return Response.json({ error: "not_found" }, { status: 404 });

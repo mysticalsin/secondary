@@ -439,6 +439,13 @@ const publicEvent = (e: Ev): OpEvent => ({
   retryable: e.retryable,
 });
 
+/** Events a page holds (the API's is 200); a test lowers it to reach the second page. */
+let activityPage = 200;
+export const setMockActivityPage = (n: number): void => {
+  activityPage = n;
+};
+const cursorOf = (e: Ev): string => btoa(`${e.t}.${e.id}`);
+
 const STATUS_FILTERS = ["all", "needs_review", "blocked", "failed"] as const;
 
 function activityOf(
@@ -481,6 +488,24 @@ function activityOf(
     return true;
   });
   totals.matching = match.length;
+  const cursor = params.get("cursor");
+  let after: [number, string] | null = null;
+  if (cursor) {
+    try {
+      const m = /^(\d+)\.(.+)$/.exec(atob(cursor));
+      if (m) after = [Number(m[1]), m[2] as string];
+    } catch {
+      // refused below
+    }
+    if (!after) throw new ApiError(400, "Bad cursor.", { error: "invalid_cursor" });
+  }
+  const rest = after
+    ? match.filter(
+        (e) => e.t < (after as [number, string])[0] || (e.t === after?.[0] && e.id > after[1]),
+      )
+    : match;
+  const page = rest.slice(0, activityPage);
+  const last = page.at(-1);
   return {
     window: win,
     from: (buckets[0] as ActivityBucket).start,
@@ -491,7 +516,8 @@ function activityOf(
     buckets,
     callout: calloutOf(inWin),
     totals,
-    events: match.slice(0, 200).map(publicEvent),
+    events: page.map(publicEvent),
+    nextCursor: rest.length > page.length && last ? cursorOf(last) : null,
     ...extra,
   };
 }

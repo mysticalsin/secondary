@@ -38,18 +38,61 @@ export async function fetchReceipts(
   days: number,
   limit?: number,
 ): Promise<StoredReceipt[] | null> {
+  return (await fetchReceiptPage(env, tenantId, principalId, days, limit))?.receipts ?? null;
+}
+
+/** One page of receipts, newest first. `next` is the cursor for the page after it, null at the end. */
+export async function fetchReceiptPage(
+  env: Env,
+  tenantId: string,
+  principalId: string | null,
+  days: number,
+  limit?: number,
+  before?: string,
+): Promise<{ receipts: StoredReceipt[]; next: string | null } | null> {
   try {
     const q = new URLSearchParams({ tenant: tenantId, days: String(days) });
     if (limit !== undefined) q.set("limit", String(limit));
+    if (before !== undefined) q.set("before", before);
     if (principalId !== null) q.set("principal", principalId);
     const res = await env.AUDIT.fetch(`${AUDIT_ORIGIN}/receipts?${q}`, {
       headers: { "X-Audit-Key": env.AUDIT_KEY_READ ?? "" },
     });
     if (!res.ok) return null;
-    return ((await res.json()) as { receipts: StoredReceipt[] }).receipts;
+    const body = (await res.json()) as { receipts: StoredReceipt[]; next?: string | null };
+    return { receipts: body.receipts, next: body.next ?? null };
   } catch {
     return null;
   }
+}
+
+const DEEP_PAGE = 1000;
+const DEEP_MAX_PAGES = 10;
+
+/**
+ * Every receipt back to `sinceMs` (newest first), by following the audit worker's cursor. Stops at the
+ * first receipt older than `sinceMs` or after DEEP_MAX_PAGES pages (10 000 receipts). `truncated` is true
+ * when it stopped on the cap, so the caller can say the span is shorter than asked.
+ */
+export async function fetchReceiptsSince(
+  env: Env,
+  tenantId: string,
+  principalId: string | null,
+  days: number,
+  sinceMs: number,
+): Promise<{ receipts: StoredReceipt[]; truncated: boolean } | null> {
+  const all: StoredReceipt[] = [];
+  let before: string | undefined;
+  for (let page = 0; page < DEEP_MAX_PAGES; page++) {
+    const got = await fetchReceiptPage(env, tenantId, principalId, days, DEEP_PAGE, before);
+    if (!got) return page === 0 ? null : { receipts: all, truncated: true };
+    all.push(...got.receipts);
+    const oldest = got.receipts.at(-1);
+    if (got.next === null || (oldest !== undefined && Date.parse(oldest.at) < sinceMs))
+      return { receipts: all, truncated: false };
+    before = got.next;
+  }
+  return { receipts: all, truncated: true };
 }
 
 /**

@@ -121,6 +121,7 @@ describe("GET /v1/brains/:id/activity", () => {
         "events",
         "from",
         "generatedAt",
+        "nextCursor",
         "partial",
         "perDot",
         "synthetic",
