@@ -1,5 +1,19 @@
 # HANDOFF
 
+## v7 Operate: Brain activity, Sources, Platform health on `v7/ops` (2026-11-06, Claude, not merged, nothing pushed, nothing deployed)
+
+Design `docs/DESIGN-V7-GOVERN-OPERATE.md` sections 2 to 4 (web notes `docs/DESIGN-V7-OPS-WEB.md`); shapes `docs/API-CONTRACT.md` "v7 Operate". Rules (section 1) are on `v7/rules`: where a receipt reason carries a `ruleId@version` token the event shows it (`ruleRefOf` in `packages/contracts/src/ops-v7.ts`); nothing else of rules is here.
+
+- Pure model `packages/contracts/src/ops-v7.ts` (statuses, failure reasons, retry plan with Retry-After, latency p50/p95, ACL strip, buckets, heatmap, callout). Imported by relative path from the workers and tested through them.
+- Connector (`workers/connector`): records every Graph call (ms, ok/timeout/429/error, last 320 per source) and every sync attempt (7 days, try counter), per-source `settings` (chips, delta interval, retry policy, timeout, ACL max age) and `paused` (pause keeps items, unlike disabling), `credentialRotatedAt`; the timeout is enforced per Graph call, the ACL max age per source, the cron skips paused and not-yet-due sources, the Workflow takes its step retries from the policy. New internal routes `GET /internal/sources/:id/stats` and `GET /internal/ops/summary`.
+- API `workers/api/src/v7ops/` (one mount line in `brains/index.ts`): activity (manager of the brain), agents activity (own calls), sources (admins), health (admin: tenant, steward: own brains). Events are derived from receipts (scoped by scope or node id), the brain's wiki log and connector attempts. Retry claims one marker per event in the brain's `wiki_meta` (`opsRetryClaim`), audits once, queues an ingest or a sync. Rotation uses `requestSecond` (24 h, different human) and only records `rotatedAt`: the secret value is set out of band. `GET /v1/health` without `window` is still the liveness probe.
+- Dev stand-in: `OPS_SYNTHETIC=on` (vitest, `scripts/dev-all.mjs`; never in a deployed config) serves deterministic synthetic sources, call timings and attempts (`v7ops/synthetic.ts`), labelled `synthetic: true`; its edits live in the `ops:sources` workspace key-value space. Without the flag, and in staging and prod, the connector binding is used and its absence answers 503 `connector_unavailable`.
+- Web `apps/web/src/ops/` (see the web design note), mock `mock/v7ops.ts`, FR/EN `i18n/v7ops.ts`.
+- Tests: connector 66 (+13 in `test/ops.test.ts`), api `v7-ops.test.ts` 16 (scope, no content, retry idempotent and audited and manager only, two-person rotation, stats and heatmap equal fixture aggregation), `v7-mock-contract.test.ts` 5 (web mock and API agree), web 133. Playwright mock `e2e/v7-ops.e2e.ts`, real stack `e2e/v7-ops-real.spec.ts` (5). Screenshots `e2e/screens/v7-ops-*.png`.
+- Gaps: the audit worker returns the newest 200 receipts of the tenant, so a busy tenant shows a shorter span than the window (`partial` only says the worker did not answer); asking it for one scope is the fix. Receipts carry no latency, so receipt events show none. A sync that ran out of tries is `failed`, but nothing re-arms it besides the next cron or "Retry". Times in the web are UTC. Connector path (staging and prod) is covered by connector tests and the shape parity test, not by a live Graph.
+
+Updated: 2026-11-06. By: Claude (v7 ops).
+
 ## v6 My Agent and v5 polish on `main` (2026-11-05, Claude, nothing pushed, nothing deployed)
 
 Design `docs/DESIGN-V6-MY-AGENT-GENUI.md` (section 6 is the UI map); shapes `docs/API-CONTRACT.md` "v6 My Agent"; spike and benchmark `docs/research/OPENUI-SPIKE.md`.

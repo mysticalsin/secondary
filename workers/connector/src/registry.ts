@@ -136,6 +136,12 @@ export function parseSource(id: string, raw: unknown, now: number): Parsed {
     name = o.name;
   }
   if (o.paused !== undefined && typeof o.paused !== "boolean") return fail("invalid_paused");
+  let rotatedAt: number | undefined;
+  if (o.credentialRotatedAt !== undefined) {
+    if (typeof o.credentialRotatedAt !== "number" || !Number.isFinite(o.credentialRotatedAt))
+      return fail("invalid_rotated_at");
+    rotatedAt = o.credentialRotatedAt;
+  }
   let settings: SourceSettings | undefined;
   if (o.settings !== undefined) {
     const parsed = parseSettings(o.settings);
@@ -155,6 +161,7 @@ export function parseSource(id: string, raw: unknown, now: number): Parsed {
       ...(o.paused === true ? { paused: true } : {}),
       ...(name ? { name } : {}),
       ...(settings ? { settings } : {}),
+      ...(rotatedAt !== undefined ? { credentialRotatedAt: rotatedAt } : {}),
       createdAt: now,
     },
   };

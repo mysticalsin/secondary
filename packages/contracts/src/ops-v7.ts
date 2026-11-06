@@ -298,7 +298,7 @@ export function heatmapOf(
   const { ms, columnMs } = HEALTH_WINDOWS[win];
   const n = ms / columnMs;
   // Columns end at the last full column boundary after `now`, oldest first.
-  const end = Math.ceil(now / columnMs) * columnMs;
+  const end = (Math.floor(now / columnMs) + 1) * columnMs;
   const start = end - n * columnMs;
   const columns = Array.from({ length: n }, (_, i) => new Date(start + i * columnMs).toISOString());
   const out: HeatRow[] = rows.map((r) => ({ ...r, total: 0, failed: 0, cells: [] }));
@@ -377,7 +377,7 @@ const zeroCounts = (): Record<OpsStatus, number> => ({
   retrying: 0,
 });
 
-/** Timeline columns, oldest first. The last column ends at the next boundary after `now`. */
+/** Timeline columns, oldest first. The last column ends at the first boundary after `now`, so an event at `now` itself counts. */
 export function bucketsOf(
   records: OpRecord[],
   win: ActivityWindow,
@@ -385,7 +385,7 @@ export function bucketsOf(
 ): { buckets: ActivityBucket[]; perDot: number } {
   const { ms, bucketMs } = ACTIVITY_WINDOWS[win];
   const n = ms / bucketMs;
-  const end = Math.ceil(now / bucketMs) * bucketMs;
+  const end = (Math.floor(now / bucketMs) + 1) * bucketMs;
   const start = end - n * bucketMs;
   const buckets: ActivityBucket[] = Array.from({ length: n }, (_, i) => ({
     start: new Date(start + i * bucketMs).toISOString(),
@@ -394,8 +394,9 @@ export function bucketsOf(
     counts: zeroCounts(),
   }));
   for (const r of records) {
-    if (r.at < start || r.at >= end) continue;
-    const b = buckets[Math.floor((r.at - start) / bucketMs)] as ActivityBucket;
+    // The first column is a little shorter than the others: what happened since `now - window` lands in it.
+    if (r.at < now - ms || r.at >= end) continue;
+    const b = buckets[Math.max(0, Math.floor((r.at - start) / bucketMs))] as ActivityBucket;
     b.total++;
     b.counts[r.status]++;
   }

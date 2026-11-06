@@ -62,6 +62,8 @@ interface Env {
   WIKI_ALARMS?: string;
   /** Dev only: "off" stops the synthetic wiki seed (tests set it). */
   WIKI_SEED?: string;
+  /** Dev only: "on" makes Sources, Activity and Health answer deterministic synthetic connector numbers (mocked Graph). Never set in staging or prod. */
+  OPS_SYNTHETIC?: string;
   /** Var. Wiki searches per person and minute (default 30), and wiki writes per person and minute (default 30). */
   WIKI_SEARCH_PER_MIN?: string;
   WIKI_WRITE_PER_MIN?: string;

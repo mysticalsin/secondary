@@ -290,7 +290,7 @@ export class ConnectorState extends DurableObject<Env> implements Store {
       Math.max(0, Math.round(a.ms)),
       a.outcome,
       a.reason,
-      a.outcome === "ok" ? 1 : n,
+      n,
       a.retryAfter,
     );
     this.sql.exec("DELETE FROM attempts WHERE at < ?", a.at - ATTEMPT_KEEP_MS);

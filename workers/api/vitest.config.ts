@@ -33,6 +33,9 @@ export default defineConfig({
           WIKI_ALARMS: "off",
           // The synthetic wiki seed is off by default so other tests start with empty wikis.
           WIKI_SEED: "off",
+          // The dev stand-in for the connector (synthetic sources, mocked Graph). Tests that need the real
+          // connector path pass OPS_SYNTHETIC: "off" through call({ env }).
+          OPS_SYNTHETIC: "on",
           AUDIT_KEY_API: "test-audit-key-api-0123456789abcdef0123",
           AUDIT_KEY_READ: "test-audit-key-read-0123456789abcdef012",
           AUDIT_KEY_ERASE: "test-audit-key-erase-0123456789abcdef01",

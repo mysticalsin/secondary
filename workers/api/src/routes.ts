@@ -394,8 +394,13 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   const v1 = new Hono<AppEnv>();
   v1.use("*", limitBody, mutationGuard);
 
-  // Unauthenticated: liveness only, no data.
-  v1.get("/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION }));
+  // Unauthenticated: liveness only, no data. With `?window=` the same path is Platform health (v7
+  // operate, signed in, admins and stewards): it passes on to the authenticated route in v7ops.
+  v1.get("/health", (c, next) =>
+    c.req.query("window") === undefined
+      ? c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION })
+      : next(),
+  );
 
   // Readiness: Durable Object and R2 reachability. No data, no identity, answers are cached for 5 s.
   v1.get("/ready", async (c) => {
@@ -583,10 +588,11 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
 
   // A source-backed file (SharePoint/OneDrive). Same two gates as search, then the connector must
   // confirm the user can still read it at the source. Not confirmed: the item stays hidden.
-  v1.get("/sources/:id", async (c) => {
+  v1.get("/sources/:id", async (c, next) => {
     const s = sess(c);
     const id = c.req.param("id");
-    if (!SOURCE_ITEM_ID.test(id)) throw notFound();
+    // `src_...` is a source config (Settings, Sources, v7); only `src:<source>:<hex>` is a file record.
+    if (!SOURCE_ITEM_ID.test(id)) return next();
     const view = viewOf(s);
     const rows = await Promise.all(
       admittedScopes(view).map((scope) => workspaceStub(c.env, s.tenantId, scope).sourceGet(id)),

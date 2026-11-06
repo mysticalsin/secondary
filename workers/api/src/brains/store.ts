@@ -711,6 +711,64 @@ export abstract class BrainBase extends WikiBase {
     const p = this.pageById(pageId);
     return p ? citationsOf(p.markdown) : [];
   }
+
+  // ---- v7 operate: what Brain, Activity reads and writes (ids and codes only) ----
+
+  /** Log rows since `since` that describe an ingest, a classifier verdict or a failed job. Newest first. */
+  opsLog(since: number, limit: number): { id: number; at: number; kind: string; detail: string }[] {
+    return this.sql
+      .exec(
+        `SELECT id, at, kind, detail FROM wiki_log
+         WHERE at >= ? AND (kind LIKE 'ingest.%' OR kind LIKE '%.failed')
+         ORDER BY id DESC LIMIT ?`,
+        since,
+        limit,
+      )
+      .toArray()
+      .map((r) => ({
+        id: r.id as number,
+        at: r.at as number,
+        kind: r.kind as string,
+        detail: r.detail as string,
+      }));
+  }
+
+  /**
+   * Claim the one retry an activity event may have. The first call stores `retryId` and says
+   * `already: false`; every later call returns what is stored. Runs in one step of the object, so two
+   * calls at once cannot both win.
+   */
+  opsRetryClaim(
+    eventId: string,
+    retryId: string,
+    at: number,
+    by: string,
+  ): { retryId: string; at: number; already: boolean } {
+    const key = `ops:retry:${eventId}`;
+    const cur = this.metaGet(key);
+    if (cur) {
+      const j = JSON.parse(cur) as { retryId: string; at: number };
+      return { retryId: j.retryId, at: j.at, already: true };
+    }
+    this.metaSet(key, JSON.stringify({ retryId, at, by }));
+    return { retryId, at, already: false };
+  }
+
+  opsRetryGet(eventId: string): { retryId: string; at: number } | null {
+    const cur = this.metaGet(`ops:retry:${eventId}`);
+    if (!cur) return null;
+    const j = JSON.parse(cur) as { retryId: string; at: number };
+    return { retryId: j.retryId, at: j.at };
+  }
+
+  /** A small key-value space for the dev stand-in of the connector (synthetic source settings). */
+  opsKvGet(key: string): string | null {
+    return this.metaGet(`ops:kv:${key}`);
+  }
+
+  opsKvSet(key: string, value: string): void {
+    this.metaSet(`ops:kv:${key}`, value.slice(0, 4_000));
+  }
 }
 
 export { DEFAULT_SCHEMA };

@@ -506,7 +506,7 @@ Density, card theme, language, token display and the cleared history are per dev
 
 ## v7 Operate: Brain activity, Sources, Platform health
 
-Design: `docs/DESIGN-V7-GOVERN-OPERATE.md` sections 2 to 4. Pure model (statuses, retry plan, latency stats, buckets, heatmap) in `packages/contracts/src/ops-v7.ts`. **Ids, counts, timings and `ruleId@version` only. No page content, title or text in any response.** Every response is `Cache-Control: no-store`. `synthetic: true` marks numbers produced by the dev stand-in (mocked Graph, `OPS_SYNTHETIC=on`, dev only); staging and prod never answer synthetic data.
+Design: `docs/DESIGN-V7-GOVERN-OPERATE.md` sections 2 to 4. Pure model (statuses, retry plan, latency stats, buckets, heatmap) in `packages/contracts/src/ops-v7.ts`. **Ids, counts, timings and `ruleId@version` only. No page content, title or text in any response.** Every response is `Cache-Control: no-store`. `partial: true` means the audit worker did not answer, so the receipts part of the numbers is missing (the audit worker returns the newest 200 receipts of the tenant, so a busy tenant shows a shorter span than the window). `synthetic: true` marks numbers produced by the dev stand-in (mocked Graph, `OPS_SYNTHETIC=on`, dev only); staging and prod never answer synthetic data.
 
 Shared vocabulary: status `published | needs_review | blocked | failed | retrying`; failure reason `permission_denied | graph_429 | timeout | blocked_by_rule | classifier_asked | parse_error`.
 
@@ -518,7 +518,7 @@ Shared vocabulary: status `published | needs_review | blocked | failed | retryin
 
 Brain managers only (the caller needs `manage` on the brain: 403 otherwise, 404 outside the admitted view). `status=failed` matches `failed` and `retrying`. `q` (max 80) matches type, source label, event id or rule ref. `from`/`to` (ISO, inside the window) narrow the table to a brushed span; the timeline always shows the whole window.
 
-`{brainId, window, from, to, generatedAt, synthetic, perDot, buckets: [{start, end, total, counts: {published, needs_review, blocked, failed, retrying}}], callout: {since, kind: "blocked"|"failed", label, count}|null, totals: {all, published, needs_review, blocked, failed, retrying, matching}, events: OpEvent[] (newest first, at most 200)}`. 60 buckets of a minute, 48 of 30 minutes, 84 of 2 hours. `perDot` is how many events one dot stands for (so a column never stacks more than 14 dots).
+`{brainId, window, from, to, generatedAt, synthetic, partial, perDot, buckets: [{start, end, total, counts: {published, needs_review, blocked, failed, retrying}}], callout: {since, kind: "blocked"|"failed", label, count}|null, totals: {all, published, needs_review, blocked, failed, retrying, matching}, events: OpEvent[] (newest first, at most 200)}`. 60 buckets of a minute, 48 of 30 minutes, 84 of 2 hours. `perDot` is how many events one dot stands for (so a column never stacks more than 14 dots).
 
 ### `GET /v1/brains/:id/activity/:eventId`
 
@@ -545,12 +545,16 @@ The caller's own agent connection calls only (receipts with their principal and 
 
 ### `GET /v1/health?window=1h|24h|7d`
 
+`GET /v1/health` without `window` stays the unauthenticated liveness probe `{ok, env, version}`. With `window` it is Platform health and needs a signed-in admin or steward (a 400 `invalid_window` for any other value).
+
 Admins see the tenant; a brain steward (`manage` on one or more brains) sees the same cards limited to those brains; anyone else is 403. `scope` says which.
 
-`{window, generatedAt, scope: "tenant"|"stewards", synthetic, slo, success: {attempts, delivered, failed, rate}, outcomes: {firstTry, recovered, failing}, failures: [{reason, count, share}], heatmap: {columnMs, columns: ISO[], rows: [{id, kind: "brain"|"source", label, total, failed, cells: [{attempts, delivered, failed, failing, topReason, ruleRef}]}]}, totals: {attempts, delivered, failed}}`. An attempt is one operation (a receipt, an ingest job, a sync run), not each try: `attempts = firstTry + recovered + failing`, `delivered = firstTry + recovered`, `rate = delivered / attempts` (1 when none). `slo` is 0.99. A cell is a failing hour when at least 10 percent of its attempts failed. Columns: 12 of 5 minutes (1h), 24 of an hour (24h), 28 of 6 hours (7d). Heatmap rows are the brains and sources the caller may see; counts only, never content.
+`{window, generatedAt, scope: "tenant"|"stewards", synthetic, partial, slo, success: {attempts, delivered, failed, rate}, outcomes: {firstTry, recovered, failing}, failures: [{reason, count, share}], heatmap: {columnMs, columns: ISO[], rows: [{id, kind: "brain"|"source", label, total, failed, cells: [{attempts, delivered, failed, failing, topReason, ruleRef}]}]}, totals: {attempts, delivered, failed}}`. An attempt is one operation (a receipt, an ingest job, a sync run), not each try: `attempts = firstTry + recovered + failing`, `delivered = firstTry + recovered`, `rate = delivered / attempts` (1 when none). `slo` is 0.99. A cell is a failing hour when at least 10 percent of its attempts failed. Columns: 12 of 5 minutes (1h), 24 of an hour (24h), 28 of 6 hours (7d). Heatmap rows are the brains and sources the caller may see; counts only, never content.
 
 ### Connector recording (workers/connector, internal)
 
 The connector now records each Graph call (`ms`, outcome `ok|timeout|429|error`) and each sync attempt (`outcome`, `reason`, try number, latency) per source, keeps the last 320 calls and 7 days of attempts, and serves `GET /internal/sources/:id/stats` and `GET /internal/ops/summary` (signed like the other routes). A source carries `settings` (chips, schedule, retry policy, timeout, ACL max age) and `paused`; pause keeps the synced items (unlike disabling a source). The api reads these through the `CONNECTOR` binding; with `OPS_SYNTHETIC=on` (dev) and no connector it answers deterministic synthetic data instead and says so.
+
+Events come from three places: audit receipts (scoped to the brain by scope id or node id), the brain's wiki log (`ingest.triage`, `ingest.skipped` as `classifier.ask`, `*.failed`; a failed ingest log row now carries its `sourceId`) and connector sync attempts. A streak of failed syncs that ends in a success is one event (recovered on retry); a streak still going is `retrying` until the policy's tries are used up, then `failed`. The rotation of a credential approves the change and records `rotatedAt`; the new secret value is set out of band (`wrangler secret`), the API never sees it.
 
 Receipts: `activity.retry`, `source.config`, `source.run`, `source.rotate_request`, `source.rotate`, ids and key names only.

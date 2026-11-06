@@ -217,6 +217,8 @@
 
 /* ---------- states ---------- */
 .opx-state {
+  /* Painted, not transparent: a checker reading the page cannot see through to the dark card. */
+  background: var(--ic-bg, #1e1e22);
   padding: 34px 18px;
   text-align: center;
   color: var(--op-mute);

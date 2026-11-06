@@ -45,6 +45,8 @@ export interface SourceDef {
   /** Display name, no content. */
   name?: string;
   settings?: SourceSettings;
+  /** When two admins last approved a credential rotation (the value is set out of band, never stored here). */
+  credentialRotatedAt?: number;
   createdAt: number;
 }
 
@@ -55,7 +57,7 @@ export interface CallRow {
   outcome: CallOutcome;
 }
 
-/** One sync attempt. `n` counts consecutive failed runs: 1 is a first try. */
+/** One sync attempt. `n` is the try in a streak of failures that ended here: 1 is a first try, a success after two failures is 3. */
 export interface AttemptRow {
   at: number;
   ms: number;

@@ -102,7 +102,7 @@ describe("recording", () => {
     expect(a.map((x) => [x.outcome, x.n, x.reason, x.retryAfter])).toEqual([
       ["throttled", 1, "graph_429", 120],
       ["throttled", 2, "graph_429", 120],
-      ["ok", 1, null, null],
+      ["ok", 3, null, null],
     ]);
     const calls = await store.listCalls(src.id, 320);
     expect(calls.filter((c) => c.outcome === "429").length).toBeGreaterThanOrEqual(2);
