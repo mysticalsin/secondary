@@ -18,6 +18,7 @@ import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
 import { needFlag } from "../brains/open.ts";
 import { humanIdsOf } from "../human.ts";
+import { ruleDecideGuard } from "../rules/gate.ts";
 import { parseCandidateId, personalScope, scopeOfNode } from "../scope.ts";
 import type { SensitivityFlag } from "../sensitivity.ts";
 import type { AppEnv } from "../types.ts";
@@ -533,12 +534,28 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
     }
 
     const decision = approving ? "approve" : "reject";
+    // Brain rules (v7): a rule can block this publish, ask for more approvals or limit who approves.
+    const dg = approving
+      ? await ruleDecideGuard(
+          c,
+          {
+            stub,
+            nodeId: node,
+            personal,
+            vn: personal ? null : (view.nodes.get(node) ?? null),
+            view,
+          },
+          id,
+        )
+      : null;
+    if (dg?.response) return dg.response;
     if (
       !(await audit(c, {
         action: `wiki.${decision}`,
         nodeId: id,
         scopeId: scope,
         revision: null,
+        ...(dg?.rx ?? {}),
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -586,6 +603,14 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
       message: "The item changed since you read it. Reload and read it again",
       currentRevision: item.revision,
     });
+  const dg = wantsRelease
+    ? await ruleDecideGuard(
+        c,
+        { stub, nodeId: node, personal: false, vn: view.nodes.get(node) ?? null, view },
+        id,
+      )
+    : null;
+  if (dg?.response) return dg.response;
   if (
     !(await audit(c, {
       action: wantsRelease ? "approve_release" : "review",
@@ -593,6 +618,7 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
       scopeId: scope,
       revision: item.revision,
       reason: d.reason,
+      ...(dg?.rx ?? {}),
     }))
   )
     return c.json({ error: "audit_unavailable" }, 503);

@@ -5,6 +5,7 @@
 
 import { ROLE_ORDER } from "@secondary/policy";
 import { getOrg } from "../org.ts";
+import { ensureRulesSeed } from "../rules/seed.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
 import { planWikiSeed, SEED_TYPES, WIKI_SEED_VERSION } from "./seed-content.ts";
 
@@ -27,6 +28,7 @@ export async function ensureWikiSeed(
   const tenant = tenantStub(env, tenantId);
   const config = await tenant.getConfig();
   if (!config) return { status: "unseeded" };
+  await ensureRulesSeed(env, tenantId, now);
   if (!(await tenant.seedClaim(WIKI_SEED_VERSION, now)))
     return { status: (await tenant.seedVersion()) >= WIKI_SEED_VERSION ? "current" : "busy" };
   try {

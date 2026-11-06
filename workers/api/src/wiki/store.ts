@@ -85,6 +85,7 @@ export const WIKI_TABLES = [
   "brain_members",
   "brain_fields",
   "brain_coach",
+  "item_rules",
 ] as const;
 
 /** A record tagged "contacts" in an account is gated by the account's Contacts subspace, not the account. */

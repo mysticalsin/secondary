@@ -54,6 +54,10 @@ export async function audit(
     revision: number | null;
     decision?: Receipt["decision"];
     reason?: string;
+    /** v7 brain rules: the deciding rule (`ruleId@version`), its mode and the replayable metadata. */
+    rule?: Receipt["rule"];
+    ruleMode?: Receipt["ruleMode"];
+    meta?: Receipt["meta"];
   },
 ): Promise<boolean> {
   const s = sess(c);
@@ -71,6 +75,9 @@ export async function audit(
     requestId: c.get("requestId") ?? null,
     clientId: s.internal?.clientId ?? null,
     tool: s.internal?.tool ?? null,
+    ...(i.rule !== undefined ? { rule: i.rule } : {}),
+    ...(i.ruleMode !== undefined ? { ruleMode: i.ruleMode } : {}),
+    ...(i.meta !== undefined ? { meta: i.meta } : {}),
   });
 }
 

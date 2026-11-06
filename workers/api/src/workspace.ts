@@ -392,7 +392,7 @@ export class Workspace extends BrainBase {
       sensitivityFlags: JSON.parse(r.sensitivity_flags as string) as SensitivityFlag[],
       reviewedBy2: r.reviewed_by_2 === 1,
       approvals,
-      required: requiredFor(releaseTarget, r.plane as string),
+      required: Math.max(requiredFor(releaseTarget, r.plane as string), this.ruleRequired(id)),
       createdAt: r.created_at as number,
       updatedAt: r.updated_at as number,
     };

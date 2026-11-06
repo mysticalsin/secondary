@@ -36,9 +36,11 @@ export async function fetchReceipts(
   tenantId: string,
   principalId: string | null,
   days: number,
+  limit?: number,
 ): Promise<StoredReceipt[] | null> {
   try {
     const q = new URLSearchParams({ tenant: tenantId, days: String(days) });
+    if (limit !== undefined) q.set("limit", String(limit));
     if (principalId !== null) q.set("principal", principalId);
     const res = await env.AUDIT.fetch(`${AUDIT_ORIGIN}/receipts?${q}`, {
       headers: { "X-Audit-Key": env.AUDIT_KEY_READ ?? "" },

@@ -111,6 +111,10 @@ export abstract class BrainBase extends WikiBase {
         CREATE TABLE IF NOT EXISTS brain_coach (
           id TEXT PRIMARY KEY, hash TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL,
           expires_at INTEGER NOT NULL, applied_at INTEGER);
+        -- What a brain rule (v7) added to one proposal or candidate: approvals, approver group, rule tag.
+        CREATE TABLE IF NOT EXISTS item_rules (
+          item_id TEXT PRIMARY KEY, required INTEGER NOT NULL, grp TEXT NOT NULL,
+          tag TEXT NOT NULL, expires_after_min INTEGER);
       `);
       const cols = this.sql.exec("PRAGMA table_info(wiki_page_revisions)").toArray();
       for (const [name, type] of [
@@ -178,6 +182,48 @@ export abstract class BrainBase extends WikiBase {
     }
     if (added.length || !super.wikiSchema().types.journal) this.wikiSetSchema({ ...schema, types });
     return added;
+  }
+
+  // ---- brain rules (v7): what a rule asked of one proposal ----
+
+  /** A rule raises the approvals a proposal needs, limits who may approve it, and is named on it. It never lowers anything. */
+  brainRuleStamp(
+    id: string,
+    s: { required: number; group: string[]; tag: string; expiresAfterMin: number | null },
+  ): void {
+    const cur = this.brainRuleOf(id);
+    this.sql.exec(
+      `INSERT INTO item_rules (item_id, required, grp, tag, expires_after_min) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(item_id) DO UPDATE SET required = excluded.required, grp = excluded.grp,
+         tag = excluded.tag, expires_after_min = excluded.expires_after_min`,
+      id,
+      Math.max(s.required, cur?.required ?? 0),
+      JSON.stringify([...new Set([...(cur?.group ?? []), ...s.group])]),
+      s.tag,
+      s.expiresAfterMin ?? cur?.expiresAfterMin ?? null,
+    );
+  }
+
+  brainRuleOf(
+    id: string,
+  ): { required: number; group: string[]; tag: string; expiresAfterMin: number | null } | null {
+    const r = this.sql.exec("SELECT * FROM item_rules WHERE item_id = ?", id).toArray()[0];
+    return r
+      ? {
+          required: r.required as number,
+          group: JSON.parse(r.grp as string) as string[],
+          tag: r.tag as string,
+          expiresAfterMin: (r.expires_after_min as number | null) ?? null,
+        }
+      : null;
+  }
+
+  /** Approvals a rule asked for on this item (0 when none). */
+  protected ruleRequired(id: string): number {
+    return (
+      (this.sql.exec("SELECT required FROM item_rules WHERE item_id = ?", id).toArray()[0]
+        ?.required as number | undefined) ?? 0
+    );
   }
 
   // ---- stored member roles (they only ever narrow) ----

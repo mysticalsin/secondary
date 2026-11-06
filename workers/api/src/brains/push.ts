@@ -6,6 +6,7 @@
 // directly (the brain's own publication mode).
 
 import { Hono } from "hono";
+import { type GateOut, ruleGate } from "../rules/gate.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, notFound, readObject, sess, text } from "../ux/util.ts";
 import { pageVisible, readableMany } from "../wiki/routes.ts";
@@ -35,12 +36,28 @@ const rate = (c: C): Promise<Response | null> => {
   return rateLimit(c, "wiki_write", Number.isFinite(raw) && raw > 0 ? raw : 30);
 };
 
+/** Brain rules (v7): the gate for a page an agent or a person pushes. Stamps the proposal once it exists. */
+const gateFor = (
+  c: C,
+  b: Brain,
+  action: "propose_page" | "propose_change" | "write_session_report",
+  md: string,
+): Promise<GateOut> =>
+  ruleGate(c, {
+    action,
+    brain: { nodeId: b.nodeId, personal: b.personal, vn: b.vn, role: b.role },
+    text: md,
+    cites: citationsOf(md).length,
+    pages: 1,
+    mode: "stamp",
+  });
+
 /** Queue one page draft in the brain. A person cites only what they can read themselves (L-01). */
 async function submit(
   c: C,
   b: Brain,
   draft: PageDraft,
-  input: { title: string; rationale: string; publishDirect: boolean },
+  input: { title: string; rationale: string; publishDirect: boolean; gate?: GateOut },
 ): Promise<Response> {
   const s = sess(c);
   const [ok] = await readableMany(c, [
@@ -69,9 +86,10 @@ async function submit(
     {
       plane: b.plane,
       readable: [...(ok?.keys() ?? [])],
-      ...(input.publishDirect ? { publishDirect: true } : {}),
+      ...(input.publishDirect && !input.gate?.forceReview ? { publishDirect: true } : {}),
     },
   );
+  if (res.ok && res.created) await input.gate?.stamp(b.stub, res.id);
   if (!res.ok)
     return c.json({ error: res.code, reason: res.message }, res.code === "not_found" ? 404 : 409);
   if (!res.created) return c.json({ error: "nothing_to_propose", reason: res.reason }, 422);
@@ -105,12 +123,15 @@ export function pushRoutes(_deps: AppDeps): Hono<AppEnv> {
     const cur = await b.stub.wikiPage(pageId);
     const refused = await rate(c);
     if (refused) return refused;
+    const g = await gateFor(c, b, cur ? "propose_change" : "propose_page", md);
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "brain.push_page",
         nodeId: b.nodeId,
         scopeId: b.scope,
         revision: null,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -122,6 +143,7 @@ export function pushRoutes(_deps: AppDeps): Hono<AppEnv> {
         title: `${cur ? "Edit" : "New page"}: ${title}`,
         rationale: "proposed by an agent",
         publishDirect: false,
+        gate: g,
       },
     );
   });
@@ -152,12 +174,15 @@ export function pushRoutes(_deps: AppDeps): Hono<AppEnv> {
     if (!seen || !pageVisible(citationsOf(cur.markdown), seen)) throw notFound();
     const refused = await rate(c);
     if (refused) return refused;
+    const g = await gateFor(c, b, "propose_change", md);
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "brain.push_change",
         nodeId: b.nodeId,
         scopeId: b.scope,
         revision: cur.revision,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -171,7 +196,7 @@ export function pushRoutes(_deps: AppDeps): Hono<AppEnv> {
         baseRevision: cur.revision,
         markdown: md,
       },
-      { title: `Edit: ${cur.title}`, rationale, publishDirect: false },
+      { title: `Edit: ${cur.title}`, rationale, publishDirect: false, gate: g },
     );
   });
 
@@ -199,12 +224,15 @@ export function pushRoutes(_deps: AppDeps): Hono<AppEnv> {
     if ((await b.stub.wikiPage(pageId)) !== null) throw bad("try_again", 409);
     const refused = await rate(c);
     if (refused) return refused;
+    const g = await gateFor(c, b, "write_session_report", md);
+    if (g.response) return g.response;
     if (
       !(await audit(c, {
         action: "brain.push_session_report",
         nodeId: b.nodeId,
         scopeId: b.scope,
         revision: null,
+        ...g.rx,
       }))
     )
       return c.json({ error: "audit_unavailable" }, 503);
@@ -220,7 +248,12 @@ export function pushRoutes(_deps: AppDeps): Hono<AppEnv> {
         baseRevision: null,
         markdown: `# ${title}\n\nFolder: ${folder.join(" / ")}\n\n${md}\n`,
       },
-      { title: `New page: ${title}`, rationale: "session report from an agent", publishDirect },
+      {
+        title: `New page: ${title}`,
+        rationale: "session report from an agent",
+        publishDirect,
+        gate: g,
+      },
     );
     if (res.status !== 201) return res;
     return c.json({ ...((await res.json()) as Record<string, unknown>), folder }, 201);

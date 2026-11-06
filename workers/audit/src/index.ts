@@ -99,6 +99,10 @@ app.get("/receipts", async (c) => {
   if (!tenant || (principalParam !== undefined && !principal))
     return c.json({ error: "invalid_query" }, 400);
   const days = Math.min(Math.max(Number.parseInt(c.req.query("days") ?? "7", 10) || 7, 1), 30);
+  const limit = Math.min(
+    Math.max(Number.parseInt(c.req.query("limit") ?? "200", 10) || 200, 1),
+    1000,
+  );
 
   const keys: string[] = [];
   for (let d = 0; d < days && keys.length < 1000; d++) {
@@ -120,7 +124,7 @@ app.get("/receipts", async (c) => {
     .flatMap((l) => (l.trim() ? [JSON.parse(l) as { principalId: string; at: string }] : []))
     .filter((r) => principal === null || r.principalId === principal)
     .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 200);
+    .slice(0, limit);
   return c.json({ receipts });
 });
 

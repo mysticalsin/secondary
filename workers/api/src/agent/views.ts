@@ -14,6 +14,7 @@ import {
   viewOfProgram,
 } from "../../../../packages/contracts/src/agent-ui/index.ts";
 import { brainOf } from "../brains/open.ts";
+import { type GateOut, ruleGate } from "../rules/gate.ts";
 import { personalScope } from "../scope.ts";
 import { workspaceStub } from "../stubs.ts";
 import { audit, bad, type C, notFound, sess } from "../ux/util.ts";
@@ -267,6 +268,26 @@ export function viewsHandlers() {
 
     async share(c: C): Promise<Response> {
       const { row, st } = await loadMine(c);
+      // Brain rules (v7): sharing a plan that names a brain can be blocked or held for approval there.
+      const v = viewOfProgram(st.program);
+      const named = [
+        ...new Set([
+          ...(v.root ? brainRefs(v.root) : []),
+          ...(st.pin === "home" ? [] : [st.pin.brain]),
+        ]),
+      ];
+      let rx: GateOut["rx"] | undefined;
+      for (const id of named) {
+        const b = await brainOf(c, id);
+        if (!b || b.personal) continue;
+        const g = await ruleGate(c, {
+          action: "share_view",
+          brain: { nodeId: b.nodeId, personal: false, vn: b.vn, role: b.role },
+          mode: "hold",
+        });
+        if (g.response) return g.response;
+        rx ??= g.rx;
+      }
       if (
         !(await audit(c, {
           action: "agent.share",
@@ -274,6 +295,7 @@ export function viewsHandlers() {
           scopeId: null,
           revision: null,
           reason: "share",
+          ...(rx ?? {}),
         }))
       )
         return c.json({ error: "audit_unavailable" }, 503);
