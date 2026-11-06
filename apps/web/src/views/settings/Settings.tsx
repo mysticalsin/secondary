@@ -298,7 +298,14 @@ export function Settings() {
     ok ? el : opsRights.known ? <Navigate to="/settings/profile" replace /> : null;
   // Rules is for people with the configure grant, and only where the API says the surface exists.
   const rules = useRulesAccess(undefined, !!me?.capabilities?.configure);
-  const items: { to: string; label: Key; admin?: boolean; gap?: boolean; show?: boolean; hide?: boolean }[] = [
+  const items: {
+    to: string;
+    label: Key;
+    admin?: boolean;
+    gap?: boolean;
+    show?: boolean;
+    hide?: boolean;
+  }[] = [
     { to: "profile", label: "v4.settings.profile" },
     { to: "brains", label: "v4.settings.brains" },
     { to: "agents", label: "v4.settings.agents" },
