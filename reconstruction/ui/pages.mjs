@@ -515,3 +515,51 @@ export function renderGenui(state) {
 <p class="note">A tenant query on this page is ignored. The session tenant comes from /v1/me.</p>`,
   );
 }
+
+export function renderPersonal(model) {
+  const plan = model.plan ?? {};
+  const denied = model.status !== 200;
+  const notes = denied || !Array.isArray(plan.context) ? [] : plan.context;
+  const cards = notes
+    .map(
+      (item) => `<article class="note">
+        <h2>${esc(item.externalId)}</h2>
+        <p class="meta">Version ${esc(item.version)} · ${esc(String(item.contentSha256 ?? "").slice(0, 12))}</p>
+        <p class="body">${esc(item.text)}</p>
+      </article>`,
+    )
+    .join("");
+  const coverage = denied
+    ? ""
+    : plan.empty
+      ? `<p class="empty" role="status">This personal brain has no imported context yet. That is an empty brain, not a consultant or CEO task list.</p>`
+      : `<p class="meta" data-coverage="${esc(plan.coverage)}">Showing ${esc(plan.shown)} of ${esc(plan.total)}. Coverage is ${esc(plan.coverage)}.</p>${cards}`;
+  const state = denied
+    ? `<p class="alert" role="status">That brain is not open to this session. Nothing from another owner is shown.</p>`
+    : coverage;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your personal brain</title>
+<style>
+:root { color-scheme: light; --canvas:#f8f6f9; --ink:#17121a; --accent:#6600ae; --line:#d8d8df; --muted:#5c5d6d; --bad:#c70e1d; --panel:#fff; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--canvas); color:var(--ink); font-family:ui-sans-serif,system-ui,sans-serif; }
+.frame { max-width: 760px; margin: 0 auto; padding: 28px 16px 64px; }
+nav { display:flex; flex-wrap:wrap; gap:10px; margin: 0 0 16px; }
+nav a { color: var(--accent); }
+h1 { margin: 8px 0; font-size: 36px; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+h2 { margin: 0 0 4px; font-size: 18px; overflow-wrap: anywhere; }
+.banner { display:inline-flex; margin: 8px 0 16px; padding: 6px 12px; border-radius: 999px; background:#fcf3ff; color:var(--accent); font-size:13px; font-weight:650; }
+.note, .empty { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:16px; margin: 12px 0; }
+.body, .meta, .empty { overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 14px; }
+.alert { color: var(--bad); font-weight: 650; }
+@media (max-width: 720px) { h1 { font-size: 30px; } .frame { padding: 20px 12px 48px; } }
+</style></head><body><main class="frame">
+<nav aria-label="Settings"><a href="/settings">Settings</a><a href="/settings/observability">Observability</a><a href="/reconstruction/import">Import</a><a href="/brains/me" aria-current="page">Personal brain</a></nav>
+<p class="banner">Deterministic plan. No model was called. AI is disabled.</p>
+<h1>Your personal brain</h1>
+<p class="meta">Signed in as ${esc(plan.principalId || model.email || "unknown")} in ${esc(plan.tenantId || "unknown")}. The server chose this owner. A requested brain id is not a grant. Provider configuration is absent, so this is not a live model view.</p>
+${state}
+</main></body></html>`;
+}

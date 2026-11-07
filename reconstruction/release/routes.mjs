@@ -40,7 +40,7 @@ export function releaseDecision(pathname, mode) {
     return { kind: "deny", status: 404, reason: "fixture_closed" };
   }
   if (path.startsWith("/.well-known/") || MCP.has(path)) return { kind: "mcp", auth: "oauth" };
-  if (path === "/settings/observability" || path === "/reconstruction/import" || path === "/" || path === "/settings" || path === "/settings/profile") {
+  if (path === "/settings/observability" || path === "/reconstruction/import" || path === "/brains/me" || path === "/" || path === "/settings" || path === "/settings/profile") {
     return { kind: "browser", auth: "jwt" };
   }
   if (path === "/favicon.ico" || path.startsWith("/assets/")) return { kind: "asset", auth: "none" };

@@ -13,6 +13,7 @@ import { workspaceStub } from "../worker-root/worker/src/stubs.ts";
 import { matchReceipt, readReceipt, sha256Hex, storedBody, validateImport, visibleText } from "../import/policy.mjs";
 import { UsageLedger } from "../ledger/object.mjs";
 import { canonicalHash, personalBrain, syntheticFixture, validateClientReport } from "../ledger/policy.mjs";
+import { personalPlan } from "../personal/plan.mjs";
 
 export { TenantPolicy, Workspace, UsageLedger };
 
@@ -473,9 +474,117 @@ async function ledgerGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
   return Response.json({ ...saved.body, providerVerified: false }, { status: saved.status });
 }
 
+function orgDenied() {
+  return Response.json({ error: "org_denied", reason: "org_denied", orgAcl: false }, { status: 403 });
+}
+
+async function personalPlanGate(request: Request, env: HarnessEnv, ctx: ExecutionContext) {
+  if (request.method !== "GET") return Response.json({ error: "method", reason: "method", write: false }, { status: 405 });
+  if (request.headers.get("cf-connecting-ip")) {
+    return Response.json({ error: "public_edge", reason: "public_edge" }, { status: 401 });
+  }
+  const verified = await verifyInternalRequest(request, internalKeys(env as never));
+  if (!verified.ok) return Response.json({ error: "unauthorized", reason: verified.reason }, { status: 401 });
+  if (verified.principal.persona) return Response.json({ error: "persona_denied", reason: "persona_denied", orgAcl: false }, { status: 403 });
+  if (!verified.principal.scope.includes("secondary.read")) {
+    return Response.json({ error: "insufficient_scope", reason: "insufficient_scope", write: false }, { status: 403 });
+  }
+  const principal = { ...verified.principal };
+  delete principal.persona;
+  const who = await sessionIdentity(env, ctx, principal);
+  if (who instanceof Response) return who;
+  const url = new URL(request.url);
+  const ownNode = `pb:${who.principalId}`;
+  const nodeId = url.searchParams.get("nodeId");
+  const brain = url.searchParams.get("brain");
+  const owner = url.searchParams.get("owner") ?? url.searchParams.get("principalId");
+  const tenantId = url.searchParams.get("tenantId");
+  const email = url.searchParams.get("email");
+  if (url.searchParams.get("persona") || url.searchParams.get("prompt")) return orgDenied();
+  if (nodeId && nodeId !== ownNode) return orgDenied();
+  if (brain && brain !== "me" && brain !== ownNode) return orgDenied();
+  if (owner && owner !== who.principalId) return orgDenied();
+  if (tenantId && tenantId !== who.tenantId) return orgDenied();
+  if (email && email.toLowerCase() !== verified.principal.email.toLowerCase()) return orgDenied();
+  const listed = await importRpc(env, who.tenantId, "/import/list", {
+    principalId: who.principalId,
+    limit: url.searchParams.get("limit") ?? "20",
+    cursor: url.searchParams.get("cursor"),
+  });
+  if (!listed.ok) return Response.json(listed.body, { status: listed.status });
+  const page = Array.isArray(listed.body.items) ? listed.body.items : [];
+  const context = [];
+  for (const row of page) {
+    const full = await ownItem(env, who.tenantId, who.principalId, String(row.id));
+    const view = full ? present(full) : null;
+    if (view) context.push(view);
+  }
+  const itemId = url.searchParams.get("item");
+  if (itemId) {
+    const owned = await ownItem(env, who.tenantId, who.principalId, itemId);
+    const view = owned ? present(owned) : null;
+    if (!view) return Response.json({ error: "not_found", reason: "not_found", write: false }, { status: 404 });
+    const one = personalPlan({
+      principalId: who.principalId,
+      tenantId: who.tenantId,
+      items: [view],
+      total: 1,
+      complete: true,
+    });
+    return Response.json({ ...one, focused: true });
+  }
+  const total = Number(listed.body.total ?? context.length);
+  const plan = personalPlan({
+    principalId: who.principalId,
+    tenantId: who.tenantId,
+    items: context,
+    total,
+    complete: Boolean(listed.body.complete) && context.length === total,
+  });
+  return Response.json(plan);
+}
+
+async function genuiGate(request: Request, env: HarnessEnv, ctx: ExecutionContext) {
+  const raw = await request.text();
+  const next = () => app.fetch(new Request(request.url, { method: request.method, headers: request.headers, body: raw }), env, ctx);
+  let payload: Record<string, unknown> = {};
+  try {
+    payload = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+  } catch {
+    return next();
+  }
+  const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+  if (!prompt) return next();
+  const verified = await verifyInternalRequest(
+    new Request(request.url, { method: request.method, headers: request.headers, body: raw }),
+    internalKeys(env as never),
+  );
+  if (!verified.ok) return next();
+  const email = verified.principal.email.trim().toLowerCase();
+  const local = email.split("@")[0] ?? "";
+  if (verified.principal.persona && local !== verified.principal.persona) return orgDenied();
+  const principal = { ...verified.principal };
+  delete principal.persona;
+  const meUrl = "https://api.internal/v1/me";
+  const meHeaders = await signInternalRequest({
+    secret: env.INTERNAL_HMAC_KEY ?? "",
+    method: "GET",
+    url: meUrl,
+    principal,
+  });
+  const me = await app.fetch(new Request(meUrl, { method: "GET", headers: { ...meHeaders, accept: "application/json" } }), env, ctx);
+  if (!me.ok) return next();
+  const body = await me.json() as { principal?: { roleIds?: string[] } };
+  const roles = Array.isArray(body.principal?.roleIds) ? body.principal.roleIds : [];
+  if (roles.length === 0) return orgDenied();
+  return next();
+}
+
 export default {
   async fetch(request: Request, env: HarnessEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/harness/personal/plan") return personalPlanGate(request, env, ctx);
+    if (url.pathname === "/v1/genui/plan" && request.method === "POST") return genuiGate(request, env, ctx);
     if (url.pathname === "/harness/ledger" || url.pathname === "/harness/ledger/fixture") {
       return ledgerGate(request, env, ctx);
     }

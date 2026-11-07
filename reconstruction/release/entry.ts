@@ -10,7 +10,7 @@ import shellJs from "../../recovered-delivery/main-js/index-PLmoiPYI.dom-capture
 import { signInternalRequest } from "../worker-root/worker/src/internal-auth.ts";
 import { verifyReleaseJwt } from "./identity.mjs";
 import { DEV_IDENTITY_HEADERS, releaseDecision } from "./routes.mjs";
-import { renderImport, renderObservability } from "../ui/pages.mjs";
+import { renderImport, renderObservability, renderPersonal } from "../ui/pages.mjs";
 
 interface Env {
   RELEASE_MODE?: string;
@@ -83,7 +83,7 @@ async function signedFetch(env: Env, email: string, method: string, path: string
 }
 
 function shell() {
-  const nav = `<nav data-reconstruction="settings" style="font:14px sans-serif;padding:8px 16px;background:#fcf3ff;color:#17121a"><a href="/settings" style="color:#6600ae">Settings</a> · <a href="/settings/observability" style="color:#6600ae">Observability</a> · <a href="/reconstruction/import" style="color:#6600ae">Import</a></nav>`;
+  const nav = `<nav data-reconstruction="settings" style="font:14px sans-serif;padding:8px 16px;background:#fcf3ff;color:#17121a"><a href="/settings" style="color:#6600ae">Settings</a> · <a href="/brains/me" style="color:#6600ae">Personal brain</a> · <a href="/settings/observability" style="color:#6600ae">Observability</a> · <a href="/reconstruction/import" style="color:#6600ae">Import</a></nav>`;
   return shellHtml.replace("<body>", `<body>${nav}`);
 }
 
@@ -145,6 +145,11 @@ export default {
     if (!who.ok) return text(`${who.reason}\n`, who.reason === "auth_unconfigured" ? 503 : 401);
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/settings" || url.pathname === "/settings/profile")) {
       return text(shell(), 200, "text/html; charset=utf-8");
+    }
+    if (request.method === "GET" && url.pathname === "/brains/me") {
+      const planned = await signedFetch(env, who.email, "GET", `/harness/personal/plan${url.search}`);
+      const plan = await planned.json().catch(() => ({ error: "unavailable" }));
+      return text(renderPersonal({ status: planned.status, plan, email: who.email }), planned.status === 200 ? 200 : planned.status, "text/html; charset=utf-8");
     }
     if (request.method === "GET" && url.pathname === "/settings/observability") {
       return text(await observability(env, who.email, url), 200, "text/html; charset=utf-8");

@@ -12,6 +12,8 @@ Pinned local packages checked against their own files, not against newer docs:
 Official notes incorporated from the 2026-11-07 research handoff, without running those clients:
 Dust admin MCP onboarding and Claude custom connectors are external-client work. OAuth is the per-person path. A shared bearer is a service identity, not an individual. Hosted clients need a machine-usable OAuth endpoint, not a browser-only Access HTML login. `global_fetch_strictly_public` stays off, so Client ID Metadata Documents are not fetched. Dynamic registration on the loopback issuer was used instead. "my cloud" is not confirmed to mean Claude. No universal client is claimed.
 
+Recovered `POST /v1/genui/plan` looks up `nodeId` in the admitted org view. `buildOrg` creates `pb:<id>` only for `personalOwners`, and the dev seed sets that list to the canonical `u_<role>` principals. A non-seed email, including a plus-address, is `principalIdFor` of the whole address. `forNode` returns null, and the route answers 404. Adding that id to `personalOwners` would run `buildPersonalBrain`, which fabricates three synthetic items, and copying a persona's memberships would grant company roles from the mailbox prefix. Neither change was made. The own-brain page reads the personal workspace instead.
+
 A normal `tools/call` does not carry the caller's model usage. Missing external usage stays unknown, not zero. Client-reported numbers are `client_reported`, never provider-verified. `provider_reported` is set only by the server synthetic fixture adapter, with `providerVerified: false`. Streaming snapshots replace a per-request total. A retried provider request is a separate event from an idempotent import. Cost stays unknown. The served dev MCP bundle is `reconstruction/mcp/worker/src/import-entry.ts`. Recovered `index.ts` is not that bundle. The protected-dev client entry is `reconstruction/release/entry.ts`. The fixture server on port 43131 is not that edge. `/harness/*` and the dev identity headers are local-only and are not a production entry. The pinned OAuth library accepts an `http` resource only on a loopback host, so the positive edge proof dispatches to `http://127.0.0.1` on the release worker. The MCP worker in that proof is `ENVIRONMENT=dev`, so its local consent header still works after the edge forwards the request. A non-dev MCP worker rejects that header. That is not an Access login.
 
 ## 1. Personal brain
@@ -19,11 +21,12 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Check | Where | Status |
 | --- | --- | --- |
 | Seeded `u_consultant` personal plan `pb:u_consultant` | Recovered planner, reconstruction fixture | PASS |
-| Plus-address principal has no personal node; original 404 kept | Recovered `planView` | FAIL closed |
+| Plus-address principal has no org-graph personal node. Recovered `POST /v1/genui/plan` for `pb:<that id>` stays 404. The id is not added to `personalOwners`, so no fabricated seed tasks and no company role is copied from the mailbox prefix | Recovered `planView` / `buildPersonalBrain`. Fixture `recovered routes replace the synthetic gap and the genui flow stays on the session` | FAIL closed |
 | Another owner and a tenant query cannot read that plan | Recovered view | PASS |
 | New synthetic users `ada@tenant-a.test` and `bob@tenant-b.test` each get a durable personal workspace that is not `u_consultant` | Reconstruction gate over recovered `POST /v1/personal/items`; workerd `two new users keep separate durable imports across a restart` | PASS |
 | Same items are readable after a new workerd process uses the same persistence directory | That test's second boot | PASS |
-| Plus-address org-graph plan `pb:<hash>` | Recovered `planView` still has no node | FAIL closed |
+| Plus-address org-graph plan `pb:<hash>` | Recovered `planView` still has no node. A prefix does not inherit the CEO or consultant membership | FAIL closed |
+| Own personal plan for a non-seed owner, including a plus-address, from that person's durable imports. Empty context stays empty. Coverage is partial when only 20 of more than 100 notes are loaded | `new owners get their own personal plan and not a seed org plan` and `the release edge personal page shows only that token's context` | PASS |
 
 ## 2. Selected import
 
@@ -112,7 +115,8 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Release edge serves captured shell bytes and the Mantu Observability page, and MCP initialize/import/ledger go through that edge | `the release edge is the only client path for pages and MCP` | PASS |
 | Encoded harness paths, repeated slash, case, query path, `X-Original-URL`, method override, import cross-origin, future `nbf`, `alg: none`, a bad signature with the same `kid`, and `Cf-Access-Jwt-Assertion` agreement | `protected-dev edge ignores dev headers and closes harness routes` | PASS |
 | A configured JWKS that contains a private-key field is refused. An unknown local `kid` is refused. This is not a fetch of the live certs | `API and MCP audiences stay distinct and a JWKS failure stays closed` | PASS |
-| Live JWKS fetch, rotation against those live certs, Access admission, and a real browser login | Recorded issuer and audiences only | NOTRUN |
+| Public Access cert endpoint returned HTTP 200 on 2026-11-07 15:33:55 America/Sao_Paulo. 5116 bytes, SHA-256 `b5536252ff8227a04307334611fabaee5f2df05dec40b52f2498bed687760c66`. Two RSA-2048 RS256 signature keys, no private fields, cache `max-age=14400` and `must-revalidate`. This snapshot is not a production pin | `the observed public cert document is a format check, not an identity pin` | PASS |
+| A live Access JWT, signature acceptance against those certs, key rotation on Cloudflare, admission, and a real browser login | Not requested and not run. An unknown kid or a stale cache fails closed in the local checker only | NOTRUN |
 | Wrong OAuth resource, audience, expiry, refresh rotation, or a real identity provider | Local dev issuer only | NOTRUN |
 | Installed `@modelcontextprotocol/sdk` is 1.32.2 and public `registerTool` refuses a second `personal_note_create` | `the MCP SDK pin cannot replace a tool through the public registerTool API` | PASS |
 | A later SDK still exposes the private tool map used to swap that tool | Not an upgrade test | NOTRUN |
