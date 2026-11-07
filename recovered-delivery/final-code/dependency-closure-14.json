@@ -1,0 +1,738 @@
+{
+  "status": "LEXICAL DECLARED CODE REFERENCE CHECK ONLY",
+  "captured_assets": [
+    {
+      "name": "AgentPage-DHJmJKpV.js",
+      "sha256": "45bd273e77f17400ac8e63bc4b42f99e98f0056a9b5446106f91f4e30fab0adc"
+    },
+    {
+      "name": "AgentPanel-Dn16YgEH.js",
+      "sha256": "0e4470b0e8cf106ed4e04f11e3817d6e3e8b8bcacdeec99408256fe4e6bda9da"
+    },
+    {
+      "name": "BrainViews-DoMdPJUS.js",
+      "sha256": "491a9954f54fa47335670b7b4b55f3f8db9b6c9f97109f03bb19fda976c281e8"
+    },
+    {
+      "name": "PinnedGrid-CuaLdMPY.js",
+      "sha256": "8fce1ea2399cb26156e8ce71363cfd099d1f07d426859db76d5b2b2c54d6c772"
+    },
+    {
+      "name": "Renderer-0G0MSIPy.js",
+      "sha256": "dac8cd97a0e6ffc87c9b8af87be428b85f441ad7f33b5432d0b65c13b091b2ca"
+    },
+    {
+      "name": "SettingsSection-f2wwgrYJ.js",
+      "sha256": "0bfb51714cde0ad5836d1b214453318dfdd45c45f6d91bebcdf72434d3813fc5"
+    },
+    {
+      "name": "SharedView-CEqhSdzS.js",
+      "sha256": "17afcaf26e26a434240b79c65008ab1e3302e6b31e9905ac719097e1f748979d"
+    },
+    {
+      "name": "Thread-eq9OCIoK.js",
+      "sha256": "c4c9970a2c6cc0b5a83f36d7b5ec0042cf00db8a0a40009d427906f992952d72"
+    },
+    {
+      "name": "ViewCard-D5JbjyDb.js",
+      "sha256": "1f38bc0084d5aace61dcb55adb7b1d7286cf6e292d2778c54573c222aa50cc28"
+    },
+    {
+      "name": "agent-DA0iqiiF.js",
+      "sha256": "ba53fea497b4968f0336743fa8f4a604be5581e4e71052a2096759e697000eef"
+    },
+    {
+      "name": "agent-Wsu4vetM.css",
+      "sha256": "65a5afc39d1d8b26289e6488289316912012b4a7ba0c8211ac891a63e3790ae9"
+    },
+    {
+      "name": "index-DiBYRwP4.css",
+      "sha256": "15c03f1ef9bc3f766d10d3d0d7a56ca1d2de0032ce174deb47f7e1f5f36240d3"
+    },
+    {
+      "name": "index-PLmoiPYI.js",
+      "sha256": "0acf56bc36d5dbfed072cc12ceb38abb9750bab36203f9f38bf5243315df33bd"
+    },
+    {
+      "name": "index-DZRyvnzT.js",
+      "sha256": "0c99a1cb3e8d42334cd5deb1641abd3212a56b21d0bab828e44eec67d498bb01"
+    }
+  ],
+  "captured_count": 14,
+  "declared_references": [
+    {
+      "declared_by": "AgentPage-DHJmJKpV.js",
+      "literal": "./Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "AgentPage-DHJmJKpV.js",
+      "literal": "./Thread-eq9OCIoK.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Thread-eq9OCIoK.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "AgentPage-DHJmJKpV.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "AgentPage-DHJmJKpV.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "AgentPanel-Dn16YgEH.js",
+      "literal": "./Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "AgentPanel-Dn16YgEH.js",
+      "literal": "./Thread-eq9OCIoK.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Thread-eq9OCIoK.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "AgentPanel-Dn16YgEH.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "AgentPanel-Dn16YgEH.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "BrainViews-DoMdPJUS.js",
+      "literal": "./Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "BrainViews-DoMdPJUS.js",
+      "literal": "./ViewCard-D5JbjyDb.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/ViewCard-D5JbjyDb.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "BrainViews-DoMdPJUS.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "BrainViews-DoMdPJUS.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "PinnedGrid-CuaLdMPY.js",
+      "literal": "./Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "PinnedGrid-CuaLdMPY.js",
+      "literal": "./ViewCard-D5JbjyDb.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/ViewCard-D5JbjyDb.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "PinnedGrid-CuaLdMPY.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "PinnedGrid-CuaLdMPY.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "Renderer-0G0MSIPy.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "SettingsSection-f2wwgrYJ.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "SettingsSection-f2wwgrYJ.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "SharedView-CEqhSdzS.js",
+      "literal": "./Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "SharedView-CEqhSdzS.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "SharedView-CEqhSdzS.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "Thread-eq9OCIoK.js",
+      "literal": "./Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "Thread-eq9OCIoK.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "Thread-eq9OCIoK.js",
+      "literal": "./index-DZRyvnzT.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-DZRyvnzT.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "Thread-eq9OCIoK.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "ViewCard-D5JbjyDb.js",
+      "literal": "./Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "ViewCard-D5JbjyDb.js",
+      "literal": "./agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "ViewCard-D5JbjyDb.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "agent-DA0iqiiF.js",
+      "literal": "./index-PLmoiPYI.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-400-normal-BtG3bBmV.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-400-normal-BtG3bBmV.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-400-normal-Bzv-FGbj.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-400-normal-Bzv-FGbj.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-700-normal-Cj42L3Bs.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-700-normal-Cj42L3Bs.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-700-normal-bxg6f20d.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-700-normal-bxg6f20d.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-ext-400-normal-DYs6OoL4.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-400-normal-DYs6OoL4.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-ext-400-normal-UzWcrHdi.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-400-normal-UzWcrHdi.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-ext-700-normal-BAPhAm-q.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-700-normal-BAPhAm-q.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-cyrillic-ext-700-normal-C5O8kkCQ.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-700-normal-C5O8kkCQ.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-400-normal-Cv5gcxdy.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-400-normal-Cv5gcxdy.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-400-normal-aOjZpsFX.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-400-normal-aOjZpsFX.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-700-normal-B-Y_qvTa.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-700-normal-B-Y_qvTa.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-700-normal-BXGaow7Z.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-700-normal-BXGaow7Z.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-ext-400-normal-DnfnTswf.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-400-normal-DnfnTswf.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-ext-400-normal-m-eDGcsW.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-400-normal-m-eDGcsW.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-ext-700-normal-BGl1PQht.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-700-normal-BGl1PQht.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-greek-ext-700-normal-COKnZ-5a.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-700-normal-COKnZ-5a.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-400-normal-R-CeALMm.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-400-normal-R-CeALMm.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-400-normal-jEGHVXAP.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-400-normal-jEGHVXAP.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-700-normal-CjG3MLqY.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-700-normal-CjG3MLqY.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-700-normal-DQ6DOkPk.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-700-normal-DQ6DOkPk.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-ext-400-normal-D112-ed2.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-400-normal-D112-ed2.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-ext-400-normal-DPZWia0-.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-400-normal-DPZWia0-.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-ext-700-normal-9QIvu-gI.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-700-normal-9QIvu-gI.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-latin-ext-700-normal-D2WO8ap1.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-700-normal-D2WO8ap1.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-vietnamese-400-normal-BA1ASEPx.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-400-normal-BA1ASEPx.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-vietnamese-400-normal-D0HL2cT_.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-400-normal-D0HL2cT_.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-vietnamese-700-normal-DIEsMQO6.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-700-normal-DIEsMQO6.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/carlito-vietnamese-700-normal-gG8ns3Xg.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-700-normal-gG8ns3Xg.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-cyrillic-400-normal-BEIGL1Tu.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-400-normal-BEIGL1Tu.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-cyrillic-400-normal-ugxPyKxw.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-400-normal-ugxPyKxw.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-cyrillic-ext-400-normal-Bh0R7Dhr.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-ext-400-normal-Bh0R7Dhr.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-cyrillic-ext-400-normal-C_uLvvQ5.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-ext-400-normal-C_uLvvQ5.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-greek-400-normal-B9oWc5Lo.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-greek-400-normal-B9oWc5Lo.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-greek-400-normal-C190GLew.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-greek-400-normal-C190GLew.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-latin-400-normal-6-qcROiO.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-400-normal-6-qcROiO.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-latin-400-normal-V6pRDFza.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-400-normal-V6pRDFza.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-latin-ext-400-normal-Bc8Ftmh3.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-ext-400-normal-Bc8Ftmh3.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-latin-ext-400-normal-fXTG6kC5.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-ext-400-normal-fXTG6kC5.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-vietnamese-400-normal-ByoDsISC.woff2",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-vietnamese-400-normal-ByoDsISC.woff2",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-DiBYRwP4.css",
+      "literal": "/assets/jetbrains-mono-vietnamese-400-normal-CqNFfHCs.woff",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-vietnamese-400-normal-CqNFfHCs.woff",
+      "category": "font",
+      "captured": false
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "./AgentPage-DHJmJKpV.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPage-DHJmJKpV.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "./AgentPanel-Dn16YgEH.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPanel-Dn16YgEH.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "./BrainViews-DoMdPJUS.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/BrainViews-DoMdPJUS.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "./PinnedGrid-CuaLdMPY.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/PinnedGrid-CuaLdMPY.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "./SettingsSection-f2wwgrYJ.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/SettingsSection-f2wwgrYJ.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "./SharedView-CEqhSdzS.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/SharedView-CEqhSdzS.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "/brand/logo_main.png",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main.png",
+      "category": "image",
+      "captured": false
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "/brand/logo_main_white.png",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main_white.png",
+      "category": "image",
+      "captured": false
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/AgentPage-DHJmJKpV.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPage-DHJmJKpV.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/AgentPanel-Dn16YgEH.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPanel-Dn16YgEH.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/BrainViews-DoMdPJUS.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/BrainViews-DoMdPJUS.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/PinnedGrid-CuaLdMPY.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/PinnedGrid-CuaLdMPY.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/Renderer-0G0MSIPy.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Renderer-0G0MSIPy.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/SettingsSection-f2wwgrYJ.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/SettingsSection-f2wwgrYJ.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/SharedView-CEqhSdzS.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/SharedView-CEqhSdzS.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/Thread-eq9OCIoK.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Thread-eq9OCIoK.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/ViewCard-D5JbjyDb.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/ViewCard-D5JbjyDb.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/agent-DA0iqiiF.js",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-DA0iqiiF.js",
+      "category": "code",
+      "captured": true
+    },
+    {
+      "declared_by": "index-PLmoiPYI.js",
+      "literal": "assets/agent-Wsu4vetM.css",
+      "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/agent-Wsu4vetM.css",
+      "category": "code",
+      "captured": true
+    }
+  ],
+  "missing_declared_code_assets": [],
+  "missing_font_urls": [
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-400-normal-BtG3bBmV.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-400-normal-Bzv-FGbj.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-700-normal-Cj42L3Bs.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-700-normal-bxg6f20d.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-400-normal-DYs6OoL4.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-400-normal-UzWcrHdi.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-700-normal-BAPhAm-q.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-cyrillic-ext-700-normal-C5O8kkCQ.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-400-normal-Cv5gcxdy.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-400-normal-aOjZpsFX.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-700-normal-B-Y_qvTa.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-700-normal-BXGaow7Z.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-400-normal-DnfnTswf.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-400-normal-m-eDGcsW.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-700-normal-BGl1PQht.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-greek-ext-700-normal-COKnZ-5a.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-400-normal-R-CeALMm.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-400-normal-jEGHVXAP.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-700-normal-CjG3MLqY.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-700-normal-DQ6DOkPk.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-400-normal-D112-ed2.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-400-normal-DPZWia0-.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-700-normal-9QIvu-gI.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-latin-ext-700-normal-D2WO8ap1.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-400-normal-BA1ASEPx.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-400-normal-D0HL2cT_.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-700-normal-DIEsMQO6.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/carlito-vietnamese-700-normal-gG8ns3Xg.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-400-normal-BEIGL1Tu.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-400-normal-ugxPyKxw.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-ext-400-normal-Bh0R7Dhr.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-cyrillic-ext-400-normal-C_uLvvQ5.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-greek-400-normal-B9oWc5Lo.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-greek-400-normal-C190GLew.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-400-normal-6-qcROiO.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-400-normal-V6pRDFza.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-ext-400-normal-Bc8Ftmh3.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-latin-ext-400-normal-fXTG6kC5.woff",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-vietnamese-400-normal-ByoDsISC.woff2",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/jetbrains-mono-vietnamese-400-normal-CqNFfHCs.woff"
+  ],
+  "missing_image_urls": [
+    "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main.png",
+    "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main_white.png"
+  ],
+  "sourceMappingURL_comments": [],
+  "declared_literal_code_set_closed": true,
+  "limitations": "Checks bounded quoted local asset paths and CSS url literals only, not computed URLs/runtime behavior, original build completeness, license status, UI/render acceptance or network accessibility. assets/* literal table paths mapped to app-root form and recorded explicitly; no fetch. Fonts/images separated, not required for code-set closure.",
+  "update_basis": "Prior all13 literal-reference inventory retained unchanged except newly captured final module resolves Thread dynamic import; new module independently scanned with same literal-path rules."
+}

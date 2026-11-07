@@ -1,0 +1,1 @@
+import{u as t,j as e}from"./index-PLmoiPYI.js";import"./agent-DA0iqiiF.js";import{T as s}from"./Thread-eq9OCIoK.js";import"./Renderer-0G0MSIPy.js";function o(){const{t:a}=t();return e.jsxs("div",{className:"page v4page wide ag-page",children:[e.jsx("h1",{className:"ptitle",children:a("v6.page.title")}),e.jsx(s,{variant:"page"})]})}export{o as default};

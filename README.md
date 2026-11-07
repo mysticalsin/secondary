@@ -1,6 +1,6 @@
 # Secondary API recovery
 
-Private preservation of source recovered from the deployed Secondary API Worker source map. This is the API Worker plus two shared packages. It is not the original git history, not the static UI, and not the other Workers that this API calls.
+Private preservation of recovered Secondary Worker source and delivered shell text. It is not the original git history and not a complete UI.
 
 Recovered files live under `recovered-source/` and are not rewritten. New config, the package symlink, and tests live outside that directory. Details, omissions, and command results are in [RECOVERY.md](RECOVERY.md).
 
@@ -16,6 +16,9 @@ npm run typecheck:reconstructed
 npm run typecheck:workers
 npm run build:worker
 npm run build:workers
+npm run test:workerd
 ```
 
-`npm test` runs the isolated recovered-code tests. `npm run typecheck:workers` typechecks the API reconstruction and the audit, connector, MCP, ops, and pages overlays. `npm run build:workers` writes local bundles. The MCP bundle uses the Node platform because the published `agents` package imports Node builtins. `npm run typecheck:worker` still typechecks the recovered API tree alone and fails. `npm run deploy` refuses.
+`npm test` runs the Node tests, including hash checks of the delivered shell text. Those tests do not execute the delivered JavaScript. `npm run test:workerd` runs the recovered Workers in local workerd through Miniflare, with synthetic bindings and no upload. `npm run typecheck:workers` typechecks the six reconstruction overlays. `npm run build:workers` writes local esbuild bundles; the MCP esbuild bundle is Node-only. `npm run build:workerd` is Wrangler's dry-run bundler for the MCP entry. `npm run typecheck:worker` still typechecks the recovered API tree alone and fails with 119 errors. `npm run deploy` refuses.
+
+Delivered CSS and JS text is under `recovered-delivery/`. It is not a complete shell: the main bundle bytes, fonts, logos, and any HTML document are absent, and no substitute page was added.

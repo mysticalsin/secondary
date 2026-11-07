@@ -177,10 +177,38 @@ Public packages added for these entrypoints, not a recovered lockfile:
 | `@cloudflare/workers-oauth-provider` | 1.2.4 | MIT |
 | `ajv` | 8.20.0 | MIT |
 
-`ajv` is required by the recovered MCP validator, which calls `require("ajv/dist/runtime/...")` inside an ESM file. Tests load that file through a hook that supplies `require`. The file on disk is unchanged.
+`ajv` is required by the recovered MCP validator, which calls `require("ajv/dist/runtime/...")` inside an ESM file. The file on disk is unchanged. Node tests do not inject `require`. Loading that file in Node or in workerd throws `require is not defined`.
 
-The new tests exercise recovered behavior: audit keys and public-traffic refusal, connector HMAC and Graph path refusal, MCP URL and redirect failure, view-plan rejection of data props, ops restore disabled without a key, and pages 404 plus events dropped when consent is absent. No remote service is called.
+## Local workerd
+
+`npm run test:workerd` runs Miniflare 5 against local bundles. It does not log in, upload, or call a private API. `compatibility_date` `2026-11-07` is the reconstruction date. On that date the runtime enables Node.js compatibility by default, so the flag is not repeated and is not claimed as original config. Bindings in that test are synthetic harness values.
+
+| Check | Runtime | Result |
+| --- | --- | --- |
+| `npm test` | Node | pass, 44 tests |
+| `npm run test:workerd` | workerd via Miniflare | pass, 11 tests |
+| `npm run typecheck:workers` | TypeScript | pass, six overlays, 0 errors |
+| `npm run typecheck:worker` | TypeScript on recovered API tree | fail, exit 2, 119 errors |
+| `npm run build:workers` | esbuild | audit, connector, ops, pages neutral; MCP is a Node-platform bundle and is not workerd proof |
+| `npm run build:workerd` | Wrangler `deploy --dry-run` | MCP entry and the view-plan gate bundle for workerd. Nothing is uploaded |
+| `npm run deploy` | refused | exit 1 |
+
+Workerd results that are not Node results: recovered `TenantPolicy.epoch` and `Workspace.listByKind` run on local SQLite and return no rows; a connector source in one tenant is absent from another; a refresh whose Graph client throws stays `lastError: graph_auth_failed` with `lastSyncAt: null` and `ready: false`; `/v1/ready` reports only `do` and `r2`, and a missing R2 binding is HTTP 500 `internal_error` rather than ready; a direct audit request is 403 because the local fetch carries `CF-Connecting-IP`, while a service-binding hop without that header still enforces the key; a rejected view plan does not echo the rejected row text. The recovered MCP validator module, loaded as ESM and not bundled, throws `require is not defined`. Wrangler's bundler rewrites those top-level calls, and the bundled view-plan gate then rejects inline data. `SourceSyncWorkflow` is registered on the refresh harness; the test accepts either a created instance id or an explicit gap and does not claim a completed sync. Loading the OAuth provider prints that Client ID Metadata Documents want `global_fetch_strictly_public`. That flag is not in recovered config and was not added.
+
+## Delivered static shell
+
+Three DOM-text archives are preserved under `recovered-delivery/`. They are minified delivery text, not wire bytes and not original TypeScript. Nothing in them is imported or executed. No HTML document was in the archives, so no shell page was invented and the files are not served as an app.
+
+| Archive | Bytes | SHA256 |
+| --- | --- | --- |
+| `shell-six/` | 61301 | `64622e1c8e5504636f7dace883edfa39b60e186ae282895718e9eef0ecd8ef79` |
+| `lazy-six/` | 39254 | `803132fda13db3a662c441c4722ac797a2084cae1aa28c9958479f8a8bbd8296` |
+| `final-code/` | 7372 | `9afe572e0bc07b483196d42e8f7df4cdd7f3c8ca2aa535ba619b3a086916dae3` |
+
+`final-code/dependency-closure-14.json` says the quoted JS/CSS reference set of 14 assets is closed and that `index-DZRyvnzT.js` adds no further local import. That file is present (5704 code points, SHA256 `0c99a1cb3e8d42334cd5deb1641abd3212a56b21d0bab828e44eec67d498bb01`) and its uppercase strings are CI provider names, not secret values. The same document still lists `index-PLmoiPYI.js` as captured. Those bytes are not in this repository. Forty font files and `/brand/logo_main.png` plus `/brand/logo_main_white.png` are listed and not stored. No `sourceMappingURL` comments were found. Scoped privacy notes in the manifests report no unresolved flags, including one Renderer format label and one Thread documentation example. That is not a universal clearance.
+
+The delivered renderer names a different component set from the recovered view-plan schema. The only shared names are `Callout` and `Table`. `KpiTile` is in the renderer and not in the schema. `KpiRow` is in the schema and not in the renderer. The view-plan gate remains the recovered rejection of inline data. It is not a claim that the delivered renderer matches that schema, and it is not a visual match.
 
 ## Still absent
 
-Original API `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, and every worker's `wrangler.jsonc` and compatibility date. Company Brain SPA assets. `env.ASSETS` is still unresolved; script-content GETs are not an SPA export, and no substitute UI was added. Live Durable Object storage, Graph, Entra, Access, R2 objects, and page HTML are not in the archives. A neutral workerd bundle of MCP is not produced by these public packages. A passing local build is not production, security, Microsoft identity, or live-refresh acceptance.
+Original API `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, original worker `wrangler.jsonc`, and original compatibility date. The main delivered bundle `index-PLmoiPYI.js`. Fonts, both logos, and any HTML shell. `env.ASSETS` is still unresolved. Original TypeScript for the shell is not in these archives. Live Graph, Entra, Access, and production objects are not connected. A passing local workerd test is not production, security, Microsoft identity, or live-refresh acceptance.

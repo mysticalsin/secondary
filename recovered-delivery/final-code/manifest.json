@@ -1,0 +1,102 @@
+{
+  "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-DZRyvnzT.js",
+  "source_kind": "Browser DOM text, not wire/original source; reported5704 Unicode codepoints; MIME/status absent in eight range results (earlier200 browser report not independently reprobed).",
+  "codepoints": 5704,
+  "utf8_bytes": 5704,
+  "sha256": "0c99a1cb3e8d42334cd5deb1641abd3212a56b21d0bab828e44eec67d498bb01",
+  "transcript_sha256": "3f767221ca30de5f2814efdd2f1d07fe91425114afe3a80a69fd5d1f7d484a10",
+  "ranges": [
+    {
+      "transcript_line": 10,
+      "start": 0,
+      "endExclusive": 750,
+      "codepoints": 750,
+      "utf8_sha256": "75500a34016dd9367eb369a94d55f5389a10dbe07a9d5775f2be99aaafcbeb25",
+      "tool_result_sha256": "1aac834c699fa490455b89d3758f938d0478b92d33bf88eb5b40ee8ae5d470fd"
+    },
+    {
+      "transcript_line": 12,
+      "start": 750,
+      "endExclusive": 1500,
+      "codepoints": 750,
+      "utf8_sha256": "3091a21be53dbbfabca213918775e7ba9f054758fde997e634e488c128464f5f",
+      "tool_result_sha256": "386a05efca45760bfa417210b76850cd9d9a79d6a11acdd82ae00d867cfa5037"
+    },
+    {
+      "transcript_line": 14,
+      "start": 1500,
+      "endExclusive": 2250,
+      "codepoints": 750,
+      "utf8_sha256": "5b8eb0e669609f967e3886d08682caef60b76742ca6a38994163862d92bc3bf8",
+      "tool_result_sha256": "c73c2cece3013dcaeca3d76cc6c24776d50aeca8d10a86a9ecc3181b1588f9db"
+    },
+    {
+      "transcript_line": 16,
+      "start": 2250,
+      "endExclusive": 3000,
+      "codepoints": 750,
+      "utf8_sha256": "6f472abff43632c95c508e00d454f97707bc3e4c539afe3e89b5a4677fd273bf",
+      "tool_result_sha256": "a0ab073b6ccd21b5507d281ced00c9555fea6d98245b3071fcde8a67d2b66dc2"
+    },
+    {
+      "transcript_line": 18,
+      "start": 3000,
+      "endExclusive": 3750,
+      "codepoints": 750,
+      "utf8_sha256": "af6e8063442f8242a1ab76274ec7f2cd928d2bd73c78ced9260ce285a99bbdf8",
+      "tool_result_sha256": "71827b49c73535cef6b4a8b09c30d6109f684c1adf984cb67c7cf1ccb1e841b8"
+    },
+    {
+      "transcript_line": 20,
+      "start": 3750,
+      "endExclusive": 4500,
+      "codepoints": 750,
+      "utf8_sha256": "32ec9f756b223a14276a77819da997fc6ad538299e81a5f56eb6c63cfcb0ac19",
+      "tool_result_sha256": "22b125055718b35a79406a2593132a1945c50460b88a382c57e13c4e8eef2c82"
+    },
+    {
+      "transcript_line": 22,
+      "start": 4500,
+      "endExclusive": 5250,
+      "codepoints": 750,
+      "utf8_sha256": "538603843a59db2e784211a2eb3b1b0e31949617d553e36770eae28e70599cf1",
+      "tool_result_sha256": "706cb2f0a20f7edf5b2a8fdd7cb87f5fdc2e82125849b44ff56a1d88e102a19f"
+    },
+    {
+      "transcript_line": 24,
+      "start": 5250,
+      "endExclusive": 5704,
+      "codepoints": 454,
+      "utf8_sha256": "971feeb258e06f65ac1d1daa39a7b773b0b9f37f35d0b0750cceb5e4d1ad652c",
+      "tool_result_sha256": "11d51828a96ac37c6880b48a4596f0ebe70eadac816da6d5de3a334275cd6d80"
+    }
+  ],
+  "validation": "Eight actual browser_run_code result JSON records; URL,total,offsetUnit,length,exact contiguity checked; earlier preview excluded; no ellipsis/excerpt markers or substitution, no normalization.",
+  "privacy": {
+    "pattern_counts": {
+      "private_key": 0,
+      "recognizable_key": 0,
+      "jwt": 0,
+      "email_shape": 0,
+      "credential_literal": 0,
+      "private_record_keys": 0,
+      "identity_literal": 0
+    },
+    "scope": "Static artifact intake only; code/data declarations consist of CI-provider identifiers, environment-variable NAMES and detection conditions, not env values/private person records. No known unresolved flags, not universal clearance.",
+    "license_markers": 0,
+    "unmodified": true
+  },
+  "dependency_closure": {
+    "captured_count": 14,
+    "literal_code_set_closed": true,
+    "missing_code": [],
+    "missing_fonts": 40,
+    "missing_images": [
+      "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main.png",
+      "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main_white.png"
+    ],
+    "new_module_references": [],
+    "sourceMappingURL_comments": []
+  },
+  "no_execution_network_upload_repo_changes": true
+}

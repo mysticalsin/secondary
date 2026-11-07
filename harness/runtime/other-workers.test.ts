@@ -13,7 +13,6 @@ import {
   isRedirectAllowed,
   publicBase,
 } from "../../reconstruction/mcp/worker/src/config.ts";
-import { sanitizeViewPlan } from "../../reconstruction/mcp/worker/src/view/plan.ts";
 import { restoreBackup } from "../../reconstruction/ops/worker/src/backup.ts";
 import { signInternalRequest } from "../../reconstruction/connector/worker/src/internal-auth.ts";
 
@@ -154,16 +153,16 @@ test("a signed connector call from an unknown client is unauthorized", async () 
   assert.equal(res.status, 401);
 });
 
-test("MCP fails closed without a public URL and rejects foreign redirects", async () => {
-  const { default: worker, grantOf } = await import("../../reconstruction/mcp/worker/src/index.ts");
+test("the recovered MCP validator is rejected by ESM, with no require() injected", async () => {
+  await assert.rejects(
+    () => import("../../recovered-other/secondary-mcp-dev/worker/src/generated/view-plan-validator.js"),
+    /require is not defined/,
+  );
+});
+
+test("MCP config fails closed on the public URL and foreign redirects", async () => {
   const env = { ENVIRONMENT: "reconstruction", DEFAULT_TENANT_ID: "tenant_reconstruction", INTERNAL_HMAC_KEY: HMAC };
   assert.equal(publicBase(env, new Request("http://mcp.invalid/mcp")), null);
-  const res = await worker.fetch(new Request("http://mcp.invalid/mcp"), env, {
-    waitUntil() {},
-    passThroughOnException() {},
-  });
-  assert.equal(res.status, 500);
-  assert.equal(await res.text(), "MCP_PUBLIC_URL is not configured");
   const rules = allowedRedirects({
     ...env,
     ALLOWED_REDIRECT_URIS: "https://claude.ai/api/mcp/auth_callback,http://evil.invalid/callback",
@@ -172,34 +171,7 @@ test("MCP fails closed without a public URL and rejects foreign redirects", asyn
   assert.equal(isRedirectAllowed("https://claude.ai/api/mcp/auth_callback", rules), true);
   assert.equal(isRedirectAllowed("https://evil.invalid/steal", rules), false);
   assert.equal(isRedirectAllowed("http://127.0.0.1:9/callback", rules), false);
-  assert.equal(grantOf("user:grant:secret"), "grant");
-  assert.equal(grantOf("not-a-token"), undefined);
   assert.equal(hostOf(["https://claude.ai/callback"], ""), "claude_ai");
-});
-
-test("a view plan with data or an unknown component does not become a trusted plan", () => {
-  const bad = sanitizeViewPlan({
-    version: 1,
-    title: "Accounts",
-    components: [
-      { type: "Html", props: { html: "<script>" } },
-      { type: "NodeCard", props: { nodeId: "a_acme", rows: ["secret"] } },
-    ],
-  });
-  assert.equal(bad.ok, false);
-  const kept = sanitizeViewPlan({
-    version: 1,
-    title: "Accounts",
-    components: [
-      { type: "NotAComponent", props: {} },
-      { type: "NodeCard", props: { nodeId: "a_acme" } },
-    ],
-  });
-  assert.equal(kept.ok, true);
-  if (kept.ok) {
-    assert.equal(kept.dropped.length, 1);
-    assert.deepEqual(kept.plan.components.map((c) => c.type), ["NodeCard"]);
-  }
 });
 
 test("ops restore stays disabled and admin routes are absent without a key", async () => {

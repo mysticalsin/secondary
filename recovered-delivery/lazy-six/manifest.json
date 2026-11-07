@@ -1,0 +1,171 @@
+{
+  "status": "PRIVATE SIX LAZY CODE CANDIDATE; lexical code dependency gap remains",
+  "assets": [
+    {
+      "name": "AgentPage-DHJmJKpV.js",
+      "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPage-DHJmJKpV.js",
+      "codepoints": 355,
+      "utf8_bytes": 355,
+      "sha256": "45bd273e77f17400ac8e63bc4b42f99e98f0056a9b5446106f91f4e30fab0adc",
+      "reported_status": 200,
+      "MIME": "unknown",
+      "ranges": [
+        {
+          "saved_result_sha256": "7140d1208ab6cece997bb0c0aee12bbbb28041a0ae9bac93b415ca9ae9e47abc",
+          "start": 0,
+          "endExclusive": 355,
+          "actual_codepoints": 355,
+          "text_utf8_sha256": "45bd273e77f17400ac8e63bc4b42f99e98f0056a9b5446106f91f4e30fab0adc"
+        }
+      ],
+      "license_markers": 0,
+      "privacy_resolution": "No known sensitive-pattern or embedded-record-shape flags detected in scoped local static intake.",
+      "unresolved_known_privacy_flags": 0
+    },
+    {
+      "name": "AgentPanel-Dn16YgEH.js",
+      "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPanel-Dn16YgEH.js",
+      "codepoints": 1623,
+      "utf8_bytes": 1623,
+      "sha256": "0e4470b0e8cf106ed4e04f11e3817d6e3e8b8bcacdeec99408256fe4e6bda9da",
+      "reported_status": 200,
+      "MIME": "unknown",
+      "ranges": [
+        {
+          "saved_result_sha256": "7140d1208ab6cece997bb0c0aee12bbbb28041a0ae9bac93b415ca9ae9e47abc",
+          "start": 0,
+          "endExclusive": 1623,
+          "actual_codepoints": 1623,
+          "text_utf8_sha256": "0e4470b0e8cf106ed4e04f11e3817d6e3e8b8bcacdeec99408256fe4e6bda9da"
+        }
+      ],
+      "license_markers": 0,
+      "privacy_resolution": "No known sensitive-pattern or embedded-record-shape flags detected in scoped local static intake.",
+      "unresolved_known_privacy_flags": 0
+    },
+    {
+      "name": "BrainViews-DoMdPJUS.js",
+      "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/BrainViews-DoMdPJUS.js",
+      "codepoints": 1011,
+      "utf8_bytes": 1011,
+      "sha256": "491a9954f54fa47335670b7b4b55f3f8db9b6c9f97109f03bb19fda976c281e8",
+      "reported_status": 200,
+      "MIME": "unknown",
+      "ranges": [
+        {
+          "saved_result_sha256": "7140d1208ab6cece997bb0c0aee12bbbb28041a0ae9bac93b415ca9ae9e47abc",
+          "start": 0,
+          "endExclusive": 1011,
+          "actual_codepoints": 1011,
+          "text_utf8_sha256": "491a9954f54fa47335670b7b4b55f3f8db9b6c9f97109f03bb19fda976c281e8"
+        }
+      ],
+      "license_markers": 0,
+      "privacy_resolution": "No known sensitive-pattern or embedded-record-shape flags detected in scoped local static intake.",
+      "unresolved_known_privacy_flags": 0
+    },
+    {
+      "name": "SettingsSection-f2wwgrYJ.js",
+      "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/SettingsSection-f2wwgrYJ.js",
+      "codepoints": 2261,
+      "utf8_bytes": 2263,
+      "sha256": "0bfb51714cde0ad5836d1b214453318dfdd45c45f6d91bebcdf72434d3813fc5",
+      "reported_status": 200,
+      "MIME": "unknown",
+      "ranges": [
+        {
+          "saved_result_sha256": "7140d1208ab6cece997bb0c0aee12bbbb28041a0ae9bac93b415ca9ae9e47abc",
+          "start": 0,
+          "endExclusive": 2261,
+          "actual_codepoints": 2261,
+          "text_utf8_sha256": "0bfb51714cde0ad5836d1b214453318dfdd45c45f6d91bebcdf72434d3813fc5"
+        }
+      ],
+      "license_markers": 0,
+      "privacy_resolution": "No known sensitive-pattern or embedded-record-shape flags detected in scoped local static intake.",
+      "unresolved_known_privacy_flags": 0
+    },
+    {
+      "name": "SharedView-CEqhSdzS.js",
+      "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/SharedView-CEqhSdzS.js",
+      "codepoints": 718,
+      "utf8_bytes": 718,
+      "sha256": "17afcaf26e26a434240b79c65008ab1e3302e6b31e9905ac719097e1f748979d",
+      "reported_status": 200,
+      "MIME": "unknown",
+      "ranges": [
+        {
+          "saved_result_sha256": "7140d1208ab6cece997bb0c0aee12bbbb28041a0ae9bac93b415ca9ae9e47abc",
+          "start": 0,
+          "endExclusive": 718,
+          "actual_codepoints": 718,
+          "text_utf8_sha256": "17afcaf26e26a434240b79c65008ab1e3302e6b31e9905ac719097e1f748979d"
+        }
+      ],
+      "license_markers": 0,
+      "privacy_resolution": "No known sensitive-pattern or embedded-record-shape flags detected in scoped local static intake.",
+      "unresolved_known_privacy_flags": 0
+    },
+    {
+      "name": "Thread-eq9OCIoK.js",
+      "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/Thread-eq9OCIoK.js",
+      "codepoints": 90258,
+      "utf8_bytes": 90475,
+      "sha256": "c4c9970a2c6cc0b5a83f36d7b5ec0042cf00db8a0a40009d427906f992952d72",
+      "reported_status": 200,
+      "MIME": "unknown",
+      "ranges": [
+        {
+          "saved_result_sha256": "7140d1208ab6cece997bb0c0aee12bbbb28041a0ae9bac93b415ca9ae9e47abc",
+          "start": 0,
+          "endExclusive": 50000,
+          "actual_codepoints": 50000,
+          "text_utf8_sha256": "05196d82183bd29cb502aa43c7cd0924fbba3f55cc3f602f687a50a5f669a141"
+        },
+        {
+          "saved_result_sha256": "b369fa4c2e5c21dcc9e7402a9f81de9320ddba3c5549ecc3f888e263d4f11eb0",
+          "start": 40000,
+          "endExclusive": 90258,
+          "actual_codepoints": 50258,
+          "text_utf8_sha256": "ee1f8c4c88ecd5acf21b5b36a6ee878a440001a9db9936c6e4877de5e23e1484"
+        }
+      ],
+      "license_markers": 0,
+      "privacy_resolution": "One non-reserved-domain email-shaped literal is inside an explicit form-control/input documentation example amid required/email validation and bindings instructions, not an exported personal/customer record. Scoped sample-context review only; preserve unchanged; no universal clearance.",
+      "unresolved_known_privacy_flags": 0
+    }
+  ],
+  "total_codepoints": 96226,
+  "total_utf8_bytes": 96445,
+  "thread_overlap": {
+    "start": 40000,
+    "endExclusive": 50000,
+    "codepoints": 10000,
+    "exact_match": true,
+    "utf8_sha256": "6ba1a60b9f0dee281849cc7da3ff7dbb848314c77ac6fa45c07606c8e82e243e"
+  },
+  "provenance": "DOM text, not wire/original source; saved reported200, MIME unknown; no normalization or code execution. Existing notices preserved, no license inferred.",
+  "privacy_scope": "Patterns and isolated documentation-literal context only; no known unresolved flags, not universal security/privacy clearance. No text rewritten.",
+  "dependency_summary": {
+    "captured_asset_count": 13,
+    "literal_code_set_closed": false,
+    "missing_declared_code_assets": [
+      {
+        "declared_by": "Thread-eq9OCIoK.js",
+        "literal": "./index-DZRyvnzT.js",
+        "resolved_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-DZRyvnzT.js",
+        "category": "code",
+        "captured": false,
+        "context": "Literal dynamic import in captured Thread source (static text classification only); not guessed"
+      }
+    ],
+    "missing_fonts": 40,
+    "missing_images": [
+      "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main.png",
+      "https://secondary-api-dev.tony-walteur.workers.dev/brand/logo_main_white.png"
+    ],
+    "sourceMappingURL_comments": []
+  },
+  "main_and_shell_archives_included": false,
+  "no_execution_network_upload_repo_changes": true
+}

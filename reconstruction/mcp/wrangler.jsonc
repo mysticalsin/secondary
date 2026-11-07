@@ -1,0 +1,19 @@
+{
+  // NEW RECONSTRUCTION. Not a recovered Wrangler config.
+  // compatibility_date 2026-11-07 is the reconstruction date. From 2026-08-04 the
+  // Workers runtime enables Node.js compatibility by default, so nodejs_compat is
+  // not repeated here. No account, no routes, no secrets.
+  // Wrangler realpaths overlay symlinks. reconstruction/workerd/bundle-workerd.mjs
+  // writes absolute aliases for the shared package imports and then runs
+  // `wrangler deploy --dry-run` only. Do not deploy this file.
+  "name": "secondary-mcp-reconstruction-local-only",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-11-07",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  }
+}
