@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -19,4 +20,5 @@ test("the offline activity page is one file and contains no review records", () 
   assert.equal(html.includes("x-dev-email"), false);
   assert.equal(html.includes("fetch("), false);
   assert.equal(html.includes("import "), false);
+  assert.equal(createHash("sha256").update(readFileSync("reconstruction/activity/offline/index.html")).digest("hex"), "0efa28faac2b0818831e9b651ee8a713515c82c17bae47ac2b3816212ae3fdd0");
 });

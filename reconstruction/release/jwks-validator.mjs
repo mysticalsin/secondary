@@ -57,11 +57,14 @@ export function resolveJwksTarget(env) {
 
 function publicKeys(body) {
   if (!body || !Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > 4) throw fail("jwks_unavailable");
+  const kids = new Set();
   for (const key of body.keys) {
     if (!key || typeof key !== "object") throw fail("jwks_unavailable");
     if (key.kty !== "RSA" || key.alg !== "RS256" || key.use !== "sig" || typeof key.kid !== "string" || typeof key.n !== "string") {
       throw fail("jwks_unavailable");
     }
+    if (kids.has(key.kid)) throw fail("jwks_unavailable");
+    kids.add(key.kid);
     if (PRIVATE_FIELDS.some((name) => Object.hasOwn(key, name))) throw fail("jwks_unavailable");
   }
   return body;

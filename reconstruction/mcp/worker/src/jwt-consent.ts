@@ -63,6 +63,35 @@ async function rejectRedirect(env: Env, clientId: string, redirectUri: string, w
 const hasPkce = (request: { codeChallenge?: string; codeChallengeMethod?: string }) =>
   !!request.codeChallenge && request.codeChallengeMethod === "S256";
 
+function consentHashes(header: string) {
+  const hashes: string[] = [];
+  for (const part of header.split(";")) {
+    const trimmed = part.trim();
+    const eq = trimmed.indexOf("=");
+    if (eq < 0) continue;
+    const name = trimmed.slice(0, eq);
+    const value = trimmed.slice(eq + 1);
+    if (name.includes("oauth-consent-") && value) hashes.push(value);
+  }
+  return hashes;
+}
+
+async function bindConsentSubject(env: Env, headers: Headers, sub: string) {
+  const listed = typeof headers.getSetCookie === "function" ? headers.getSetCookie() : [headers.get("set-cookie") ?? ""];
+  for (const header of listed) {
+    for (const hash of consentHashes(header)) {
+      await env.OAUTH_KV.put(`jwt-consent-sub:${hash}`, sub, { expirationTtl: 600 });
+    }
+  }
+}
+
+async function consentSubjectMatches(env: Env, request: Request, sub: string) {
+  const hashes = consentHashes(request.headers.get("cookie") ?? "");
+  if (hashes.length === 0) return false;
+  const bound = await Promise.all(hashes.map((hash) => env.OAUTH_KV.get(`jwt-consent-sub:${hash}`)));
+  return bound.includes(sub);
+}
+
 export async function jwtConsent(request: Request, env: Env): Promise<Response> {
   const who = await identity(request, env);
   if (!who.ok) {
@@ -78,6 +107,7 @@ export async function jwtConsent(request: Request, env: Env): Promise<Response> 
       if (!hasPkce(authReq)) return html(400, errorPage("Invalid request", "This application must use PKCE (S256). Nothing was shared."));
       const details = await oauth.describeConsent(authReq);
       const consent = await oauth.beginConsent(authReq);
+      await bindConsentSubject(env, consent.headers, who.sub);
       return html(200, consentPage({ details, email: who.email, scopes: grantable(authReq.scope), handle: consent.handle }), consent.headers);
     } catch (error) {
       if (error instanceof AuthorizationError) return html(400, errorPage("Invalid request", error.description));
@@ -87,6 +117,9 @@ export async function jwtConsent(request: Request, env: Env): Promise<Response> 
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405, headers: { allow: "GET, POST" } });
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) return html(403, errorPage("Request refused", "Cross-site request."));
+  if (!(await consentSubjectMatches(env, request, who.sub))) {
+    return html(403, errorPage("Request refused", "This approval belongs to a different sign-in."));
+  }
   const form = await request.formData();
   const handle = String(form.get("handle") ?? "");
   try {
