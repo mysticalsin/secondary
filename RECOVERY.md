@@ -118,6 +118,39 @@ The Worker run's 119 errors are 68 `TS2304` (`Cannot find name 'Env'`) and 43 `T
 
 Tests cover recovered behavior only. The in-memory replay object in `harness/tests/contracts-security.test.ts` implements the recovered `ReplayStore` interface for that test. The object passed to `planView` in `harness/runtime/genui-plan.test.ts` is a plain map with the fields that function reads. Neither is a live binding.
 
-## Next step
+## Other five Workers
 
-The Worker typecheck stays blocked until `worker/src/types.ts`, `packages/contracts/src/agent-ui/index.ts`, and `packages/contracts/src/view-plan.ts` are copied from an original tree, if one still exists. Do not fetch the deployed Worker to invent them, and do not write substitutes into `recovered-source/`. `Env` belongs with the missing `wrangler.jsonc` surface, not with a guessed config in this repo.
+Archive `intake/other-five/secondary-other-five-private-source-candidate.tar.gz`.
+
+| Check | Result |
+| --- | --- |
+| SHA-256 | `0c9c40f476e5c1a23fa03eb491726bf09d2fbe8af26edef276570bec86c5f655` |
+| Size | 90077 bytes |
+| Occurrences | 48, all hashes match `intake/other-five/manifest.json` |
+| Unique objects | 44 |
+| Workers | audit 2, connector 17, mcp 20, ops 7, pages 2 |
+
+Eight shared-package occurrences match the API intake byte for byte (`audit-receipt.ts`, `signed-call.ts`, `log.ts`, `ops-auth.ts`). They are symlinks in `recovered-other/` onto `recovered-source/` and are listed in `recovered-other/DEDUP.json`. The API copies were not rewritten. One further exact match, MCP `worker/src/internal-auth.ts` with the API file of the same hash, is the same kind of symlink. Connector `internal-auth.ts` differs and is stored as its own copy. Two shared files are new and were not in the API intake: `source-record.ts` and `agent-host.ts`.
+
+This intake does not contain the API's `worker/src/types.ts`, `packages/contracts/src/agent-ui/index.ts`, or `packages/contracts/src/view-plan.ts`. Connector `worker/src/types.ts` describes source-registry records, not `AppEnv`. MCP `worker/src/view/plan.ts` still imports the missing `view-plan.ts` as types only. Its generated validator is a different file from the API validator (API `44eb9707…`, MCP `a6065680…`) and names the same eight component types.
+
+Frontend: `secondary-pages-dev` serves published Landing Page Studio HTML from a bucket (`GET /p/:slug`). It is not the Company Brain SPA. MCP has two markup sources: `consent-page.ts` (OAuth consent) and `view/ui.ts` (one inline `ui://secondary/view` document, CSS and script in that file, no separate CSS module). The API still sends non-API GET/HEAD to `env.ASSETS`. That asset bundle is not in either intake.
+
+## Reconstruction build
+
+`reconstruction/` is new. Recovered bytes are symlinked in at the import depth the API already uses (`reconstruction/worker-root/worker/src` and `reconstruction/packages`). `preserveSymlinks` makes those imports resolve to the new modules instead of the absent files under `recovered-source/`. The three new modules re-export or describe only shapes the recovered call sites and the API validator schema already use. `reconstruction/env.d.ts` is the global `Env`, named from recovered `env.*` reads, with no secret values. `reconstruction/wrangler.jsonc` has no account, no routes, and a migration tag that is not original history. `cloudflare:workers` is external in the bundle. A test-only class stub exists so Node can load the graph. It is not workerd.
+
+| Command | Result |
+| --- | --- |
+| `npm test` | pass, 32 tests, 0 failed |
+| `npm run typecheck` | pass, exit 0 |
+| `npm run typecheck:reconstructed` | pass, exit 0 |
+| `npm run build:worker` | pass, exit 0, `reconstruction/dist/worker.js` (gitignored) |
+| `npm run typecheck:worker` | fail, exit 2, 119 errors (recovered tree alone, unchanged) |
+| `npm run deploy` | fail, exit 1, upload refused |
+
+The passing typecheck is the reconstructed project, not a claim that the recovered tree typechecks by itself. The 119-error command is still present. No `ts-ignore` and no `any` were added to recovered source. A local bundle is not production, security, Microsoft identity, or live-refresh acceptance.
+
+## Still absent
+
+Original `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, and `wrangler.jsonc`. Company Brain SPA assets. Deployed compatibility date. Original dependency lockfile. Live Durable Object storage, Graph, Entra, Access, and the other workers' remote bindings. Pages HTML objects are not in the source archive. MCP uses `agents/mcp` and `@cloudflare/workers-oauth-provider`, which this API bundle does not compile.

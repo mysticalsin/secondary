@@ -1,0 +1,717 @@
+{
+  "status": "PRIVATE SOURCE-ONLY HANDOFF CANDIDATE; no upload/execution/security acceptance",
+  "scope_basis": "Exact six Secondary DEV names already returned by authorized live Cloudflare Worker discovery in this workstream around00:28 Sao Paulo; this package exports only remaining audit/connector/mcp/ops/pages. API not fetched again. No new references followed.",
+  "retrieval": "Official Cloudflare documented GET Worker-script export, OpenAPI searched first; all5 succeeded, output direct-to-file untruncated. Complete multipart closing verified; HTTP Content-Length/status/response headers not exposed. Local lengths/hashes identify recovered connector representations, not proven wire bytes.",
+  "export_summary": [
+    {
+      "worker": "secondary-audit-dev",
+      "complete_multipart": true,
+      "body_bytes": 207787,
+      "body_sha256": "29c064ae452e9f5dc6d15d15bcdbaa7f2ee692395c0b22752897d3aca50a3174",
+      "modules": [
+        {
+          "name": "index.js",
+          "bytes": 70798,
+          "sha256": "cfbc3b9ae4c183f5d0d51cbe097e0e179ed325da228ae81ad8dd6dfb76ddeccf"
+        },
+        {
+          "name": "index.js.map",
+          "bytes": 136622,
+          "sha256": "9887562ddda1ed2ee4aebcb0ce10f1927643e7b39bd07f07d5d7d80a121bf4ae"
+        }
+      ],
+      "app_source_count": 2,
+      "source_map_available": true
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "complete_multipart": true,
+      "body_bytes": 355862,
+      "body_sha256": "2895c0a682238bfa9d2e8a604798af7b4733838f2126f7fe48aff6a15e94b31a",
+      "modules": [
+        {
+          "name": "index.js",
+          "bytes": 115229,
+          "sha256": "8b5de1d044e51f43a06b3fc3ce5a982b69db2cae03b2b77b001ae03da1042f6b"
+        },
+        {
+          "name": "index.js.map",
+          "bytes": 240266,
+          "sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd"
+        }
+      ],
+      "app_source_count": 17,
+      "source_map_available": true
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "complete_multipart": true,
+      "body_bytes": 12299620,
+      "body_sha256": "14487b799bbcd0a72ffead8829f744cac3e36ed92f6150c0a265497f2a9ee3e6",
+      "modules": [
+        {
+          "name": "index.js",
+          "bytes": 3980928,
+          "sha256": "a8791f61221627f51b121cd8a3bd2a35cd3dd440939ac9891671636a5f31df3a"
+        },
+        {
+          "name": "index.js.map",
+          "bytes": 8318325,
+          "sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40"
+        }
+      ],
+      "app_source_count": 20,
+      "source_map_available": true
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "complete_multipart": true,
+      "body_bytes": 243090,
+      "body_sha256": "33f9e549bd7b7cb413300e87ce5f254f94ecfbd7ff284f197a68ceda16d84755",
+      "modules": [
+        {
+          "name": "index.js",
+          "bytes": 80177,
+          "sha256": "e56ae14ae9084dd9a529d2733142edb331a147bb49493862f8e9e3b2fdfd2384"
+        },
+        {
+          "name": "index.js.map",
+          "bytes": 162546,
+          "sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945"
+        }
+      ],
+      "app_source_count": 7,
+      "source_map_available": true
+    },
+    {
+      "worker": "secondary-pages-dev",
+      "complete_multipart": true,
+      "body_bytes": 32391,
+      "body_sha256": "b0a31740b3818894a55d5caff21e632e8c847b08581e68ab7f72f49a0bb81d4b",
+      "modules": [
+        {
+          "name": "index.js",
+          "bytes": 10374,
+          "sha256": "0eb2698e54546a1f879fd0b8e2e65793fcc725418b156a0cd0f3e1b11f9b2da8"
+        },
+        {
+          "name": "index.js.map",
+          "bytes": 21652,
+          "sha256": "e1bffc9e53f33ab3f75f361bee6383f6f66e764f894544adbe49d9b123fcf7d1"
+        }
+      ],
+      "app_source_count": 2,
+      "source_map_available": true
+    }
+  ],
+  "counts": {
+    "app_source_occurrences": 48,
+    "unique_content_objects": 44,
+    "logical_source_bytes": 322423,
+    "unique_source_bytes": 310014,
+    "thirdparty_source_occurrences_excluded": 624,
+    "generated_runtime_paths_excluded": 1
+  },
+  "source_path_mapping": "src/* -> worker/src/*; exact ../../packages/* -> shared/packages/*; all workers kept separate in mapping; no traversal/symlinks/import rewriting. Content-addressed objects deduplicate byte-identical files only. Reconstruct each worker separately; do not flatten samepath/differenthash.",
+  "source_files": [
+    {
+      "worker": "secondary-audit-dev",
+      "logical_relative_path": "shared/packages/contracts/src/audit-receipt.ts",
+      "object_path": "sources/49190f5302ce4bdac2798ccce335fb063d55f447ac3ae4a1989a39e00766bfab.ts",
+      "sha256": "49190f5302ce4bdac2798ccce335fb063d55f447ac3ae4a1989a39e00766bfab",
+      "bytes": 4803,
+      "source_map_module_sha256": "9887562ddda1ed2ee4aebcb0ce10f1927643e7b39bd07f07d5d7d80a121bf4ae",
+      "source_index": 21
+    },
+    {
+      "worker": "secondary-audit-dev",
+      "logical_relative_path": "worker/src/index.ts",
+      "object_path": "sources/0c2f95e39bedc79b099f7a6c9e890a3875665cde2c4c9f13622ff13fc2b58b88.ts",
+      "sha256": "0c2f95e39bedc79b099f7a6c9e890a3875665cde2c4c9f13622ff13fc2b58b88",
+      "bytes": 9472,
+      "source_map_module_sha256": "9887562ddda1ed2ee4aebcb0ce10f1927643e7b39bd07f07d5d7d80a121bf4ae",
+      "source_index": 22
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "shared/packages/contracts/src/signed-call.ts",
+      "object_path": "sources/19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb.ts",
+      "sha256": "19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb",
+      "bytes": 2549,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 21
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/graph.ts",
+      "object_path": "sources/c14d99162262d91406fda02ec8d22e0f8571bee0f2434aa1c31e118e52c11c27.ts",
+      "sha256": "c14d99162262d91406fda02ec8d22e0f8571bee0f2434aa1c31e118e52c11c27",
+      "bytes": 7635,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 22
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/ids.ts",
+      "object_path": "sources/206bbbffa213ff6c01f5e2e364e8ccbb25bb14502d903713095b742a8cdf8051.ts",
+      "sha256": "206bbbffa213ff6c01f5e2e364e8ccbb25bb14502d903713095b742a8cdf8051",
+      "bytes": 1516,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 23
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/types.ts",
+      "object_path": "sources/011b3824cbe2615001bde648148ceafd3e9bf425892127121ba9bce0ad4348b1.ts",
+      "sha256": "011b3824cbe2615001bde648148ceafd3e9bf425892127121ba9bce0ad4348b1",
+      "bytes": 4492,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 24
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/acl.ts",
+      "object_path": "sources/08de4c722bbd84f21548d903f65d8fc7de707b3efff0e67ddf1e9c579e725c26.ts",
+      "sha256": "08de4c722bbd84f21548d903f65d8fc7de707b3efff0e67ddf1e9c579e725c26",
+      "bytes": 5316,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 25
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/calendar.ts",
+      "object_path": "sources/54bc6b253c55d198aa8aa9808d75734f9743bbedd1d2e1410d13d975ce1a30ee.ts",
+      "sha256": "54bc6b253c55d198aa8aa9808d75734f9743bbedd1d2e1410d13d975ce1a30ee",
+      "bytes": 2735,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 26
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/internal-auth.ts",
+      "object_path": "sources/3b2aeb4863ddf07f97af43a702ae6c8863eb5bc820cadd934e6a2614c7901a5b.ts",
+      "sha256": "3b2aeb4863ddf07f97af43a702ae6c8863eb5bc820cadd934e6a2614c7901a5b",
+      "bytes": 10092,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 27
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "shared/packages/contracts/src/source-record.ts",
+      "object_path": "sources/0edf82aa304d1cb7f407c67c667c1df00a5fc8125179dc9fce8488f999f7d5ba.ts",
+      "sha256": "0edf82aa304d1cb7f407c67c667c1df00a5fc8125179dc9fce8488f999f7d5ba",
+      "bytes": 4327,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 28
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/records.ts",
+      "object_path": "sources/e7ab8414608883adcf734e338563048653acf531d9cc9af50d45181482d267f6.ts",
+      "sha256": "e7ab8414608883adcf734e338563048653acf531d9cc9af50d45181482d267f6",
+      "bytes": 1966,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 29
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/registry.ts",
+      "object_path": "sources/9d3af7070800ba846f924884885c69ac7d8043a62ca59fd0d821e75a4b52b47e.ts",
+      "sha256": "9d3af7070800ba846f924884885c69ac7d8043a62ca59fd0d821e75a4b52b47e",
+      "bytes": 3844,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 30
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/api-client.ts",
+      "object_path": "sources/d16ec0754382f8858c9cedfcf0cdde19688675533a97ce01b474796728c71093.ts",
+      "sha256": "d16ec0754382f8858c9cedfcf0cdde19688675533a97ce01b474796728c71093",
+      "bytes": 2504,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 31
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/state.ts",
+      "object_path": "sources/bbe866065dea27c9269250c8801f32d97efbff3c98528e8fc20b5543c25d8f5c.ts",
+      "sha256": "bbe866065dea27c9269250c8801f32d97efbff3c98528e8fc20b5543c25d8f5c",
+      "bytes": 8374,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 32
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/extract.ts",
+      "object_path": "sources/3958415bd29f37dd835774a525eed9e284ac5ec780061ccbea6d5640e3d2cdfd.ts",
+      "sha256": "3958415bd29f37dd835774a525eed9e284ac5ec780061ccbea6d5640e3d2cdfd",
+      "bytes": 1350,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 33
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/sync.ts",
+      "object_path": "sources/4329bc623a275e1a41b2d77cac71ca1d7d2b82074376cb237892ea9cda8a728c.ts",
+      "sha256": "4329bc623a275e1a41b2d77cac71ca1d7d2b82074376cb237892ea9cda8a728c",
+      "bytes": 11288,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 34
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/runtime.ts",
+      "object_path": "sources/f72600cec63ce1ce5aa6ecde94028fad45ac1fe90916f44c61e07761128439f7.ts",
+      "sha256": "f72600cec63ce1ce5aa6ecde94028fad45ac1fe90916f44c61e07761128439f7",
+      "bytes": 1975,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 35
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/workflow.ts",
+      "object_path": "sources/520be7411989f368d7e4531e28e10cdc023bc83fee97a9246eb7421b187373d1.ts",
+      "sha256": "520be7411989f368d7e4531e28e10cdc023bc83fee97a9246eb7421b187373d1",
+      "bytes": 1489,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 36
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "worker/src/index.ts",
+      "object_path": "sources/a8407c9b05c31f0ee66144bea9f5455abc060d4e0569438590b24940f2526f97.ts",
+      "sha256": "a8407c9b05c31f0ee66144bea9f5455abc060d4e0569438590b24940f2526f97",
+      "bytes": 10550,
+      "source_map_module_sha256": "dc0b51c22ba97bfd9877f2784bff15e394e0be36fb449a4261aac92654d6e5dd",
+      "source_index": 37
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "shared/packages/contracts/src/agent-host.ts",
+      "object_path": "sources/4a65f1ba12d669c4af6c5d03a5d9799c10b47e0e8aed72ffc6eb8243ec1e22c3.ts",
+      "sha256": "4a65f1ba12d669c4af6c5d03a5d9799c10b47e0e8aed72ffc6eb8243ec1e22c3",
+      "bytes": 1392,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 561
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/audit.ts",
+      "object_path": "sources/82da58cd0787ff925bfba7c121e354dd9bcddd58a05568952e33df85852d8ecb.ts",
+      "sha256": "82da58cd0787ff925bfba7c121e354dd9bcddd58a05568952e33df85852d8ecb",
+      "bytes": 3223,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 562
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/access.ts",
+      "object_path": "sources/9e73e0883d2d0e469fc866afbc01836c3889ce69a0f15b06814aca998e2a4f37.ts",
+      "sha256": "9e73e0883d2d0e469fc866afbc01836c3889ce69a0f15b06814aca998e2a4f37",
+      "bytes": 3278,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 563
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/config.ts",
+      "object_path": "sources/1f325898a8ac4158d00ccdbf588d0cbdcd0d0a91afffe54b154aca2bd2837d21.ts",
+      "sha256": "1f325898a8ac4158d00ccdbf588d0cbdcd0d0a91afffe54b154aca2bd2837d21",
+      "bytes": 3599,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 564
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/consent-page.ts",
+      "object_path": "sources/3dc8df68acaed6543bc2b1b87fb80ddaa87c80f260d701cf3269561b0faba78f.ts",
+      "sha256": "3dc8df68acaed6543bc2b1b87fb80ddaa87c80f260d701cf3269561b0faba78f",
+      "bytes": 4979,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 565
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/authorize.ts",
+      "object_path": "sources/09e1a095801d9f3db8af1d958065eedef42259d0562d549f2b1edfcf5dd5e4f0.ts",
+      "sha256": "09e1a095801d9f3db8af1d958065eedef42259d0562d549f2b1edfcf5dd5e4f0",
+      "bytes": 7350,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 566
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/rate-limit.ts",
+      "object_path": "sources/5a5bb1d08e696b75552893ca4d4929b16110e30a3a0aa4e5d3756a7d7b5bb102.ts",
+      "sha256": "5a5bb1d08e696b75552893ca4d4929b16110e30a3a0aa4e5d3756a7d7b5bb102",
+      "bytes": 3401,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 567
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "shared/packages/contracts/src/log.ts",
+      "object_path": "sources/f88437805361ee3cfdd50c480eaa2842a6f8cf11635f6bdc176a14c19b3e1ff0.ts",
+      "sha256": "f88437805361ee3cfdd50c480eaa2842a6f8cf11635f6bdc176a14c19b3e1ff0",
+      "bytes": 2252,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 568
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "shared/packages/contracts/src/signed-call.ts",
+      "object_path": "sources/19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb.ts",
+      "sha256": "19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb",
+      "bytes": 2549,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 569
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "shared/packages/contracts/src/ops-auth.ts",
+      "object_path": "sources/6fab0716128c37856ec5055e7f24046c56c0160180f75697aa952d7374a391fa.ts",
+      "sha256": "6fab0716128c37856ec5055e7f24046c56c0160180f75697aa952d7374a391fa",
+      "bytes": 5059,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 570
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/switch.ts",
+      "object_path": "sources/a3cea8165cd1efef451dcc3ece819a6ac9c85670d1123aaab01555dd78d1542e.ts",
+      "sha256": "a3cea8165cd1efef451dcc3ece819a6ac9c85670d1123aaab01555dd78d1542e",
+      "bytes": 2055,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 571
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/internal-auth.ts",
+      "object_path": "sources/412a9b50822a622879f3a760c5f057f9e681a76d6610c2a64e2f90a17670b982.ts",
+      "sha256": "412a9b50822a622879f3a760c5f057f9e681a76d6610c2a64e2f90a17670b982",
+      "bytes": 10442,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 573
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/api-client.ts",
+      "object_path": "sources/7082c1a4c08d20849aa8791087383dc1fee25b87b269c00c2cc5ad47a64e7b7a.ts",
+      "sha256": "7082c1a4c08d20849aa8791087383dc1fee25b87b269c00c2cc5ad47a64e7b7a",
+      "bytes": 4068,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 574
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/generated/view-plan-validator.js",
+      "object_path": "sources/a6065680fd5b829dd3825aa61cb19280ee3c3abec84f456599c6732d2609ebb3.js",
+      "sha256": "a6065680fd5b829dd3825aa61cb19280ee3c3abec84f456599c6732d2609ebb3",
+      "bytes": 70668,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 575
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/view/plan.ts",
+      "object_path": "sources/6e30c59a1da3245e2631aed270a34b64bb0922d3e054b5020b90e299b14a0018.ts",
+      "sha256": "6e30c59a1da3245e2631aed270a34b64bb0922d3e054b5020b90e299b14a0018",
+      "bytes": 2184,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 576
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/view/resolve.ts",
+      "object_path": "sources/e2e28fea37b714a021bfbdf626b740d9762eace96d2bd7dcf1ab94783178663c.ts",
+      "sha256": "e2e28fea37b714a021bfbdf626b740d9762eace96d2bd7dcf1ab94783178663c",
+      "bytes": 11554,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 577
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/view/text.ts",
+      "object_path": "sources/39b868b47ffe8f5e70b8036e60d8449e286c5822fe886b9631ea58c3d799305d.ts",
+      "sha256": "39b868b47ffe8f5e70b8036e60d8449e286c5822fe886b9631ea58c3d799305d",
+      "bytes": 3037,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 578
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/view/ui.ts",
+      "object_path": "sources/5b2042407685d55b97d5780e6878f5a7da26f09c589f636c32f2847899a3128a.ts",
+      "sha256": "5b2042407685d55b97d5780e6878f5a7da26f09c589f636c32f2847899a3128a",
+      "bytes": 12682,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 579
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/tools.ts",
+      "object_path": "sources/e3c1bf46672754b297b3ef2194dd6282cef79d689c5fd945d6103a3ae25e0db5.ts",
+      "sha256": "e3c1bf46672754b297b3ef2194dd6282cef79d689c5fd945d6103a3ae25e0db5",
+      "bytes": 21935,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 580
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/index.ts",
+      "object_path": "sources/2815915c90bd29d781c0a895add36995dcb0b66f3b8f314d68bd802c021c0337.ts",
+      "sha256": "2815915c90bd29d781c0a895add36995dcb0b66f3b8f314d68bd802c021c0337",
+      "bytes": 6028,
+      "source_map_module_sha256": "c6d8ee726abd8f3d99bcfb15ca798fbf6e351dc3b2b0020b863bea26f799ea40",
+      "source_index": 581
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "shared/packages/contracts/src/log.ts",
+      "object_path": "sources/f88437805361ee3cfdd50c480eaa2842a6f8cf11635f6bdc176a14c19b3e1ff0.ts",
+      "sha256": "f88437805361ee3cfdd50c480eaa2842a6f8cf11635f6bdc176a14c19b3e1ff0",
+      "bytes": 2252,
+      "source_map_module_sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945",
+      "source_index": 21
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "worker/src/access.ts",
+      "object_path": "sources/fe3f1c561fbb907cae228dd59fbf906038eb2d397d3f39a08774a9800baee71a.ts",
+      "sha256": "fe3f1c561fbb907cae228dd59fbf906038eb2d397d3f39a08774a9800baee71a",
+      "bytes": 4280,
+      "source_map_module_sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945",
+      "source_index": 22
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "shared/packages/contracts/src/signed-call.ts",
+      "object_path": "sources/19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb.ts",
+      "sha256": "19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb",
+      "bytes": 2549,
+      "source_map_module_sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945",
+      "source_index": 23
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "shared/packages/contracts/src/ops-auth.ts",
+      "object_path": "sources/6fab0716128c37856ec5055e7f24046c56c0160180f75697aa952d7374a391fa.ts",
+      "sha256": "6fab0716128c37856ec5055e7f24046c56c0160180f75697aa952d7374a391fa",
+      "bytes": 5059,
+      "source_map_module_sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945",
+      "source_index": 24
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "worker/src/crypto.ts",
+      "object_path": "sources/88b2f5928db54e91a5f8fd9fb43fc3d13d1d2b007117bfe029bf032dba27c34b.ts",
+      "sha256": "88b2f5928db54e91a5f8fd9fb43fc3d13d1d2b007117bfe029bf032dba27c34b",
+      "bytes": 2413,
+      "source_map_module_sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945",
+      "source_index": 25
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "worker/src/backup.ts",
+      "object_path": "sources/098b8249943c65b882585e4faf0f3ef829e02187db1a08d56ad51be19be4f73b.ts",
+      "sha256": "098b8249943c65b882585e4faf0f3ef829e02187db1a08d56ad51be19be4f73b",
+      "bytes": 9933,
+      "source_map_module_sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945",
+      "source_index": 26
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "worker/src/index.ts",
+      "object_path": "sources/e509de7ffe7fe6d58e8f9bd23f3a34bfeaf054edbfba13b83ddfaf41d9efbb71.ts",
+      "sha256": "e509de7ffe7fe6d58e8f9bd23f3a34bfeaf054edbfba13b83ddfaf41d9efbb71",
+      "bytes": 4827,
+      "source_map_module_sha256": "43e0ac12637895c19a0fd6753b8bb5eec614082733831c524ffb3832cac93945",
+      "source_index": 27
+    },
+    {
+      "worker": "secondary-pages-dev",
+      "logical_relative_path": "worker/src/counter.ts",
+      "object_path": "sources/2761fb4d7b2008ad30407da5df5f414ceb03936f5365415b165baeeafa2ac611.ts",
+      "sha256": "2761fb4d7b2008ad30407da5df5f414ceb03936f5365415b165baeeafa2ac611",
+      "bytes": 4498,
+      "source_map_module_sha256": "e1bffc9e53f33ab3f75f361bee6383f6f66e764f894544adbe49d9b123fcf7d1",
+      "source_index": 0
+    },
+    {
+      "worker": "secondary-pages-dev",
+      "logical_relative_path": "worker/src/index.ts",
+      "object_path": "sources/b3db50fd596eea2b0db1aefd854200a5a6c7fb2b7bd8f3da7800ef0a0843e891.ts",
+      "sha256": "b3db50fd596eea2b0db1aefd854200a5a6c7fb2b7bd8f3da7800ef0a0843e891",
+      "bytes": 8600,
+      "source_map_module_sha256": "e1bffc9e53f33ab3f75f361bee6383f6f66e764f894544adbe49d9b123fcf7d1",
+      "source_index": 1
+    }
+  ],
+  "same_path_different_content": [
+    {
+      "logical_path": "worker/src/index.ts",
+      "versions": [
+        {
+          "worker": "secondary-audit-dev",
+          "sha256": "0c2f95e39bedc79b099f7a6c9e890a3875665cde2c4c9f13622ff13fc2b58b88"
+        },
+        {
+          "worker": "secondary-connector-dev",
+          "sha256": "a8407c9b05c31f0ee66144bea9f5455abc060d4e0569438590b24940f2526f97"
+        },
+        {
+          "worker": "secondary-mcp-dev",
+          "sha256": "2815915c90bd29d781c0a895add36995dcb0b66f3b8f314d68bd802c021c0337"
+        },
+        {
+          "worker": "secondary-ops-dev",
+          "sha256": "e509de7ffe7fe6d58e8f9bd23f3a34bfeaf054edbfba13b83ddfaf41d9efbb71"
+        },
+        {
+          "worker": "secondary-pages-dev",
+          "sha256": "b3db50fd596eea2b0db1aefd854200a5a6c7fb2b7bd8f3da7800ef0a0843e891"
+        }
+      ]
+    },
+    {
+      "logical_path": "worker/src/internal-auth.ts",
+      "versions": [
+        {
+          "worker": "secondary-connector-dev",
+          "sha256": "3b2aeb4863ddf07f97af43a702ae6c8863eb5bc820cadd934e6a2614c7901a5b"
+        },
+        {
+          "worker": "secondary-mcp-dev",
+          "sha256": "412a9b50822a622879f3a760c5f057f9e681a76d6610c2a64e2f90a17670b982"
+        }
+      ]
+    },
+    {
+      "logical_path": "worker/src/api-client.ts",
+      "versions": [
+        {
+          "worker": "secondary-connector-dev",
+          "sha256": "d16ec0754382f8858c9cedfcf0cdde19688675533a97ce01b474796728c71093"
+        },
+        {
+          "worker": "secondary-mcp-dev",
+          "sha256": "7082c1a4c08d20849aa8791087383dc1fee25b87b269c00c2cc5ad47a64e7b7a"
+        }
+      ]
+    },
+    {
+      "logical_path": "worker/src/access.ts",
+      "versions": [
+        {
+          "worker": "secondary-mcp-dev",
+          "sha256": "9e73e0883d2d0e469fc866afbc01836c3889ce69a0f15b06814aca998e2a4f37"
+        },
+        {
+          "worker": "secondary-ops-dev",
+          "sha256": "fe3f1c561fbb907cae228dd59fbf906038eb2d397d3f39a08774a9800baee71a"
+        }
+      ]
+    }
+  ],
+  "shared_package_comparison_to_prior_api": [
+    {
+      "worker": "secondary-audit-dev",
+      "logical_path": "shared/packages/contracts/src/audit-receipt.ts",
+      "same_as_prior_api_candidate": true
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_path": "shared/packages/contracts/src/signed-call.ts",
+      "same_as_prior_api_candidate": true
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_path": "shared/packages/contracts/src/log.ts",
+      "same_as_prior_api_candidate": true
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_path": "shared/packages/contracts/src/signed-call.ts",
+      "same_as_prior_api_candidate": true
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_path": "shared/packages/contracts/src/ops-auth.ts",
+      "same_as_prior_api_candidate": true
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_path": "shared/packages/contracts/src/log.ts",
+      "same_as_prior_api_candidate": true
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_path": "shared/packages/contracts/src/signed-call.ts",
+      "same_as_prior_api_candidate": true
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_path": "shared/packages/contracts/src/ops-auth.ts",
+      "same_as_prior_api_candidate": true
+    }
+  ],
+  "privacy_review": {
+    "flags": [
+      {
+        "worker": "secondary-connector-dev",
+        "file": "worker/src/graph.ts",
+        "categories": [
+          "credential_literal"
+        ],
+        "decision": "include_private_source",
+        "reason": "Authorization template interpolation, not a literal credential; no value emitted or execution."
+      },
+      {
+        "worker": "secondary-connector-dev",
+        "file": "worker/src/calendar.ts",
+        "categories": [
+          "credential_literal"
+        ],
+        "decision": "include_private_source",
+        "reason": "Authorization template interpolation, not a literal credential; no value emitted or execution."
+      },
+      {
+        "worker": "secondary-connector-dev",
+        "file": "worker/src/api-client.ts",
+        "categories": [
+          "email_literal",
+          "identity_field_literal"
+        ],
+        "decision": "include_private_source",
+        "reason": "Reserved-domain service principal placeholder in source configuration, not a personal address. Preserve unchanged; no functional identity rewrite."
+      }
+    ],
+    "unresolved_known_privacy_flags": 0,
+    "screening": "All48 source candidates scanned for recognizable credentials/keys/JWT/private-key/email/phone literals, identity fields, bulk record keys, long encoded/text/record blobs; only flagged local snippets reviewed as data with values suppressed. No known embedded private record dumps found; not universal clearance.",
+    "static_template_review": "Two MCP template source files consent-page.ts and view/ui.ts contain static markup with interpolated values and no detected embedded contact/record blobs. No template executed; no correctness/security claim."
+  },
+  "static_ui_metadata": {
+    "standalone_html_css_modules": 0,
+    "static_markup_source_files": [
+      {
+        "worker": "secondary-mcp-dev",
+        "file": "worker/src/consent-page.ts",
+        "bytes": 4979
+      },
+      {
+        "worker": "secondary-mcp-dev",
+        "file": "worker/src/view/ui.ts",
+        "bytes": 12682
+      }
+    ],
+    "limitation": "No full product frontend availability inferred from filename or template markers; no separate assets downloaded."
+  },
+  "omissions": [
+    "raw bundles/source maps/connector results",
+    "624 third-party node_modules occurrences",
+    "1 generated Wrangler runtime source",
+    "account configuration/bindings/settings/secrets",
+    "application storage/calendar/email/transcripts/private vault/27MBdashboard"
+  ],
+  "limitations": "Deployed sourcesContent only, not original git history/complete build config. Dependency/license/build/behavior/security work belongs to existing cloud owner. Private repo only; public publication forbidden. No repo/upload/commit/deploy performed."
+}

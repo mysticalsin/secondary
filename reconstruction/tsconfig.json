@@ -1,0 +1,17 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "preserveSymlinks": true,
+    "paths": {
+      "@secondary/policy": ["../harness/adapters/policy-entry.ts"]
+    },
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": [
+    "env.d.ts",
+    "worker-root/worker/src/**/*.ts",
+    "packages/**/*.ts",
+    "../harness/adapters/policy-entry.ts"
+  ],
+  "exclude": []
+}

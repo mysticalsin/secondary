@@ -1,0 +1,31 @@
+{
+  // NEW RECONSTRUCTION. Not the recovered Wrangler config. No account id, no routes,
+  // no secret values. `npm run deploy` refuses to upload this file.
+  // compatibility_date is the reconstruction date, not a recovered deploy date.
+  "name": "secondary-api-reconstruction-local-only",
+  "main": "worker-root/worker/src/index.ts",
+  "compatibility_date": "2026-11-07",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
+      { "name": "WORKSPACE", "class_name": "Workspace" }
+    ]
+  },
+  // SQLite is what the recovered classes call (ctx.storage.sql). The migration tag
+  // is not original history.
+  "migrations": [
+    { "tag": "reconstruction-1", "new_sqlite_classes": ["TenantPolicy", "Workspace"] }
+  ],
+  "vars": {
+    "ENVIRONMENT": "reconstruction",
+    "DEFAULT_TENANT_ID": "tenant_reconstruction",
+    "RATE_LIMIT_PER_MIN": "60"
+  }
+}

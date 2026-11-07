@@ -1,0 +1,624 @@
+import {
+  RESOURCE_MIME_TYPE,
+  registerAppResource,
+  registerAppTool,
+} from "@modelcontextprotocol/ext-apps/server";
+import { type CallToolResult, McpServer, requireScopes } from "@modelcontextprotocol/server";
+import { z } from "zod";
+import { ApiClient, type ApiResult, type Caller, q } from "./api-client.ts";
+import { writeAudit } from "./audit.ts";
+import type { Scope } from "./config.ts";
+import { sanitizeViewPlan } from "./view/plan.ts";
+import { resolveView } from "./view/resolve.ts";
+import { viewToMarkdown } from "./view/text.ts";
+import { VIEW_HTML, VIEW_URI } from "./view/ui.ts";
+
+/** The contract's tool list, in full. B1 tools read or draft. None approves, deletes or changes membership. */
+export const TOOL_NAMES = [
+  "whoami",
+  "search",
+  "get_map",
+  "get_node",
+  "get_account",
+  "list_review_queue",
+  "personal_note_create",
+  "contribute",
+  "render_view",
+  "wiki_search",
+  "wiki_read",
+  "wiki_propose",
+  "get_brain_guide",
+  "coach_propose_structure",
+  "list_brains",
+  "propose_page",
+  "propose_change",
+  "write_session_report",
+] as const;
+export type ToolName = (typeof TOOL_NAMES)[number];
+
+/** Scopes each tool needs (all of them). Write tools also need the read baseline. */
+export const TOOL_SCOPES: Record<ToolName, readonly [Scope, ...Scope[]]> = {
+  whoami: ["secondary.read"],
+  search: ["secondary.read"],
+  get_map: ["secondary.read"],
+  get_node: ["secondary.read"],
+  get_account: ["secondary.read"],
+  list_review_queue: ["secondary.read"],
+  render_view: ["secondary.read"],
+  personal_note_create: ["secondary.read", "secondary.personal.write"],
+  contribute: ["secondary.read", "secondary.contribute"],
+  wiki_search: ["secondary.read"],
+  wiki_read: ["secondary.read"],
+  wiki_propose: ["secondary.read", "secondary.contribute"],
+  get_brain_guide: ["secondary.read"],
+  coach_propose_structure: ["secondary.read", "secondary.contribute"],
+  list_brains: ["secondary.read"],
+  propose_page: ["secondary.read", "secondary.contribute"],
+  propose_change: ["secondary.read", "secondary.contribute"],
+  write_session_report: ["secondary.read", "secondary.contribute"],
+};
+
+const MAX_TEXT = 60_000;
+const nodeId = z
+  .string()
+  .regex(
+    /^[a-z0-9][a-z0-9_.:-]{0,127}$/,
+    "an id as returned by Secondary, for example c_bid:pricing-models",
+  );
+/** A wiki workspace: a node id as returned by Secondary, or `me` for the user's own wiki. */
+const wikiWs = z
+  .string()
+  .regex(/^(me|[a-z0-9][a-z0-9_.:-]{0,127})$/, "an account, circle or department id, or me");
+const wikiPage = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,63}$/, "a wiki page id as returned by wiki_search");
+const lens = z.enum(["departments", "accounts", "topics", "governances"]);
+const noInput = z.object({});
+
+type Json = Record<string, unknown>;
+
+interface Outcome {
+  ok: true;
+  text: string;
+  structured?: Json;
+  count: number;
+}
+type Failure = { ok: false; error: string; status: number };
+
+const toText = (data: unknown): string => {
+  const s = JSON.stringify(data, null, 1);
+  return s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n... truncated` : s;
+};
+
+const fail = (error: string, extra?: Json): CallToolResult => ({
+  isError: true,
+  content: [{ type: "text", text: JSON.stringify({ error, ...extra }) }],
+  structuredContent: { error, ...extra },
+});
+
+function fromApi(r: ApiResult, count: (d: unknown) => number): Outcome | Failure {
+  if (!r.ok) return { ok: false, error: r.error, status: r.status };
+  return {
+    ok: true,
+    text: toText(r.data),
+    structured: { result: r.data } as Json,
+    count: count(r.data),
+  };
+}
+
+const len = (key: string) => (d: unknown) => {
+  const v = (d as Json | null)?.[key];
+  return Array.isArray(v) ? v.length : 0;
+};
+
+export interface ServerDeps {
+  env: Env;
+  caller: Caller;
+}
+
+export function buildServer({ env, caller }: ServerDeps): McpServer {
+  const server = new McpServer(
+    { name: "secondary", version: "0.1.0" },
+    {
+      instructions:
+        "Secondary is Mantu's governed knowledge map. Every answer is limited to what the signed-in user's role allows. " +
+        "Tools read or draft only. Ask the user before calling personal_note_create, contribute, wiki_propose, propose_page, propose_change or write_session_report, and never include personal " +
+        "or client-confidential details they have not confirmed. wiki_search and wiki_read answer from the workspace wikis the user may read, with citations; " +
+        "wiki_propose only queues a page for human review. list_brains names the brains the user may read and their role in each; propose_page, propose_change and " +
+        "write_session_report push into one of them with the user's own rights and always wait for review in a shared brain (they need the contributor role there). To show a visual, plan a view from the catalog " +
+        "(KpiRow, NodeCard, ItemList, AccountSummary, StageBoard, MapMini, Callout, Table) and call render_view; props are queries (ids, lens, filters), never data.",
+    },
+  );
+
+  /** Scope check, execution, audit receipt, result shaping. Audit failure fails closed. */
+  async function run(
+    tool: ToolName,
+    ids: string[],
+    exec: (api: ApiClient) => Promise<Outcome | Failure>,
+  ): Promise<CallToolResult> {
+    const base = {
+      kind: "mcp.tool_call" as const,
+      action: tool,
+      who: caller.sub,
+      client_id: caller.clientId,
+      oauth_scopes: caller.scopes,
+    };
+    const required = TOOL_SCOPES[tool];
+    if (!required.every((s) => caller.scopes.includes(s))) {
+      await writeAudit(env, {
+        ...base,
+        scope_ids: ids,
+        outcome: "denied",
+        reason: "insufficient_scope",
+        result_count: 0,
+      });
+      return fail("insufficient_scope", { required_scopes: [...required] });
+    }
+    const out = await exec(new ApiClient(env, caller, tool));
+    if (!out.ok) {
+      const denied = out.status === 403 || out.status === 404;
+      const audited = await writeAudit(env, {
+        ...base,
+        scope_ids: ids,
+        outcome: denied ? "denied" : "error",
+        reason: out.error.slice(0, 80),
+        result_count: 0,
+      });
+      return fail(audited ? out.error : "audit_unavailable");
+    }
+    const audited = await writeAudit(env, {
+      ...base,
+      scope_ids: ids,
+      outcome: "ok",
+      result_count: out.count,
+    });
+    if (!audited) return fail("audit_unavailable");
+    return {
+      content: [{ type: "text", text: out.text }],
+      ...(out.structured ? { structuredContent: out.structured } : {}),
+    };
+  }
+
+  const read = {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  } as const;
+  const draft = {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false,
+  } as const;
+  const challenge = (t: ToolName) => requireScopes(...TOOL_SCOPES[t]);
+
+  server.registerTool(
+    "whoami",
+    {
+      title: "Who am I",
+      description:
+        "Show the signed-in user, their role, and what they can see, do and never do in Secondary.",
+      inputSchema: noInput,
+      annotations: read,
+      scopeChallenge: challenge("whoami"),
+    },
+    () => run("whoami", [], async (api) => fromApi(await api.get("/v1/me"), () => 1)),
+  );
+
+  server.registerTool(
+    "search",
+    {
+      title: "Search Secondary",
+      description: "Search nodes the user may see. Returns ids, labels, kinds and planes only.",
+      inputSchema: z.object({ q: z.string().trim().min(1).max(200).describe("Search text") }),
+      annotations: read,
+      scopeChallenge: challenge("search"),
+    },
+    ({ q: text }) =>
+      run("search", [], async (api) =>
+        fromApi(await api.get(`/v1/search?q=${q(text)}`), len("results")),
+      ),
+  );
+
+  server.registerTool(
+    "get_map",
+    {
+      title: "Get the Company Map",
+      description:
+        "The Company Map through one lens, limited to what the user may see. Locked areas show structure only.",
+      inputSchema: z.object({ lens: lens.default("departments") }),
+      annotations: read,
+      scopeChallenge: challenge("get_map"),
+    },
+    ({ lens: l }) =>
+      run("get_map", [], async (api) =>
+        fromApi(await api.get(`/v1/map?lens=${q(l)}`), len("hubs")),
+      ),
+  );
+
+  server.registerTool(
+    "get_node",
+    {
+      title: "Get a node",
+      description: "One node: facts, items, backlinks and which actions the user may take on it.",
+      inputSchema: z.object({ id: nodeId }),
+      annotations: read,
+      scopeChallenge: challenge("get_node"),
+    },
+    ({ id }) =>
+      run("get_node", [id], async (api) =>
+        fromApi(await api.get(`/v1/nodes/${q(id)}`), len("items")),
+      ),
+  );
+
+  server.registerTool(
+    "get_account",
+    {
+      title: "Get an account workspace",
+      description: "An account workspace the user is admitted to, by section.",
+      inputSchema: z.object({ id: nodeId }),
+      annotations: read,
+      scopeChallenge: challenge("get_account"),
+    },
+    ({ id }) =>
+      run("get_account", [id], async (api) =>
+        fromApi(await api.get(`/v1/accounts/${q(id)}`), len("sections")),
+      ),
+  );
+
+  server.registerTool(
+    "list_review_queue",
+    {
+      title: "List the review queue",
+      description:
+        "Candidates waiting in the user's review scope. Read only: reviewing is done in the web app.",
+      inputSchema: noInput,
+      annotations: read,
+      scopeChallenge: challenge("list_review_queue"),
+    },
+    () =>
+      run("list_review_queue", [], async (api) => {
+        const r = await api.get("/v1/review");
+        return fromApi(r, (d) =>
+          Array.isArray(d) ? d.length : len("candidates")(d) || len("items")(d),
+        );
+      }),
+  );
+
+  server.registerTool(
+    "personal_note_create",
+    {
+      title: "Save a personal note",
+      description:
+        "Save a note to the user's private Personal Brain. Only the owner can see it. Ask the user to confirm the text first.",
+      inputSchema: z.object({
+        title: z.string().trim().min(1).max(200),
+        body: z.string().trim().min(1).max(20_000),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("personal_note_create"),
+    },
+    ({ title, body }) =>
+      run("personal_note_create", [], async (api) =>
+        fromApi(await api.post("/v1/personal/items", { kind: "note", title, body }), () => 1),
+      ),
+  );
+
+  server.registerTool(
+    "contribute",
+    {
+      title: "Contribute a personal item",
+      description:
+        "Propose one of the user's personal items to a Company scope. This creates a candidate that enters review. It never publishes, and the personal original stays private.",
+      inputSchema: z.object({ personalItemId: nodeId, targetScopeId: nodeId }),
+      annotations: draft,
+      scopeChallenge: challenge("contribute"),
+    },
+    ({ personalItemId, targetScopeId }) =>
+      run("contribute", [targetScopeId], async (api) =>
+        fromApi(
+          await api.post(`/v1/personal/items/${q(personalItemId)}/contribute`, { targetScopeId }),
+          () => 1,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "wiki_search",
+    {
+      title: "Search the workspace wikis",
+      description:
+        "Search the wiki pages the user may read, with the cited claims that match. Searches every wiki the user is admitted to unless a workspace is given. Citations the user cannot read are already removed.",
+      inputSchema: z.object({
+        q: z.string().trim().min(1).max(200).describe("Search text"),
+        workspace: z.union([z.literal("all"), wikiWs]).default("all"),
+      }),
+      annotations: read,
+      scopeChallenge: challenge("wiki_search"),
+    },
+    ({ q: text, workspace }) =>
+      run("wiki_search", workspace === "all" ? [] : [workspace], async (api) =>
+        fromApi(await api.get(`/v1/wiki/${q(workspace)}/search?q=${q(text)}`), len("results")),
+      ),
+  );
+
+  server.registerTool(
+    "wiki_read",
+    {
+      title: "Read a wiki page",
+      description:
+        "One wiki page with its citations, as the signed-in user may see it. Claims whose sources the user cannot read are removed.",
+      inputSchema: z.object({ workspace: wikiWs, page: wikiPage }),
+      annotations: read,
+      scopeChallenge: challenge("wiki_read"),
+    },
+    ({ workspace, page }) =>
+      run("wiki_read", [workspace], async (api) =>
+        fromApi(await api.get(`/v1/wiki/${q(workspace)}/pages/${q(page)}`), () => 1),
+      ),
+  );
+
+  server.registerTool(
+    "wiki_propose",
+    {
+      title: "Propose a wiki page",
+      description:
+        "Propose a new page or a new version of a page in a workspace wiki. This creates a review item and never publishes: a person approves it in the web app. Ask the user to confirm the text first.",
+      inputSchema: z.object({
+        workspace: wikiWs,
+        title: z.string().trim().min(1).max(120),
+        markdown: z.string().trim().min(1).max(20_000),
+        pageId: wikiPage.optional(),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("wiki_propose"),
+    },
+    ({ workspace, title, markdown, pageId }) =>
+      run("wiki_propose", [workspace], async (api) =>
+        fromApi(
+          await api.post(`/v1/wiki/${q(workspace)}/propose`, {
+            title,
+            markdown,
+            ...(pageId ? { pageId } : {}),
+          }),
+          () => 1,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "get_brain_guide",
+    {
+      title: "Get a brain's guide",
+      description:
+        "How a brain is structured: its collections and required sections, tone, the typed business fields it defines (definitions only, never values), its publication mode and writing conventions. Read this before proposing pages. It never contains page text.",
+      inputSchema: z.object({ brainId: wikiWs }),
+      annotations: read,
+      scopeChallenge: challenge("get_brain_guide"),
+    },
+    ({ brainId }) =>
+      run("get_brain_guide", [brainId], async (api) =>
+        fromApi(await api.get(`/v1/brains/${q(brainId)}/guide`), len("collections")),
+      ),
+  );
+
+  const coachList = z.array(z.string().trim().min(1).max(60)).max(8).optional();
+  server.registerTool(
+    "coach_propose_structure",
+    {
+      title: "Propose a structure for a brain",
+      description:
+        "Structure Coach: from a short interview (role, accounts, recurring work) propose a collection tree for a brain the user manages. It only returns a proposal. The user applies it in the web app; this tool cannot change a brain, and it is refused for a brain the user does not manage. Ask the user the interview questions first.",
+      inputSchema: z.object({
+        brainId: wikiWs,
+        answers: z.object({
+          role: z.string().trim().max(60).optional(),
+          accounts: coachList,
+          recurring: coachList,
+          template: z.enum(["personal", "team", "account", "bid", "practice", "global"]).optional(),
+        }),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("coach_propose_structure"),
+    },
+    ({ brainId, answers }) =>
+      run("coach_propose_structure", [brainId], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(brainId)}/coach/propose`, { answers }),
+          len("collections"),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "list_brains",
+    {
+      title: "List my brains",
+      description:
+        "The brains the user can read (their Personal Brain, governance brains, account brains and Company Global) with the user's role in each: reader, contributor, editor, steward or owner. Pushing needs contributor or above.",
+      inputSchema: noInput,
+      annotations: read,
+      scopeChallenge: challenge("list_brains"),
+    },
+    () =>
+      run("list_brains", [], async (api) => {
+        const r = await api.get<{ brains?: Json[] }>("/v1/brains");
+        if (!r.ok) return fromApi(r, () => 0);
+        const brains = (r.data.brains ?? []).map((b) => ({
+          id: b.id,
+          name: b.name,
+          type: b.type,
+          role: b.role,
+          publication: b.publication,
+        }));
+        return fromApi({ ...r, data: { brains } }, len("brains"));
+      }),
+  );
+
+  const brainId = wikiWs.describe("A brain id from list_brains, or me for the Personal Brain");
+  const markdown = z.string().trim().min(1).max(20_000);
+  server.registerTool(
+    "propose_page",
+    {
+      title: "Propose a page in a brain",
+      description:
+        "Propose a new page in a brain (or a new version of the page with the same title). It always waits for a person to review it in a shared brain, and is never published directly. Needs the contributor role in that brain. Read get_brain_guide first, cite sources, and ask the user to confirm the text.",
+      inputSchema: z.object({
+        brainId,
+        title: z.string().trim().min(1).max(120),
+        markdown,
+        type: z
+          .string()
+          .regex(
+            /^[a-z][a-z0-9_]{0,40}$/,
+            "a collection type from get_brain_guide, for example topic",
+          )
+          .optional()
+          .describe("Collection type; defaults to topic"),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("propose_page"),
+    },
+    ({ brainId: id, title, markdown: md, type }) =>
+      run("propose_page", [id], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(id)}/push/page`, {
+            title,
+            markdown: md,
+            ...(type ? { type } : {}),
+          }),
+          () => 1,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "propose_change",
+    {
+      title: "Propose a change to a page",
+      description:
+        "Propose a new version of an existing page you can read: send the whole new Markdown. It waits for review, shows the reviewer a diff, and never publishes directly. Needs the contributor role in that brain.",
+      inputSchema: z.object({
+        brainId,
+        pageId: wikiPage,
+        markdown,
+        rationale: z.string().trim().max(500).optional().describe("Why the page should change"),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("propose_change"),
+    },
+    ({ brainId: id, pageId, markdown: md, rationale }) =>
+      run("propose_change", [id], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(id)}/push/change`, {
+            pageId,
+            markdown: md,
+            ...(rationale ? { rationale } : {}),
+          }),
+          () => 1,
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "write_session_report",
+    {
+      title: "Write a session report",
+      description:
+        "Save a summary of this working session as a page under Sources > Session reports > the user's name in a brain. It waits for review in a shared brain; in the user's Personal Brain it follows that brain's publication mode. Needs the contributor role in that brain. Ask the user to confirm the summary first, and leave out personal or client-confidential details.",
+      inputSchema: z.object({
+        brainId,
+        markdown,
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD")
+          .optional()
+          .describe("Day of the session; defaults to today"),
+      }),
+      annotations: draft,
+      scopeChallenge: challenge("write_session_report"),
+    },
+    ({ brainId: id, markdown: md, date }) =>
+      run("write_session_report", [id], async (api) =>
+        fromApi(
+          await api.post(`/v1/brains/${q(id)}/push/session-report`, {
+            markdown: md,
+            ...(date ? { date } : {}),
+          }),
+          () => 1,
+        ),
+      ),
+  );
+
+  const renderView = registerAppTool(
+    server,
+    "render_view",
+    {
+      title: "Render a view",
+      description:
+        "Render a ViewPlan as a visual. You plan, the server resolves data as the user. A plan is {version:1,title,components:[{type,props}]} " +
+        "with type one of KpiRow, NodeCard, ItemList, AccountSummary, StageBoard, MapMini, Callout, Table. " +
+        "props hold queries only (nodeId, accountId, lens, filter, metrics, columns, limit), never data or text. Unknown component types are dropped. " +
+        "Data props are rejected. A plan cannot show more than the user may see.",
+      inputSchema: z.object({
+        viewPlan: z.object({
+          version: z.literal(1),
+          title: z.string().min(1).max(120),
+          components: z
+            .array(z.object({ type: z.string(), props: z.record(z.string(), z.unknown()) }))
+            .min(1)
+            .max(24),
+        }),
+      }),
+      annotations: read,
+      _meta: { ui: { resourceUri: VIEW_URI, visibility: ["model", "app"] } },
+    },
+    ({ viewPlan }) => {
+      const ids: string[] = [];
+      return run("render_view", ids, async (api) => {
+        const plan = sanitizeViewPlan(viewPlan);
+        if (!plan.ok) {
+          return {
+            ok: false,
+            status: 400,
+            error: `invalid_view_plan: ${plan.errors.join("; ")}`.slice(0, 600),
+          };
+        }
+        const view = await resolveView(plan.plan, api, plan.dropped);
+        ids.push(...view.ids);
+        return {
+          ok: true,
+          text: viewToMarkdown(view),
+          structured: { view } as unknown as Json,
+          count: view.components.filter((c) => c.status === "ok").length,
+        };
+      });
+    },
+  );
+
+  // registerAppTool's config type has no scopeChallenge, the registered tool does.
+  renderView.update({ scopeChallenge: challenge("render_view") });
+
+  registerAppResource(
+    server,
+    "Secondary view",
+    VIEW_URI,
+    {
+      description:
+        "Renders a Secondary ViewPlan with trusted components. No external scripts or network.",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: VIEW_URI,
+          mimeType: RESOURCE_MIME_TYPE,
+          text: VIEW_HTML,
+          _meta: { ui: { csp: {}, prefersBorder: false } },
+        },
+      ],
+    }),
+  );
+
+  return server;
+}

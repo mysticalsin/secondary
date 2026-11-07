@@ -7,9 +7,12 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test --test-reporter=spec harness/tests/*.test.ts harness/runtime/*.test.ts",
+    "test": "node --preserve-symlinks --experimental-strip-types --import ./reconstruction/register-test-hooks.mjs --test --test-reporter=spec harness/tests/*.test.ts harness/runtime/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json"
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
+    "typecheck:reconstructed": "tsc --noEmit -p reconstruction/tsconfig.json",
+    "build:worker": "esbuild reconstruction/worker-root/worker/src/index.ts --bundle --format=esm --platform=neutral --target=es2022 --outfile=reconstruction/dist/worker.js --preserve-symlinks --alias:@secondary/policy=./harness/adapters/policy-entry.ts --external:cloudflare:workers --banner:js=\"/* Local reconstruction bundle. Not a deployment artifact. */\"",
+    "deploy": "node reconstruction/refuse-deploy.mjs"
   },
   "dependencies": {
     "@openuidev/lang-core": "1.1.0",
@@ -20,6 +23,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261107.1",
     "@types/node": "22.19.0",
+    "esbuild": "^0.28.2",
     "typescript": "5.9.3"
   }
 }

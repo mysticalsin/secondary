@@ -1,0 +1,59 @@
+{
+  "exact_api_matches": [
+    {
+      "worker": "secondary-audit-dev",
+      "logical_relative_path": "shared/packages/contracts/src/audit-receipt.ts",
+      "sha256": "49190f5302ce4bdac2798ccce335fb063d55f447ac3ae4a1989a39e00766bfab",
+      "api_path": "recovered-source/shared/packages/contracts/src/audit-receipt.ts"
+    },
+    {
+      "worker": "secondary-connector-dev",
+      "logical_relative_path": "shared/packages/contracts/src/signed-call.ts",
+      "sha256": "19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb",
+      "api_path": "recovered-source/shared/packages/contracts/src/signed-call.ts"
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "shared/packages/contracts/src/log.ts",
+      "sha256": "f88437805361ee3cfdd50c480eaa2842a6f8cf11635f6bdc176a14c19b3e1ff0",
+      "api_path": "recovered-source/shared/packages/contracts/src/log.ts"
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "shared/packages/contracts/src/signed-call.ts",
+      "sha256": "19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb",
+      "api_path": "recovered-source/shared/packages/contracts/src/signed-call.ts"
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "shared/packages/contracts/src/ops-auth.ts",
+      "sha256": "6fab0716128c37856ec5055e7f24046c56c0160180f75697aa952d7374a391fa",
+      "api_path": "recovered-source/shared/packages/contracts/src/ops-auth.ts"
+    },
+    {
+      "worker": "secondary-mcp-dev",
+      "logical_relative_path": "worker/src/internal-auth.ts",
+      "sha256": "412a9b50822a622879f3a760c5f057f9e681a76d6610c2a64e2f90a17670b982",
+      "api_path": "recovered-source/worker/src/internal-auth.ts"
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "shared/packages/contracts/src/log.ts",
+      "sha256": "f88437805361ee3cfdd50c480eaa2842a6f8cf11635f6bdc176a14c19b3e1ff0",
+      "api_path": "recovered-source/shared/packages/contracts/src/log.ts"
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "shared/packages/contracts/src/signed-call.ts",
+      "sha256": "19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb",
+      "api_path": "recovered-source/shared/packages/contracts/src/signed-call.ts"
+    },
+    {
+      "worker": "secondary-ops-dev",
+      "logical_relative_path": "shared/packages/contracts/src/ops-auth.ts",
+      "sha256": "6fab0716128c37856ec5055e7f24046c56c0160180f75697aa952d7374a391fa",
+      "api_path": "recovered-source/shared/packages/contracts/src/ops-auth.ts"
+    }
+  ],
+  "unique_copies": 39
+}

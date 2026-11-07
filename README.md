@@ -12,8 +12,8 @@ Node 22.18 or newer. Install does not run dependency lifecycle scripts (`@openui
 npm install --ignore-scripts --no-audit --no-fund
 npm test
 npm run typecheck
+npm run typecheck:reconstructed
+npm run build:worker
 ```
 
-`npm test` runs 17 isolated tests of recovered policy, receipt, log, HMAC, agent-plan, and GenUI code. `npm run typecheck` checks the shared packages and the Worker modules whose imports do not depend on missing files.
-
-`npm run typecheck:worker` typechecks the whole Worker and fails. The missing modules are listed in RECOVERY.md. There is no deploy script in this repo. Do not deploy, and do not point Wrangler at a Cloudflare account from here.
+`npm test` runs the isolated recovered-code tests, including auth, tenant, and resource gates. `npm run typecheck` checks the shared packages and the Worker modules that do not need the missing files. `npm run typecheck:reconstructed` typechecks the whole API Worker through `reconstruction/`, where the three missing modules are new files derived from call sites. `npm run build:worker` writes a local esbuild bundle. `npm run typecheck:worker` still typechecks the recovered tree alone and fails. `npm run deploy` refuses.
