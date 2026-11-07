@@ -554,7 +554,8 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     const measured = parsed(
       await callTool(adaWrite, adaSession, "usage_fixture", { fixture: "measured-zero", eventId: "fixture-zero" }, 38),
     );
-    assert.equal(measured.json.event.trust, "server_measured");
+    assert.equal(measured.json.event.trust, "synthetic_fixture");
+    assert.equal(measured.json.event.evidence, "synthetic_fixture");
     assert.equal(measured.json.event.inputTokens, 0);
     assert.equal(measured.json.event.providerVerified, false);
     const cancelled = parsed(
@@ -564,6 +565,8 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     assert.equal(cancelled.json.event.inputTokens, null);
     const covered = parsed(await callTool(adaWrite, adaSession, "usage_lookup", {}, 40));
     assert.equal(covered.json.summary.input.value, 8);
+    assert.equal(covered.json.summary.tokenCoverage.serverMeasured, 0);
+    assert.equal(covered.json.summary.tokenCoverage.syntheticFixture >= 1, true);
     assert.equal(covered.json.summary.input.complete, false);
     assert.equal(covered.json.summary.cost, "unknown");
     assert.equal(covered.json.summary.providerVerified, false);

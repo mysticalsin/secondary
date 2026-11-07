@@ -196,6 +196,7 @@ h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035
 .chip.ok { background: var(--ok-bg); color: var(--ok); }
 .chip.bad { background: var(--bad-bg); color: var(--bad); }
 .chip.unknown { background: #eeeef0; color: #4b4c59; }
+.chip.fixture { background: #fff6d8; color: #5c4300; }
 .callout { padding: 18px 20px; }
 .callout.bad { background: var(--bad-bg); border-color: #ffcccf; }
 .callout h2, .block h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.02em; }
@@ -248,7 +249,7 @@ function tokenLabel(dimension) {
 }
 
 function trustChip(event) {
-  if (event.evidence === "synthetic_fixture") return chip("unknown", "Synthetic fixture");
+  if (event.trust === "synthetic_fixture" || event.evidence === "synthetic_fixture") return chip("fixture", "Synthetic fixture");
   if (event.trust === "client_reported") return chip("", "Client-reported");
   if (event.trust === "server_measured") return chip("ok", "Server-measured");
   return chip("unknown", "Unknown");
@@ -328,10 +329,10 @@ export function renderObservability(model) {
   <section id="panel-usage" role="tabpanel" aria-labelledby="tab-usage"${usageOn ? "" : " hidden"}>
     <p class="banner"><i></i>Local preview · synthetic data</p>
     <p class="muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. Switching session loads that person's ledger. Cost is unknown. Client-reported numbers are not provider-verified.</p>
-    <form method="post" action="/settings/observability/session" class="tabs">
+    ${model.release ? "" : `<form method="post" action="/settings/observability/session" class="tabs">
       <button type="submit" name="preset" value="person_a" aria-pressed="${model.preset === "person_b" ? "false" : "true"}">Consultant session</button>
       <button type="submit" name="preset" value="person_b" aria-pressed="${model.preset === "person_b" ? "true" : "false"}">Plus-address session</button>
-    </form>
+    </form>`}
     <form method="get" action="/settings/observability">
       <input type="hidden" name="section" value="usage">
       <label>Operation <input name="operation" value="${esc(ledger.operation)}" placeholder="import"></label>
@@ -347,11 +348,11 @@ export function renderObservability(model) {
       <article class="stat"><p class="k">Input tokens</p><p class="value">${esc(tokenLabel(ledger.summary.input))}</p><p class="hint">Known inputs are not summed with unknown events. Cache is separate. Cost is unknown.</p></article>
     </div>` : ""}
     ${usageRows ? `<table><thead><tr><th>Evidence</th><th>Operation</th><th>State</th><th>Input</th><th>Request</th></tr></thead><tbody>${usageRows}</tbody></table>` : ""}
-    <form method="post" action="/settings/observability/usage">
+    ${model.release ? "" : `<form method="post" action="/settings/observability/usage">
       <button class="save" type="submit" name="kind" value="report">Record synthetic client report (2 + 2)</button>
-      <button class="save" type="submit" name="kind" value="fixture">Record measured zero fixture</button>
-    </form>
-    <p class="muted">The client report is client-reported and uses the synthetic-echo label. The zero fixture is server-measured and is not a live bill. Provider-verified billing is not available.</p>
+      <button class="save" type="submit" name="kind" value="fixture">Record synthetic zero fixture</button>
+    </form>`}
+    <p class="muted">A client report stays client-reported and is not provider-verified. A synthetic fixture, including a zero, is not server-measured and is not added to live token totals. Unknown usage is not zero. Provider-verified billing is not available.</p>
   </section>
   <section id="panel-prefs" role="tabpanel" aria-labelledby="tab-prefs"${prefs && !usageOn ? "" : " hidden"}>
     <div class="callout">

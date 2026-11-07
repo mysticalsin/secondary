@@ -295,7 +295,7 @@ function attachImportTools(server: ReturnType<typeof buildServer>, env: Env, cal
     {
       title: "Record a synthetic usage fixture",
       description:
-        "Record a named synthetic fixture. Numbers are not a live provider bill. measured-zero is a server-measured zero. cancelled-unknown stays unknown. provider-sample is labeled synthetic.",
+        "Record a named synthetic fixture. It is not server-measured usage and not a live bill. measured-zero is a synthetic zero. cancelled-unknown stays unknown.",
       inputSchema: z.object({ fixture: z.enum(["measured-zero", "provider-sample", "cancelled-unknown"]), eventId: z.string().trim().min(1).max(80) }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       scopeChallenge: requireScopes(...WRITE),

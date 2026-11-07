@@ -528,3 +528,61 @@ test("a cross-origin authorize post and a remote fetch stay closed", async () =>
   assert.equal(blocked.status, 403);
   assert.equal(blocked.text, "egress_denied");
 });
+
+test("a local test issuer rejects the wrong resource and rotates refresh tokens", async () => {
+  const clientId = await registerClient();
+  const granted = await authorizationCode(clientId, EMAIL, ["secondary.read"]);
+  const wrong = await read(
+    await mf.dispatchFetch(`${ORIGIN}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: granted.code,
+        redirect_uri: REDIRECT,
+        client_id: clientId,
+        code_verifier: granted.verifier,
+        resource: "http://localhost/other",
+      }),
+    }),
+  );
+  assert.equal(wrong.status, 400, wrong.text.slice(0, 300));
+  assert.equal(wrong.json.error, "invalid_target");
+  const pair = await authorizationCode(clientId, EMAIL, ["secondary.read"]);
+  const first = await read(
+    await mf.dispatchFetch(`${ORIGIN}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: pair.code,
+        redirect_uri: REDIRECT,
+        client_id: clientId,
+        code_verifier: pair.verifier,
+        resource: RESOURCE,
+      }),
+    }),
+  );
+  assert.equal(first.status, 200, first.text.slice(0, 300));
+  assert.equal(typeof first.json.refresh_token, "string");
+  const refresh = async (token) =>
+    read(
+      await mf.dispatchFetch(`${ORIGIN}/token`, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: token,
+          client_id: clientId,
+          resource: RESOURCE,
+        }),
+      }),
+    );
+  const second = await refresh(first.json.refresh_token);
+  assert.equal(second.status, 200, second.text.slice(0, 300));
+  const third = await refresh(second.json.refresh_token);
+  assert.equal(third.status, 200, third.text.slice(0, 240));
+  const stale = await refresh(first.json.refresh_token);
+  assert.equal(stale.status, 400, stale.text.slice(0, 240));
+  assert.equal(stale.json.error, "invalid_grant");
+});

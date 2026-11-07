@@ -92,6 +92,12 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | --- | --- | --- |
 | Protected non-production preview, bindings, rollback | Not executed | NOTRUN |
 | Production deploy, merge, spend, live provider | Disallowed | NOTRUN |
+| Protected-dev edge rejects dev email headers, closes `/harness/*` and fixture routes, and verifies a local test JWT for issuer, audience, signature, and expiry | `protected-dev edge ignores dev headers and closes harness routes` | PASS |
+| MCP `/mcp` without a bearer is a machine 401 when `ENVIRONMENT` is not dev | `mcp tools stay a machine 401 when dev email is not a configured identity` | PASS |
+| Local test issuer rejects a mismatched resource and an old refresh token after rotation | `a local test issuer rejects the wrong resource and rotates refresh tokens` | PASS |
+| Live Access or Entra issuer, remote JWKS, and a public route | Not wired | NOTRUN |
+| Private API worker published without the edge | Local workerd still sets `ENVIRONMENT=dev` so Durable Object jurisdiction can be off. That worker is not the public entry | NOTRUN |
+| OAuth access-token wall-clock expiry | Pinned provider TTL is 3600 and was not shortened | NOTRUN |
 
 ## 7. Review gaps still open
 

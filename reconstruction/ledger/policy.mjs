@@ -223,6 +223,7 @@ export function summarize(events) {
     let knownEvents = 0;
     let value = 0;
     for (const event of counted) {
+      if (event.trust === "synthetic_fixture" || event.evidence === "synthetic_fixture") continue;
       if (event.trust === "unknown") {
         unknownEvents += 1;
         continue;
@@ -261,11 +262,11 @@ export function summarize(events) {
 export function syntheticFixture(name) {
   if (name === "measured-zero") {
     return {
-      trust: "server_measured",
-      evidence: "server_clock",
+      trust: "synthetic_fixture",
+      evidence: "synthetic_fixture",
       providerVerified: false,
-      provider: null,
-      model: null,
+      provider: "synthetic",
+      model: "synthetic-echo",
       outcome: "ok",
       inputTokens: 0,
       outputTokens: 0,
@@ -276,7 +277,7 @@ export function syntheticFixture(name) {
   }
   if (name === "provider-sample") {
     return {
-      trust: "provider_reported",
+      trust: "synthetic_fixture",
       evidence: "synthetic_fixture",
       providerVerified: false,
       provider: "synthetic",
@@ -291,7 +292,7 @@ export function syntheticFixture(name) {
   }
   if (name === "cancelled-unknown") {
     return {
-      trust: "provider_reported",
+      trust: "synthetic_fixture",
       evidence: "synthetic_fixture",
       providerVerified: false,
       provider: "synthetic",

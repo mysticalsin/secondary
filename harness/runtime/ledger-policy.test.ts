@@ -42,7 +42,8 @@ test("usage reports reject extra fields, bad totals, and keep unknown distinct f
   const zero = syntheticFixture("measured-zero");
   const cancelled = syntheticFixture("cancelled-unknown");
   assert.equal(zero.inputTokens, 0);
-  assert.equal(zero.trust, "server_measured");
+  assert.equal(zero.trust, "synthetic_fixture");
+  assert.equal(zero.evidence, "synthetic_fixture");
   assert.equal(cancelled.inputTokens, null);
   assert.equal(cancelled.outcome, "cancelled");
   const summary = summarize([
@@ -54,6 +55,26 @@ test("usage reports reject extra fields, bad totals, and keep unknown distinct f
   assert.equal(summary.input.value, 0);
   assert.equal(summary.input.complete, false);
   assert.equal(summary.cost, "unknown");
+  const fixtureOnly = summarize([
+    {
+      eventId: "z",
+      operation: "provider_fixture",
+      requestId: "rz",
+      trust: zero.trust,
+      evidence: zero.evidence,
+      inputTokens: zero.inputTokens,
+      outputTokens: zero.outputTokens,
+      cacheReadTokens: zero.cacheReadTokens,
+      cacheWriteTokens: zero.cacheWriteTokens,
+      totalTokens: zero.totalTokens,
+      providerRequestId: null,
+      describesRequestId: null,
+      streamSeq: null,
+    },
+  ]);
+  assert.equal(fixtureOnly.tokenCoverage.serverMeasured, 0);
+  assert.equal(fixtureOnly.tokenCoverage.syntheticFixture, 1);
+  assert.equal(fixtureOnly.input.value, null);
 });
 
 test("stream snapshots replace totals and a conflicting replay does not add", () => {
@@ -90,7 +111,7 @@ test("stream snapshots replace totals and a conflicting replay does not add", ()
   const retry = decideAppend(null, null, { ...base, eventId: "evt-3", providerRequestId: "preq-2", payloadHash: "h4" });
   assert.equal(retry.action, "insert");
   const described = summarize([
-    { ...base, operation: "provider_fixture", requestId: "r", trust: "provider_reported", evidence: "synthetic_fixture", describesRequestId: null },
+    { ...base, operation: "provider_fixture", requestId: "r", trust: "server_measured", evidence: "server_clock", describesRequestId: null },
     { eventId: "client", operation: "usage_report", requestId: "c", trust: "client_reported", evidence: "client_report", providerRequestId: null, describesRequestId: "evt-1", inputTokens: 99, outputTokens: 99, cacheReadTokens: null, cacheWriteTokens: null, totalTokens: 198, streamSeq: null },
   ]);
   assert.equal(described.input.value, 2);
