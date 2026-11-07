@@ -113,18 +113,29 @@ function chip(kind, text) {
 }
 
 const OBS_CSS = `
+/* Palette for this page only.
+   Official public tokens, https://mantu.com/_next/static/chunks/0f4n.iw4c7x10.css :root
+   (fetched 2026-11-07): --primary-main #6600ae, --primary-50 #fcf3ff, --primary-950 #41007c,
+   --dark-main #17121a, --dark-50 #f8f6f9, --white #fff, --grey-200 #d8d8df, --grey-600 #5c5d6d,
+   --yellow-main #ffc709, --red-50 #fff1f1, --red-200 #ffcccf, --red-700 #c70e1d.
+   The same primary #6600ae is also --purple in recovered-delivery/shell-six/assets/index-DiBYRwP4.css.
+   Success uses that recovered stylesheet's --st-done #1e6b34 and --add-bg #e6f6ea.
+   mantu.com publishes no success-green token. The reel accent #6d5bd0 is not used. */
 :root {
   color-scheme: light;
-  --canvas: #e8ebf0;
-  --ink: #1b2433;
-  --nav: #1c2433;
+  --canvas: #f8f6f9;
+  --ink: #17121a;
+  --nav: #6600ae;
   --panel: #ffffff;
-  --muted: #3e4b5f;
-  --line: #e3e7ee;
-  --accent: #6d5bd0;
-  --ok: #0f6b4c;
-  --bad: #8d2f39;
-  --shadow: 0 16px 40px rgba(27, 36, 51, 0.08);
+  --muted: #5c5d6d;
+  --line: #d8d8df;
+  --accent: #6600ae;
+  --ok: #1e6b34;
+  --ok-bg: #e6f6ea;
+  --bad: #c70e1d;
+  --bad-bg: #fff1f1;
+  --focus-on-dark: #ffc709;
+  --shadow: 0 16px 40px rgba(23, 18, 26, 0.08);
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
@@ -140,7 +151,7 @@ h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035
 .lede { margin: 14px 0 0; font-size: 17px; color: var(--ink); }
 .banner {
   display: inline-flex; align-items: center; gap: 8px; margin-top: 16px;
-  padding: 6px 12px; border-radius: 999px; background: #f3f0ff; color: #5346b8;
+  padding: 6px 12px; border-radius: 999px; background: #fcf3ff; color: var(--accent);
   font-size: 13px; font-weight: 650;
 }
 .banner i { width: 8px; height: 8px; border-radius: 99px; background: var(--accent); display: block; }
@@ -155,10 +166,11 @@ h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035
   border: 0; border-radius: 999px; font: inherit; font-size: 14px;
   text-decoration: none; padding: 9px 14px; cursor: pointer; line-height: 1.2;
 }
-.pills a { color: #f5f7fa; background: transparent; }
-.pills a[aria-current="page"] { background: #f7f8fa; color: var(--ink); }
+.pills a { color: #ffffff; background: transparent; }
+.pills a[aria-current="page"] { background: #ffffff; color: var(--ink); }
 .pills a:hover { background: rgba(255,255,255,0.14); }
 .pills a[aria-current="page"]:hover { background: #ffffff; }
+.pills a:focus-visible { outline-color: var(--focus-on-dark); }
 .tabs { margin: 0 0 18px; }
 .tabs button { background: transparent; color: var(--muted); border: 1px solid transparent; }
 .tabs button[aria-selected="true"] { background: white; color: var(--ink); border-color: var(--line); box-shadow: var(--shadow); }
@@ -170,7 +182,7 @@ h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035
 .stat { padding: 18px 18px 16px; min-width: 0; }
 .mark {
   width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center;
-  background: #f3f0ff; color: var(--accent); margin-bottom: 14px;
+  background: #fcf3ff; color: var(--accent); margin-bottom: 14px;
 }
 .k { margin: 0; color: var(--muted); font-size: 13px; }
 .value { margin: 8px 0 0; font-size: 22px; letter-spacing: -0.03em; }
@@ -180,20 +192,20 @@ h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035
 .host:last-child { border-bottom: 0; }
 .host strong { display: block; font-size: 15px; }
 .host span { color: var(--muted); font-size: 13px; }
-.chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 650; background: #f3f0ff; color: var(--accent); white-space: nowrap; }
-.chip.ok { background: #e7f6ef; color: var(--ok); }
-.chip.bad { background: #fdecef; color: var(--bad); }
-.chip.unknown { background: #eef1f4; color: var(--muted); }
+.chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 650; background: #fcf3ff; color: var(--accent); white-space: nowrap; }
+.chip.ok { background: var(--ok-bg); color: var(--ok); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
+.chip.unknown { background: #eeeef0; color: #4b4c59; }
 .callout { padding: 18px 20px; }
-.callout.bad { background: #fff7f8; border-color: #f3d5da; }
+.callout.bad { background: var(--bad-bg); border-color: #ffcccf; }
 .callout h2, .block h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.02em; }
 .block { margin-top: 16px; }
 label { display: block; margin: 12px 0; font-size: 14px; }
 select, button.save, input[type="search"] {
   font: inherit; border-radius: 12px; border: 1px solid var(--line); background: white; padding: 10px 12px;
 }
-button.save { background: var(--ink); color: white; cursor: pointer; }
-button.save:hover { background: #2c3850; }
+button.save { background: var(--accent); color: white; cursor: pointer; }
+button.save:hover { background: #41007c; }
 input:disabled { opacity: 0.6; }
 .alert { margin: 12px 0 0; color: var(--bad); font-weight: 650; }
 details { margin-top: 28px; background: white; border: 1px solid var(--line); border-radius: 18px; padding: 12px 16px; }
@@ -245,7 +257,7 @@ export function renderObservability(model) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Settings · Observability</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%231c2433'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236600ae'/%3E%3C/svg%3E">
 <style>${OBS_CSS}</style></head><body>
 <main class="frame">
   <p class="crumb"><a href="/settings">Settings</a> <span aria-hidden="true">/</span> Observability</p>
