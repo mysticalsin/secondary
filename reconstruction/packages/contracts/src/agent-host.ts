@@ -1,0 +1,1 @@
+../../../../recovered-other/secondary-mcp-dev/shared/packages/contracts/src/agent-host.ts

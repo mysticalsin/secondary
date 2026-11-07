@@ -151,6 +151,36 @@ Frontend: `secondary-pages-dev` serves published Landing Page Studio HTML from a
 
 The passing typecheck is the reconstructed project, not a claim that the recovered tree typechecks by itself. The 119-error command is still present. No `ts-ignore` and no `any` were added to recovered source. A local bundle is not production, security, Microsoft identity, or live-refresh acceptance.
 
+## Other Worker overlays
+
+Each remaining Worker has its own directory under `reconstruction/` (`audit`, `connector`, `mcp`, `ops`, `pages`). Recovered files are symlinks. New files are `env.d.ts`, `tsconfig.json`, and, for MCP, a declaration for the generated validator. Recovered bytes are unchanged. `npm run typecheck:worker` is still the API-only recovered project and still reports 119 errors.
+
+| Command | Result |
+| --- | --- |
+| `npm test` | pass, 40 tests, 0 failed |
+| `npm run typecheck:workers` | pass, exit 0: api, audit, connector, mcp, ops, pages |
+| `npm run build:workers` | audit, connector, ops, pages pass as neutral bundles; MCP passes only as a Node-platform bundle |
+| `npm run build:worker` | pass, API bundle |
+| `npm run typecheck:worker` | fail, exit 2, 119 errors |
+| `npm run deploy` | fail, exit 1, refused |
+
+A neutral esbuild of the MCP entry fails. The published `agents@0.33.0` package imports `node:` modules, `cloudflare:email`, and `@modelcontextprotocol/sdk`, and its client dependency does not export `.` for a neutral bundle. `reconstruction/dist/mcp.js` is therefore a Node bundle with `cloudflare:*` left external. It is not a workerd artifact. Loading the public OAuth provider prints that Client ID Metadata Documents want the compatibility flag `global_fetch_strictly_public`. That flag is not in any recovered config, so it was not added.
+
+Public packages added for these entrypoints, not a recovered lockfile:
+
+| Package | Version | License |
+| --- | --- | --- |
+| `agents` | 0.33.0 | MIT |
+| `@modelcontextprotocol/server` | 2.4.0 | Apache-2.0 |
+| `@modelcontextprotocol/sdk` | 1.32.2 | MIT |
+| `@modelcontextprotocol/ext-apps` | 2.0.4 | MIT |
+| `@cloudflare/workers-oauth-provider` | 1.2.4 | MIT |
+| `ajv` | 8.20.0 | MIT |
+
+`ajv` is required by the recovered MCP validator, which calls `require("ajv/dist/runtime/...")` inside an ESM file. Tests load that file through a hook that supplies `require`. The file on disk is unchanged.
+
+The new tests exercise recovered behavior: audit keys and public-traffic refusal, connector HMAC and Graph path refusal, MCP URL and redirect failure, view-plan rejection of data props, ops restore disabled without a key, and pages 404 plus events dropped when consent is absent. No remote service is called.
+
 ## Still absent
 
-Original `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, and `wrangler.jsonc`. Company Brain SPA assets. Deployed compatibility date. Original dependency lockfile. Live Durable Object storage, Graph, Entra, Access, and the other workers' remote bindings. Pages HTML objects are not in the source archive. MCP uses `agents/mcp` and `@cloudflare/workers-oauth-provider`, which this API bundle does not compile.
+Original API `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, and every worker's `wrangler.jsonc` and compatibility date. Company Brain SPA assets. `env.ASSETS` is still unresolved; script-content GETs are not an SPA export, and no substitute UI was added. Live Durable Object storage, Graph, Entra, Access, R2 objects, and page HTML are not in the archives. A neutral workerd bundle of MCP is not produced by these public packages. A passing local build is not production, security, Microsoft identity, or live-refresh acceptance.

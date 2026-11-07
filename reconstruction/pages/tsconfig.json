@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "preserveSymlinks": true,
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": ["env.d.ts", "worker/src/**/*.ts"]
+}

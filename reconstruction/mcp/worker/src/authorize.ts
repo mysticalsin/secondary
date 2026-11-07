@@ -1,0 +1,1 @@
+../../../../recovered-other/secondary-mcp-dev/worker/src/authorize.ts

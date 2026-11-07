@@ -13,7 +13,9 @@ npm install --ignore-scripts --no-audit --no-fund
 npm test
 npm run typecheck
 npm run typecheck:reconstructed
+npm run typecheck:workers
 npm run build:worker
+npm run build:workers
 ```
 
-`npm test` runs the isolated recovered-code tests, including auth, tenant, and resource gates. `npm run typecheck` checks the shared packages and the Worker modules that do not need the missing files. `npm run typecheck:reconstructed` typechecks the whole API Worker through `reconstruction/`, where the three missing modules are new files derived from call sites. `npm run build:worker` writes a local esbuild bundle. `npm run typecheck:worker` still typechecks the recovered tree alone and fails. `npm run deploy` refuses.
+`npm test` runs the isolated recovered-code tests. `npm run typecheck:workers` typechecks the API reconstruction and the audit, connector, MCP, ops, and pages overlays. `npm run build:workers` writes local bundles. The MCP bundle uses the Node platform because the published `agents` package imports Node builtins. `npm run typecheck:worker` still typechecks the recovered API tree alone and fails. `npm run deploy` refuses.

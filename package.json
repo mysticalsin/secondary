@@ -11,11 +11,19 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
     "typecheck:reconstructed": "tsc --noEmit -p reconstruction/tsconfig.json",
+    "typecheck:workers": "node reconstruction/typecheck-workers.mjs",
     "build:worker": "esbuild reconstruction/worker-root/worker/src/index.ts --bundle --format=esm --platform=neutral --target=es2022 --outfile=reconstruction/dist/worker.js --preserve-symlinks --alias:@secondary/policy=./harness/adapters/policy-entry.ts --external:cloudflare:workers --banner:js=\"/* Local reconstruction bundle. Not a deployment artifact. */\"",
+    "build:workers": "node reconstruction/build-workers.mjs",
     "deploy": "node reconstruction/refuse-deploy.mjs"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^1.2.4",
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@modelcontextprotocol/server": "^2.4.0",
     "@openuidev/lang-core": "1.1.0",
+    "agents": "^0.33.0",
+    "ajv": "^8.20.0",
     "hono": "4.13.17",
     "jose": "6.2.15",
     "zod": "4.6.7"
