@@ -260,8 +260,8 @@ h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035
   display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%;
 }
 .pills {
-  width: fit-content; margin: 26px 0 22px; padding: 7px;
-  background: var(--nav); border-radius: 28px;
+  width: fit-content; margin: 18px 0 16px; padding: 4px;
+  background: #17121a; border-radius: 999px;
 }
 .pills a, .tabs button {
   border: 0; border-radius: 999px; font: inherit; font-size: 14px;
@@ -404,7 +404,7 @@ function mark(paths) {
  * @returns {string}
  */
 function textNav(links, currentHref) {
-  return `<nav aria-label="Second Brain">${links.map(([href, text]) =>
+  return `<nav class="capsule" aria-label="Second Brain">${links.map(([href, text]) =>
     `<a href="${href}"${href === currentHref ? ' aria-current="page"' : ""}>${esc(text)}</a>`,
   ).join("")}</nav>`;
 }
@@ -792,13 +792,16 @@ button { width:auto; background:var(--accent); color:white; cursor:pointer; }
 .switch button[aria-current="true"] { background:var(--accent); color:#fff; }
 .alert { color:var(--bad); font-weight:650; }
 .muted { color:var(--muted); }
+.capsule { display:flex; flex-wrap:wrap; gap:2px; width:fit-content; max-width:100%; background:#17121a; border-radius:999px; padding:4px; margin:0 0 16px; }
+.capsule a { color:#fff; text-decoration:none; font-size:13px; padding:6px 10px; border-radius:999px; }
+.capsule a[aria-current="page"] { background:#fff; color:#17121a; }
 :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
 @media (max-width:720px) { h1 { font-size:30px; } }
 </style></head><body><main class="frame">
 <p><a href="/settings">Settings</a> / Import</p>
 <h1>Import into your brain</h1>
 <p class="banner">${model.release ? "Deterministic import. No model was called. AI is disabled." : "Local preview"}</p>
-${model.links ? textNav(model.links, model.currentHref ?? "") : `<nav aria-label="Settings"><a href="/">Home</a> · <a href="/settings">Settings</a> · <a href="/brains/me">Personal brain</a> · <a href="/settings/observability?section=usage">Usage</a> · <a href="/reconstruction/import" aria-current="page">Import</a></nav>`}
+${textNav(model.links ?? RELEASE_APP_LINKS, model.currentHref ?? "/reconstruction/import")}
 <p class="muted">Paste text, or choose a .txt or .md file. Limit 7000 characters and 8000 bytes. Other types, path names, scripts, and URL fetches are refused. Model usage stays unknown.</p>
 <p>Signed in as <strong>${esc(model.who)}</strong> in <strong>${esc(model.tenant)}</strong>.</p>
 <details><summary>Session limits</summary>
@@ -910,9 +913,12 @@ h2 { margin: 0 0 4px; font-size: 18px; overflow-wrap: anywhere; }
 .body, .meta, .empty { overflow-wrap: anywhere; }
 .meta { color: var(--muted); font-size: 14px; }
 .alert { color: var(--bad); font-weight: 650; }
+.capsule { display:flex; flex-wrap:wrap; gap:2px; width:fit-content; max-width:100%; background:#17121a; border-radius:999px; padding:4px; margin:0 0 16px; }
+.capsule a { color:#fff; text-decoration:none; font-size:13px; padding:6px 10px; border-radius:999px; }
+.capsule a[aria-current="page"] { background:#fff; color:#17121a; }
 @media (max-width: 720px) { h1 { font-size: 30px; } .frame { padding: 20px 12px 48px; } }
 </style></head><body><main class="frame">
-${model.links ? textNav(model.links, model.currentHref ?? "") : `<nav aria-label="Settings"><a href="/">Home</a><a href="/settings">Settings</a><a href="/settings/observability">Observability</a><a href="/reconstruction/import">Import</a><a href="/brains/me" aria-current="page">Personal brain</a></nav>`}
+${textNav(model.links ?? RELEASE_APP_LINKS, model.currentHref ?? "/brains/me")}
 <p class="banner">Deterministic plan. No model was called. AI is disabled.</p>
 <h1>Your personal brain</h1>
 <p class="meta">Signed in as ${esc(plan.principalId || model.email || "unknown")} in ${esc(plan.tenantId || "unknown")}. The server chose this owner. A requested brain id is not a grant. Provider configuration is absent, so this is not a live model view.</p>
@@ -950,57 +956,281 @@ export function renderHome(model) {
   const activityLine = model.activity.state === "open" && model.activity.count !== null
     ? `${model.activity.count} review record${model.activity.count === 1 ? "" : "s"} stored for this sign-in.`
     : model.activity.detail;
-  const banner = model.surface === "preview"
-    ? "Opened from a file on this computer. No account was contacted. This file has no review records."
+  const statusLine = model.surface === "preview"
+    ? "Not signed in. No account was contacted. This file has no review records."
     : "Signed in. No model was called. AI is disabled.";
+  /**
+   * @param {string} state
+   * @returns {string}
+   */
+  const chip = (state) => {
+    const label = { empty: "Empty", open: "Stored", denied: "Not open", unavailable: "Not loaded", unknown: "Unknown", recorded: "Recorded" }[state] ?? "Unknown";
+    const kind = state === "denied" ? "bad" : state === "open" || state === "recorded" ? "ok" : "unknown";
+    return `<span class="chip ${kind}">${esc(label)}</span>`;
+  };
+  /**
+   * @param {string} state
+   * @param {number | null} value
+   * @returns {string}
+   */
+  const metric = (state, value) => {
+    if (state === "open" && value !== null) return String(value);
+    if (state === "empty") return "None";
+    if (state === "recorded") return "Recorded";
+    if (state === "denied") return "Not open";
+    return "Unknown";
+  };
+  const notesMetric = metric(model.brain.state, model.brain.state === "open" ? model.brain.shown : null);
+  const reviewMetric = metric(model.activity.state, model.activity.count);
+  const usageMetric = model.usage.state === "empty" ? "None" : model.usage.state === "recorded" ? "Recorded" : "Unknown";
+  /** @type {{ kind: string, href: string, label: string, hint: string, filter: string }[]} */
+  const actions = [
+    ...model.links.map(([link, label]) => ({ kind: "go", href: link, label: `Go to ${label}`, hint: "Open this page", filter: label.toLowerCase() })),
+    { kind: "limits", href: href("Import"), label: "Show what this screen will not do", hint: "No model, no approval, no agent run", filter: "limits" },
+  ];
+  const rows = [
+    ["notes", "Personal brain", "Notes", model.brain.state, brainLine, href("Personal brain")],
+    ["reviews", "Review activity", "Reviews", model.activity.state, activityLine, href("Activity")],
+    ["usage", "Usage ledger", "Usage", model.usage.state, model.usage.detail, href("Observability")],
+  ];
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Second Brain</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236600ae'/%3E%3C/svg%3E">
-<style>${OBS_CSS}</style></head><body>
-<main class="frame">
-  <p class="eyebrow">Mantu</p>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%2317121a'/%3E%3C/svg%3E">
+<style>
+:root { color-scheme: light; --canvas:#e6e4e8; --ink:#17121a; --muted:#6a6570; --line:#e6e4e8; --accent:#5b4fd6; --bad:#c70e1d; --ok:#1e6b34; }
+* { box-sizing: border-box; }
+html, body { margin: 0; max-width: 100%; }
+body { background: var(--canvas); color: var(--ink); font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; }
+button, input { font: inherit; }
+.top { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); align-items: center; gap: 10px; max-width: 1120px; margin: 0 auto; padding: 14px 16px 6px; }
+.brand { font-size: 13px; font-weight: 720; letter-spacing: -0.03em; }
+.capsule { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; background: #17121a; color: #fff; border-radius: 999px; padding: 3px; max-width: 100%; }
+.capsule a { color: #fff; text-decoration: none; font-size: 13px; padding: 6px 11px; border-radius: 999px; white-space: nowrap; }
+.capsule a[aria-current="page"] { background: #fff; color: #17121a; }
+.utils { justify-self: end; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.who { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
+.util { border: 1px solid #d8d5db; background: #fff; border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.util kbd { font: inherit; color: var(--muted); }
+.workspace { max-width: 1120px; margin: 8px auto 28px; background: #fff; border: 1px solid #dddbe0; border-radius: 18px; padding: 16px 16px 18px; min-width: 0; }
+h1 { margin: 0; font-size: 22px; line-height: 1.15; letter-spacing: -0.03em; font-weight: 640; }
+.sub, .notice { margin: 4px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.notice { color: var(--bad); }
+.filters { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 12px; }
+.filters button { border: 0; background: transparent; color: var(--muted); border-radius: 8px; padding: 5px 9px; cursor: pointer; }
+.filters button[aria-pressed="true"] { background: #f3f1f4; color: var(--ink); }
+.band { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; background: #1b2433; color: #fff; border-radius: 14px; padding: 12px 4px; margin: 12px 0; }
+.band div { padding: 0 12px; min-width: 0; }
+.band .k { color: #b7c0ce; font-size: 11px; }
+.band .n { font-size: 22px; font-weight: 620; letter-spacing: -0.03em; margin: 1px 0; overflow-wrap: anywhere; }
+.band .s { color: #8b95a6; font-size: 11px; }
+.table-wrap { max-width: 100%; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-size: 11px; font-weight: 620; color: #6d6872; padding: 7px 10px; border-bottom: 1px solid #eee; }
+td { padding: 9px 10px; border-bottom: 1px solid #f2f1f4; vertical-align: middle; }
+td:last-child { overflow-wrap: anywhere; }
+td a { color: inherit; }
+.chip { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef0f3; color: #3c4454; white-space: nowrap; }
+.chip.ok { background: #e6f6ea; color: var(--ok); }
+.chip.bad { background: #fff1f1; color: var(--bad); }
+.chip.unknown { background: #eef0f3; color: #5c6574; }
+.overlay[hidden] { display: none; }
+.overlay { position: fixed; inset: 0; z-index: 20; background: rgba(23,18,26,.38); display: grid; align-items: start; justify-content: center; padding: 11vh 16px 16px; }
+.panel { width: min(560px, 100%); background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(23,18,26,.18); overflow: hidden; }
+.panel header, .panel p { padding: 0 16px; }
+.panel h2 { margin: 14px 16px 6px; font-size: 16px; letter-spacing: -0.02em; }
+.panel input { width: 100%; border: 0; border-bottom: 1px solid #eee; padding: 14px 16px; outline: none; font-size: 15px; }
+.panel [role="option"], .panel .close, .panel .go { display: block; width: 100%; text-align: left; background: #fff; border: 0; padding: 10px 16px; cursor: pointer; }
+.panel [role="option"][aria-selected="true"] { background: #f6f4fb; box-shadow: inset 2px 0 0 var(--accent); }
+.panel .hint { color: var(--muted); font-size: 12px; }
+.panel .actions { display: flex; gap: 8px; padding: 12px 16px 16px; }
+.panel .actions a, .panel .actions button { width: auto; border-radius: 999px; padding: 8px 12px; text-decoration: none; font-size: 13px; }
+.panel .actions button { border: 1px solid #ddd; background: #fff; cursor: pointer; }
+.panel .actions a { background: #17121a; color: #fff; }
+@media (max-width: 720px) {
+  .top { grid-template-columns: 1fr auto; }
+  .capsule { grid-column: 1 / -1; justify-content: flex-start; }
+  .band { grid-template-columns: 1fr 1fr; gap: 10px 0; }
+  h1 { font-size: 20px; }
+  thead { display: none; }
+  table, tbody { display: block; width: 100%; }
+  tr:not([hidden]) { display: block; width: 100%; padding: 8px 0 10px; border-bottom: 1px solid #f2f1f4; }
+  tr[hidden] { display: none; }
+  td { display: block; width: 100%; border: 0; padding: 1px 0; }
+  td:nth-child(2) { color: #6d6872; font-size: 12px; }
+}
+</style></head><body>
+<header class="top">
+  <div class="brand">Mantu</div>
+  <nav class="capsule" aria-label="Second Brain">${model.links.map(([link, label]) => `<a href="${esc(link)}"${link === model.currentHref ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("")}</nav>
+  <div class="utils">
+    <span class="who">${esc(model.who)}</span>
+    <button class="util" id="open-palette" type="button">Search <kbd>Ctrl K</kbd></button>
+  </div>
+</header>
+<main class="workspace">
   <h1>Second Brain</h1>
-  <p class="lede">Notes, personal brain, and review activity for this sign-in. Cost, uptime, and agent coverage are not measured here.</p>
-  <p class="banner"><i></i>${esc(banner)}</p>
-  <p class="muted">Shown for <strong>${esc(model.who)}</strong> · <strong>${esc(model.tenant)}</strong>.</p>
-  ${model.notice ? `<p class="alert" role="status">${esc(model.notice)}</p>` : ""}
-  ${appPills(model.links, model.currentHref, "Second Brain")}
-  <section class="home-grid" aria-label="Work">
-    <article class="dest">
-      <p class="k">Personal brain</p>
-      <h2>${model.brain.state === "empty" ? "No notes yet" : model.brain.state === "denied" ? "Not open" : model.brain.state === "unavailable" ? "Not loaded" : "Your notes"}</h2>
-      <p>${esc(brainLine)}</p>
-      <a class="goto" href="${esc(href("Personal brain"))}">Open personal brain</a>
-    </article>
-    <article class="dest">
-      <p class="k">Review activity</p>
-      <h2>${model.activity.state === "empty" ? "Nothing imported" : model.activity.state === "unavailable" ? "Not loaded" : "Imported reviews"}</h2>
-      <p>${esc(activityLine)}</p>
-      <a class="goto" href="${esc(href("Activity"))}">Open activity</a>
-    </article>
-    <article class="dest">
-      <p class="k">Observability</p>
-      <h2>Status is unknown</h2>
-      <p>${esc(model.usage.detail)}</p>
-      <a class="goto" href="${esc(href("Observability"))}">Open observability</a>
-    </article>
-    <article class="dest">
-      <p class="k">Import</p>
-      <h2>Add a note</h2>
-      <p>Paste text or a .txt or .md file into your personal brain. The form cannot grant a person, a tenant, or model usage.</p>
-      <a class="goto" href="${esc(href("Import"))}">Open import</a>
-    </article>
+  <p class="sub">${esc(statusLine)} ${esc(model.tenant)}.</p>
+  ${model.notice ? `<p class="notice" role="status">${esc(model.notice)}</p>` : ""}
+  <div class="filters" role="toolbar" aria-label="Rows">
+    <button type="button" data-filter="all" aria-pressed="true">All</button>
+    <button type="button" data-filter="notes" aria-pressed="false">Notes</button>
+    <button type="button" data-filter="reviews" aria-pressed="false">Reviews</button>
+    <button type="button" data-filter="usage" aria-pressed="false">Usage</button>
+  </div>
+  <section class="band" aria-label="Not a live scoreboard">
+    <div><p class="k">Notes</p><p class="n">${esc(notesMetric)}</p><p class="s">${model.brain.state === "empty" ? "Nothing stored" : "Stored notes, or unknown"}</p></div>
+    <div><p class="k">Reviews</p><p class="n">${esc(reviewMetric)}</p><p class="s">Imported records only</p></div>
+    <div><p class="k">Usage</p><p class="n">${esc(usageMetric)}</p><p class="s">Not a token total</p></div>
+    <div><p class="k">Cost</p><p class="n">Unknown</p><p class="s">No price list. Not zero.</p></div>
+    <div><p class="k">Uptime</p><p class="n">Unknown</p><p class="s">Not measured</p></div>
   </section>
-  <section class="unknowns" aria-label="Not measured">
-    <article><p class="k">Cost</p><p class="value">Unknown</p><p class="muted">No price list is loaded. Unknown is not zero.</p></article>
-    <article><p class="k">Uptime</p><p class="value">Unknown</p><p class="muted">This page does not report live uptime.</p></article>
-    <article><p class="k">Agent coverage</p><p class="value">Unknown</p><p class="muted">No live agent roster is claimed from this home screen.</p></article>
-    <article><p class="k">Freshness</p><p class="value">Unknown</p><p class="muted">Source refresh success is not reported.</p></article>
-  </section>
-  <details>
-    <summary>Where these facts come from</summary>
-    <p class="muted">Personal-brain wording comes from the stored plan for this sign-in, or says it did not load. Review counts come only from records already imported for this sign-in. Cost, uptime, agent coverage, and freshness stay unknown because this screen does not measure them. ${model.surface === "preview" ? "This file does not call a server and does not contain review records." : "The release edge chooses the person from the verified token. A requested id is not a grant."}</p>
-  </details>
-</main></body></html>`;
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Item</th><th>Kind</th><th>Status</th><th>Detail</th></tr></thead>
+      <tbody>
+        ${rows.map(([kind, item, group, state, detail, link]) => `<tr data-kind="${kind}"><td><a href="${esc(link)}">${esc(item)}</a></td><td>${esc(group)}</td><td>${chip(state)}</td><td>${esc(detail)}</td></tr>`).join("")}
+        <tr data-kind="none" hidden><td colspan="4">No rows in this filter.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+<div class="overlay" id="palette" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="palette-title">
+    <h2 id="palette-title">Command palette</h2>
+    <input id="palette-q" type="text" placeholder="Search pages" autocomplete="off">
+    <div id="palette-list" role="listbox" aria-label="Actions"></div>
+  </div>
+</div>
+<div class="overlay" id="limits" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="limits-title">
+    <h2 id="limits-title">What this screen will not do</h2>
+    <p>It does not start an agent, approve a plan, or check a security policy. Nothing here is a completed run.</p>
+    <p>Opening Import does not store a note until that page is submitted in the signed-in app. This dialog does not submit anything.</p>
+    <p>Cost, uptime, and agent coverage stay unknown. Unknown is not zero.</p>
+    <div class="actions">
+      <button class="close" id="close-limits" type="button">Close</button>
+      <a class="go" href="${esc(href("Import"))}">Go to import</a>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  const actions = ${JSON.stringify(actions)};
+  const palette = document.getElementById("palette");
+  const limits = document.getElementById("limits");
+  const input = document.getElementById("palette-q");
+  const list = document.getElementById("palette-list");
+  const openBtn = document.getElementById("open-palette");
+  const closeLimitsBtn = document.getElementById("close-limits");
+  let active = 0;
+  let lastFocus = null;
+  let shown = actions.slice();
+  function matches(item, query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (item.label + " " + item.hint + " " + item.filter).toLowerCase().includes(q);
+  }
+  function render(query) {
+    shown = actions.filter((item) => matches(item, query));
+    if (active >= shown.length) active = 0;
+    list.replaceChildren();
+    shown.forEach((item, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", index === active ? "true" : "false");
+      button.innerHTML = item.label + '<div class="hint">' + item.hint + "</div>";
+      button.addEventListener("click", () => { active = index; activate(); });
+      list.appendChild(button);
+    });
+    if (!shown.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "No matching page.";
+      list.appendChild(empty);
+    }
+  }
+  function openPalette() {
+    lastFocus = document.activeElement;
+    limits.hidden = true;
+    palette.hidden = false;
+    input.value = "";
+    render("");
+    input.focus();
+  }
+  function closePalette() {
+    palette.hidden = true;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  function openLimits() {
+    lastFocus = lastFocus || document.activeElement;
+    palette.hidden = true;
+    limits.hidden = false;
+    closeLimitsBtn.focus();
+  }
+  function closeLimits() {
+    limits.hidden = true;
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+  function move(step) {
+    if (!shown.length) return;
+    active = (active + step + shown.length) % shown.length;
+    render(input.value);
+  }
+  function activate() {
+    const item = shown[active];
+    if (!item) return;
+    if (item.kind === "limits") { openLimits(); return; }
+    location.href = item.href;
+  }
+  function trap(event, root) {
+    if (event.key !== "Tab" || root.hidden) return;
+    const nodes = [...root.querySelectorAll("a, button, input")].filter((el) => !el.disabled);
+    if (!nodes.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+  openBtn.addEventListener("click", openPalette);
+  closeLimitsBtn.addEventListener("click", closeLimits);
+  input.addEventListener("input", () => { active = 0; render(input.value); });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); move(1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); move(-1); }
+    else if (event.key === "Enter") { event.preventDefault(); activate(); }
+  });
+  document.addEventListener("keydown", (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      if (palette.hidden) openPalette();
+      else closePalette();
+      return;
+    }
+    if (event.key === "Escape") {
+      if (!limits.hidden) { event.preventDefault(); closeLimits(); return; }
+      if (!palette.hidden) { event.preventDefault(); closePalette(); }
+    }
+    trap(event, palette);
+    trap(event, limits);
+  });
+  document.querySelectorAll("[data-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const filter = button.getAttribute("data-filter");
+      document.querySelectorAll("[data-filter]").forEach((peer) => peer.setAttribute("aria-pressed", peer === button ? "true" : "false"));
+      let visible = 0;
+      document.querySelectorAll("tbody tr[data-kind]").forEach((row) => {
+        const kind = row.getAttribute("data-kind");
+        const show = kind !== "none" && (filter === "all" || kind === filter);
+        row.hidden = !show;
+        if (show) visible += 1;
+      });
+      const none = document.querySelector('tr[data-kind="none"]');
+      if (none) none.hidden = visible !== 0;
+    });
+  });
+})();
+</script>
+</body></html>`;
 }

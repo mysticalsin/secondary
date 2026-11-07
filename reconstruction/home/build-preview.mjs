@@ -126,15 +126,14 @@ mkdirSync(outDir, { recursive: true });
 for (const [name, html] of Object.entries(files)) {
   writeFileSync(`${outDir}/${name}`, html);
 }
-writeFileSync(`${outDir}/RUN.txt`, `Mantu Second Brain — home preview
+writeFileSync(`${outDir}/RUN.txt`, `Mantu Second Brain — home candidate
 
-Open index.html in this folder. It is the same home screen the reconstructed app renders at /.
-This folder is not signed in. It does not contain review records, credentials, or a live session.
-Personal brain, Import, Observability, and Activity are the same renderers with empty or unknown data.
-The deployed app you already saw is older and does not include this home screen.
+Open index.html. It is the same home screen the reconstructed app renders at /.
+This folder is a new candidate. It does not replace the earlier preview folder.
+This file is not signed in. It has no review records and no credentials.
+Search, or press Ctrl K or Command K, opens the command palette. Escape closes it.
+Personal brain, Import, Observability, and Activity are linked pages. Do not submit the import form here; it cannot store a note.
 
-From this folder you can also run:
-  python3 -m http.server 43158 --bind 127.0.0.1
-and open http://127.0.0.1:43158/
+The earlier delivered preview remains a different version.
 `);
 console.log(dirname(`${outDir}/index.html`));

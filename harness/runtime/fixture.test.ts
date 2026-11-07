@@ -38,7 +38,8 @@ test("the fixture home is the Second Brain dashboard and settings keeps the capt
     assert.equal(res.headers.get("x-secondary-fixture"), "reconstruction");
     const text = await res.text();
     assert.equal(text.includes("Second Brain"), true);
-    assert.equal(text.includes("Open personal brain"), true);
+    assert.equal(text.includes("/brains/me"), true);
+    assert.equal(text.includes("Command palette"), true);
     assert.equal(text.includes("/settings/observability"), true);
     assert.equal(text.includes("/reconstruction/import"), true);
     assert.equal(text.includes("Unknown"), true);

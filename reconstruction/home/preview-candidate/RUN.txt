@@ -1,0 +1,9 @@
+Mantu Second Brain — home candidate
+
+Open index.html. It is the same home screen the reconstructed app renders at /.
+This folder is a new candidate. It does not replace the earlier preview folder.
+This file is not signed in. It has no review records and no credentials.
+Search, or press Ctrl K or Command K, opens the command palette. Escape closes it.
+Personal brain, Import, Observability, and Activity are linked pages. Do not submit the import form here; it cannot store a note.
+
+The earlier delivered preview remains a different version.
