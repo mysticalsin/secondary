@@ -27,6 +27,14 @@ interface Env {
   MCP?: { fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response> };
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function asText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
 const ASSETS: Record<string, { type: string; body: string }> = {
   "/assets/index-DiBYRwP4.css": { type: "text/css; charset=utf-8", body: shellCss },
   "/assets/index-PLmoiPYI.js": { type: "text/javascript; charset=utf-8", body: shellJs },
@@ -104,7 +112,7 @@ function notice(result: string | null): string {
 
 async function importPage(env: Env, email: string, message: string) {
   const listed = await signedFetch(env, email, "GET", "/harness/import?limit=20");
-  const body = listed.ok ? await listed.json() : { items: [] as unknown[] };
+  const body = asRecord(listed.ok ? await listed.json() : {});
   const rows = Array.isArray(body.items) ? body.items : [];
   return renderImport({
     who: email,
@@ -122,14 +130,14 @@ async function importPage(env: Env, email: string, message: string) {
 
 async function observability(env: Env, email: string, url: URL, message = "") {
   const ledgerResponse = await signedFetch(env, email, "GET", `/harness/ledger?${url.searchParams.toString()}`);
-  const ledger = ledgerResponse.ok ? await ledgerResponse.json() : { events: [], summary: null, error: "unavailable", status: ledgerResponse.status };
+  const ledger = asRecord(ledgerResponse.ok ? await ledgerResponse.json() : { events: [], summary: null, error: "unavailable", status: ledgerResponse.status });
   const activityQuery = new URLSearchParams();
   for (const key of ["q", "capture", "kind", "date", "record"]) {
     const value = url.searchParams.get(key);
     if (value) activityQuery.set(key, value);
   }
   const activityResponse = await signedFetch(env, email, "GET", `/harness/activity?${activityQuery.toString()}`);
-  const activityBody = activityResponse.ok || activityResponse.status === 404 ? await activityResponse.json().catch(() => ({})) : {};
+  const activityBody = asRecord(activityResponse.ok || activityResponse.status === 404 ? await activityResponse.json().catch(() => ({})) : {});
   const result = url.searchParams.get("result");
   const notice = message || (result === "stored" ? "Imported. The list below is the server read-back." : result === "partial" ? "Imported the complete lines. The final line was incomplete, so this is not a full snapshot." : result === "conflict" ? "A record id was already stored with different contents. Nothing was overwritten." : "");
   return renderObservability({
@@ -152,7 +160,7 @@ async function observability(env: Env, email: string, url: URL, message = "") {
       status: ledgerResponse.status,
       events: Array.isArray(ledger.events) ? ledger.events : [],
       summary: ledger.summary ?? null,
-      error: ledger.reason || ledger.error || "",
+      error: asText(ledger.reason) || asText(ledger.error),
       operation: url.searchParams.get("operation") ?? "",
       trust: url.searchParams.get("trust") ?? "",
       requestId: url.searchParams.get("requestId") ?? "",
@@ -217,7 +225,7 @@ export default {
         if (params.get(field)) return text("foreign_principal\n", 403);
       }
       const saved = await signedFetch(env, who.email, "POST", "/harness/activity", JSON.stringify({ ndjson: params.get("ndjson") ?? "" }));
-      const body = await saved.json().catch(() => ({ reason: "unavailable" }));
+      const body = asRecord(await saved.json().catch(() => ({ reason: "unavailable" })));
       const result = saved.status === 200 ? (body.snapshot_complete === false ? "partial" : "stored") : saved.status === 409 ? "conflict" : "rejected";
       if (result === "rejected") {
         return text(await observability(env, who.email, new URL(`${url.origin}/settings/observability?section=activity`), `Not imported (${body.reason || body.error || saved.status}). Nothing was written.`), 400, "text/html; charset=utf-8");
@@ -239,7 +247,7 @@ export default {
         text: params.get("text") ?? "",
         ...(params.get("filename") ? { filename: params.get("filename") } : {}),
       }));
-      const body = await saved.json().catch(() => ({ error: "unavailable" }));
+      const body = asRecord(await saved.json().catch(() => ({ error: "unavailable" })));
       const result = saved.status === 201 ? "stored" : body.outcome === "duplicate" ? "duplicate" : saved.status === 409 ? "conflict" : "rejected";
       if (result === "rejected") {
         return text(await importPage(env, who.email, `Not stored (${String(body.reason || body.error || saved.status)}). Nothing new was written.`), 400, "text/html; charset=utf-8");

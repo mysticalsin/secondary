@@ -1,6 +1,7 @@
 /**
  * Typecheck each recovered Worker through its reconstruction overlay.
- * Does not typecheck the API recovered tree; that command stays typecheck:worker.
+ * The API project includes the derived worker, the release edge, and the harness.
+ * typecheck:worker remains the original recovered tree without those modules.
  */
 import { spawnSync } from "node:child_process";
 

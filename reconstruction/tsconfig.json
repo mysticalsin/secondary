@@ -11,7 +11,10 @@
     "env.d.ts",
     "worker-root/worker/src/**/*.ts",
     "packages/**/*.ts",
-    "../harness/adapters/policy-entry.ts"
+    "../harness/adapters/policy-entry.ts",
+    "release/**/*.ts",
+    "release/**/*.d.ts",
+    "workerd/api-harness.ts"
   ],
   "exclude": []
 }

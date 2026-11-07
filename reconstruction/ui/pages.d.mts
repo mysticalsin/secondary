@@ -1,0 +1,52 @@
+export function renderObservability(model: {
+  roleLabel: string;
+  principalId: string;
+  tenantId: string;
+  persona: string;
+  prefMessage: string;
+  section: string;
+  release: boolean;
+  preset: string;
+  routes: { path: string; status: string; meaning: string }[];
+  ready: { kind: string; label: string; detail: string; technical: string };
+  health: { kind: string; label: string; detail: string };
+  ai: { kind: string; label: string; detail: string };
+  agentRows: string;
+  audit: { kind: string; label: string; detail: string; raw: string };
+  lang: string;
+  ledger: {
+    status: number;
+    events: { trust?: string; evidence?: string; operation?: string; outcome?: string; inputTokens?: number | null; requestId?: string }[];
+    summary: unknown;
+    error: string;
+    operation: string;
+    trust: string;
+    requestId: string;
+  };
+  activity?: {
+    items: unknown[];
+    detail: unknown;
+    empty: boolean;
+    snapshot_complete: boolean;
+    message: string;
+    failed: boolean;
+    q: string;
+    capture: string;
+    kind: string;
+    date: string;
+  };
+}): string;
+export function renderImport(model: {
+  who: string;
+  tenant: string;
+  message: string;
+  items: unknown[];
+  kept: number;
+  total: number;
+  shown: number;
+  coverage: string;
+  preset: string;
+  release: boolean;
+}): string;
+export function renderPersonal(model: { status: number; plan: unknown; email: string }): string;
+export function renderGenui(state: unknown): string;

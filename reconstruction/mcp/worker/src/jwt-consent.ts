@@ -4,8 +4,6 @@
  * x-dev-email and x-dev-persona are not read. Persona is not copied onto the grant.
  */
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
-// The validator is plain mjs shared with the release edge. This project has no mjs resolver.
-// @ts-expect-error module has a sibling declaration for other projects, not this overlay
 import { admittedTenant, tokenFromRequest, verifyRemoteJwt } from "../../../release/jwks-validator.mjs";
 import { writeAudit } from "./audit.ts";
 import { allowedRedirects, isRedirectAllowed, SCOPES, type AuthProps, type Scope } from "./config.ts";

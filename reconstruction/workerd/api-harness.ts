@@ -56,18 +56,18 @@ async function sessionIdentity(
 }
 
 async function ownItem(env: HarnessEnv, tenantId: string, principalId: string, id: string) {
-  const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as DurableObjectStub<{
+  const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as unknown as {
     get(id: string): Promise<{ id: string; body: string | null; authorId: string | null; kind?: string } | null>;
-  }>;
+  };
   const item = await stub.get(id);
   if (!item || item.kind !== "personalitem") return null;
   return item;
 }
 
 async function ownItems(env: HarnessEnv, tenantId: string, principalId: string) {
-  const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as DurableObjectStub<{
+  const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as unknown as {
     listByKind(kind: string, limit: number): Promise<{ id: string; body: string | null; authorId: string | null; createdAt: number }[]>;
-  }>;
+  };
   const rows = await stub.listByKind("personalitem", 100);
   return Array.isArray(rows) ? rows : [];
 }
@@ -565,7 +565,9 @@ async function activityGate(request: Request, env: HarnessEnv, ctx: ExecutionCon
   if (request.method === "GET") {
     const listed = await importRpc(env, who.tenantId, "/activity/list", { principalId: who.principalId });
     if (!listed.ok) return Response.json(listed.body, { status: listed.status });
-    const all = (Array.isArray(listed.body.records) ? listed.body.records : []).map((row) => JSON.parse(String(row.body)));
+    const meta = listed.body.meta as { incomplete?: boolean; readAt?: string | null; ledgerSha256?: string | null } | null | undefined;
+    const rows = Array.isArray(listed.body.records) ? listed.body.records : [];
+    const all = rows.map((row) => JSON.parse(String((row as { body?: unknown }).body)) as Parameters<typeof viewRecord>[0]);
     let records = all;
     const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
     const capture = url.searchParams.get("capture") ?? "";
@@ -587,10 +589,10 @@ async function activityGate(request: Request, env: HarnessEnv, ctx: ExecutionCon
       tenantId: who.tenantId,
       trusted_runtime_capture: false,
       coverage: "supplied records only",
-      snapshot_complete: listed.body.meta ? !listed.body.meta.incomplete : true,
-      read_at: listed.body.meta?.readAt ?? null,
+      snapshot_complete: meta ? !meta.incomplete : true,
+      read_at: meta?.readAt ?? null,
       last_finished_at: finishes.sort().at(-1) ?? null,
-      ledger_sha256: listed.body.meta?.ledgerSha256 ?? null,
+      ledger_sha256: meta?.ledgerSha256 ?? null,
       items: records.map(viewRecord),
       ...(detail ? { detail: viewRecord(detail) } : {}),
     });
@@ -698,9 +700,9 @@ export default {
     if (url.pathname === "/harness/workspace") {
       const name = url.searchParams.get("name") ?? "";
       const ns = env.WORKSPACE;
-      const stub = ns.get(ns.idFromName(name)) as DurableObjectStub<{
+      const stub = ns.get(ns.idFromName(name)) as unknown as {
         listByKind(kind: string, limit: number): Promise<unknown[]>;
-      }>;
+      };
       try {
         const rows = await stub.listByKind("note", 5);
         return Response.json({ count: Array.isArray(rows) ? rows.length : -1 });
