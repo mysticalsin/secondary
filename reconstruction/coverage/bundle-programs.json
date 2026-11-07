@@ -241,6 +241,11 @@
       "declaration": "reconstruction/release/routes.d.mts"
     },
     {
+      "body": "reconstruction/shared-documents/register.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/shared-documents/register.d.mts"
+    },
+    {
       "body": "reconstruction/ui/pages.mjs",
       "bodyInProgram": false,
       "declaration": "reconstruction/ui/pages.d.mts"
