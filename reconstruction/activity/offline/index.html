@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review activity · local</title>
+<style>
+:root { color-scheme: light; --canvas:#f8f6f9; --ink:#17121a; --accent:#6600ae; --line:#d8d8df; --muted:#5c5d6d; --bad:#c70e1d; --panel:#fff; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--canvas); color:var(--ink); font-family:ui-sans-serif,system-ui,sans-serif; }
+main { max-width:760px; margin:0 auto; padding:28px 16px 64px; }
+h1 { font-size:36px; letter-spacing:-0.03em; }
+label, textarea, input, select, button { font:inherit; }
+textarea, input, select { width:100%; border:1px solid var(--line); border-radius:12px; padding:10px; }
+button { background:var(--accent); color:#fff; border:0; border-radius:12px; padding:10px 14px; }
+.banner { display:inline-flex; padding:6px 12px; border-radius:999px; background:#fcf3ff; color:var(--accent); font-weight:650; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:16px; margin:12px 0; }
+.muted { color:var(--muted); }
+.alert { color:var(--bad); font-weight:650; }
+a { color:var(--accent); }
+@media (max-width:720px) { h1 { font-size:30px; } main { padding:20px 12px 48px; } }
+</style>
+</head>
+<body>
+<main>
+<p class="banner">Local loopback only. No model was called. AI is disabled. trusted_runtime_capture=false.</p>
+<h1>Review activity</h1>
+<p class="muted">This page does not contain review records. Paste an NDJSON ledger on this computer. Nothing is uploaded. Evidence paths are text and are not opened.</p>
+<label>Local label <input id="label" value="local"></label>
+<label>NDJSON <textarea id="ndjson" rows="8"></textarea></label>
+<p><button id="import" type="button">Import review records</button></p>
+<p id="status" role="status"></p>
+<form id="filters">
+<label>Search <input id="q"></label>
+<label>Capture <select id="capture"><option value="">Any</option><option>historical-manual</option><option>live-exporter</option></select></label>
+<label>Kind <select id="kind"><option value="">Any</option><option>static</option><option>runtime</option></select></label>
+<label>Date <input id="date" placeholder="YYYY-MM-DD"></label>
+<button type="submit">Filter</button>
+</form>
+<ul id="list"></ul>
+<article id="detail" class="card" hidden></article>
+</main>
+<script type="module">
+import { parseNdjson, sortRecords, viewRecord } from "./validate.mjs";
+const key = () => `activity:${document.getElementById("label").value || "local"}`;
+const status = document.getElementById("status");
+const list = document.getElementById("list");
+const detail = document.getElementById("detail");
+function load() { try { return JSON.parse(sessionStorage.getItem(key()) || "[]"); } catch { return []; } }
+function save(records) { sessionStorage.setItem(key(), JSON.stringify(records)); }
+function text(node, value) { node.textContent = value === null || value === undefined || value === "" ? "Not reported" : String(value); }
+function render() {
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const capture = document.getElementById("capture").value;
+  const kind = document.getElementById("kind").value;
+  const date = document.getElementById("date").value;
+  let records = load();
+  if (q) records = records.filter((record) => [record.record_id, record.session_id, record.notes, record.target?.label].join("\n").toLowerCase().includes(q));
+  if (capture) records = records.filter((record) => record.capture === capture);
+  if (kind) records = records.filter((record) => record.analysis_kind === kind);
+  if (date) records = records.filter((record) => String(record.started_at ?? "").startsWith(date) || String(record.finished_at ?? "").startsWith(date));
+  records = sortRecords(records).map(viewRecord);
+  list.replaceChildren();
+  if (records.length === 0) status.textContent = "No review records for this label. Nothing has been imported.";
+  for (const item of records) {
+    const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.id;
+    button.addEventListener("click", () => show(item));
+    li.append(button, " ", document.createTextNode(`${item.activity_label} · ${item.capture}`));
+    list.append(li);
+  }
+}
+function show(item) {
+  detail.hidden = false;
+  detail.replaceChildren();
+  const title = document.createElement("h2");
+  title.textContent = item.id;
+  const notes = document.createElement("p");
+  notes.textContent = item.untrusted_notes;
+  const paths = document.createElement("p");
+  paths.textContent = item.evidence_provenance_pointers.join("\n");
+  const tokens = document.createElement("p");
+  tokens.textContent = `${item.token_usage.label}: ${item.token_usage.value === null ? "Not reported" : item.token_usage.value}`;
+  const writes = document.createElement("p");
+  writes.textContent = item.observed_writes_detected === false
+    ? "writes_detected=false. A reported false is not proof that no transient writes occurred."
+    : "writes_detected=true. This page did not perform a write.";
+  detail.append(title, notes, paths, tokens, writes);
+}
+document.getElementById("label").addEventListener("change", () => { detail.hidden = true; render(); });
+document.getElementById("filters").addEventListener("submit", (event) => { event.preventDefault(); render(); });
+document.getElementById("import").addEventListener("click", async () => {
+  try {
+    const parsed = await parseNdjson(document.getElementById("ndjson").value);
+    const current = load();
+    const byId = new Map(current.map((record) => [record.record_id, record]));
+    for (const record of parsed.records) {
+      const prior = byId.get(record.record_id);
+      if (prior && JSON.stringify(prior) !== JSON.stringify(record)) throw Object.assign(new Error("conflict"), { reason: "conflicting_duplicate" });
+      byId.set(record.record_id, record);
+    }
+    save([...byId.values()]);
+    status.textContent = parsed.incomplete ? "Imported the complete lines. The final line was incomplete, so this is not a full snapshot." : "Imported. Coverage is the supplied records only.";
+    render();
+  } catch (error) {
+    status.textContent = `Not imported (${error.reason || "malformed_record"}). Nothing was written.`;
+    status.className = "alert";
+  }
+});
+render();
+</script>
+</body>
+</html>

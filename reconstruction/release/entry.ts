@@ -120,16 +120,25 @@ async function importPage(env: Env, email: string, message: string) {
   });
 }
 
-async function observability(env: Env, email: string, url: URL) {
+async function observability(env: Env, email: string, url: URL, message = "") {
   const ledgerResponse = await signedFetch(env, email, "GET", `/harness/ledger?${url.searchParams.toString()}`);
   const ledger = ledgerResponse.ok ? await ledgerResponse.json() : { events: [], summary: null, error: "unavailable", status: ledgerResponse.status };
+  const activityQuery = new URLSearchParams();
+  for (const key of ["q", "capture", "kind", "date", "record"]) {
+    const value = url.searchParams.get(key);
+    if (value) activityQuery.set(key, value);
+  }
+  const activityResponse = await signedFetch(env, email, "GET", `/harness/activity?${activityQuery.toString()}`);
+  const activityBody = activityResponse.ok || activityResponse.status === 404 ? await activityResponse.json().catch(() => ({})) : {};
+  const result = url.searchParams.get("result");
+  const notice = message || (result === "stored" ? "Imported. The list below is the server read-back." : result === "partial" ? "Imported the complete lines. The final line was incomplete, so this is not a full snapshot." : result === "conflict" ? "A record id was already stored with different contents. Nothing was overwritten." : "");
   return renderObservability({
     roleLabel: "Verified token",
     principalId: email,
     tenantId: String(ledger.tenantId ?? "unknown"),
     persona: "none",
     prefMessage: "",
-    section: url.searchParams.get("section") ?? "usage",
+    section: url.searchParams.get("section") ?? "status",
     release: true,
     preset: "person_a",
     routes: [],
@@ -147,6 +156,18 @@ async function observability(env: Env, email: string, url: URL) {
       operation: url.searchParams.get("operation") ?? "",
       trust: url.searchParams.get("trust") ?? "",
       requestId: url.searchParams.get("requestId") ?? "",
+    },
+    activity: {
+      items: Array.isArray(activityBody.items) ? activityBody.items : [],
+      detail: activityBody.detail ?? null,
+      empty: !Array.isArray(activityBody.items) || activityBody.items.length === 0,
+      snapshot_complete: activityBody.snapshot_complete !== false,
+      message: notice || (activityResponse.status === 404 ? "That review is not in this session." : ""),
+      failed: activityResponse.status === 404 || result === "conflict" || Boolean(message),
+      q: url.searchParams.get("q") ?? "",
+      capture: url.searchParams.get("capture") ?? "",
+      kind: url.searchParams.get("kind") ?? "",
+      date: url.searchParams.get("date") ?? "",
     },
   });
 }
@@ -189,6 +210,19 @@ export default {
     }
     if (request.method === "GET" && url.pathname === "/settings/observability") {
       return text(await observability(env, who.email, url), 200, "text/html; charset=utf-8");
+    }
+    if (request.method === "POST" && url.pathname === "/settings/observability/activity") {
+      const params = new URLSearchParams(await request.text());
+      for (const field of ["principalId", "owner", "tenantId", "tenant", "email"]) {
+        if (params.get(field)) return text("foreign_principal\n", 403);
+      }
+      const saved = await signedFetch(env, who.email, "POST", "/harness/activity", JSON.stringify({ ndjson: params.get("ndjson") ?? "" }));
+      const body = await saved.json().catch(() => ({ reason: "unavailable" }));
+      const result = saved.status === 200 ? (body.snapshot_complete === false ? "partial" : "stored") : saved.status === 409 ? "conflict" : "rejected";
+      if (result === "rejected") {
+        return text(await observability(env, who.email, new URL(`${url.origin}/settings/observability?section=activity`), `Not imported (${body.reason || body.error || saved.status}). Nothing was written.`), 400, "text/html; charset=utf-8");
+      }
+      return new Response(null, { status: 303, headers: { location: `/settings/observability?section=activity&result=${result}`, "cache-control": "no-store", "x-secondary-edge": "protected-dev" } });
     }
     if (request.method === "GET" && url.pathname === "/reconstruction/import") {
       return text(await importPage(env, who.email, notice(url.searchParams.get("result"))), 200, "text/html; charset=utf-8");

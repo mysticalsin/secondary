@@ -14,6 +14,7 @@ import { matchReceipt, readReceipt, sha256Hex, storedBody, validateImport, visib
 import { UsageLedger } from "../ledger/object.mjs";
 import { canonicalHash, personalBrain, syntheticFixture, validateClientReport } from "../ledger/policy.mjs";
 import { personalPlan } from "../personal/plan.mjs";
+import { brtNow, parseNdjson, recordHash, sortRecords, viewRecord } from "../activity/validate.mjs";
 
 export { TenantPolicy, Workspace, UsageLedger };
 
@@ -368,7 +369,7 @@ async function ledgerCaller(request: Request, env: HarnessEnv, ctx: ExecutionCon
   if (!verified.principal.client_id) {
     return Response.json({ error: "invalid_client", reason: "invalid_client" }, { status: 400 });
   }
-  return { ...who, clientId: verified.principal.client_id };
+  return { ...who, clientId: verified.principal.client_id, email: verified.principal.email };
 }
 
 function deniedBrain(who: { principalId: string; tenantId: string }, brain: unknown, tenantId: unknown, principalId: unknown) {
@@ -544,6 +545,88 @@ async function personalPlanGate(request: Request, env: HarnessEnv, ctx: Executio
   return Response.json(plan);
 }
 
+function identityMismatch(who: { principalId: string; tenantId: string; email?: string }, value: string | null, field: string) {
+  if (!value) return false;
+  if (field === "tenantId" || field === "tenant") return value !== who.tenantId;
+  if (field === "email") return value !== who.email;
+  return value !== who.principalId;
+}
+
+async function activityGate(request: Request, env: HarnessEnv, ctx: ExecutionContext): Promise<Response> {
+  const write = request.method === "POST";
+  const who = await ledgerCaller(request, env, ctx, write);
+  if (who instanceof Response) return who;
+  const url = new URL(request.url);
+  for (const field of ["principalId", "owner", "tenantId", "tenant", "email"]) {
+    if (identityMismatch(who, url.searchParams.get(field), field)) {
+      return Response.json({ error: "foreign_principal", reason: "foreign_principal" }, { status: 403 });
+    }
+  }
+  if (request.method === "GET") {
+    const listed = await importRpc(env, who.tenantId, "/activity/list", { principalId: who.principalId });
+    if (!listed.ok) return Response.json(listed.body, { status: listed.status });
+    const all = (Array.isArray(listed.body.records) ? listed.body.records : []).map((row) => JSON.parse(String(row.body)));
+    let records = all;
+    const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+    const capture = url.searchParams.get("capture") ?? "";
+    const kind = url.searchParams.get("kind") ?? "";
+    const date = url.searchParams.get("date") ?? "";
+    if (q) {
+      records = records.filter((record) => [record.record_id, record.session_id, record.notes, record.target?.label].join("\n").toLowerCase().includes(q));
+    }
+    if (capture) records = records.filter((record) => record.capture === capture);
+    if (kind) records = records.filter((record) => record.analysis_kind === kind);
+    if (date) records = records.filter((record) => String(record.started_at ?? "").startsWith(date) || String(record.finished_at ?? "").startsWith(date));
+    records = sortRecords(records);
+    const recordId = url.searchParams.get("record");
+    const detail = recordId ? all.find((record) => record.record_id === recordId) ?? null : null;
+    if (recordId && !detail) return Response.json({ error: "not_found", reason: "not_found", items: records.map(viewRecord) }, { status: 404 });
+    const finishes = records.map((record) => record.finished_at).filter((value) => typeof value === "string");
+    return Response.json({
+      principalId: who.principalId,
+      tenantId: who.tenantId,
+      trusted_runtime_capture: false,
+      coverage: "supplied records only",
+      snapshot_complete: listed.body.meta ? !listed.body.meta.incomplete : true,
+      read_at: listed.body.meta?.readAt ?? null,
+      last_finished_at: finishes.sort().at(-1) ?? null,
+      ledger_sha256: listed.body.meta?.ledgerSha256 ?? null,
+      items: records.map(viewRecord),
+      ...(detail ? { detail: viewRecord(detail) } : {}),
+    });
+  }
+  if (!write) return Response.json({ error: "method" }, { status: 405 });
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(await request.text()) as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: "invalid_json", reason: "invalid_json" }, { status: 400 });
+  }
+  for (const field of ["principalId", "owner", "tenantId", "tenant", "email"]) {
+    const value = payload[field];
+    if (typeof value === "string" && identityMismatch(who, value, field)) {
+      return Response.json({ error: "foreign_principal", reason: "foreign_principal" }, { status: 403 });
+    }
+  }
+  let parsed;
+  try {
+    parsed = await parseNdjson(String(payload.ndjson ?? ""));
+  } catch (error) {
+    const reason = error instanceof Error && "reason" in error ? String((error as { reason?: string }).reason) : "malformed_record";
+    return Response.json({ error: reason, reason }, { status: 400 });
+  }
+  const saved = await importRpc(env, who.tenantId, "/activity/apply", {
+    principalId: who.principalId,
+    ledgerSha256: parsed.ledgerSha256,
+    incomplete: parsed.incomplete,
+    readAt: brtNow(),
+    byteLength: parsed.byteLength,
+    records: await Promise.all(parsed.records.map(async (record) => ({ record_id: record.record_id, hash: await recordHash(record), body: JSON.stringify(record) }))),
+  });
+  if (!saved.ok) return Response.json(saved.body, { status: saved.status });
+  return Response.json({ ...saved.body, snapshot_complete: !parsed.incomplete, trusted_runtime_capture: false }, { status: 200 });
+}
+
 async function genuiGate(request: Request, env: HarnessEnv, ctx: ExecutionContext) {
   const raw = await request.text();
   const next = () => app.fetch(new Request(request.url, { method: request.method, headers: request.headers, body: raw }), env, ctx);
@@ -606,6 +689,7 @@ export default {
     env = shimLocalDurableObjects(env);
     const url = new URL(request.url);
     if (url.pathname === "/harness/personal/plan") return personalPlanGate(request, env, ctx);
+    if (url.pathname === "/harness/activity") return activityGate(request, env, ctx);
     if (url.pathname === "/v1/genui/plan" && request.method === "POST") return genuiGate(request, env, ctx);
     if (url.pathname === "/harness/ledger" || url.pathname === "/harness/ledger/fixture") {
       return ledgerGate(request, env, ctx);

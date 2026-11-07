@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "relay.codex-review-run/1"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^relay-[a-zA-Z0-9-]+$"
+    },
+    "capture": {
+      "enum": [
+        "historical-manual",
+        "live-exporter"
+      ]
+    },
+    "agent": {
+      "const": "Relay"
+    },
+    "tool": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "codex-cli"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "machine_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoning_effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sandbox": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "machine_label",
+        "model",
+        "reasoning_effort",
+        "sandbox"
+      ],
+      "additionalProperties": false
+    },
+    "session_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "started_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}-03:00$"
+    },
+    "finished_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}-03:00$"
+    },
+    "timezone": {
+      "const": "America/Sao_Paulo"
+    },
+    "analysis_kind": {
+      "enum": [
+        "static",
+        "runtime"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "archive_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bundle_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "tree": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "baseline_head": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{40}$"
+        },
+        "patch_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "label",
+        "archive_sha256",
+        "bundle_sha256",
+        "tree",
+        "baseline_head",
+        "patch_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "properties": {
+        "completed": {
+          "type": "boolean"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "overall_verdict": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "high": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "medium": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "low": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "fixed": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "cannot_determine": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "required": [
+            "high",
+            "medium",
+            "low",
+            "fixed",
+            "cannot_determine"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "completed",
+        "exit_code",
+        "overall_verdict",
+        "counts"
+      ],
+      "additionalProperties": false
+    },
+    "tokens_used": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "writes_detected": {
+      "type": "boolean"
+    },
+    "context_scope": {
+      "type": "object",
+      "properties": {
+        "usual_notes_loaded": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "out_of_folder_reads_observed": {
+          "type": [
+            "integer",
+            "string",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "artifact_only_enforced": {
+          "const": false
+        }
+      },
+      "required": [
+        "usual_notes_loaded",
+        "out_of_folder_reads_observed",
+        "artifact_only_enforced"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^/workspace/[^\\n\\r]+$"
+      }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  },
+  "required": [
+    "schema_version",
+    "record_id",
+    "capture",
+    "agent",
+    "tool",
+    "session_id",
+    "started_at",
+    "finished_at",
+    "timezone",
+    "analysis_kind",
+    "target",
+    "outcome",
+    "tokens_used",
+    "writes_detected",
+    "context_scope",
+    "evidence_paths",
+    "notes"
+  ],
+  "additionalProperties": false
+}

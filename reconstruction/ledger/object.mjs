@@ -28,6 +28,20 @@ export class UsageLedger {
       body TEXT NOT NULL
     )`);
     this.sql.exec(`CREATE INDEX IF NOT EXISTS events_principal ON events (principal_id)`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS activity_records (
+      principal_id TEXT NOT NULL,
+      record_id TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      body TEXT NOT NULL,
+      PRIMARY KEY (principal_id, record_id)
+    )`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS activity_meta (
+      principal_id TEXT PRIMARY KEY,
+      ledger_sha256 TEXT NOT NULL,
+      incomplete INTEGER NOT NULL,
+      read_at TEXT NOT NULL,
+      byte_length INTEGER NOT NULL
+    )`);
     this.sql.exec(`CREATE TABLE IF NOT EXISTS imports (
       principal_id TEXT NOT NULL,
       client_id TEXT NOT NULL,
@@ -56,6 +70,8 @@ export class UsageLedger {
     if (pathname === "/import/finish") return this.finishImport(body);
     if (pathname === "/import/abort") return this.abortImport(body);
     if (pathname === "/import/list") return this.listImports(body);
+    if (pathname === "/activity/apply") return this.applyActivity(body);
+    if (pathname === "/activity/list") return this.listActivity(body);
     return json({ error: "not_found" }, 404);
   }
 
@@ -293,6 +309,67 @@ export class UsageLedger {
       coverage: complete ? "full" : "partial",
       nextCursor: complete ? null : String(offset + page.length),
       usage: "mixed",
+    }, 200);
+  }
+
+  applyActivity(body) {
+    const principalId = body?.principalId;
+    const records = Array.isArray(body?.records) ? body.records : null;
+    if (typeof principalId !== "string" || !records) return json({ error: "invalid_import", reason: "invalid_import" }, 400);
+    const existing = new Map(
+      this.sql.exec("SELECT record_id, content_hash, body FROM activity_records WHERE principal_id = ?", principalId).toArray()
+        .map((row) => [row.record_id, row]),
+    );
+    const next = new Map();
+    for (const record of records) {
+      if (!record || typeof record.record_id !== "string" || typeof record.hash !== "string" || typeof record.body !== "string") {
+        return json({ error: "invalid_import", reason: "invalid_import" }, 400);
+      }
+      const prior = next.get(record.record_id) ?? existing.get(record.record_id);
+      if (prior && prior.content_hash !== record.hash && prior.hash !== record.hash) {
+        return json({ error: "conflict", reason: "conflicting_duplicate" }, 409);
+      }
+      next.set(record.record_id, record);
+    }
+    for (const record of next.values()) {
+      const stored = existing.get(record.record_id);
+      if (stored && stored.content_hash === record.hash) continue;
+      this.sql.exec(
+        "INSERT INTO activity_records (principal_id, record_id, content_hash, body) VALUES (?, ?, ?, ?)",
+        principalId,
+        record.record_id,
+        record.hash,
+        record.body,
+      );
+    }
+    this.sql.exec(
+      `INSERT INTO activity_meta (principal_id, ledger_sha256, incomplete, read_at, byte_length) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(principal_id) DO UPDATE SET ledger_sha256 = excluded.ledger_sha256, incomplete = excluded.incomplete, read_at = excluded.read_at, byte_length = excluded.byte_length`,
+      principalId,
+      String(body.ledgerSha256 ?? ""),
+      body.incomplete ? 1 : 0,
+      String(body.readAt ?? ""),
+      Number(body.byteLength ?? 0),
+    );
+    return json({ outcome: "stored", count: next.size }, 200);
+  }
+
+  listActivity(body) {
+    const principalId = body?.principalId;
+    if (typeof principalId !== "string") return json({ error: "invalid_query" }, 400);
+    const rows = this.sql.exec(
+      "SELECT record_id, content_hash, body FROM activity_records WHERE principal_id = ? ORDER BY record_id",
+      principalId,
+    ).toArray();
+    const meta = this.sql.exec("SELECT ledger_sha256, incomplete, read_at, byte_length FROM activity_meta WHERE principal_id = ?", principalId).toArray()[0];
+    return json({
+      records: rows.map((row) => ({ record_id: row.record_id, hash: row.content_hash, body: row.body })),
+      meta: meta ? {
+        ledgerSha256: meta.ledger_sha256,
+        incomplete: meta.incomplete === 1,
+        readAt: meta.read_at,
+        byteLength: meta.byte_length,
+      } : null,
     }, 200);
   }
 }

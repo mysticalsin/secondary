@@ -15,7 +15,7 @@
     "build:worker": "esbuild reconstruction/worker-root/worker/src/index.ts --bundle --format=esm --platform=neutral --target=es2022 --outfile=reconstruction/dist/worker.js --preserve-symlinks --alias:@secondary/policy=./harness/adapters/policy-entry.ts --external:cloudflare:workers --banner:js=\"/* Local reconstruction bundle. Not a deployment artifact. */\"",
     "build:workers": "node reconstruction/build-workers.mjs",
     "build:workerd": "node reconstruction/workerd/bundle-workerd.mjs",
-    "test:workerd": "node --preserve-symlinks --experimental-strip-types --test --test-reporter=spec reconstruction/workerd/runtime.test.mjs reconstruction/workerd/mcp-oauth.test.mjs reconstruction/workerd/import-isolation.test.mjs reconstruction/workerd/mcp-import-roundtrip.test.mjs reconstruction/workerd/release-auth.test.mjs reconstruction/workerd/integrity.test.mjs reconstruction/workerd/personal-plan.test.mjs reconstruction/workerd/oauth-two-clients.test.mjs reconstruction/workerd/release-jwt.test.mjs",
+    "test:workerd": "node --preserve-symlinks --experimental-strip-types --test --test-reporter=spec reconstruction/workerd/runtime.test.mjs reconstruction/workerd/mcp-oauth.test.mjs reconstruction/workerd/import-isolation.test.mjs reconstruction/workerd/mcp-import-roundtrip.test.mjs reconstruction/workerd/release-auth.test.mjs reconstruction/workerd/integrity.test.mjs reconstruction/workerd/personal-plan.test.mjs reconstruction/workerd/oauth-two-clients.test.mjs reconstruction/workerd/release-jwt.test.mjs reconstruction/workerd/activity-import.test.mjs",
     "deploy": "node reconstruction/refuse-deploy.mjs"
   },
   "dependencies": {

@@ -248,6 +248,61 @@ function tokenLabel(dimension) {
   return String(dimension.value);
 }
 
+function reported(value) {
+  if (value === null || value === undefined || value === "") return "Not reported";
+  return esc(value);
+}
+
+function activityPanel(model) {
+  const activity = model.activity;
+  if (!activity) {
+    return `<p class="muted">Review activity is not loaded on this page.</p>`;
+  }
+  const items = Array.isArray(activity.items) ? activity.items : [];
+  const detail = activity.detail ?? null;
+  const list = items.map((item) => `<li><a href="/settings/observability?section=activity&amp;record=${encodeURIComponent(item.id)}">${esc(item.id)}</a> <span class="muted">${esc(item.activity_label)} · ${esc(item.capture)}</span><p>${reported(item.what_reviewed)}</p></li>`).join("");
+  const counts = detail?.outcome?.counts ?? {};
+  const evidence = (detail?.evidence_provenance_pointers ?? []).map((path) => `<p>${esc(path)}</p>`).join("");
+  const captureNote = detail?.capture === "historical-manual"
+    ? "Historical. This manual record is not a live capture."
+    : detail?.capture === "live-exporter"
+      ? "Reported live exporter. This is a cooperative approved-run completion export, not a universal runtime capture."
+      : "";
+  return `<p class="banner"><i></i>Read-only review activity. No model was called. AI is disabled. trusted_runtime_capture=false.</p>
+    <p class="muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. Records are supplied imports for this session only. Evidence paths are untrusted text and are not opened.</p>
+    <p role="status">${activity.empty ? "No review records for this session. Nothing has been imported." : `Showing ${esc(items.length)} supplied record${items.length === 1 ? "" : "s"}. ${activity.snapshot_complete === false ? "The final line was incomplete and was not imported. This is not a full snapshot." : "Coverage is the supplied records only."}`}</p>
+    ${activity.message ? `<p class="${activity.failed ? "alert" : ""}" role="status">${esc(activity.message)}</p>` : ""}
+    <form method="get" action="/settings/observability">
+      <input type="hidden" name="section" value="activity">
+      <label>Search <input name="q" value="${esc(activity.q ?? "")}" placeholder="Notes or label"></label>
+      <label>Capture <select name="capture"><option value="">Any</option><option value="historical-manual" ${activity.capture === "historical-manual" ? "selected" : ""}>historical-manual</option><option value="live-exporter" ${activity.capture === "live-exporter" ? "selected" : ""}>live-exporter</option></select></label>
+      <label>Kind <select name="kind"><option value="">Any</option><option value="static" ${activity.kind === "static" ? "selected" : ""}>static</option><option value="runtime" ${activity.kind === "runtime" ? "selected" : ""}>runtime</option></select></label>
+      <label>Date <input name="date" value="${esc(activity.date ?? "")}" placeholder="YYYY-MM-DD"></label>
+      <button class="save" type="submit">Filter</button>
+    </form>
+    ${model.release ? `<form method="post" action="/settings/observability/activity">
+      <label>NDJSON <textarea name="ndjson" rows="6" placeholder="One relay.codex-review-run/1 record per line"></textarea></label>
+      <button class="save" type="submit">Import review records</button>
+    </form>` : ""}
+    ${items.length ? `<ul>${list}</ul>` : ""}
+    ${detail ? `<article class="sheet">
+      <h2>${esc(detail.id)}</h2>
+      <p>${esc(detail.activity_label)} · ${esc(captureNote)}</p>
+      <p>Reviewed: ${reported(detail.what_reviewed)}</p>
+      <p>Session: ${reported(detail.session_id)}</p>
+      <p>Started: ${reported(detail.started_at)} Finished: ${reported(detail.finished_at)}</p>
+      <p>Verdict: ${reported(detail.outcome?.overall_verdict)} Exit: ${reported(detail.outcome?.exit_code)} Completed: ${esc(String(detail.outcome?.completed))}</p>
+      <p>Reported counts. These are not edits performed by this page. High ${reported(counts.high)}, medium ${reported(counts.medium)}, low ${reported(counts.low)}, fixed ${reported(counts.fixed)}, cannot determine ${reported(counts.cannot_determine)}.</p>
+      <p>${esc(detail.token_usage?.label)}: ${reported(detail.token_usage?.value)}</p>
+      <p>writes_detected=${esc(String(detail.observed_writes_detected))}. ${detail.observed_writes_detected === false ? "A reported false is not proof that no transient writes occurred." : "A reported true is the producer’s observation, not a write performed here."}</p>
+      <p>artifact_only_enforced=false. usual_notes_loaded=${reported(detail.context_scope?.usual_notes_loaded)} does not prove a six-guide setup.</p>
+      <h3>Evidence paths</h3>
+      ${evidence}
+      <h3>Notes</h3>
+      <p>${esc(detail.untrusted_notes)}</p>
+    </article>` : ""}`;
+}
+
 function trustChip(event) {
   if (event.trust === "synthetic_fixture" || event.evidence === "synthetic_fixture") return chip("fixture", "Synthetic fixture");
   if (event.trust === "client_reported") return chip("", "Client-reported");
@@ -258,6 +313,7 @@ function trustChip(event) {
 export function renderObservability(model) {
   const prefs = model.section === "prefs" || Boolean(model.prefMessage);
   const usageOn = model.section === "usage";
+  const activityOn = model.section === "activity";
   const failed = model.prefMessage.startsWith("Save failed");
   const ledger = model.ledger ?? { events: [], summary: null, error: "", status: 0, operation: "", trust: "", requestId: "" };
   const usageEmpty = ledger.status === 200 && ledger.events.length === 0 && !ledger.requestId;
@@ -299,19 +355,23 @@ export function renderObservability(model) {
   <p class="banner"><i></i>${model.release ? "Deterministic view. No model was called. AI is disabled." : "Local preview · synthetic data"}</p>
   <nav class="pills" aria-label="Settings">${settings}</nav>
   <div class="tabs" role="tablist" aria-label="Observability sections">
-    ${tab("tab-status", "panel-status", "Status", !prefs && !usageOn)}
+    ${tab("tab-status", "panel-status", "Status", !prefs && !usageOn && !activityOn)}
     ${tab("tab-agents", "panel-agents", "Agents", false)}
+    <a role="tab" id="tab-activity" href="/settings/observability?section=activity" aria-controls="panel-activity" aria-selected="${activityOn ? "true" : "false"}">Activity</a>
     ${tab("tab-audit", "panel-audit", "Audit", false)}
     ${tab("tab-usage", "panel-usage", "Usage", usageOn)}
-    ${tab("tab-prefs", "panel-prefs", "Preferences", prefs && !usageOn)}
+    ${tab("tab-prefs", "panel-prefs", "Preferences", prefs && !usageOn && !activityOn)}
   </div>
-  <section id="panel-status" role="tabpanel" aria-labelledby="tab-status"${prefs || usageOn ? " hidden" : ""}>
+  <section id="panel-status" role="tabpanel" aria-labelledby="tab-status"${prefs || usageOn || activityOn ? " hidden" : ""}>
     <div class="grid">
       <article class="stat">${mark('<circle cx="12" cy="12" r="8"/><path d="m8.5 12.2 2.2 2.2 4.6-5"/>')}<p class="k">Readiness</p><p class="value">${esc(model.ready.label)}</p><p class="hint">${esc(model.ready.detail)}</p></article>
       <article class="stat">${mark('<path d="M3 12h4l2-5 3 10 2-5h7"/>')}<p class="k">Health</p><p class="value">${esc(model.health.label)}</p><p class="hint">${esc(model.health.detail)}</p></article>
       <article class="stat">${mark('<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>')}<p class="k">AI processor</p><p class="value">${esc(model.ai.label)}</p><p class="hint">${esc(model.ai.detail)}</p></article>
       <article class="stat">${mark('<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>')}<p class="k">Freshness</p><p class="value">Unknown</p><p class="hint">Source refresh success is not reported. Connector sync is not bound.</p></article>
     </div>
+  </section>
+  <section id="panel-activity" role="tabpanel" aria-labelledby="tab-activity"${activityOn ? "" : " hidden"}>
+    ${activityPanel(model)}
   </section>
   <section id="panel-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
     <p class="banner"><i></i>Local preview · synthetic data</p>

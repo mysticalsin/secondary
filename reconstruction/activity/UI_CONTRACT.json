@@ -1,0 +1,61 @@
+{
+  "contract_version": "mantu.source-activity/1",
+  "status": "NEW consumer contract, not recovered prior UI",
+  "producer_schema_version": "relay.codex-review-run/1",
+  "producer_field_changes_required": false,
+  "producer_writer": "Relay only",
+  "consumer_access": "read-only",
+  "mapping": {
+    "record_id": "items[].id",
+    "session_id": "items[].session_id",
+    "capture": "items[].capture",
+    "agent": "items[].reported_by.agent",
+    "tool": "items[].reported_by.tool",
+    "started_at": "items[].started_at + when_brt.start",
+    "finished_at": "items[].finished_at + when_brt.finish; max -> last_finished_at",
+    "timezone": "fixed validated America/Sao_Paulo; BRT display",
+    "analysis_kind": "items[].analysis_kind + derived activity_label",
+    "target": "items[].artifact_identity",
+    "target.label": "items[].what_reviewed",
+    "outcome": "items[].outcome",
+    "tokens_used": "items[].token_usage.value",
+    "writes_detected": "items[].observed_writes_detected",
+    "context_scope": "items[].context_scope",
+    "evidence_paths": "items[].evidence_provenance_pointers",
+    "notes": "items[].untrusted_notes",
+    "schema_version": "validated relay.codex-review-run/1 (consumer contract independently versioned)"
+  },
+  "constants": {
+    "trusted_runtime_capture": false,
+    "coverage": "supplied records only",
+    "token_usage_label": "Reported CLI tokens; not provider usage or billing"
+  },
+  "nullable": "preserve all actual nulls; never infer values or counts",
+  "ordering": [
+    "finished_at or empty",
+    "started_at or empty",
+    "record_id"
+  ],
+  "identity": "record_id; identical duplicates dedup, conflicting duplicates fail closed",
+  "fingerprints": {
+    "ledger_sha256": "all exact read bytes including ignored incomplete tail",
+    "schema_sha256": "pinned exact schema bytes"
+  },
+  "freshness": {
+    "read_at": "snapshot read time ISO -03:00",
+    "last_finished_at": "max supplied finish or null"
+  },
+  "limits": {
+    "ledger_bytes": 2097152,
+    "record_bytes": 65536,
+    "schema_bytes": 65536
+  },
+  "output": "HTML-escaped item strings; safe_json serializer; textContent only; no page",
+  "forbidden": [
+    "producer writes/locks/helper execution",
+    "evidence-path following",
+    "network",
+    "automatic export",
+    "trusted universal actor claims"
+  ]
+}
