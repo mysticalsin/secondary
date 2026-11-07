@@ -94,7 +94,7 @@ function show(item) {
     ? "Historical. This manual record is not a live capture."
     : "Reported live exporter. This is a cooperative approved-run completion export, not a universal runtime capture.";
   addText(detail, "p", captureNote);
-  addText(detail, "p", item.untrusted_notes);
+  addText(detail, "p", item.untrusted_notes, "path");
   addText(detail, "h3", "Evidence paths");
   for (const path of item.evidence_provenance_pointers) addText(detail, "p", path, "path");
   addText(detail, "p", `${item.token_usage.label}: ${reported(item.token_usage.value)}`);

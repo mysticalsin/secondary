@@ -104,10 +104,11 @@ button { min-height:44px; border:0; border-radius:12px; background:var(--accent)
 button:hover { background:#41007c; }
 .empty-card, .import-card, .detail-card { padding:18px; margin-top:14px; }
 .empty-card h2, .import-card h2, .detail-card h2 { margin:0; font-size:22px; letter-spacing:-.03em; }
-.runs { display:grid; gap:10px; margin-top:14px; }
-.run { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 16px; align-items:center; width:100%; text-align:left; background:#fff; color:var(--ink); }
+.runs { display:grid; gap:10px; margin-top:14px; min-width:0; max-width:100%; }
+.run { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 16px; align-items:center; width:100%; max-width:100%; min-width:0; text-align:left; background:#fff; color:var(--ink); }
+.run strong, .id, .path, .detail-card, .detail-card p, .detail-card h2, .detail-card h3, details, summary { overflow-wrap:anywhere; min-width:0; max-width:100%; }
 .run strong { display:block; font-size:16px; }
-.run-side { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; align-items:center; }
+.run-side { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; align-items:center; min-width:0; max-width:100%; }
 .chip { display:inline-flex; border-radius:999px; padding:4px 10px; background:#fcf3ff; color:var(--accent); font-size:12px; font-weight:650; }
 .chip.fixture { background:#fff6d8; color:#5c4300; }
 .chip.unknown { background:#eeeef0; color:#4b4c59; }

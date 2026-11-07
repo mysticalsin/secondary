@@ -93,7 +93,7 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Original recovered API tree compiled alone | `npm run typecheck:worker` exit 2. 119 lines: 68 missing `Env`, 43 missing modules (`types.ts`, agent-ui, `view-plan.ts`). Eight further diagnostics are counted and are not proven to be only missing-module fallout. The bytes were not edited | SNAPSHOT, still failing |
 | Bundled TypeScript is in a compiler program. Declarations do not typecheck `.mjs` bodies | `bundled TypeScript files are members of a compiler program` writes `reconstruction/coverage/bundle-programs.json` | PASS for `.ts` membership. Unchecked JavaScript boundaries stay listed |
 | The parent's three historical review records rendered in this environment | Those rows were not attached and were not fetched. The offline HTML file also starts empty | NOTRUN |
-| Offline paste page bytes stay the exported build | SHA-256 `ecb209b35dd8ca140b3763334f83912f76586575d0cb1173465abf2ec0b68638` of `reconstruction/activity/offline/index.html`. It still has no `Buffer.byteLength`. The typed label is not authentication | PASS as a byte pin, not a three-row render |
+| Offline paste page bytes stay the exported build | SHA-256 `a4d35e2a54430fd8d10606f87ad5672c86427e8d82e3f0c44514537784622e0c` of `reconstruction/activity/offline/index.html`. Long notes wrap inside the card at 390px. The typed label is not authentication | PASS as a byte pin, not a three-row render |
 
 ## 6. Deployment
 

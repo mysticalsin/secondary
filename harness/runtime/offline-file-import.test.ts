@@ -80,3 +80,66 @@ test("the file:// activity page imports a synthetic UTF-8 record without Buffer"
     await browser.close();
   }
 });
+
+test("a 390px file:// detail wraps a synthetic SHA inside the card", async () => {
+  const { chromium } = createRequire(import.meta.url)(playwright);
+  const hex = "0123456789abcdef".repeat(4);
+  const notes = `Supplement SHA256 ${hex}`;
+  const title = `Synthetic long title ${hex}`;
+  const evidence = `/workspace/synthetic/${hex}/evidence.txt`;
+  const id = `relay-synthetic-${hex.slice(0, 24)}`;
+  const dir = mkdtempSync(join(tmpdir(), "offline-wrap-"));
+  const file = join(dir, "synthetic-review.ndjson");
+  writeFileSync(file, `${JSON.stringify({ ...record(notes), record_id: id, target: { ...record(notes).target, label: title }, evidence_paths: [evidence] })}\n`, "utf8");
+  const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ["--no-sandbox"] });
+  const page = await browser.newPage({ viewport: { width: 390, height: 985 } });
+  try {
+    await page.goto(pageUrl);
+    await page.locator("#activity-file").setInputFiles(file);
+    await page.waitForFunction((needle) => {
+      const area = document.querySelector("#ndjson");
+      return area instanceof HTMLTextAreaElement && area.value.includes(needle);
+    }, id);
+    await page.locator("#import").click();
+    await page.getByRole("button", { name: id }).click();
+    await page.getByText(notes).waitFor();
+    const measure = () => page.evaluate(({ hex, id }) => {
+      const view = document.documentElement.clientWidth;
+      const toolbar = document.querySelector(".toolbar")?.getBoundingClientRect();
+      const hosts = [...document.querySelectorAll(".run, .detail-card, .import-card")];
+      const cards = hosts.map((el) => {
+        const box = el.getBoundingClientRect();
+        return { right: box.right, left: box.left, scroll: el.scrollWidth, client: el.clientWidth };
+      });
+      const lines = [...document.querySelectorAll("p, h2, strong, .id, .path")].filter((el) => el.textContent?.includes(hex) || el.textContent?.includes(id));
+      const text = lines.map((el) => {
+        const card = el.closest(".detail-card, .run");
+        const cardBox = card?.getBoundingClientRect();
+        const rects = [...el.getClientRects()];
+        return {
+          clipped: el.scrollWidth > el.clientWidth + 1,
+          outsideCard: !cardBox || rects.some((box) => box.right > cardBox.right + 1 || box.left < cardBox.left - 1),
+          outsideView: rects.some((box) => box.right > view + 1 || box.left < -1),
+        };
+      });
+      return {
+        overflow: document.documentElement.scrollWidth - view,
+        toolbarRight: toolbar?.right ?? 0,
+        cards,
+        text,
+      };
+    }, { hex, id });
+    const narrow = await measure();
+    assert.equal(narrow.overflow <= 1, true, JSON.stringify(narrow));
+    assert.equal(narrow.text.length > 0, true);
+    assert.equal(narrow.text.every((item) => !item.clipped && !item.outsideCard && !item.outsideView), true, JSON.stringify(narrow));
+    assert.equal(narrow.cards.every((card) => card.right <= narrow.toolbarRight + 1 && card.scroll <= card.client + 1), true, JSON.stringify(narrow));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const wide = await measure();
+    assert.equal(wide.overflow <= 1, true, JSON.stringify(wide));
+    assert.equal(wide.text.every((item) => !item.clipped && !item.outsideCard && !item.outsideView), true, JSON.stringify(wide));
+    assert.equal(wide.cards.every((card) => card.right <= wide.toolbarRight + 1), true, JSON.stringify(wide));
+  } finally {
+    await browser.close();
+  }
+});

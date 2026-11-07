@@ -242,19 +242,22 @@ th, td { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line
 #panel-activity .empty-card h2, #panel-activity .import-card h2, #panel-activity .detail-card h2 {
   margin: 0; font-size: 22px; letter-spacing: -0.03em;
 }
-#panel-activity .runs { display: grid; gap: 10px; margin: 14px 0 0; }
+#panel-activity .runs { display: grid; gap: 10px; margin: 14px 0 0; min-width: 0; max-width: 100%; }
 #panel-activity .run {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center;
   text-decoration: none; background: white; border: 1px solid var(--line); border-radius: 18px;
-  padding: 14px 16px; box-shadow: var(--shadow);
+  padding: 14px 16px; box-shadow: var(--shadow); width: 100%; max-width: 100%; min-width: 0;
 }
 #panel-activity .run[aria-current="page"] { border-color: #c9a4e4; box-shadow: 0 0 0 3px #fcf3ff; }
+#panel-activity .run strong, #panel-activity .id, #panel-activity .path, #panel-activity .detail-card, #panel-activity .detail-card p, #panel-activity .detail-card h2, #panel-activity .detail-card h3 {
+  overflow-wrap: anywhere; min-width: 0; max-width: 100%;
+}
 #panel-activity .run strong { display: block; font-size: 16px; letter-spacing: -0.02em; }
-#panel-activity .run-side { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+#panel-activity .run-side { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; min-width: 0; max-width: 100%; }
 #panel-activity .id { color: var(--muted); font-size: 12px; }
 #panel-activity .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
-#panel-activity .detail-card details { margin-top: 16px; }
-#panel-activity .path { margin: 4px 0; overflow-wrap: anywhere; }
+#panel-activity .detail-card details { margin-top: 16px; max-width: 100%; min-width: 0; }
+#panel-activity .path { margin: 4px 0; }
 @media (max-width: 720px) {
   .frame { padding: 20px 16px 48px; }
   h1 { font-size: 32px; }
@@ -361,7 +364,7 @@ function activityPanel(model) {
       <h2>${reported(detail.what_reviewed)}</h2>
       <div class="chips">${detail.synthetic ? `<span class="chip fixture">Synthetic fixture</span>` : ""}${chip("", captureLabel(detail.capture))}${chip("", detail.activity_label)}<span class="chip unknown">Not a trusted capture</span></div>
       <p>${esc(captureNote)}</p>
-      <p>${esc(detail.untrusted_notes)}</p>
+      <p class="path">${esc(detail.untrusted_notes)}</p>
       <h3>Evidence paths</h3>
       ${evidence}
       <p>${esc(detail.token_usage?.label)}: ${reported(detail.token_usage?.value)}</p>
