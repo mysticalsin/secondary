@@ -172,8 +172,13 @@ h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035
 .pills a[aria-current="page"]:hover { background: #ffffff; }
 .pills a:focus-visible { outline-color: var(--focus-on-dark); }
 .tabs { margin: 0 0 18px; }
-.tabs button { background: transparent; color: var(--muted); border: 1px solid transparent; }
-.tabs button[aria-selected="true"] { background: white; color: var(--ink); border-color: var(--line); box-shadow: var(--shadow); }
+.tabs button, .tabs a[role="tab"] {
+  background: transparent; color: var(--muted); border: 1px solid transparent;
+  border-radius: 999px; font: inherit; font-size: 14px; text-decoration: none; padding: 9px 14px; line-height: 1.2;
+}
+.tabs button[aria-selected="true"], .tabs a[role="tab"][aria-selected="true"] {
+  background: white; color: var(--ink); border-color: var(--line); box-shadow: var(--shadow);
+}
 .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
 .stat, .sheet, .callout {
   background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
@@ -215,11 +220,49 @@ pre, table { max-width: 100%; overflow-wrap: anywhere; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .muted { color: var(--muted); font-size: 14px; }
+#panel-activity .activity-lead { margin: 8px 0 0; max-width: 62ch; }
+#panel-activity .coverage { margin: 14px 0; }
+#panel-activity .toolbar, #panel-activity .import-card, #panel-activity .empty-card, #panel-activity .detail-card {
+  background: white; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+}
+#panel-activity .toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: end; padding: 12px;
+}
+#panel-activity .toolbar label, #panel-activity .import-card label {
+  margin: 0; display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 650;
+}
+#panel-activity .toolbar label:first-of-type { flex: 1 1 240px; }
+#panel-activity .toolbar label { flex: 1 1 140px; }
+#panel-activity .toolbar input, #panel-activity .toolbar select, #panel-activity .import-card textarea, #panel-activity .import-card input[type="file"] {
+  width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 10px 12px;
+}
+#panel-activity .toolbar button, #panel-activity .import-card button { min-height: 44px; padding: 10px 16px; }
+#panel-activity .empty-card, #panel-activity .import-card, #panel-activity .detail-card { padding: 18px 18px 16px; margin-top: 14px; }
+#panel-activity .empty-card h2, #panel-activity .import-card h2, #panel-activity .detail-card h2 {
+  margin: 0; font-size: 22px; letter-spacing: -0.03em;
+}
+#panel-activity .runs { display: grid; gap: 10px; margin: 14px 0 0; }
+#panel-activity .run {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center;
+  text-decoration: none; background: white; border: 1px solid var(--line); border-radius: 18px;
+  padding: 14px 16px; box-shadow: var(--shadow);
+}
+#panel-activity .run[aria-current="page"] { border-color: #c9a4e4; box-shadow: 0 0 0 3px #fcf3ff; }
+#panel-activity .run strong { display: block; font-size: 16px; letter-spacing: -0.02em; }
+#panel-activity .run-side { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; }
+#panel-activity .id { color: var(--muted); font-size: 12px; }
+#panel-activity .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+#panel-activity .detail-card details { margin-top: 16px; }
+#panel-activity .path { margin: 4px 0; overflow-wrap: anywhere; }
 @media (max-width: 720px) {
   .frame { padding: 20px 16px 48px; }
   h1 { font-size: 32px; }
   .value { font-size: 20px; }
   .host { align-items: flex-start; }
+  #panel-activity .toolbar label, #panel-activity .toolbar label:first-of-type { flex-basis: 100%; }
+  #panel-activity .run { grid-template-columns: 1fr; }
+  #panel-activity .run-side { justify-content: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
@@ -253,6 +296,12 @@ function reported(value) {
   return esc(value);
 }
 
+function captureLabel(capture) {
+  if (capture === "historical-manual") return "Historical manual";
+  if (capture === "live-exporter") return "Reported completion export";
+  return "Capture not reported";
+}
+
 function activityPanel(model) {
   const activity = model.activity;
   if (!activity) {
@@ -260,47 +309,82 @@ function activityPanel(model) {
   }
   const items = Array.isArray(activity.items) ? activity.items : [];
   const detail = activity.detail ?? null;
-  const list = items.map((item) => `<li><a href="/settings/observability?section=activity&amp;record=${encodeURIComponent(item.id)}">${esc(item.id)}</a> <span class="muted">${esc(item.activity_label)} · ${esc(item.capture)}</span><p>${reported(item.what_reviewed)}</p></li>`).join("");
+  const filtering = Boolean(activity.q || activity.capture || activity.kind || activity.date);
+  const list = items.map((item) => {
+    const query = new URLSearchParams({ section: "activity", record: item.id });
+    for (const key of ["q", "capture", "kind", "date"]) if (activity[key]) query.set(key, activity[key]);
+    const synthetic = item.synthetic ? `<span class="chip fixture">Synthetic fixture</span>` : "";
+    return `<a class="run" href="/settings/observability?${esc(query.toString())}"${detail?.id === item.id ? ' aria-current="page"' : ""}>
+      <span><strong>${reported(item.what_reviewed)}</strong><span class="muted">${esc(item.activity_label)} · ${esc(captureLabel(item.capture))}</span></span>
+      <span class="run-side">${synthetic}<span class="muted">${reported(item.finished_at)}</span><span class="id">${esc(item.id)}</span></span>
+    </a>`;
+  }).join("");
   const counts = detail?.outcome?.counts ?? {};
-  const evidence = (detail?.evidence_provenance_pointers ?? []).map((path) => `<p>${esc(path)}</p>`).join("");
+  const evidence = (detail?.evidence_provenance_pointers ?? []).map((path) => `<p class="path">${esc(path)}</p>`).join("");
   const captureNote = detail?.capture === "historical-manual"
     ? "Historical. This manual record is not a live capture."
     : detail?.capture === "live-exporter"
       ? "Reported live exporter. This is a cooperative approved-run completion export, not a universal runtime capture."
       : "";
-  return `<p class="banner"><i></i>Read-only review activity. No model was called. AI is disabled. trusted_runtime_capture=false.</p>
-    <p class="muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. Records are supplied imports for this session only. Evidence paths are untrusted text and are not opened.</p>
-    <p role="status">${activity.empty ? "No review records for this session. Nothing has been imported." : `Showing ${esc(items.length)} supplied record${items.length === 1 ? "" : "s"}. ${activity.snapshot_complete === false ? "The final line was incomplete and was not imported. This is not a full snapshot." : "Coverage is the supplied records only."}`}</p>
+  const writes = detail?.observed_writes_detected === false
+    ? "No writes were reported. A reported false is not proof that no transient writes occurred."
+    : detail?.observed_writes_detected === true
+      ? "Writes were reported by the producer. This page did not perform a write."
+      : "Writes were not reported.";
+  const status = activity.empty
+    ? (filtering ? "No supplied records match this filter." : "No review records for this session. Nothing has been imported.")
+    : `Showing ${items.length} supplied record${items.length === 1 ? "" : "s"}. ${activity.snapshot_complete === false ? "The final line was incomplete and was not imported. This is not a full snapshot." : "Coverage is the supplied records only."}`;
+  const importForm = model.release ? `<form class="import-card" method="post" action="/settings/observability/activity">
+      <h2>${activity.empty ? "Import a ledger" : "Import another ledger"}</h2>
+      <p class="muted">Paste review records, or choose a file on this computer. The file is read here and stored for this signed-in user only. It is not sent to a model. Evidence paths are not opened.</p>
+      <label>Ledger file <input id="activity-file" type="file" accept=".ndjson,.jsonl,.txt,text/plain"></label>
+      <label>Review records <textarea name="ndjson" rows="5" placeholder="One relay.codex-review-run/1 record per line"></textarea></label>
+      <button class="save" type="submit">Import review records</button>
+    </form>` : "";
+  return `<p class="banner"><i></i>Read-only review activity. No model was called. AI is disabled.</p>
+    <p class="activity-lead muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. Only records imported for this sign-in are shown. Evidence paths are untrusted text and are not opened.</p>
+    <p class="coverage" role="status">${esc(status)}</p>
     ${activity.message ? `<p class="${activity.failed ? "alert" : ""}" role="status">${esc(activity.message)}</p>` : ""}
-    <form method="get" action="/settings/observability">
+    <form class="toolbar" method="get" action="/settings/observability">
       <input type="hidden" name="section" value="activity">
       <label>Search <input name="q" value="${esc(activity.q ?? "")}" placeholder="Notes or label"></label>
-      <label>Capture <select name="capture"><option value="">Any</option><option value="historical-manual" ${activity.capture === "historical-manual" ? "selected" : ""}>historical-manual</option><option value="live-exporter" ${activity.capture === "live-exporter" ? "selected" : ""}>live-exporter</option></select></label>
-      <label>Kind <select name="kind"><option value="">Any</option><option value="static" ${activity.kind === "static" ? "selected" : ""}>static</option><option value="runtime" ${activity.kind === "runtime" ? "selected" : ""}>runtime</option></select></label>
-      <label>Date <input name="date" value="${esc(activity.date ?? "")}" placeholder="YYYY-MM-DD"></label>
+      <label>Capture <select name="capture"><option value="">Any</option><option value="historical-manual" ${activity.capture === "historical-manual" ? "selected" : ""}>Historical manual</option><option value="live-exporter" ${activity.capture === "live-exporter" ? "selected" : ""}>Reported completion export</option></select></label>
+      <label>Kind <select name="kind"><option value="">Any</option><option value="static" ${activity.kind === "static" ? "selected" : ""}>Static review</option><option value="runtime" ${activity.kind === "runtime" ? "selected" : ""}>Runtime review</option></select></label>
+      <label>Date <input name="date" value="${esc(activity.date ?? "")}" placeholder="YYYY-MM-DD" inputmode="numeric"></label>
       <button class="save" type="submit">Filter</button>
     </form>
-    ${model.release ? `<form method="post" action="/settings/observability/activity">
-      <label>NDJSON <textarea name="ndjson" rows="6" placeholder="One relay.codex-review-run/1 record per line"></textarea></label>
-      <button class="save" type="submit">Import review records</button>
-    </form>` : ""}
-    ${items.length ? `<ul>${list}</ul>` : ""}
-    ${detail ? `<article class="sheet">
-      <h2>${esc(detail.id)}</h2>
-      <p>${esc(detail.activity_label)} · ${esc(captureNote)}</p>
-      <p>Reviewed: ${reported(detail.what_reviewed)}</p>
-      <p>Session: ${reported(detail.session_id)}</p>
-      <p>Started: ${reported(detail.started_at)} Finished: ${reported(detail.finished_at)}</p>
-      <p>Verdict: ${reported(detail.outcome?.overall_verdict)} Exit: ${reported(detail.outcome?.exit_code)} Completed: ${esc(String(detail.outcome?.completed))}</p>
-      <p>Reported counts. These are not edits performed by this page. High ${reported(counts.high)}, medium ${reported(counts.medium)}, low ${reported(counts.low)}, fixed ${reported(counts.fixed)}, cannot determine ${reported(counts.cannot_determine)}.</p>
-      <p>${esc(detail.token_usage?.label)}: ${reported(detail.token_usage?.value)}</p>
-      <p>writes_detected=${esc(String(detail.observed_writes_detected))}. ${detail.observed_writes_detected === false ? "A reported false is not proof that no transient writes occurred." : "A reported true is the producer’s observation, not a write performed here."}</p>
-      <p>artifact_only_enforced=false. usual_notes_loaded=${reported(detail.context_scope?.usual_notes_loaded)} does not prove a six-guide setup.</p>
+    ${activity.empty && !filtering ? `<article class="empty-card"><h2>No reviews yet</h2><p>Nothing has been imported.</p></article>` : ""}
+    ${items.length ? `<div class="runs">${list}</div>` : ""}
+    ${activity.empty ? importForm : ""}
+    ${detail ? `<article class="sheet detail-card">
+      <p class="k">Selected review</p>
+      <h2>${reported(detail.what_reviewed)}</h2>
+      <div class="chips">${detail.synthetic ? `<span class="chip fixture">Synthetic fixture</span>` : ""}${chip("", captureLabel(detail.capture))}${chip("", detail.activity_label)}<span class="chip unknown">Not a trusted capture</span></div>
+      <p>${esc(captureNote)}</p>
+      <p>${esc(detail.untrusted_notes)}</p>
       <h3>Evidence paths</h3>
       ${evidence}
-      <h3>Notes</h3>
-      <p>${esc(detail.untrusted_notes)}</p>
-    </article>` : ""}`;
+      <p>${esc(detail.token_usage?.label)}: ${reported(detail.token_usage?.value)}</p>
+      <p>${esc(writes)}</p>
+      <details>
+        <summary>Technical record</summary>
+        <p>record_id ${esc(detail.id)}</p>
+        <p>session_id ${reported(detail.session_id)}</p>
+        <p>capture ${reported(detail.capture)}</p>
+        <p>analysis_kind ${reported(detail.analysis_kind)}</p>
+        <p>started_at ${reported(detail.started_at)}</p>
+        <p>finished_at ${reported(detail.finished_at)}</p>
+        <p>overall_verdict ${reported(detail.outcome?.overall_verdict)}</p>
+        <p>exit_code ${reported(detail.outcome?.exit_code)}</p>
+        <p>completed ${esc(String(detail.outcome?.completed))}</p>
+        <p>Reported counts. These are not edits performed by this page. High ${reported(counts.high)}, medium ${reported(counts.medium)}, low ${reported(counts.low)}, fixed ${reported(counts.fixed)}, cannot determine ${reported(counts.cannot_determine)}.</p>
+        <p>writes_detected=${esc(String(detail.observed_writes_detected))}</p>
+        <p>artifact_only_enforced=false. usual_notes_loaded=${reported(detail.context_scope?.usual_notes_loaded)} does not prove a six-guide setup.</p>
+        <p>trusted_runtime_capture=false</p>
+        <p>agent ${esc(detail.reported_by?.agent ?? "")} tool ${esc(detail.reported_by?.tool?.name ?? "")}</p>
+      </details>
+    </article>` : ""}
+    ${activity.empty ? "" : importForm}`;
 }
 
 function trustChip(event) {
@@ -472,6 +556,12 @@ for (const tab of tabs) {
 document.getElementById("route-filter").addEventListener("input", (event) => {
   const q = event.target.value.toLowerCase();
   for (const row of document.querySelectorAll("#route-table tbody tr")) row.hidden = q && !row.textContent.toLowerCase().includes(q);
+});
+const activityFile = document.getElementById("activity-file");
+if (activityFile) activityFile.addEventListener("change", async () => {
+  const chosen = activityFile.files && activityFile.files[0];
+  const area = document.querySelector("textarea[name=ndjson]");
+  if (chosen && area) area.value = await chosen.text();
 });
 </script>
 </body></html>`;

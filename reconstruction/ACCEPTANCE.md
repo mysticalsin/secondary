@@ -90,7 +90,7 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Usage tab reads the session ledger, and a session switch does not keep the previous person's events | Reconstruction Observability page | PASS |
 | Status, Agents, Audit, and Preferences remain | That page | PASS |
 | Activity tab imports local `relay.codex-review-run/1` NDJSON for the signed-in user, searches and filters it, opens one record, and clears it for another token. Null counts stay null. Notes and evidence paths are text. `trusted_runtime_capture` stays false. A conflicting duplicate and a malformed line do not overwrite. The schema file hash is `7ec06819c880305c91c7eba47b383715c765810c4dcbe4e8380f0d6348993fbb` | `the review schema hash is pinned and extra fields fail closed`, `synthetic review imports stay with the signed-in user`, and `the release activity page escapes notes and clears across tokens` | PASS for synthetic fixtures only |
-| The parent's three historical review records rendered in this environment | Those rows were not attached and were not fetched | NOTRUN |
+| The parent's three historical review records rendered in this environment | Those rows were not attached and were not fetched. The offline HTML file also starts empty | NOTRUN |
 
 ## 6. Deployment
 

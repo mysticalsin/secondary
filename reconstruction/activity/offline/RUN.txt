@@ -1,0 +1,31 @@
+Review activity — local paste page
+
+This folder is a build-only page. It is not a source checkout.
+It has no credentials, no session token, and no review records.
+The three historical records are not in this file. Import them on this computer.
+Nothing in the page is uploaded.
+
+This page is not the signed-in Settings → Observability release page.
+The local label and the browser session cache are not authentication.
+Changing the label shows a different cache. It does not prove who you are.
+
+Open it
+1. Unzip this folder.
+2. Double-click index.html, or from this folder run:
+   python3 -m http.server 43157 --bind 127.0.0.1
+   then open http://127.0.0.1:43157/
+3. The page starts empty.
+4. Type a local label if you want a separate cache.
+5. Paste NDJSON or choose a .ndjson, .jsonl, or .txt file, then choose Import review records.
+6. Search, capture, kind, and date filter the records in that cache.
+7. Evidence paths are shown as text and are not opened.
+8. A conflicting duplicate is refused and does not overwrite.
+   An incomplete final line is not a full snapshot.
+   Null token counts and null severity counts stay "Not reported".
+
+Check the files from this folder:
+  shasum -a 256 -c SHA256SUMS.txt
+
+Pinned schema SHA-256, also shown on the page:
+  7ec06819c880305c91c7eba47b383715c765810c4dcbe4e8380f0d6348993fbb
+The page embeds that schema. It does not fetch it.
