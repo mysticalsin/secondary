@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
+import { stopRecoveredApi } from "../../reconstruction/fixture/recovered-api.mjs";
 import { fixtureResponse, listen } from "../../reconstruction/fixture/serve.mjs";
 
 const sha = (body) => createHash("sha256").update(body).digest("hex");
@@ -24,15 +25,9 @@ test("the fixture serves the recovered shell and blocks fonts, logos, and unknow
   const logo = fixtureResponse(new URL("http://127.0.0.1/brand/logo_main.png"));
   assert.equal(logo.status, 404);
   assert.equal(String(logo.body).includes("not fetched"), true);
-  const me = fixtureResponse(new URL("http://127.0.0.1/v1/me"));
-  assert.equal(me.status, 200);
-  const meJson = JSON.parse(String(me.body));
-  assert.equal(meJson.synthetic, true);
-  assert.equal(meJson.tenantId, "tenant_reconstruction");
-  assert.equal(meJson.principal.email, "synthetic@example.invalid");
-  const gap = fixtureResponse(new URL("http://127.0.0.1/v1/genui/plan"));
-  assert.equal(gap.status, 501);
-  assert.equal(JSON.parse(String(gap.body)).error, "synthetic_gap");
+  const gap = fixtureResponse(new URL("http://127.0.0.1/v1/me"));
+  assert.equal(gap.status, 404);
+  assert.equal(String(gap.body).includes("not in the captured fixture"), true);
 });
 
 test("the fixture listens only on loopback and returns the shell", async () => {
@@ -44,7 +39,10 @@ test("the fixture listens only on loopback and returns the shell", async () => {
     const text = await res.text();
     assert.equal(text.includes("Secondary | Company Brain"), true);
     assert.equal(text.includes("/assets/index-PLmoiPYI.js"), true);
+    assert.equal(text.includes("/reconstruction/observability"), true);
   } finally {
+    server.closeAllConnections?.();
     await new Promise((resolve) => server.close(resolve));
+    await stopRecoveredApi();
   }
 });
