@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your personal brain</title>
+<style>
+:root { color-scheme: light; --canvas:#f8f6f9; --ink:#17121a; --accent:#6600ae; --line:#d8d8df; --muted:#5c5d6d; --bad:#c70e1d; --panel:#fff; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--canvas); color:var(--ink); font-family:ui-sans-serif,system-ui,sans-serif; }
+.frame { max-width: 760px; margin: 0 auto; padding: 28px 16px 64px; }
+nav { display:flex; flex-wrap:wrap; gap:10px; margin: 0 0 16px; }
+nav a { color: var(--accent); }
+h1 { margin: 8px 0; font-size: 36px; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+h2 { margin: 0 0 4px; font-size: 18px; overflow-wrap: anywhere; }
+.banner { display:inline-flex; margin: 8px 0 16px; padding: 6px 12px; border-radius: 999px; background:#fcf3ff; color:var(--accent); font-size:13px; font-weight:650; }
+.note, .empty { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:16px; margin: 12px 0; }
+.body, .meta, .empty { overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 14px; }
+.alert { color: var(--bad); font-weight: 650; }
+.capsule { display:flex; flex-wrap:wrap; gap:2px; width:fit-content; max-width:100%; background:#17121a; border-radius:999px; padding:4px; margin:0 0 16px; }
+.capsule a { color:#fff; text-decoration:none; font-size:13px; padding:6px 10px; border-radius:999px; }
+.capsule a[aria-current="page"] { background:#fff; color:#17121a; }
+@media (max-width: 720px) { h1 { font-size: 30px; } .frame { padding: 20px 12px 48px; } }
+</style></head><body><main class="frame">
+<nav class="capsule" aria-label="Second Brain"><a href="index.html">Home</a><a href="personal.html" aria-current="page">Personal brain</a><a href="import.html">Import</a><a href="observability.html">Observability</a><a href="activity.html">Activity</a><a href="shared-documents.html">Shared documents</a></nav>
+<p class="banner">Deterministic plan. No model was called. AI is disabled.</p>
+<h1>Your personal brain</h1>
+<p class="meta">Signed in as Not signed in in Not connected. The server chose this owner. A requested brain id is not a grant. Provider configuration is absent, so this is not a live model view.</p>
+<p class="empty" role="status">This personal brain has no imported context yet. That is an empty brain, not a consultant or CEO task list.</p>
+</main></body></html>

@@ -11,7 +11,7 @@ import { signInternalRequest } from "../worker-root/worker/src/internal-auth.ts"
 import { admittedTenant, tokenFromRequest } from "./jwks-validator.mjs";
 import { verifyReleaseJwt } from "./identity.mjs";
 import { DEV_IDENTITY_HEADERS, releaseDecision } from "./routes.mjs";
-import { RELEASE_APP_LINKS, renderHome, renderImport, renderObservability, renderPersonal } from "../ui/pages.mjs";
+import { RELEASE_APP_LINKS, renderHome, renderImport, renderObservability, renderPersonal, renderSharedDocuments } from "../ui/pages.mjs";
 
 interface Env {
   RELEASE_MODE?: string;
@@ -288,6 +288,9 @@ export default {
     }
     if (request.method === "GET" && (url.pathname === "/settings" || url.pathname === "/settings/profile")) {
       return text(shell(), 200, "text/html; charset=utf-8");
+    }
+    if (request.method === "GET" && url.pathname === "/shared-documents") {
+      return text(renderSharedDocuments({ surface: "release", links: RELEASE_APP_LINKS, currentHref: "/shared-documents", who: who.email }), 200, "text/html; charset=utf-8");
     }
     if (request.method === "GET" && url.pathname === "/brains/me") {
       const planned = await signedFetch(env, who.email, "GET", `/harness/personal/plan${url.search}`);

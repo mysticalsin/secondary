@@ -1,0 +1,140 @@
+{
+  "schema": "partial-shared-register-metadata-v1",
+  "source_provenance": {
+    "archive_sha256": "291e1167d384d50d41b132c558cd54c4c1d959e972de0d4e53b4b6dcdf038836",
+    "archive_bytes": 0,
+    "manifest_sha256": "0e592e3f3e2b7c73d82e61003273b1c405b54cad942c70db527496ebe77d795e",
+    "manifest_member": "SYNTHETIC-BATCH/manifest.json",
+    "checksums_sha256": "9dbfecc6797fca0b92f9845e4d20245de94721f813779f9766d9adca70ddad20",
+    "manifest_checksum_verified": false,
+    "archive_members_validated": 0,
+    "archive_expanded_bytes": 0
+  },
+  "source_coverage_statement": "SYNTHETIC ONLY; 2 invented occurrences / 3 invented events, not real capture",
+  "historical_master_reconciliation": {
+    "reported_occurrences": 0,
+    "reported_sharing_events": 0,
+    "rowset_present": false,
+    "coverage": "SYNTHETIC ONLY; historical coverage UNKNOWN"
+  },
+  "counts": {
+    "source_document_occurrences": 2,
+    "source_sharing_evidence_events": 3,
+    "policy_excluded_sharepoint_occurrences": 0,
+    "policy_excluded_sharepoint_events": 0,
+    "retained_occurrences": 2,
+    "retained_sharing_evidence_events": 3,
+    "dedup_candidates": 2,
+    "verified_unique_underlying_documents": null,
+    "verified_content_copies": 0,
+    "identity_conflicts_or_variants": 1,
+    "omitted_unusable_shared_links": 0
+  },
+  "conflicts": [
+    {
+      "candidate_id": "70f4ae01392e16c91c50f24dce75e4e5259f2a8d4a91465100ddfb635f948387",
+      "reason": "SYNTHETIC multiple identity evidence; preserve occurrences",
+      "occurrences": 1,
+      "identity_evidence_variants": 2
+    }
+  ],
+  "records": [
+    {
+      "occurrence_id": "4d03f3e96e375358e24fdb15c3807891d6f1356438abe5c2ee728d1f39675efa",
+      "source_batch": "SYNTHETIC-BATCH",
+      "source_pointer": "/documents/0",
+      "source_line": null,
+      "source_document_id": "SYNTHETIC-DOCUMENT-0",
+      "provided_title": "SYNTHETIC <b>text only</b> document",
+      "provided_type": "SYNTHETIC attachment metadata",
+      "dedup_candidate_id": "70f4ae01392e16c91c50f24dce75e4e5259f2a8d4a91465100ddfb635f948387",
+      "dedup_confidence": "SYNTHETIC candidate only; not verified document identity",
+      "exact_identity_material_hashes": [
+        "917304e4fe8667c3517f26111a18128528a7aec8ae1c9b8714d7763bb097e3b5",
+        "a42b28f8c70cbfc02137afe534988d00b26ea5abd7530493700e5d7a0390c0c8"
+      ],
+      "sharing_events": [
+        {
+          "email_sender": "Synthetic Person <person@synthetic.example>",
+          "date_original": "2000-01-02T03:00:00Z",
+          "date_sao_paulo": "2000-01-02T00:00:00-03:00",
+          "source_email_id": "SYNTHETIC-MAIL-1",
+          "attachment_id": "SYNTHETIC-ATTACHMENT-1",
+          "archive_note": "SYNTHETIC-NOTE.txt",
+          "caveat": "SYNTHETIC ONLY; unverified email evidence",
+          "subject": "SYNTHETIC sharing evidence",
+          "source_email_link": "https://synthetic.example/mail/1",
+          "allowed_shared_link": null,
+          "link_query_and_fragment_omitted": false,
+          "source_pointer": "/documents/0/sharing_events/0",
+          "event_evidence_id": "fa1b34d164e993f909573a47d7fa85856b347033b3dd1a0a2274a97ec131319b",
+          "date_semantics": "SYNTHETIC email evidence, not verified original share time"
+        },
+        {
+          "email_sender": "Synthetic Person <person@synthetic.example>",
+          "date_original": "2000-01-02T03:00:00Z",
+          "date_sao_paulo": "2000-01-02T00:00:00-03:00",
+          "source_email_id": "SYNTHETIC-MAIL-2",
+          "attachment_id": "SYNTHETIC-ATTACHMENT-2",
+          "archive_note": "SYNTHETIC-NOTE.txt",
+          "caveat": "SYNTHETIC ONLY; unverified email evidence",
+          "subject": "SYNTHETIC sharing evidence",
+          "source_email_link": "https://synthetic.example/mail/2",
+          "allowed_shared_link": null,
+          "link_query_and_fragment_omitted": false,
+          "source_pointer": "/documents/0/sharing_events/1",
+          "event_evidence_id": "d60f6d513a73c35f4c392910107c907ed2fc5a46b2cc8cb8485927ca19668b62",
+          "date_semantics": "SYNTHETIC email evidence, not verified original share time"
+        }
+      ],
+      "provided_possession_statement": "SYNTHETIC unverified source claim",
+      "possession": "UNKNOWN",
+      "current_existence": "UNKNOWN",
+      "current_identity": "UNKNOWN",
+      "acl_status": "UNKNOWN",
+      "verified_local_copy": false
+    },
+    {
+      "occurrence_id": "b292e044b6b97271cf258ea31fb260b92903839a85477e030ef0a0669613792f",
+      "source_batch": "SYNTHETIC-BATCH",
+      "source_pointer": "/documents/1",
+      "source_line": null,
+      "source_document_id": "SYNTHETIC-DOCUMENT-1",
+      "provided_title": "SYNTHETIC Document B",
+      "provided_type": "SYNTHETIC link metadata",
+      "dedup_candidate_id": "ab45f1679053b1fe76aed2dd02627c2092e0cdb44c5b7f9712c96f55eb223eac",
+      "dedup_confidence": "SYNTHETIC candidate only; not verified document identity",
+      "exact_identity_material_hashes": [
+        "8b1fef0c31c8589ac94a565500cae029ca382eab7fccb76405d4db13f90101da"
+      ],
+      "sharing_events": [
+        {
+          "email_sender": "Synthetic Person <person@synthetic.example>",
+          "date_original": "2000-01-02T03:00:00Z",
+          "date_sao_paulo": "2000-01-02T00:00:00-03:00",
+          "source_email_id": "SYNTHETIC-MAIL-3",
+          "attachment_id": null,
+          "archive_note": "SYNTHETIC-NOTE.txt",
+          "caveat": "SYNTHETIC ONLY; unverified email evidence",
+          "subject": "SYNTHETIC sharing evidence",
+          "source_email_link": "https://synthetic.example/mail/3",
+          "allowed_shared_link": "https://synthetic.example/documents/b",
+          "link_query_and_fragment_omitted": false,
+          "source_pointer": "/documents/1/sharing_events/0",
+          "event_evidence_id": "c061948f7f81f0a1deb521b1e26eccf8a752e8d96088de96ae4901468db39768",
+          "date_semantics": "SYNTHETIC email evidence, not verified original share time"
+        }
+      ],
+      "provided_possession_statement": null,
+      "possession": "UNKNOWN",
+      "current_existence": "UNKNOWN",
+      "current_identity": "UNKNOWN",
+      "acl_status": "UNKNOWN",
+      "verified_local_copy": false
+    }
+  ],
+  "limitations": [
+    "SYNTHETIC ONLY: invented people, documents and provenance; no target fetched.",
+    "Metadata is not possession, existence or ACL proof."
+  ]
+}

@@ -1,0 +1,468 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared documents</title>
+<style>
+:root { color-scheme: light; --canvas:#f8f6f9; --ink:#17121a; --muted:#5c5d6d; --line:#d8d8df; --accent:#6600ae; --bad:#c70e1d; --ok:#1e6b34; --tint:#fcf3ff; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.top { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 10px; align-items: center; max-width: 1120px; margin: 0 auto; padding: 14px 16px 6px; }
+.brand { font-size: 13px; font-weight: 720; }
+.capsule { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; background: #17121a; border-radius: 999px; padding: 3px; max-width: 100%; }
+.capsule a { color: #fff; text-decoration: none; font-size: 13px; padding: 6px 11px; border-radius: 999px; }
+.capsule a[aria-current="page"] { background: #fff; color: #17121a; }
+.workspace { max-width: 1120px; margin: 8px auto 28px; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; min-width: 0; }
+h1 { margin: 0; font-size: 22px; letter-spacing: -0.03em; }
+.sub, .notice { margin: 6px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.notice { color: var(--bad); }
+label { display: grid; gap: 6px; margin: 12px 0; font-size: 12px; color: var(--muted); font-weight: 650; }
+textarea, input[type="search"], select, input[type="file"] { width: 100%; font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: #fff; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+button { font: inherit; border-radius: 999px; border: 1px solid var(--line); background: #fff; padding: 8px 12px; cursor: pointer; }
+button.primary { background: #6600ae; color: #fff; border-color: #6600ae; }
+.band { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; background: #17121a; color: #fff; border-radius: 14px; padding: 12px; margin: 14px 0; }
+.band p { margin: 0; }
+.band .k { color: #d8d8df; font-size: 11px; }
+.band .n { font-size: 18px; margin: 2px 0; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #f4f1f6; vertical-align: top; overflow-wrap: anywhere; }
+th { color: var(--muted); font-size: 11px; }
+.chip { display: inline-block; border-radius: 999px; padding: 2px 8px; background: var(--tint); color: #41007c; font-size: 11px; }
+:focus-visible { outline: 2px solid #6600ae; outline-offset: 2px; }
+@media (max-width: 720px) {
+  .top { grid-template-columns: 1fr; }
+  .band { grid-template-columns: 1fr 1fr; }
+  thead { display: none; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  tr { padding: 8px 0; border-bottom: 1px solid #f4f1f6; }
+  td { border: 0; padding: 2px 0; }
+}
+</style></head><body>
+<header class="top">
+  <div class="brand">Mantu</div>
+  <nav class="capsule" aria-label="Second Brain"><a href="index.html">Home</a><a href="personal.html">Personal brain</a><a href="import.html">Import</a><a href="observability.html">Observability</a><a href="activity.html">Activity</a><a href="shared-documents.html" aria-current="page">Shared documents</a></nav>
+</header>
+<main class="workspace">
+  <h1>Shared documents</h1>
+  <p class="sub">Not signed in. No account was contacted. This file starts empty. Possession, current identity, ACL, and unique document identity stay unknown unless a field in the file says otherwise. Null is not zero.</p>
+  <p class="sub">SharePoint-bearing text is refused and is not opened. Links are shown as text and are not fetched.</p>
+  <label>Local JSON file <input id="reg-file" type="file" accept=".json,application/json"></label>
+  <label>Or paste JSON <textarea id="reg-paste" rows="6" placeholder="partial-shared-register-metadata-v1"></textarea></label>
+  <div class="row">
+    <button class="primary" id="reg-import" type="button">Import in this browser</button>
+    <button id="reg-clear" type="button">Clear</button>
+  </div>
+  <p id="reg-status" class="sub" role="status">Empty. No shared-document register is loaded.</p>
+  <label>Search <input id="reg-q" type="search" placeholder="Title, sender, subject, or id"></label>
+  <label>Filter <select id="reg-filter"><option value="all">All occurrences</option><option value="variants">Variant candidates</option><option value="unknown-possession">Unknown possession</option><option value="shared-link">Has a shared link</option></select></label>
+  <div id="reg-view"></div>
+</main>
+<script>
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function exactKeys(value, keys) {
+  const present = Object.keys(value);
+  return present.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+function nonEmpty(value) {
+  return typeof value === "string" && value.length > 0;
+}
+function whole(value) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1_000_000_000;
+}
+function utf8Bytes(text) {
+  return new TextEncoder().encode(text).length;
+}
+function sharePointText(value) {
+  if (typeof value === "string") return value.toLowerCase().includes("sharepoint");
+  if (Array.isArray(value)) return value.some((item) => sharePointText(item));
+  if (isRecord(value)) return Object.values(value).some((item) => sharePointText(item));
+  return false;
+}
+function inertHttpUrl(value) {
+  if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  if (!url.hostname || url.username || url.password || url.search || url.hash) return false;
+  return true;
+}
+function validateRegister(text) {
+const SCHEMA = "partial-shared-register-metadata-v1";
+const MAX_BYTES = 2_000_000;
+const ROOT_KEYS = [
+  "schema",
+  "source_provenance",
+  "source_coverage_statement",
+  "historical_master_reconciliation",
+  "counts",
+  "conflicts",
+  "records",
+  "limitations",
+];
+const PROVENANCE_KEYS = [
+  "archive_sha256",
+  "archive_bytes",
+  "manifest_sha256",
+  "manifest_member",
+  "checksums_sha256",
+  "manifest_checksum_verified",
+  "archive_members_validated",
+  "archive_expanded_bytes",
+];
+const HISTORY_KEYS = ["reported_occurrences", "reported_sharing_events", "rowset_present", "coverage"];
+const COUNT_KEYS = [
+  "source_document_occurrences",
+  "source_sharing_evidence_events",
+  "policy_excluded_sharepoint_occurrences",
+  "policy_excluded_sharepoint_events",
+  "retained_occurrences",
+  "retained_sharing_evidence_events",
+  "dedup_candidates",
+  "verified_unique_underlying_documents",
+  "verified_content_copies",
+  "identity_conflicts_or_variants",
+  "omitted_unusable_shared_links",
+];
+const RECORD_KEYS = [
+  "occurrence_id",
+  "source_batch",
+  "source_pointer",
+  "source_line",
+  "source_document_id",
+  "provided_title",
+  "provided_type",
+  "dedup_candidate_id",
+  "dedup_confidence",
+  "exact_identity_material_hashes",
+  "sharing_events",
+  "provided_possession_statement",
+  "possession",
+  "current_existence",
+  "current_identity",
+  "acl_status",
+  "verified_local_copy",
+];
+const EVENT_KEYS = [
+  "email_sender",
+  "date_original",
+  "date_sao_paulo",
+  "source_email_id",
+  "attachment_id",
+  "archive_note",
+  "caveat",
+  "subject",
+  "source_email_link",
+  "allowed_shared_link",
+  "link_query_and_fragment_omitted",
+  "source_pointer",
+  "event_evidence_id",
+  "date_semantics",
+];
+const CONFLICT_KEYS = ["candidate_id", "reason", "occurrences", "identity_evidence_variants"];
+/**
+ * @param {string} text
+ * @returns {{ ok: true, register: Record<string, unknown> } | { ok: false, error: string }}
+ */
+  if (typeof text !== "string") return { ok: false, error: "invalid_json" };
+  if (utf8Bytes(text) > MAX_BYTES) return { ok: false, error: "register_too_large" };
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { ok: false, error: "invalid_json" };
+  }
+  if (!isRecord(value) || !exactKeys(value, ROOT_KEYS)) return { ok: false, error: "invalid_register" };
+  if (value.schema !== SCHEMA) return { ok: false, error: "unsupported_schema" };
+  if (!isRecord(value.source_provenance) || !exactKeys(value.source_provenance, PROVENANCE_KEYS)) return { ok: false, error: "invalid_provenance" };
+  const provenance = value.source_provenance;
+  if (!nonEmpty(provenance.archive_sha256) || !nonEmpty(provenance.manifest_sha256) || !nonEmpty(provenance.checksums_sha256) || !nonEmpty(provenance.manifest_member)) {
+    return { ok: false, error: "invalid_provenance" };
+  }
+  if (!whole(provenance.archive_bytes) || !whole(provenance.archive_members_validated) || !whole(provenance.archive_expanded_bytes)) {
+    return { ok: false, error: "invalid_provenance" };
+  }
+  if (typeof provenance.manifest_checksum_verified !== "boolean") return { ok: false, error: "invalid_provenance" };
+  if (typeof value.source_coverage_statement !== "string" || value.source_coverage_statement.length === 0) return { ok: false, error: "invalid_coverage" };
+  if (!isRecord(value.historical_master_reconciliation) || !exactKeys(value.historical_master_reconciliation, HISTORY_KEYS)) return { ok: false, error: "invalid_history" };
+  const history = value.historical_master_reconciliation;
+  if (!whole(history.reported_occurrences) || !whole(history.reported_sharing_events) || typeof history.rowset_present !== "boolean" || typeof history.coverage !== "string") {
+    return { ok: false, error: "invalid_history" };
+  }
+  if (!isRecord(value.counts) || !exactKeys(value.counts, COUNT_KEYS)) return { ok: false, error: "invalid_counts" };
+  const counts = value.counts;
+  if (counts.verified_unique_underlying_documents !== null) return { ok: false, error: "unique_documents_not_unknown" };
+  for (const key of COUNT_KEYS) {
+    if (key === "verified_unique_underlying_documents") continue;
+    if (!whole(counts[key])) return { ok: false, error: "invalid_counts" };
+  }
+  if (!Array.isArray(value.limitations) || value.limitations.some((item) => typeof item !== "string")) return { ok: false, error: "invalid_limitations" };
+  if (!Array.isArray(value.conflicts)) return { ok: false, error: "invalid_conflicts" };
+  for (const conflict of value.conflicts) {
+    if (!isRecord(conflict) || !exactKeys(conflict, CONFLICT_KEYS)) return { ok: false, error: "invalid_conflicts" };
+    if (!nonEmpty(conflict.candidate_id) || typeof conflict.reason !== "string" || !whole(conflict.occurrences) || !whole(conflict.identity_evidence_variants)) {
+      return { ok: false, error: "invalid_conflicts" };
+    }
+  }
+  if (!Array.isArray(value.records)) return { ok: false, error: "invalid_records" };
+  /** @type {string[]} */
+  const candidateIds = [];
+  let events = 0;
+  for (const record of value.records) {
+    if (!isRecord(record) || !exactKeys(record, RECORD_KEYS)) return { ok: false, error: "invalid_records" };
+    if (sharePointText(record)) return { ok: false, error: "sharepoint_excluded" };
+    for (const key of ["occurrence_id", "source_batch", "source_pointer", "source_document_id", "provided_title", "provided_type", "dedup_candidate_id", "dedup_confidence", "possession", "current_existence", "current_identity", "acl_status"]) {
+      if (!nonEmpty(record[key])) return { ok: false, error: "invalid_records" };
+    }
+    if (!(record.source_line === null || whole(record.source_line))) return { ok: false, error: "invalid_records" };
+    if (!(record.provided_possession_statement === null || typeof record.provided_possession_statement === "string")) return { ok: false, error: "invalid_records" };
+    if (typeof record.verified_local_copy !== "boolean") return { ok: false, error: "invalid_records" };
+    if (!Array.isArray(record.exact_identity_material_hashes) || record.exact_identity_material_hashes.some((item) => !nonEmpty(item))) {
+      return { ok: false, error: "invalid_records" };
+    }
+    if (!Array.isArray(record.sharing_events)) return { ok: false, error: "invalid_events" };
+    events += record.sharing_events.length;
+    const candidateId = record.dedup_candidate_id;
+    if (!nonEmpty(candidateId)) return { ok: false, error: "invalid_records" };
+    candidateIds.push(candidateId);
+    for (const event of record.sharing_events) {
+      if (!isRecord(event) || !exactKeys(event, EVENT_KEYS)) return { ok: false, error: "invalid_events" };
+      for (const key of ["date_original", "date_sao_paulo", "source_email_id", "source_pointer", "event_evidence_id", "date_semantics"]) {
+        if (!nonEmpty(event[key])) return { ok: false, error: "invalid_events" };
+      }
+      for (const key of ["email_sender", "attachment_id", "archive_note", "caveat", "subject", "source_email_link"]) {
+        if (!(event[key] === null || typeof event[key] === "string")) return { ok: false, error: "invalid_events" };
+      }
+      if (!(event.allowed_shared_link === null || typeof event.allowed_shared_link === "string")) return { ok: false, error: "invalid_events" };
+      if (typeof event.link_query_and_fragment_omitted !== "boolean") return { ok: false, error: "invalid_events" };
+      if (typeof event.source_email_link === "string" && !inertHttpUrl(event.source_email_link)) return { ok: false, error: "invalid_link" };
+      if (typeof event.allowed_shared_link === "string" && !inertHttpUrl(event.allowed_shared_link)) return { ok: false, error: "invalid_link" };
+    }
+  }
+  const distinct = new Set(candidateIds);
+  if (counts.retained_occurrences !== value.records.length) return { ok: false, error: "inconsistent_counts" };
+  if (counts.retained_sharing_evidence_events !== events) return { ok: false, error: "inconsistent_counts" };
+  if (counts.dedup_candidates !== distinct.size) return { ok: false, error: "inconsistent_counts" };
+  if (counts.identity_conflicts_or_variants !== value.conflicts.length) return { ok: false, error: "inconsistent_counts" };
+  const retainedOccurrences = counts.retained_occurrences;
+  const excludedOccurrences = counts.policy_excluded_sharepoint_occurrences;
+  const retainedEvents = counts.retained_sharing_evidence_events;
+  const excludedEvents = counts.policy_excluded_sharepoint_events;
+  if (!whole(retainedOccurrences) || !whole(excludedOccurrences) || !whole(retainedEvents) || !whole(excludedEvents)) return { ok: false, error: "invalid_counts" };
+  if (counts.source_document_occurrences !== retainedOccurrences + excludedOccurrences) return { ok: false, error: "inconsistent_counts" };
+  if (counts.source_sharing_evidence_events !== retainedEvents + excludedEvents) return { ok: false, error: "inconsistent_counts" };
+  for (const conflict of value.conflicts) {
+    const conflictId = conflict.candidate_id;
+    if (!nonEmpty(conflictId) || !distinct.has(conflictId)) return { ok: false, error: "inconsistent_counts" };
+  }
+  return { ok: true, register: value };
+}
+function projectRegister(register) {
+  const counts = /** @type {Record<string, unknown>} */ (register.counts);
+  const provenance = /** @type {Record<string, unknown>} */ (register.source_provenance);
+  const history = /** @type {Record<string, unknown>} */ (register.historical_master_reconciliation);
+  const conflicts = /** @type {Record<string, unknown>[]} */ (register.conflicts);
+  const variantIds = new Set(conflicts.map((item) => String(item.candidate_id)));
+  const records = /** @type {Record<string, unknown>[]} */ (register.records);
+  return {
+    trust: "supplied",
+    trustNote: "Supplied provenance. A true manifest_checksum_verified flag is a claim in the file, not a pinned-hash check by this page.",
+    manifestClaim: provenance.manifest_checksum_verified === true,
+    coverage: String(register.source_coverage_statement),
+    historyCoverage: String(history.coverage),
+    historyPresent: history.rowset_present === true,
+    reportedOccurrences: history.reported_occurrences,
+    reportedEvents: history.reported_sharing_events,
+    counts,
+    limitations: /** @type {string[]} */ (register.limitations),
+    conflicts: conflicts.map((item) => ({
+      candidateId: String(item.candidate_id),
+      reason: String(item.reason),
+      occurrences: item.occurrences,
+      variants: item.identity_evidence_variants,
+    })),
+    rows: records.map((record) => ({
+      occurrenceId: String(record.occurrence_id),
+      title: String(record.provided_title),
+      type: String(record.provided_type),
+      candidateId: String(record.dedup_candidate_id),
+      confidence: String(record.dedup_confidence),
+      documentId: String(record.source_document_id),
+      batch: String(record.source_batch),
+      pointer: String(record.source_pointer),
+      line: record.source_line,
+      possessionStatement: record.provided_possession_statement,
+      possession: String(record.possession),
+      existence: String(record.current_existence),
+      identity: String(record.current_identity),
+      acl: String(record.acl_status),
+      verifiedCopy: record.verified_local_copy === true,
+      variant: variantIds.has(String(record.dedup_candidate_id)),
+      events: /** @type {Record<string, unknown>[]} */ (record.sharing_events).map((event) => ({
+        sender: event.email_sender,
+        dateOriginal: String(event.date_original),
+        dateSaoPaulo: String(event.date_sao_paulo),
+        emailId: String(event.source_email_id),
+        attachmentId: event.attachment_id,
+        subject: event.subject,
+        caveat: event.caveat,
+        archiveNote: event.archive_note,
+        emailLink: event.source_email_link,
+        sharedLink: event.allowed_shared_link,
+        pointer: String(event.source_pointer),
+        evidenceId: String(event.event_evidence_id),
+        dateSemantics: String(event.date_semantics),
+      })),
+    })),
+  };
+}
+function visibleRows(view, query, filter) {
+  const q = query.trim().toLowerCase();
+  return view.rows.filter((row) => {
+    if (filter === "variants" && !row.variant) return false;
+    if (filter === "unknown-possession" && row.possession !== "UNKNOWN") return false;
+    if (filter === "shared-link" && !row.events.some((event) => event.sharedLink)) return false;
+    if (!q) return true;
+    const haystack = [
+      row.title,
+      row.type,
+      row.documentId,
+      row.candidateId,
+      row.occurrenceId,
+      ...row.events.flatMap((event) => [event.sender, event.subject, event.emailId]),
+    ].map((item) => (item == null ? "" : String(item).toLowerCase()));
+    return haystack.some((item) => item.includes(q));
+  });
+}
+(function () {
+  let current = null;
+  const statusEl = document.getElementById("reg-status");
+  const view = document.getElementById("reg-view");
+  const paste = document.getElementById("reg-paste");
+  const file = document.getElementById("reg-file");
+  const search = document.getElementById("reg-q");
+  const filter = document.getElementById("reg-filter");
+  function line(parent, label, value) {
+    const p = document.createElement("p");
+    p.textContent = label + ": " + (value === null || value === undefined || value === "" ? "Unknown" : String(value));
+    parent.appendChild(p);
+  }
+  function render() {
+    view.replaceChildren();
+    if (!current) return;
+    const band = document.createElement("section");
+    band.className = "band";
+    const unique = current.counts.verified_unique_underlying_documents;
+    for (const [label, value] of [
+      ["Retained occurrences", current.counts.retained_occurrences],
+      ["Retained events", current.counts.retained_sharing_evidence_events],
+      ["Dedup candidates", current.counts.dedup_candidates],
+      ["Variant groups", current.counts.identity_conflicts_or_variants],
+      ["Verified copies", current.counts.verified_content_copies],
+      ["Unique documents", unique === null ? "Unknown" : unique],
+    ]) {
+      const cell = document.createElement("div");
+      const k = document.createElement("p");
+      k.className = "k";
+      k.textContent = label;
+      const n = document.createElement("p");
+      n.className = "n";
+      n.textContent = String(value);
+      cell.append(k, n);
+      band.appendChild(cell);
+    }
+    view.appendChild(band);
+    const trust = document.createElement("p");
+    trust.className = "sub";
+    trust.textContent = current.trustNote + (current.manifestClaim ? " The file claims manifest_checksum_verified." : " The file does not claim a verified manifest checksum.");
+    view.appendChild(trust);
+    const coverage = document.createElement("p");
+    coverage.textContent = current.coverage;
+    view.appendChild(coverage);
+    const history = document.createElement("p");
+    history.className = "sub";
+    history.textContent = "Historical master: " + (current.historyPresent ? "rowset present" : "rowset absent") + ". " + current.historyCoverage;
+    view.appendChild(history);
+    if (current.conflicts.length) {
+      const note = document.createElement("p");
+      note.textContent = "Variant groups are not extra documents and do not establish a unique document.";
+      view.appendChild(note);
+    }
+    const rows = visibleRows(current, search.value, filter.value);
+    const table = document.createElement("table");
+    const head = document.createElement("tr");
+    for (const name of ["What", "Who", "When", "Provenance", "Identity"]) head.appendChild(Object.assign(document.createElement("th"), { textContent: name }));
+    const thead = document.createElement("thead");
+    thead.appendChild(head);
+    const body = document.createElement("tbody");
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      const what = document.createElement("td");
+      what.textContent = row.title + " (" + row.type + ")";
+      const who = document.createElement("td");
+      who.textContent = row.events.map((event) => event.sender == null ? "Unknown" : String(event.sender)).join("; ") || "Unknown";
+      const when = document.createElement("td");
+      when.textContent = row.events.map((event) => event.dateOriginal + " / " + event.dateSaoPaulo).join("; ") || "Unknown";
+      const prov = document.createElement("td");
+      prov.textContent = row.pointer + (row.line == null ? " (no source line)" : " line " + row.line) + " · " + row.batch;
+      const ident = document.createElement("td");
+      ident.textContent = "Possession " + row.possession + ". Existence " + row.existence + ". Identity " + row.identity + ". ACL " + row.acl + ". Verified copy " + (row.verifiedCopy ? "true" : "false") + ". Candidate " + row.candidateId + (row.variant ? " (variant group)" : "") + ".";
+      tr.append(what, who, when, prov, ident);
+      body.appendChild(tr);
+      for (const event of row.events) {
+        const detail = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        line(cell, "Subject", event.subject);
+        line(cell, "Caveat", event.caveat);
+        line(cell, "Date semantics", event.dateSemantics);
+        line(cell, "Email link (not opened)", event.emailLink);
+        line(cell, "Shared link (not opened)", event.sharedLink);
+        line(cell, "Evidence id", event.evidenceId);
+        detail.appendChild(cell);
+        body.appendChild(detail);
+      }
+    }
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.textContent = "No occurrences match this search or filter.";
+      tr.appendChild(td);
+      body.appendChild(tr);
+    }
+    table.append(thead, body);
+    view.appendChild(table);
+  }
+  document.getElementById("reg-import").addEventListener("click", async () => {
+    let text = paste.value;
+    const chosen = file.files && file.files[0];
+    if (chosen) text = await chosen.text();
+    const result = validateRegister(text);
+    if (!result.ok) {
+      statusEl.className = "notice";
+      statusEl.textContent = "Not imported (" + result.error + "). The previous register was kept.";
+      return;
+    }
+    current = projectRegister(result.register);
+    statusEl.className = "sub";
+    statusEl.textContent = "Imported " + current.rows.length + " occurrence(s) in this browser. Provenance is supplied, not a pinned hash.";
+    render();
+  });
+  document.getElementById("reg-clear").addEventListener("click", () => {
+    current = null;
+    paste.value = "";
+    if (file.value) file.value = "";
+    statusEl.className = "sub";
+    statusEl.textContent = "Empty. No shared-document register is loaded.";
+    render();
+  });
+  search.addEventListener("input", render);
+  filter.addEventListener("change", render);
+})();
+</script>
+</body></html>

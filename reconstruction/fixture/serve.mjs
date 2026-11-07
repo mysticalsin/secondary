@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ViewBoundary } from "../genui/boundary.ts";
-import { RELEASE_APP_LINKS, renderGenui, renderHome, renderImport, renderObservability, renderPersonal } from "../ui/pages.mjs";
+import { RELEASE_APP_LINKS, renderGenui, renderHome, renderImport, renderObservability, renderPersonal, renderSharedDocuments } from "../ui/pages.mjs";
 import { callApi, callImport, fixtureEmail, probeEgress, startRecoveredApi } from "./recovered-api.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -561,6 +561,15 @@ export function listen(port = 0) {
     }
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
       send(res, 200, "text/html; charset=utf-8", await fixtureHome(persona), cookie);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/shared-documents") {
+      send(res, 200, "text/html; charset=utf-8", renderSharedDocuments({
+        surface: "release",
+        links: RELEASE_APP_LINKS,
+        currentHref: "/shared-documents",
+        who: fixtureEmail(persona),
+      }), cookie);
       return;
     }
     if (req.method === "GET" && url.pathname === "/brains/me") {

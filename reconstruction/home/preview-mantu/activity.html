@@ -1,0 +1,319 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · Observability</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236600ae'/%3E%3C/svg%3E">
+<style>
+/* Palette for this page only.
+   Official public tokens, https://mantu.com/_next/static/chunks/0f4n.iw4c7x10.css :root
+   (fetched 2026-11-07): --primary-main #6600ae, --primary-50 #fcf3ff, --primary-950 #41007c,
+   --dark-main #17121a, --dark-50 #f8f6f9, --white #fff, --grey-200 #d8d8df, --grey-600 #5c5d6d,
+   --yellow-main #ffc709, --red-50 #fff1f1, --red-200 #ffcccf, --red-700 #c70e1d.
+   The same primary #6600ae is also --purple in recovered-delivery/shell-six/assets/index-DiBYRwP4.css.
+   Success uses that recovered stylesheet's --st-done #1e6b34 and --add-bg #e6f6ea.
+   mantu.com publishes no success-green token. The reel accent #6d5bd0 is not used. */
+:root {
+  color-scheme: light;
+  --canvas: #f8f6f9;
+  --ink: #17121a;
+  --nav: #6600ae;
+  --panel: #ffffff;
+  --muted: #5c5d6d;
+  --line: #d8d8df;
+  --accent: #6600ae;
+  --ok: #1e6b34;
+  --ok-bg: #e6f6ea;
+  --bad: #c70e1d;
+  --bad-bg: #fff1f1;
+  --focus-on-dark: #ffc709;
+  --shadow: 0 16px 40px rgba(23, 18, 26, 0.08);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; max-width: 100%; }
+body { background: var(--canvas); color: var(--ink); line-height: 1.45; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.frame { max-width: 980px; margin: 0 auto; padding: 32px 20px 72px; }
+.crumb { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+.crumb a { text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035em; font-weight: 650; }
+.lede { margin: 14px 0 0; font-size: 17px; color: var(--ink); }
+.banner {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 16px;
+  padding: 6px 12px; border-radius: 999px; background: #fcf3ff; color: var(--accent);
+  font-size: 13px; font-weight: 650;
+}
+.banner i { width: 8px; height: 8px; border-radius: 99px; background: var(--accent); display: block; }
+.pills, .tabs {
+  display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%;
+}
+.pills {
+  width: fit-content; margin: 18px 0 16px; padding: 4px;
+  background: #17121a; border-radius: 999px;
+}
+.pills a, .tabs button {
+  border: 0; border-radius: 999px; font: inherit; font-size: 14px;
+  text-decoration: none; padding: 9px 14px; cursor: pointer; line-height: 1.2;
+}
+.pills a { color: #ffffff; background: transparent; }
+.pills a[aria-current="page"] { background: #ffffff; color: var(--ink); }
+.pills a:hover { background: rgba(255,255,255,0.14); }
+.pills a[aria-current="page"]:hover { background: #ffffff; }
+.pills a:focus-visible { outline-color: var(--focus-on-dark); }
+.tabs { margin: 0 0 18px; }
+.tabs button, .tabs a[role="tab"] {
+  background: transparent; color: var(--muted); border: 1px solid transparent;
+  border-radius: 999px; font: inherit; font-size: 14px; text-decoration: none; padding: 9px 14px; line-height: 1.2;
+}
+.tabs button[aria-selected="true"], .tabs a[role="tab"][aria-selected="true"] {
+  background: white; color: var(--ink); border-color: var(--line); box-shadow: var(--shadow);
+}
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.stat, .sheet, .callout {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+.stat { padding: 18px 18px 16px; min-width: 0; }
+.mark {
+  width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center;
+  background: #fcf3ff; color: var(--accent); margin-bottom: 14px;
+}
+.k { margin: 0; color: var(--muted); font-size: 13px; }
+.value { margin: 8px 0 0; font-size: 22px; letter-spacing: -0.03em; }
+.hint { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.sheet { padding: 8px 8px 4px; }
+.host { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px 12px; border-bottom: 1px solid var(--line); }
+.host:last-child { border-bottom: 0; }
+.host strong { display: block; font-size: 15px; }
+.host span { color: var(--muted); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 650; background: #fcf3ff; color: var(--accent); white-space: nowrap; }
+.chip.ok { background: var(--ok-bg); color: var(--ok); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
+.chip.unknown { background: #eeeef0; color: #4b4c59; }
+.chip.fixture { background: #fff6d8; color: #5c4300; }
+.callout { padding: 18px 20px; }
+.callout.bad { background: var(--bad-bg); border-color: #ffcccf; }
+.callout h2, .block h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.02em; }
+.block { margin-top: 16px; }
+label { display: block; margin: 12px 0; font-size: 14px; }
+select, button.save, input[type="search"] {
+  font: inherit; border-radius: 12px; border: 1px solid var(--line); background: white; padding: 10px 12px;
+}
+button.save { background: var(--accent); color: white; cursor: pointer; }
+button.save:hover { background: #41007c; }
+input:disabled { opacity: 0.6; }
+.alert { margin: 12px 0 0; color: var(--bad); font-weight: 650; }
+details { margin-top: 28px; background: white; border: 1px solid var(--line); border-radius: 18px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 650; }
+pre, table { max-width: 100%; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.muted { color: var(--muted); font-size: 14px; }
+#panel-activity .activity-lead { margin: 8px 0 0; max-width: 62ch; }
+#panel-activity .coverage { margin: 14px 0; }
+#panel-activity .toolbar, #panel-activity .import-card, #panel-activity .empty-card, #panel-activity .detail-card {
+  background: white; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+}
+#panel-activity .toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: end; padding: 12px;
+}
+#panel-activity .toolbar label, #panel-activity .import-card label {
+  margin: 0; display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 650;
+}
+#panel-activity .toolbar label:first-of-type { flex: 1 1 240px; }
+#panel-activity .toolbar label { flex: 1 1 140px; }
+#panel-activity .toolbar input, #panel-activity .toolbar select, #panel-activity .import-card textarea, #panel-activity .import-card input[type="file"] {
+  width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 10px 12px;
+}
+#panel-activity .toolbar button, #panel-activity .import-card button { min-height: 44px; padding: 10px 16px; }
+#panel-activity .empty-card, #panel-activity .import-card, #panel-activity .detail-card { padding: 18px 18px 16px; margin-top: 14px; }
+#panel-activity .empty-card h2, #panel-activity .import-card h2, #panel-activity .detail-card h2 {
+  margin: 0; font-size: 22px; letter-spacing: -0.03em;
+}
+#panel-activity .runs { display: grid; gap: 10px; margin: 14px 0 0; min-width: 0; max-width: 100%; }
+#panel-activity .run {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center;
+  text-decoration: none; background: white; border: 1px solid var(--line); border-radius: 18px;
+  padding: 14px 16px; box-shadow: var(--shadow); width: 100%; max-width: 100%; min-width: 0;
+}
+#panel-activity .run[aria-current="page"] { border-color: #c9a4e4; box-shadow: 0 0 0 3px #fcf3ff; }
+#panel-activity .run strong, #panel-activity .id, #panel-activity .path, #panel-activity .detail-card, #panel-activity .detail-card p, #panel-activity .detail-card h2, #panel-activity .detail-card h3 {
+  overflow-wrap: anywhere; min-width: 0; max-width: 100%;
+}
+#panel-activity .run strong { display: block; font-size: 16px; letter-spacing: -0.02em; }
+#panel-activity .run-side { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; min-width: 0; max-width: 100%; }
+#panel-activity .id { color: var(--muted); font-size: 12px; }
+#panel-activity .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+#panel-activity .detail-card details { margin-top: 16px; max-width: 100%; min-width: 0; }
+#panel-activity .path { margin: 4px 0; }
+@media (max-width: 720px) {
+  .frame { padding: 20px 16px 48px; }
+  h1 { font-size: 32px; }
+  .value { font-size: 20px; }
+  .host { align-items: flex-start; }
+  #panel-activity .toolbar label, #panel-activity .toolbar label:first-of-type { flex-basis: 100%; }
+  #panel-activity .run { grid-template-columns: 1fr; }
+  #panel-activity .run-side { justify-content: flex-start; }
+}
+.home-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dest, .unknowns article {
+  background: white; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+  padding: 18px; min-width: 0; max-width: 100%;
+}
+.dest h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.dest p, .unknowns p, .lede, .eyebrow { overflow-wrap: anywhere; max-width: 100%; }
+.dest .goto {
+  display: inline-block; margin-top: 14px; background: var(--accent); color: white; text-decoration: none;
+  border-radius: 999px; padding: 9px 14px; font-weight: 650;
+}
+.unknowns { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 22px; }
+.unknowns .value { font-size: 22px; margin: 4px 0; letter-spacing: -0.03em; }
+.eyebrow { margin: 0; color: var(--accent); font-size: 13px; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
+@media (max-width: 720px) {
+  .home-grid, .unknowns { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
+</style></head><body>
+<main class="frame">
+  <p class="crumb"><a href="/settings">Settings</a> <span aria-hidden="true">/</span> Observability</p>
+  <h1>Observability</h1>
+  <p class="lede">File preview</p>
+  <p class="banner"><i></i>Opened from a file on this computer. No account was contacted. This file has no review records.</p>
+  <nav class="pills" aria-label="Settings"><a href="index.html" >Home</a><a href="personal.html" >Personal brain</a><a href="import.html" >Import</a><a href="observability.html" >Observability</a><a href="activity.html" aria-current="page">Activity</a><a href="shared-documents.html" >Shared documents</a></nav>
+  <div class="tabs" role="tablist" aria-label="Observability sections">
+    <button type="button" role="tab" id="tab-status" aria-controls="panel-status" aria-selected="false">Status</button>
+    <button type="button" role="tab" id="tab-agents" aria-controls="panel-agents" aria-selected="false">Agents</button>
+    <a role="tab" id="tab-activity" href="/settings/observability?section=activity" aria-controls="panel-activity" aria-selected="true">Activity</a>
+    <button type="button" role="tab" id="tab-audit" aria-controls="panel-audit" aria-selected="false">Audit</button>
+    <button type="button" role="tab" id="tab-usage" aria-controls="panel-usage" aria-selected="false">Usage</button>
+    <button type="button" role="tab" id="tab-prefs" aria-controls="panel-prefs" aria-selected="false">Preferences</button>
+  </div>
+  <section id="panel-status" role="tabpanel" aria-labelledby="tab-status" hidden>
+    <div class="grid">
+      <article class="stat"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="m8.5 12.2 2.2 2.2 4.6-5"/></svg></span><p class="k">Readiness</p><p class="value">Unknown</p><p class="hint">This file does not measure readiness.</p></article>
+      <article class="stat"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 3 10 2-5h7"/></svg></span><p class="k">Health</p><p class="value">Unknown</p><p class="hint">No live uptime is measured.</p></article>
+      <article class="stat"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg></span><p class="k">AI processor</p><p class="value">Disabled</p><p class="hint">No model is called.</p></article>
+      <article class="stat"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/></svg></span><p class="k">Freshness</p><p class="value">Unknown</p><p class="hint">Source refresh success is not reported. Connector sync is not bound.</p></article>
+    </div>
+  </section>
+  <section id="panel-activity" role="tabpanel" aria-labelledby="tab-activity">
+    <p class="banner"><i></i>Read-only review activity. No model was called. AI is disabled.</p>
+    <p class="activity-lead muted">This file is not signed in. Only records imported for this sign-in are shown. Evidence paths are untrusted text and are not opened.</p>
+    <p class="coverage" role="status">No review records for this session. Nothing has been imported.</p>
+    <p class="" role="status">Nothing has been imported into this file.</p>
+    <form class="toolbar" method="get" action="activity.html">
+      <input type="hidden" name="section" value="activity">
+      <label>Search <input name="q" value="" placeholder="Notes or label"></label>
+      <label>Capture <select name="capture"><option value="">Any</option><option value="historical-manual" >Historical manual</option><option value="live-exporter" >Reported completion export</option></select></label>
+      <label>Kind <select name="kind"><option value="">Any</option><option value="static" >Static review</option><option value="runtime" >Runtime review</option></select></label>
+      <label>Date <input name="date" value="" placeholder="YYYY-MM-DD" inputmode="numeric"></label>
+      <button class="save" type="submit">Filter</button>
+    </form>
+    <article class="empty-card"><h2>No reviews yet</h2><p>Nothing has been imported.</p></article>
+    
+    
+    
+    
+  </section>
+  <section id="panel-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
+    <p class="banner"><i></i>Local preview · synthetic data</p>
+    <p class="muted">These host records come from the recovered local seed. They are not live agent runs.</p>
+    <div class="sheet"><p>No agent rows are in this file.</p></div>
+  </section>
+  <section id="panel-audit" role="tabpanel" aria-labelledby="tab-audit" hidden>
+    <div class="callout bad">
+      <h2>Audit</h2>
+      <p><span class="chip unknown">Not loaded</span></p>
+      <p>Audit was not requested from this file.</p>
+    </div>
+    <details>
+      <summary>Audit response</summary>
+      <pre></pre>
+    </details>
+  </section>
+  <section id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" hidden>
+    <p class="banner"><i></i>Deterministic ledger. No model was called. AI is disabled.</p>
+    <p class="muted">Signed in as not signed in in not connected. This page shows only this token's ledger. Cost is unknown. Client-reported numbers are not provider-verified.</p>
+    
+    <form method="get" action="/settings/observability">
+      <input type="hidden" name="section" value="usage">
+      <label>Operation <input name="operation" value="" placeholder="import"></label>
+      <label>Trust <input name="trust" value="" placeholder="unknown"></label>
+      <label>Request <input name="requestId" value="" placeholder="Request id"></label>
+      <button class="save" type="submit">Filter</button>
+    </form>
+    
+    
+    
+    
+    
+    <p class="muted">A client report stays client-reported and is not provider-verified. A synthetic fixture, including a zero, is not server-measured and is not added to live token totals. Unknown usage is not zero. Provider-verified billing is not available.</p>
+  </section>
+  <section id="panel-prefs" role="tabpanel" aria-labelledby="tab-prefs" hidden>
+    <div class="callout">
+      <h2>Language</h2>
+      <p class="muted">Saves the recovered language preference for this local session. It does not change telemetry.</p>
+      <form method="post" action="/settings/observability/prefs">
+        <label>Language
+          <select name="lang">
+            <option value="">Follow unset</option>
+            <option value="en" >English</option>
+            <option value="fr" >French</option>
+          </select>
+        </label>
+        <button class="save" type="submit">Save preference</button>
+      </form>
+      <p class="" role="none"></p>
+    </div>
+    <div class="block">
+      <h2>Telemetry</h2>
+      <p><span class="chip unknown">Unavailable</span></p>
+      <label><input type="checkbox" disabled> Enable traces</label>
+      <p class="muted">No recovered route writes sampling, logs, or paid telemetry. Cost and live uptime are unknown.</p>
+    </div>
+  </section>
+  <details>
+    <summary>Technical details</summary>
+    <p class="muted">Role File preview. Principal not signed in. Tenant not connected. Persona none.</p>
+    <p class="muted">This screen is a reconstruction served beside the captured app. The stored shell has no Observability settings item; its settings router sends an unknown section back to Profile. The Settings link is added on the served page only. Readiness checks the local Durable Object and storage, not source freshness. </p>
+    <label>Filter routes <input id="route-filter" type="search" placeholder="Filter routes"></label>
+    <table id="route-table"><thead><tr><th>Route</th><th>Status</th><th>Meaning</th></tr></thead><tbody></tbody></table>
+  </details>
+</main>
+<script>
+const tabs = [...document.querySelectorAll('[role="tab"]')];
+function select(id) {
+  for (const tab of tabs) {
+    const on = tab.id === id;
+    tab.setAttribute("aria-selected", on ? "true" : "false");
+    document.getElementById(tab.getAttribute("aria-controls")).hidden = !on;
+  }
+}
+for (const tab of tabs) {
+  tab.addEventListener("click", () => select(tab.id));
+  tab.addEventListener("keydown", (event) => {
+    const i = tabs.indexOf(tab);
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      const next = tabs[(i + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      next.focus();
+      select(next.id);
+    }
+  });
+}
+document.getElementById("route-filter").addEventListener("input", (event) => {
+  const q = event.target.value.toLowerCase();
+  for (const row of document.querySelectorAll("#route-table tbody tr")) row.hidden = q && !row.textContent.toLowerCase().includes(q);
+});
+const activityFile = document.getElementById("activity-file");
+if (activityFile) activityFile.addEventListener("change", async () => {
+  const chosen = activityFile.files && activityFile.files[0];
+  const area = document.querySelector("textarea[name=ndjson]");
+  if (chosen && area) area.value = await chosen.text();
+});
+</script>
+</body></html>

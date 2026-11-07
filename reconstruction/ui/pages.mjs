@@ -4,6 +4,18 @@
  * white rounded panels, muted labels, one restrained purple accent.
  * Mandate, Nova, SOC 2, and the numbers in that still are not copied.
  */
+import {
+  exactKeys,
+  inertHttpUrl,
+  isRecord,
+  nonEmpty,
+  projectRegister,
+  sharePointText,
+  utf8Bytes,
+  validateRegister,
+  visibleRows,
+  whole,
+} from "../shared-documents/register.mjs";
 
 /**
  * @typedef {{
@@ -428,6 +440,7 @@ export const RELEASE_APP_LINKS = [
   ["/reconstruction/import", "Import"],
   ["/settings/observability", "Observability"],
   ["/settings/observability?section=activity", "Activity"],
+  ["/shared-documents", "Shared documents"],
 ];
 
 const SETTINGS_LINKS = [
@@ -998,7 +1011,8 @@ export function renderHome(model) {
 <title>Second Brain</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%2317121a'/%3E%3C/svg%3E">
 <style>
-:root { color-scheme: light; --canvas:#e6e4e8; --ink:#17121a; --muted:#6a6570; --line:#e6e4e8; --accent:#5b4fd6; --bad:#c70e1d; --ok:#1e6b34; }
+/* Tokens observed 2026-11-07 from https://mantu.com/ via https://mantu.com/_next/static/chunks/0f4n.iw4c7x10.css : --primary-main #6600ae, --primary-50 #fcf3ff, --primary-950 #41007c, --dark-main #17121a, --dark-50 #f8f6f9, --grey-200 #d8d8df, --grey-600 #5c5d6d, --red-700 #c70e1d, --yellow-main #ffc709. Recovered index-DiBYRwP4.css repeats --purple #6600ae and sets --st-done #1e6b34, --add-bg #e6f6ea. */
+:root { color-scheme: light; --canvas:#f8f6f9; --ink:#17121a; --muted:#5c5d6d; --line:#d8d8df; --accent:#6600ae; --bad:#c70e1d; --ok:#1e6b34; --tint:#fcf3ff; --focus-dark:#ffc709; }
 * { box-sizing: border-box; }
 html, body { margin: 0; max-width: 100%; }
 body { background: var(--canvas); color: var(--ink); font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; }
@@ -1010,24 +1024,26 @@ button, input { font: inherit; }
 .capsule a[aria-current="page"] { background: #fff; color: #17121a; }
 .utils { justify-self: end; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .who { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; text-align: right; }
-.util { border: 1px solid #d8d5db; background: #fff; border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+.util { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 10px; cursor: pointer; font-size: 12px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.capsule a:focus-visible, .util:focus-visible { outline-color: var(--focus-dark); }
 .util kbd { font: inherit; color: var(--muted); }
-.workspace { max-width: 1120px; margin: 8px auto 28px; background: #fff; border: 1px solid #dddbe0; border-radius: 18px; padding: 16px 16px 18px; min-width: 0; }
+.workspace { max-width: 1120px; margin: 8px auto 28px; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 20px; min-width: 0; }
 h1 { margin: 0; font-size: 22px; line-height: 1.15; letter-spacing: -0.03em; font-weight: 640; }
 .sub, .notice { margin: 4px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .notice { color: var(--bad); }
 .filters { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 12px; }
 .filters button { border: 0; background: transparent; color: var(--muted); border-radius: 8px; padding: 5px 9px; cursor: pointer; }
-.filters button[aria-pressed="true"] { background: #f3f1f4; color: var(--ink); }
-.band { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; background: #1b2433; color: #fff; border-radius: 14px; padding: 12px 4px; margin: 12px 0; }
+.filters button[aria-pressed="true"] { background: var(--tint); color: #41007c; }
+.band { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; background: #17121a; color: #fff; border-radius: 14px; padding: 14px 6px; margin: 14px 0 12px; }
 .band div { padding: 0 12px; min-width: 0; }
-.band .k { color: #b7c0ce; font-size: 11px; }
-.band .n { font-size: 22px; font-weight: 620; letter-spacing: -0.03em; margin: 1px 0; overflow-wrap: anywhere; }
-.band .s { color: #8b95a6; font-size: 11px; }
+.band .k { color: #d8d8df; font-size: 11px; font-weight: 650; }
+.band .n { font-size: 22px; font-weight: 640; letter-spacing: -0.03em; margin: 2px 0; overflow-wrap: anywhere; }
+.band .s { color: #d8d8df; font-size: 11px; }
 .table-wrap { max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; font-size: 11px; font-weight: 620; color: #6d6872; padding: 7px 10px; border-bottom: 1px solid #eee; }
-td { padding: 9px 10px; border-bottom: 1px solid #f2f1f4; vertical-align: middle; }
+th { text-align: left; font-size: 11px; font-weight: 650; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 10px; border-bottom: 1px solid #f4f1f6; vertical-align: middle; }
 td:last-child { overflow-wrap: anywhere; }
 td a { color: inherit; }
 .chip { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #eef0f3; color: #3c4454; white-space: nowrap; }
@@ -1041,7 +1057,7 @@ td a { color: inherit; }
 .panel h2 { margin: 14px 16px 6px; font-size: 16px; letter-spacing: -0.02em; }
 .panel input { width: 100%; border: 0; border-bottom: 1px solid #eee; padding: 14px 16px; outline: none; font-size: 15px; }
 .panel [role="option"], .panel .close, .panel .go { display: block; width: 100%; text-align: left; background: #fff; border: 0; padding: 10px 16px; cursor: pointer; }
-.panel [role="option"][aria-selected="true"] { background: #f6f4fb; box-shadow: inset 2px 0 0 var(--accent); }
+.panel [role="option"][aria-selected="true"] { background: var(--tint); box-shadow: inset 2px 0 0 var(--accent); }
 .panel .hint { color: var(--muted); font-size: 12px; }
 .panel .actions { display: flex; gap: 8px; padding: 12px 16px 16px; }
 .panel .actions a, .panel .actions button { width: auto; border-radius: 999px; padding: 8px 12px; text-decoration: none; font-size: 13px; }
@@ -1054,10 +1070,10 @@ td a { color: inherit; }
   h1 { font-size: 20px; }
   thead { display: none; }
   table, tbody { display: block; width: 100%; }
-  tr:not([hidden]) { display: block; width: 100%; padding: 8px 0 10px; border-bottom: 1px solid #f2f1f4; }
+  tr:not([hidden]) { display: block; width: 100%; padding: 8px 0 10px; border-bottom: 1px solid #f4f1f6; }
   tr[hidden] { display: none; }
   td { display: block; width: 100%; border: 0; padding: 1px 0; }
-  td:nth-child(2) { color: #6d6872; font-size: 12px; }
+  td:nth-child(2) { color: var(--muted); font-size: 12px; }
 }
 </style></head><body>
 <header class="top">
@@ -1230,6 +1246,207 @@ td a { color: inherit; }
       if (none) none.hidden = visible !== 0;
     });
   });
+})();
+</script>
+</body></html>`;
+}
+
+/**
+ * @param {{ surface: "release" | "preview", links: [string, string][], currentHref: string, who: string }} model
+ * @returns {string}
+ */
+export function renderSharedDocuments(model) {
+  const program = [isRecord, exactKeys, nonEmpty, whole, utf8Bytes, sharePointText, inertHttpUrl, validateRegister, projectRegister, visibleRows]
+    .map((fn) => fn.toString())
+    .join("\n");
+  const status = model.surface === "preview"
+    ? "Not signed in. No account was contacted. This file starts empty."
+    : `Signed in as ${model.who}. A register stays in this browser and is not uploaded.`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shared documents</title>
+<style>
+:root { color-scheme: light; --canvas:#f8f6f9; --ink:#17121a; --muted:#5c5d6d; --line:#d8d8df; --accent:#6600ae; --bad:#c70e1d; --ok:#1e6b34; --tint:#fcf3ff; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--ink); font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.top { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); gap: 10px; align-items: center; max-width: 1120px; margin: 0 auto; padding: 14px 16px 6px; }
+.brand { font-size: 13px; font-weight: 720; }
+.capsule { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; background: #17121a; border-radius: 999px; padding: 3px; max-width: 100%; }
+.capsule a { color: #fff; text-decoration: none; font-size: 13px; padding: 6px 11px; border-radius: 999px; }
+.capsule a[aria-current="page"] { background: #fff; color: #17121a; }
+.workspace { max-width: 1120px; margin: 8px auto 28px; background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 18px; min-width: 0; }
+h1 { margin: 0; font-size: 22px; letter-spacing: -0.03em; }
+.sub, .notice { margin: 6px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.notice { color: var(--bad); }
+label { display: grid; gap: 6px; margin: 12px 0; font-size: 12px; color: var(--muted); font-weight: 650; }
+textarea, input[type="search"], select, input[type="file"] { width: 100%; font: inherit; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: #fff; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+button { font: inherit; border-radius: 999px; border: 1px solid var(--line); background: #fff; padding: 8px 12px; cursor: pointer; }
+button.primary { background: #6600ae; color: #fff; border-color: #6600ae; }
+.band { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; background: #17121a; color: #fff; border-radius: 14px; padding: 12px; margin: 14px 0; }
+.band p { margin: 0; }
+.band .k { color: #d8d8df; font-size: 11px; }
+.band .n { font-size: 18px; margin: 2px 0; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #f4f1f6; vertical-align: top; overflow-wrap: anywhere; }
+th { color: var(--muted); font-size: 11px; }
+.chip { display: inline-block; border-radius: 999px; padding: 2px 8px; background: var(--tint); color: #41007c; font-size: 11px; }
+:focus-visible { outline: 2px solid #6600ae; outline-offset: 2px; }
+@media (max-width: 720px) {
+  .top { grid-template-columns: 1fr; }
+  .band { grid-template-columns: 1fr 1fr; }
+  thead { display: none; }
+  table, tbody, tr, td { display: block; width: 100%; }
+  tr { padding: 8px 0; border-bottom: 1px solid #f4f1f6; }
+  td { border: 0; padding: 2px 0; }
+}
+</style></head><body>
+<header class="top">
+  <div class="brand">Mantu</div>
+  <nav class="capsule" aria-label="Second Brain">${model.links.map(([link, label]) => `<a href="${esc(link)}"${link === model.currentHref ? ' aria-current="page"' : ""}>${esc(label)}</a>`).join("")}</nav>
+</header>
+<main class="workspace">
+  <h1>Shared documents</h1>
+  <p class="sub">${esc(status)} Possession, current identity, ACL, and unique document identity stay unknown unless a field in the file says otherwise. Null is not zero.</p>
+  <p class="sub">SharePoint-bearing text is refused and is not opened. Links are shown as text and are not fetched.</p>
+  <label>Local JSON file <input id="reg-file" type="file" accept=".json,application/json"></label>
+  <label>Or paste JSON <textarea id="reg-paste" rows="6" placeholder="partial-shared-register-metadata-v1"></textarea></label>
+  <div class="row">
+    <button class="primary" id="reg-import" type="button">Import in this browser</button>
+    <button id="reg-clear" type="button">Clear</button>
+  </div>
+  <p id="reg-status" class="sub" role="status">Empty. No shared-document register is loaded.</p>
+  <label>Search <input id="reg-q" type="search" placeholder="Title, sender, subject, or id"></label>
+  <label>Filter <select id="reg-filter"><option value="all">All occurrences</option><option value="variants">Variant candidates</option><option value="unknown-possession">Unknown possession</option><option value="shared-link">Has a shared link</option></select></label>
+  <div id="reg-view"></div>
+</main>
+<script>
+${program}
+(function () {
+  let current = null;
+  const statusEl = document.getElementById("reg-status");
+  const view = document.getElementById("reg-view");
+  const paste = document.getElementById("reg-paste");
+  const file = document.getElementById("reg-file");
+  const search = document.getElementById("reg-q");
+  const filter = document.getElementById("reg-filter");
+  function line(parent, label, value) {
+    const p = document.createElement("p");
+    p.textContent = label + ": " + (value === null || value === undefined || value === "" ? "Unknown" : String(value));
+    parent.appendChild(p);
+  }
+  function render() {
+    view.replaceChildren();
+    if (!current) return;
+    const band = document.createElement("section");
+    band.className = "band";
+    const unique = current.counts.verified_unique_underlying_documents;
+    for (const [label, value] of [
+      ["Retained occurrences", current.counts.retained_occurrences],
+      ["Retained events", current.counts.retained_sharing_evidence_events],
+      ["Dedup candidates", current.counts.dedup_candidates],
+      ["Variant groups", current.counts.identity_conflicts_or_variants],
+      ["Verified copies", current.counts.verified_content_copies],
+      ["Unique documents", unique === null ? "Unknown" : unique],
+    ]) {
+      const cell = document.createElement("div");
+      const k = document.createElement("p");
+      k.className = "k";
+      k.textContent = label;
+      const n = document.createElement("p");
+      n.className = "n";
+      n.textContent = String(value);
+      cell.append(k, n);
+      band.appendChild(cell);
+    }
+    view.appendChild(band);
+    const trust = document.createElement("p");
+    trust.className = "sub";
+    trust.textContent = current.trustNote + (current.manifestClaim ? " The file claims manifest_checksum_verified." : " The file does not claim a verified manifest checksum.");
+    view.appendChild(trust);
+    const coverage = document.createElement("p");
+    coverage.textContent = current.coverage;
+    view.appendChild(coverage);
+    const history = document.createElement("p");
+    history.className = "sub";
+    history.textContent = "Historical master: " + (current.historyPresent ? "rowset present" : "rowset absent") + ". " + current.historyCoverage;
+    view.appendChild(history);
+    if (current.conflicts.length) {
+      const note = document.createElement("p");
+      note.textContent = "Variant groups are not extra documents and do not establish a unique document.";
+      view.appendChild(note);
+    }
+    const rows = visibleRows(current, search.value, filter.value);
+    const table = document.createElement("table");
+    const head = document.createElement("tr");
+    for (const name of ["What", "Who", "When", "Provenance", "Identity"]) head.appendChild(Object.assign(document.createElement("th"), { textContent: name }));
+    const thead = document.createElement("thead");
+    thead.appendChild(head);
+    const body = document.createElement("tbody");
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      const what = document.createElement("td");
+      what.textContent = row.title + " (" + row.type + ")";
+      const who = document.createElement("td");
+      who.textContent = row.events.map((event) => event.sender == null ? "Unknown" : String(event.sender)).join("; ") || "Unknown";
+      const when = document.createElement("td");
+      when.textContent = row.events.map((event) => event.dateOriginal + " / " + event.dateSaoPaulo).join("; ") || "Unknown";
+      const prov = document.createElement("td");
+      prov.textContent = row.pointer + (row.line == null ? " (no source line)" : " line " + row.line) + " · " + row.batch;
+      const ident = document.createElement("td");
+      ident.textContent = "Possession " + row.possession + ". Existence " + row.existence + ". Identity " + row.identity + ". ACL " + row.acl + ". Verified copy " + (row.verifiedCopy ? "true" : "false") + ". Candidate " + row.candidateId + (row.variant ? " (variant group)" : "") + ".";
+      tr.append(what, who, when, prov, ident);
+      body.appendChild(tr);
+      for (const event of row.events) {
+        const detail = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        line(cell, "Subject", event.subject);
+        line(cell, "Caveat", event.caveat);
+        line(cell, "Date semantics", event.dateSemantics);
+        line(cell, "Email link (not opened)", event.emailLink);
+        line(cell, "Shared link (not opened)", event.sharedLink);
+        line(cell, "Evidence id", event.evidenceId);
+        detail.appendChild(cell);
+        body.appendChild(detail);
+      }
+    }
+    if (!rows.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.textContent = "No occurrences match this search or filter.";
+      tr.appendChild(td);
+      body.appendChild(tr);
+    }
+    table.append(thead, body);
+    view.appendChild(table);
+  }
+  document.getElementById("reg-import").addEventListener("click", async () => {
+    let text = paste.value;
+    const chosen = file.files && file.files[0];
+    if (chosen) text = await chosen.text();
+    const result = validateRegister(text);
+    if (!result.ok) {
+      statusEl.className = "notice";
+      statusEl.textContent = "Not imported (" + result.error + "). The previous register was kept.";
+      return;
+    }
+    current = projectRegister(result.register);
+    statusEl.className = "sub";
+    statusEl.textContent = "Imported " + current.rows.length + " occurrence(s) in this browser. Provenance is supplied, not a pinned hash.";
+    render();
+  });
+  document.getElementById("reg-clear").addEventListener("click", () => {
+    current = null;
+    paste.value = "";
+    if (file.value) file.value = "";
+    statusEl.className = "sub";
+    statusEl.textContent = "Empty. No shared-document register is loaded.";
+    render();
+  });
+  search.addEventListener("input", render);
+  filter.addEventListener("change", render);
 })();
 </script>
 </body></html>`;

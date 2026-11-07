@@ -51,6 +51,12 @@ export function renderImport(model: {
 export function renderPersonal(model: { status: number; plan?: { error?: string; principalId?: string; tenantId?: string; context?: { externalId?: string; version?: number | null; text?: string; contentSha256?: string | null }[]; empty?: boolean; coverage?: string; shown?: number; total?: number }; email: string }): string;
 export function renderGenui(state: { who?: string; personal?: string; request?: string; planStatus?: string | number; planHtml?: string }): string;
 export const RELEASE_APP_LINKS: [string, string][];
+export function renderSharedDocuments(model: {
+  surface: "release" | "preview";
+  links: [string, string][];
+  currentHref: string;
+  who: string;
+}): string;
 export function renderHome(model: {
   surface: "release" | "preview";
   who: string;

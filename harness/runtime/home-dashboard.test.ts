@@ -12,6 +12,7 @@ const links: [string, string][] = [
   ["import.html", "Import"],
   ["observability.html", "Observability"],
   ["activity.html", "Activity"],
+  ["shared-documents.html", "Shared documents"],
 ];
 
 test("the home dashboard names unknown measures and does not invent figures", () => {

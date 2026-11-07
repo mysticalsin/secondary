@@ -4,7 +4,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { renderHome, renderObservability, renderPersonal, renderImport } from "../ui/pages.mjs";
+import { renderHome, renderObservability, renderPersonal, renderImport, renderSharedDocuments } from "../ui/pages.mjs";
 
 const links = [
   ["index.html", "Home"],
@@ -12,6 +12,7 @@ const links = [
   ["import.html", "Import"],
   ["observability.html", "Observability"],
   ["activity.html", "Activity"],
+  ["shared-documents.html", "Shared documents"],
 ];
 
 const previewBanner = "Opened from a file on this computer. No account was contacted. This file has no review records.";
@@ -112,12 +113,20 @@ const imported = renderImport({
   currentHref: "import.html",
 });
 
+const shared = renderSharedDocuments({
+  surface: "preview",
+  links,
+  currentHref: "shared-documents.html",
+  who: "Not signed in",
+});
+
 const files = {
   "index.html": home,
   "observability.html": observability,
   "activity.html": activity,
   "personal.html": personal,
   "import.html": imported,
+  "shared-documents.html": shared,
 };
 
 const outDir = process.argv[2];
@@ -129,10 +138,10 @@ for (const [name, html] of Object.entries(files)) {
 writeFileSync(`${outDir}/RUN.txt`, `Mantu Second Brain — home candidate
 
 Open index.html. It is the same home screen the reconstructed app renders at /.
-This folder is a new candidate. It does not replace the earlier preview folder.
-This file is not signed in. It has no review records and no credentials.
+Shared documents is shared-documents.html. It starts empty. A pasted or chosen JSON file stays in this browser.
 Search, or press Ctrl K or Command K, opens the command palette. Escape closes it.
-Personal brain, Import, Observability, and Activity are linked pages. Do not submit the import form here; it cannot store a note.
+This folder does not replace earlier preview folders.
+Do not submit the import form. It cannot store a note from this file.
 
 The earlier delivered preview remains a different version.
 `);

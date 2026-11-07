@@ -1,0 +1,9 @@
+Mantu Second Brain — home candidate
+
+Open index.html. It is the same home screen the reconstructed app renders at /.
+Shared documents is shared-documents.html. It starts empty. A pasted or chosen JSON file stays in this browser.
+Search, or press Ctrl K or Command K, opens the command palette. Escape closes it.
+This folder does not replace earlier preview folders.
+Do not submit the import form. It cannot store a note from this file.
+
+The earlier delivered preview remains a different version.
