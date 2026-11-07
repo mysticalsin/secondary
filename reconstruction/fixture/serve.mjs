@@ -94,14 +94,13 @@ function agentRows(result) {
   const hosts = Array.isArray(body.hosts) ? body.hosts : [];
   if (result.status !== "200") return `<p class="error">Unavailable (${esc(result.status)}).</p>`;
   if (hosts.length === 0) return "<p>No host records were returned.</p>";
-  const lines = hosts
+  return hosts
     .map(
-      (host) => `<tr><td>${esc(host.label ?? host.id ?? "unknown")}</td><td>${
-        host.connected === true ? "Connected" : "Not connected"
-      }</td><td>${esc(host.lastCallAt ?? "unknown")}</td><td>${esc(host.calls ?? "unknown")}</td></tr>`,
+      (host) => `<div class="host"><div><strong>${esc(host.label ?? host.id ?? "unknown")}</strong><span>Last call ${esc(
+        host.lastCallAt ?? "unknown",
+      )}</span></div><span class="chip unknown">${host.connected === true ? "Connected" : "Not connected"}</span></div>`,
     )
     .join("");
-  return `<table><thead><tr><th>Host</th><th>Connection</th><th>Last call</th><th>Calls</th></tr></thead><tbody>${lines}</tbody></table>`;
 }
 
 function esc(value) {
@@ -141,28 +140,43 @@ async function observabilityModel(persona, prefMessage) {
   const aiJson = jsonBody(byPath["/v1/ai/status"].text);
   const prefsJson = jsonBody(byPath["/v1/ux/prefs"].text);
   const me = jsonBody((await callApi("/v1/me", { persona })).text);
+  const role = me.principal?.roleIds?.[0] ?? me.persona ?? "";
+  const roleLabel = {
+    consultant: "Consultant",
+    ceo: "CEO",
+    head_bid: "Head of bid",
+    acme_lead: "Account lead",
+    reviewer: "Reviewer",
+    platform_admin: "Platform admin",
+    auditor: "Auditor",
+  }[role] ?? "Local session";
+  const auditBody = jsonBody(byPath["/v1/admin/audit?principal=u_consultant"].text);
   return {
-    who: `${me.principal?.id ?? "unknown"} in ${me.tenantId ?? "unknown"}, persona ${me.persona ?? "none"}`,
+    roleLabel,
+    principalId: me.principal?.id ?? "unknown",
+    tenantId: me.tenantId ?? "unknown",
+    persona: me.persona ?? "none",
     ready: {
       kind: readyJson.ready === true ? "ok" : "bad",
       label: readyJson.ready === true ? "Reachable" : "Not ready",
-      detail: `do=${readyJson.checks?.do ?? "unknown"} r2=${readyJson.checks?.r2 ?? "unknown"}`,
+      detail: readyJson.ready === true ? "The local Durable Object and storage answered." : "The local worker is not ready.",
+      technical: `do=${readyJson.checks?.do ?? "unknown"} r2=${readyJson.checks?.r2 ?? "unknown"}`,
     },
     health: {
       kind: healthJson.ok === true ? "ok" : "unknown",
-      label: healthJson.ok === true ? healthJson.env ?? "ok" : "Unavailable",
-      detail: "Recovered /v1/health. It does not report a percentage.",
+      label: healthJson.ok === true ? "Dev" : "Unavailable",
+      detail: "The worker answered. This is not an uptime percentage.",
     },
     ai: {
       kind: aiJson.state === "ready" ? "ok" : "unknown",
-      label: aiJson.state ?? "Unavailable",
+      label: aiJson.state === "disabled" ? "Disabled" : aiJson.state === "not_configured" ? "Not configured" : aiJson.state === "ready" ? "Ready" : "Unavailable",
       detail: aiJson.reason ?? "No model is configured in this local worker.",
     },
     agentRows: agentRows(byPath["/v1/agents"]),
     audit: {
-      kind: byPath["/v1/admin/audit?principal=u_consultant"].status === "200" ? "ok" : "unknown",
-      label: byPath["/v1/admin/audit?principal=u_consultant"].status,
-      detail: "Shown only as the recovered handler answered. No receipts were invented.",
+      kind: byPath["/v1/admin/audit?principal=u_consultant"].status === "200" ? "ok" : "bad",
+      label: byPath["/v1/admin/audit?principal=u_consultant"].status === "403" ? "Not permitted" : byPath["/v1/admin/audit?principal=u_consultant"].status,
+      detail: auditBody.reason ?? "The recovered audit route did not return a log.",
       raw: byPath["/v1/admin/audit?principal=u_consultant"].text.slice(0, 400),
     },
     lang: prefsJson.lang ?? "",
@@ -224,6 +238,29 @@ async function genuiState(session) {
   };
 }
 
+function withSettingsLink(html) {
+  const script = `<script>
+(function () {
+  var href = "/settings/observability";
+  function mount() {
+    var list = document.querySelector("nav.setnav ul");
+    if (!list || list.querySelector("[data-reconstruction='observability']")) return;
+    var item = document.createElement("li");
+    var link = document.createElement("a");
+    link.href = href;
+    link.textContent = "Observability";
+    link.setAttribute("data-reconstruction", "observability");
+    item.appendChild(link);
+    list.appendChild(item);
+  }
+  if (!document.body) return;
+  new MutationObserver(mount).observe(document.body, { childList: true, subtree: true });
+  mount();
+})();
+</script>`;
+  return html.replace("</body>", `${script}</body>`);
+}
+
 function send(res, status, type, body, cookie) {
   const headers = {
     "content-type": type,
@@ -281,7 +318,7 @@ export function listen(port = 0) {
       send(res, 403, "text/html; charset=utf-8", result.html, cookie);
       return;
     }
-    if (req.method === "POST" && url.pathname === "/reconstruction/observability/prefs") {
+    if (req.method === "POST" && (url.pathname === "/reconstruction/observability/prefs" || url.pathname === "/settings/observability/prefs")) {
       const fields = form(await readBody(req));
       const lang = fields.get("lang");
       const saved = await callApi("/v1/ux/prefs", {
@@ -301,8 +338,13 @@ export function listen(port = 0) {
       send(res, 200, "text/html; charset=utf-8", renderGenui(await genuiState(session)), cookie);
       return;
     }
-    if (url.pathname === "/reconstruction/observability") {
+    if (url.pathname === "/reconstruction/observability" || url.pathname === "/settings/observability") {
       send(res, 200, "text/html; charset=utf-8", renderObservability(await observabilityModel(persona, "")), cookie);
+      return;
+    }
+    if (url.pathname === "/settings" || (url.pathname.startsWith("/settings/") && !url.pathname.startsWith("/settings/observability"))) {
+      const shell = fixtureResponse(new URL("http://127.0.0.1/"));
+      send(res, shell.status, shell.type, withSettingsLink(shell.body.toString("utf8")), cookie);
       return;
     }
     if (url.pathname.startsWith("/v1/")) {
@@ -317,10 +359,7 @@ export function listen(port = 0) {
     const out = fixtureResponse(url);
     let body = out.body;
     if ((url.pathname === "/" || url.pathname === "/index.html") && out.status === 200) {
-      body = body.toString("utf8").replace(
-        "</body>",
-        `<p style="position:fixed;bottom:12px;right:12px;background:#1e2636;color:#fff;border-radius:999px;padding:8px 12px;font:14px system-ui"><a style="color:#fff" href="/reconstruction/observability">Observability</a> · <a style="color:#fff" href="/reconstruction/genui">GenUI</a></p></body>`,
-      );
+      body = withSettingsLink(body.toString("utf8"));
     }
     send(res, out.status, out.type, body, cookie);
     } catch (error) {

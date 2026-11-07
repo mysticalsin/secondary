@@ -74,17 +74,27 @@ test("recovered routes replace the synthetic gap and the genui flow stays on the
     assert.equal(rejectedHtml.includes("SECRET_TOKEN_99"), false);
     assert.equal(rejectedHtml.includes("<script"), false);
     assert.equal(rejectedHtml.includes("Accounts"), false);
-    const obs = await fetch(`http://127.0.0.1:${app.port}/reconstruction/observability`, {
+    await fetch(`http://127.0.0.1:${app.port}/reconstruction/session`, {
+      method: "POST",
+      headers: { cookie: app.cookie, "content-type": "application/x-www-form-urlencoded" },
+      body: "preset=person_a",
+      redirect: "manual",
+    });
+    const obs = await fetch(`http://127.0.0.1:${app.port}/settings/observability`, {
       headers: { cookie: app.cookie },
     });
     const obsHtml = await obs.text();
     assert.equal(obs.status, 200);
+    assert.equal(obsHtml.includes("Local preview · synthetic data"), true);
+    assert.equal(obsHtml.includes("Consultant"), true);
+    assert.equal(obsHtml.includes("Not permitted"), true);
+    assert.equal(obsHtml.includes("Unknown"), true);
     assert.equal(obsHtml.includes("Unavailable"), true);
     assert.equal(obsHtml.includes("93%"), false);
     assert.equal(obsHtml.includes("Nova"), false);
-    assert.equal(obsHtml.includes("Synthetic demo"), true);
     assert.equal(obsHtml.includes("Not connected"), true);
-    const saved = await fetch(`http://127.0.0.1:${app.port}/reconstruction/observability/prefs`, {
+    assert.equal(obsHtml.includes('href="/settings"'), true);
+    const saved = await fetch(`http://127.0.0.1:${app.port}/settings/observability/prefs`, {
       method: "POST",
       headers: { cookie: app.cookie, "content-type": "application/x-www-form-urlencoded" },
       body: "lang=en",

@@ -112,71 +112,210 @@ function chip(kind, text) {
   return `<span class="chip ${kind}">${esc(text)}</span>`;
 }
 
+const OBS_CSS = `
+:root {
+  color-scheme: light;
+  --canvas: #e8ebf0;
+  --ink: #1b2433;
+  --nav: #1c2433;
+  --panel: #ffffff;
+  --muted: #3e4b5f;
+  --line: #e3e7ee;
+  --accent: #6d5bd0;
+  --ok: #0f6b4c;
+  --bad: #8d2f39;
+  --shadow: 0 16px 40px rgba(27, 36, 51, 0.08);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; max-width: 100%; }
+body { background: var(--canvas); color: var(--ink); line-height: 1.45; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.frame { max-width: 980px; margin: 0 auto; padding: 32px 20px 72px; }
+.crumb { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+.crumb a { text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035em; font-weight: 650; }
+.lede { margin: 14px 0 0; font-size: 17px; color: var(--ink); }
+.banner {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 16px;
+  padding: 6px 12px; border-radius: 999px; background: #f3f0ff; color: #5346b8;
+  font-size: 13px; font-weight: 650;
+}
+.banner i { width: 8px; height: 8px; border-radius: 99px; background: var(--accent); display: block; }
+.pills, .tabs {
+  display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%;
+}
+.pills {
+  width: fit-content; margin: 26px 0 22px; padding: 7px;
+  background: var(--nav); border-radius: 28px;
+}
+.pills a, .tabs button {
+  border: 0; border-radius: 999px; font: inherit; font-size: 14px;
+  text-decoration: none; padding: 9px 14px; cursor: pointer; line-height: 1.2;
+}
+.pills a { color: #f5f7fa; background: transparent; }
+.pills a[aria-current="page"] { background: #f7f8fa; color: var(--ink); }
+.pills a:hover { background: rgba(255,255,255,0.14); }
+.pills a[aria-current="page"]:hover { background: #ffffff; }
+.tabs { margin: 0 0 18px; }
+.tabs button { background: transparent; color: var(--muted); border: 1px solid transparent; }
+.tabs button[aria-selected="true"] { background: white; color: var(--ink); border-color: var(--line); box-shadow: var(--shadow); }
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.stat, .sheet, .callout {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+.stat { padding: 18px 18px 16px; min-width: 0; }
+.mark {
+  width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center;
+  background: #f3f0ff; color: var(--accent); margin-bottom: 14px;
+}
+.k { margin: 0; color: var(--muted); font-size: 13px; }
+.value { margin: 8px 0 0; font-size: 22px; letter-spacing: -0.03em; }
+.hint { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.sheet { padding: 8px 8px 4px; }
+.host { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px 12px; border-bottom: 1px solid var(--line); }
+.host:last-child { border-bottom: 0; }
+.host strong { display: block; font-size: 15px; }
+.host span { color: var(--muted); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 650; background: #f3f0ff; color: var(--accent); white-space: nowrap; }
+.chip.ok { background: #e7f6ef; color: var(--ok); }
+.chip.bad { background: #fdecef; color: var(--bad); }
+.chip.unknown { background: #eef1f4; color: var(--muted); }
+.callout { padding: 18px 20px; }
+.callout.bad { background: #fff7f8; border-color: #f3d5da; }
+.callout h2, .block h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.02em; }
+.block { margin-top: 16px; }
+label { display: block; margin: 12px 0; font-size: 14px; }
+select, button.save, input[type="search"] {
+  font: inherit; border-radius: 12px; border: 1px solid var(--line); background: white; padding: 10px 12px;
+}
+button.save { background: var(--ink); color: white; cursor: pointer; }
+button.save:hover { background: #2c3850; }
+input:disabled { opacity: 0.6; }
+.alert { margin: 12px 0 0; color: var(--bad); font-weight: 650; }
+details { margin-top: 28px; background: white; border: 1px solid var(--line); border-radius: 18px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 650; }
+pre, table { max-width: 100%; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.muted { color: var(--muted); font-size: 14px; }
+@media (max-width: 720px) {
+  .frame { padding: 20px 16px 48px; }
+  h1 { font-size: 32px; }
+  .value { font-size: 20px; }
+  .host { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
+`;
+
+function mark(paths) {
+  return `<span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>`;
+}
+
+const SETTINGS_LINKS = [
+  ["/settings/profile", "Profile"],
+  ["/settings/brains", "Brains"],
+  ["/settings/agents", "Agents"],
+  ["/settings/security", "Security"],
+  ["/settings/privacy", "Privacy"],
+  ["/settings/appearance", "Appearance"],
+  ["/settings/usage", "Usage"],
+  ["/settings/observability", "Observability"],
+];
+
 export function renderObservability(model) {
   const prefs = Boolean(model.prefMessage);
+  const failed = model.prefMessage.startsWith("Save failed");
   const rows = model.routes
     .map(
       (row) => `<tr><td>${esc(row.path)}</td><td>${esc(row.status)}</td><td>${esc(row.meaning)}</td></tr>`,
     )
     .join("");
-  return page(
-    "Observability",
-    "/reconstruction/observability",
-    `<p class="note">NEW reconstruction. The verified still suggested this hierarchy. Third-party vendor-risk wording from that still is not used. This is not a pixel copy of the video.</p>
-<h1>Observability</h1>
-<p>${esc(model.who)}</p>
-<div class="tabs" role="tablist" aria-label="Observability sections">
-  <button type="button" role="tab" aria-selected="${prefs ? "false" : "true"}" aria-controls="panel-status" id="tab-status">Status</button>
-  <button type="button" role="tab" aria-selected="false" aria-controls="panel-agents" id="tab-agents">Agents</button>
-  <button type="button" role="tab" aria-selected="false" aria-controls="panel-audit" id="tab-audit">Audit</button>
-  <button type="button" role="tab" aria-selected="${prefs ? "true" : "false"}" aria-controls="panel-prefs" id="tab-prefs">Preferences</button>
-</div>
-<section class="panel" id="panel-status" role="tabpanel" aria-labelledby="tab-status"${prefs ? " hidden" : ""}>
-  <h2>Local status</h2>
-  <div class="grid">
-    <article class="panel"><p class="k">Readiness</p><p>${chip(model.ready.kind, model.ready.label)}</p><p>${esc(model.ready.detail)}</p></article>
-    <article class="panel"><p class="k">Health</p><p>${chip(model.health.kind, model.health.label)}</p><p>${esc(model.health.detail)}</p></article>
-    <article class="panel"><p class="k">AI processor</p><p>${chip(model.ai.kind, model.ai.label)}</p><p>${esc(model.ai.detail)}</p></article>
-    <article class="panel"><p class="k">Freshness</p><p>${chip("unknown", "Unknown")}</p><p>No recovered route reports source refresh success. Connector sync is not bound here.</p></article>
+  const settings = SETTINGS_LINKS.map(
+    ([href, label]) =>
+      `<a href="${href}" ${href.endsWith("/observability") ? 'aria-current="page"' : ""}>${label}</a>`,
+  ).join("");
+  const tab = (id, panel, label, on) =>
+    `<button type="button" role="tab" id="${id}" aria-controls="${panel}" aria-selected="${on ? "true" : "false"}">${label}</button>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings · Observability</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%231c2433'/%3E%3C/svg%3E">
+<style>${OBS_CSS}</style></head><body>
+<main class="frame">
+  <p class="crumb"><a href="/settings">Settings</a> <span aria-hidden="true">/</span> Observability</p>
+  <h1>Observability</h1>
+  <p class="lede">${esc(model.roleLabel)}</p>
+  <p class="banner"><i></i>Local preview · synthetic data</p>
+  <nav class="pills" aria-label="Settings">${settings}</nav>
+  <div class="tabs" role="tablist" aria-label="Observability sections">
+    ${tab("tab-status", "panel-status", "Status", !prefs)}
+    ${tab("tab-agents", "panel-agents", "Agents", false)}
+    ${tab("tab-audit", "panel-audit", "Audit", false)}
+    ${tab("tab-prefs", "panel-prefs", "Preferences", prefs)}
   </div>
-  <h3>Recovered routes this session called</h3>
-  <label>Filter <input id="route-filter" type="search" placeholder="Filter routes"></label>
-  <table id="route-table"><thead><tr><th>Route</th><th>Status</th><th>Meaning</th></tr></thead><tbody>${rows}</tbody></table>
-</section>
-<section class="panel" id="panel-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
-  <h2>Agent connections</h2>
-  <p class="note">Synthetic demo. These host records come from the recovered local seed. They are not live agent runs, and a zero is not a measured quiet period.</p>
-  ${model.agentRows}
-  <p class="note">The recovered planner returns query components such as KpiRow. The delivered renderer has its own metric tile. This page does not rename one to the other.</p>
-</section>
-<section class="panel" id="panel-audit" role="tabpanel" aria-labelledby="tab-audit" hidden>
-  <h2>Audit</h2>
-  <p>${chip(model.audit.kind, model.audit.label)}</p>
-  <p>${esc(model.audit.detail)}</p>
-  <details><summary>Response detail</summary><pre>${esc(model.audit.raw)}</pre></details>
-</section>
-<section class="panel" id="panel-prefs" role="tabpanel" aria-labelledby="tab-prefs"${prefs ? "" : " hidden"}>
-  <h2>Language preference</h2>
-  <p class="note">This is the recovered PUT /v1/ux/prefs contract. It does not change Workers telemetry.</p>
-  <form method="post" action="/reconstruction/observability/prefs">
-    <label>Language
-      <select name="lang">
-        <option value="">Follow unset</option>
-        <option value="en" ${model.lang === "en" ? "selected" : ""}>English</option>
-        <option value="fr" ${model.lang === "fr" ? "selected" : ""}>French</option>
-      </select>
-    </label>
-    <button class="action" type="submit">Save preference</button>
-  </form>
-  <p class="${model.prefMessage.startsWith("Save failed") ? "error" : ""}" role="${model.prefMessage ? "status" : "none"}">${esc(model.prefMessage)}</p>
-  <h3>Workers telemetry</h3>
-  <p>${chip("unknown", "Unavailable")}</p>
-  <label><input type="checkbox" disabled> Enable traces <span class="note">No recovered route writes sampling, logs, or paid telemetry.</span></label>
-  <p class="note">Cost and live uptime are unknown. This page does not invent them.</p>
-</section>
+  <section id="panel-status" role="tabpanel" aria-labelledby="tab-status"${prefs ? " hidden" : ""}>
+    <div class="grid">
+      <article class="stat">${mark('<circle cx="12" cy="12" r="8"/><path d="m8.5 12.2 2.2 2.2 4.6-5"/>')}<p class="k">Readiness</p><p class="value">${esc(model.ready.label)}</p><p class="hint">${esc(model.ready.detail)}</p></article>
+      <article class="stat">${mark('<path d="M3 12h4l2-5 3 10 2-5h7"/>')}<p class="k">Health</p><p class="value">${esc(model.health.label)}</p><p class="hint">${esc(model.health.detail)}</p></article>
+      <article class="stat">${mark('<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>')}<p class="k">AI processor</p><p class="value">${esc(model.ai.label)}</p><p class="hint">${esc(model.ai.detail)}</p></article>
+      <article class="stat">${mark('<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>')}<p class="k">Freshness</p><p class="value">Unknown</p><p class="hint">Source refresh success is not reported. Connector sync is not bound.</p></article>
+    </div>
+  </section>
+  <section id="panel-agents" role="tabpanel" aria-labelledby="tab-agents" hidden>
+    <p class="banner"><i></i>Local preview · synthetic data</p>
+    <p class="muted">These host records come from the recovered local seed. They are not live agent runs.</p>
+    <div class="sheet">${model.agentRows}</div>
+  </section>
+  <section id="panel-audit" role="tabpanel" aria-labelledby="tab-audit" hidden>
+    <div class="callout ${model.audit.kind === "ok" ? "" : "bad"}">
+      <h2>Audit</h2>
+      <p>${chip(model.audit.kind, model.audit.label)}</p>
+      <p>${esc(model.audit.detail)}</p>
+    </div>
+    <details>
+      <summary>Audit response</summary>
+      <pre>${esc(model.audit.raw)}</pre>
+    </details>
+  </section>
+  <section id="panel-prefs" role="tabpanel" aria-labelledby="tab-prefs"${prefs ? "" : " hidden"}>
+    <div class="callout">
+      <h2>Language</h2>
+      <p class="muted">Saves the recovered language preference for this local session. It does not change telemetry.</p>
+      <form method="post" action="/settings/observability/prefs">
+        <label>Language
+          <select name="lang">
+            <option value="">Follow unset</option>
+            <option value="en" ${model.lang === "en" ? "selected" : ""}>English</option>
+            <option value="fr" ${model.lang === "fr" ? "selected" : ""}>French</option>
+          </select>
+        </label>
+        <button class="save" type="submit">Save preference</button>
+      </form>
+      <p class="${failed ? "alert" : ""}" role="${model.prefMessage ? "alert" : "none"}">${esc(model.prefMessage)}</p>
+    </div>
+    <div class="block">
+      <h2>Telemetry</h2>
+      <p>${chip("unknown", "Unavailable")}</p>
+      <label><input type="checkbox" disabled> Enable traces</label>
+      <p class="muted">No recovered route writes sampling, logs, or paid telemetry. Cost and live uptime are unknown.</p>
+    </div>
+  </section>
+  <details>
+    <summary>Technical details</summary>
+    <p class="muted">Role ${esc(model.roleLabel)}. Principal ${esc(model.principalId)}. Tenant ${esc(model.tenantId)}. Persona ${esc(model.persona)}.</p>
+    <p class="muted">This screen is a reconstruction served beside the captured app. The stored shell has no Observability settings item; its settings router sends an unknown section back to Profile. The Settings link is added on the served page only. Readiness checks the local Durable Object and storage, not source freshness. ${esc(model.ready.technical)}</p>
+    <label>Filter routes <input id="route-filter" type="search" placeholder="Filter routes"></label>
+    <table id="route-table"><thead><tr><th>Route</th><th>Status</th><th>Meaning</th></tr></thead><tbody>${rows}</tbody></table>
+  </details>
+</main>
 <script>
 const tabs = [...document.querySelectorAll('[role="tab"]')];
-const panels = [...document.querySelectorAll('[role="tabpanel"]')];
 function select(id) {
   for (const tab of tabs) {
     const on = tab.id === id;
@@ -188,16 +327,20 @@ for (const tab of tabs) {
   tab.addEventListener("click", () => select(tab.id));
   tab.addEventListener("keydown", (event) => {
     const i = tabs.indexOf(tab);
-    if (event.key === "ArrowRight") { event.preventDefault(); tabs[(i + 1) % tabs.length].focus(); select(tabs[(i + 1) % tabs.length].id); }
-    if (event.key === "ArrowLeft") { event.preventDefault(); tabs[(i + tabs.length - 1) % tabs.length].focus(); select(tabs[(i + tabs.length - 1) % tabs.length].id); }
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      const next = tabs[(i + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      next.focus();
+      select(next.id);
+    }
   });
 }
 document.getElementById("route-filter").addEventListener("input", (event) => {
   const q = event.target.value.toLowerCase();
   for (const row of document.querySelectorAll("#route-table tbody tr")) row.hidden = q && !row.textContent.toLowerCase().includes(q);
 });
-</script>`,
-  );
+</script>
+</body></html>`;
 }
 
 export function renderGenui(state) {

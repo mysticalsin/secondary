@@ -39,7 +39,11 @@ test("the fixture listens only on loopback and returns the shell", async () => {
     const text = await res.text();
     assert.equal(text.includes("Secondary | Company Brain"), true);
     assert.equal(text.includes("/assets/index-PLmoiPYI.js"), true);
-    assert.equal(text.includes("/reconstruction/observability"), true);
+    assert.equal(text.includes("/settings/observability"), true);
+    assert.equal(text.includes("data-reconstruction"), true);
+    const settings = await fetch(`http://127.0.0.1:${port}/settings/profile`);
+    assert.equal(settings.status, 200);
+    assert.equal((await settings.text()).includes("Secondary | Company Brain"), true);
   } finally {
     server.closeAllConnections?.();
     await new Promise((resolve) => server.close(resolve));
