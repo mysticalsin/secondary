@@ -1,0 +1,140 @@
+{
+  "status": "PRIVATE DOM-CAPTURED STATIC CODE CANDIDATE, NOT ORIGINAL SOURCE/WIRE BYTES",
+  "source_url": "https://secondary-api-dev.tony-walteur.workers.dev/assets/index-PLmoiPYI.js",
+  "capture": "Normal authenticated browser DOM body text; all11 actual auto-saved result files validated independently; not shortened transcript excerpts",
+  "codepoints": 578596,
+  "utf8_bytes": 581692,
+  "sha256": "0acf56bc36d5dbfed072cc12ceb38abb9750bab36203f9f38bf5243315df33bd",
+  "range_proof": [
+    {
+      "start": 0,
+      "endExclusive": 50000,
+      "actual_codepoints": 50000,
+      "utf8_bytes": 50000,
+      "text_sha256": "af1d18a91ac860ec4fc559fcccb05ffeaa43200ff0d26755d9c554fe2fc43311",
+      "saved_result_sha256": "17298469b9ad053a9e9b81c0ce4c155382f295c66da9ae9f48ae22e340da7629"
+    },
+    {
+      "start": 50000,
+      "endExclusive": 95000,
+      "actual_codepoints": 45000,
+      "utf8_bytes": 45000,
+      "text_sha256": "c4d8c9e741fc045bfde27de52dd0af2160d3c26f0d16b38c5bb58b477fbe250c",
+      "saved_result_sha256": "870f28beca0fd390d21494527a3f0c11175cfda242b96d4bf4629c28abfb7cb6"
+    },
+    {
+      "start": 95000,
+      "endExclusive": 149000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 54000,
+      "text_sha256": "61d21ceaeb9fbd9bc02056f847af9b51087a3d5d1c9056e74173a98552375f05",
+      "saved_result_sha256": "af8dbe96e2c33ef78c72f777ad2f3b537a1c9c60072346f866b5f1b4f074e2e0"
+    },
+    {
+      "start": 149000,
+      "endExclusive": 203000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 54011,
+      "text_sha256": "30f83270429fac796b25f7e444ab12e2c5dbd4b7ea9586b9b7d73d9d6ec675de",
+      "saved_result_sha256": "da17076840c84c56b87e5aad33b3e002c709989f3d55c1b3ee1b5b92929a0a13"
+    },
+    {
+      "start": 203000,
+      "endExclusive": 257000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 54707,
+      "text_sha256": "af17ab21cfe3f81b218aed3e8fc0a14bbffe573c3e523ff3fde5b060b0ab4345",
+      "saved_result_sha256": "2af77566867dd9400ea4e21a6a5de5a741f4c0de3889d4162a1217e10552e69a"
+    },
+    {
+      "start": 257000,
+      "endExclusive": 311000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 54699,
+      "text_sha256": "a221a8815e94ddf4a0d6104b26aaca84d987e834b9a4c61cc98c084f36b4a166",
+      "saved_result_sha256": "aed517d9b347a3c704e0661e83fb8ed4cdd1b291c0ce1d9760f36899ea11d65b"
+    },
+    {
+      "start": 311000,
+      "endExclusive": 365000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 55364,
+      "text_sha256": "48159289ba5739347f36981c5b118b21f8c5eca2d24961815bafc6695ba201f1",
+      "saved_result_sha256": "9ffcf3d26df7d5894f9c68006aaf89c0ac14cedeb07562723b7c5179d7853370"
+    },
+    {
+      "start": 365000,
+      "endExclusive": 419000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 54241,
+      "text_sha256": "5a7b5931f610495a281db635ec3c3749c60fc5f166803438393b884ce7952d7f",
+      "saved_result_sha256": "df393a9171cbd768476cc3a770fb23f3b33d6acab8f6f1d63237534138305459"
+    },
+    {
+      "start": 419000,
+      "endExclusive": 473000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 54014,
+      "text_sha256": "cba7f67eac5b5988583d57f848731318951a311962eb4161be80ea13cc18d233",
+      "saved_result_sha256": "76e3f593bfb67bcd314136749e98304873f9e3389801b148ac754bfbcb00e596"
+    },
+    {
+      "start": 473000,
+      "endExclusive": 527000,
+      "actual_codepoints": 54000,
+      "utf8_bytes": 54018,
+      "text_sha256": "5e63af4201f1c284d9af42cef191ac15d67206505ee87e19190428845285f5d3",
+      "saved_result_sha256": "dc77d64463c6b842937c196f8c2a5e81cbed35ed09b3ee6111bc384f44bfe342"
+    },
+    {
+      "start": 527000,
+      "endExclusive": 578596,
+      "actual_codepoints": 51596,
+      "utf8_bytes": 51638,
+      "text_sha256": "a8bda50b7c3280bf1118452821f77aeb43887ddaec3faa47b44122c833ae412f",
+      "saved_result_sha256": "98e82f965c75c2fd77805f6f84ca35928f97fc37d087993128700b00e923042a"
+    }
+  ],
+  "contiguous_complete": true,
+  "transformations": "JSON decoding, concatenation in validated Unicode-codepoint order and UTF8 encoding only; no normalization/encoding repair/minification removal",
+  "limitations": [
+    "DOM capture may already be decoded/transformed/mojibake; identity to network/original build bytes unproven",
+    "Production-delivered/minified code; original source/build/dependency/license provenance not reconstructed",
+    "No code execution, syntax/build/native/mobile validation or dependency fetching",
+    "Existing text preserved including any license notices; no standard license markers found by scoped scan; no license inferred"
+  ],
+  "privacy": {
+    "known_unresolved_flags": 0,
+    "scope": "Local static pattern and record-shape intake only; no universal security/privacy clearance"
+  },
+  "declared_static_path_literals": [
+    "./AgentPage-DHJmJKpV.js",
+    "./AgentPanel-Dn16YgEH.js",
+    "./BrainViews-DoMdPJUS.js",
+    "./PinnedGrid-CuaLdMPY.js",
+    "./SettingsSection-f2wwgrYJ.js",
+    "./SharedView-CEqhSdzS.js",
+    "assets/AgentPage-DHJmJKpV.js",
+    "assets/AgentPanel-Dn16YgEH.js",
+    "assets/BrainViews-DoMdPJUS.js",
+    "assets/PinnedGrid-CuaLdMPY.js",
+    "assets/Renderer-0G0MSIPy.js",
+    "assets/SettingsSection-f2wwgrYJ.js",
+    "assets/SharedView-CEqhSdzS.js",
+    "assets/Thread-eq9OCIoK.js",
+    "assets/ViewCard-D5JbjyDb.js",
+    "assets/agent-DA0iqiiF.js",
+    "assets/agent-Wsu4vetM.css"
+  ],
+  "literal_dynamic_import_urls": [
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPage-DHJmJKpV.js",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/AgentPanel-Dn16YgEH.js",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/BrainViews-DoMdPJUS.js",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/PinnedGrid-CuaLdMPY.js",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/SettingsSection-f2wwgrYJ.js",
+    "https://secondary-api-dev.tony-walteur.workers.dev/assets/SharedView-CEqhSdzS.js"
+  ],
+  "sourceMappingURL_comments": [],
+  "no_new_urls_fetched": true,
+  "private_only": true
+}

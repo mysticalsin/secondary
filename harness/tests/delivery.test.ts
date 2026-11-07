@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { mainSurface } from "../../reconstruction/delivery/read-main.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const delivery = path.join(root, "recovered-delivery");
@@ -140,7 +141,10 @@ test("the final module closes the declared import and does not add another code 
   assert.equal(closure.missing_font_urls.length, 40);
   assert.equal(closure.missing_image_urls.length, 2);
   assert.equal(closure.captured_assets.some((asset) => asset.name === MAIN_JS), true);
-  assert.equal(filesUnder(delivery).some((name) => name.endsWith(MAIN_JS)), false);
+  assert.equal(
+    filesUnder(delivery).some((name) => path.basename(name) === "index-PLmoiPYI.dom-captured.js"),
+    true,
+  );
 });
 
 test("local bytes are not a closed shell and the renderer catalog is not the view-plan catalog", () => {
@@ -157,4 +161,76 @@ test("local bytes are not a closed shell and the renderer catalog is not the vie
   assert.equal(leaves.includes("KpiTile"), true);
   assert.equal(planned.includes("KpiRow"), true);
   assert.equal(leaves.includes("KpiRow"), false);
+});
+
+const MAIN_ARCHIVE_SHA = "c57b5e2b505f60936fbe583eda5de2244e7442a9c3c0641ecfde40d82c7dd69d";
+const MAIN_JS_SHA = "0acf56bc36d5dbfed072cc12ceb38abb9750bab36203f9f38bf5243315df33bd";
+
+test("the main bundle archive matches the reviewed DOM text", () => {
+  const archive = readFileSync(
+    path.join(delivery, "main-js/secondary-main-frontend-dom-code-private-candidate.tar.gz"),
+  );
+  assert.equal(archive.length, 177509);
+  assert.equal(sha256(archive), MAIN_ARCHIVE_SHA);
+  const manifest = JSON.parse(readFileSync(path.join(delivery, "main-js/manifest.json"), "utf8")) as {
+    sha256: string;
+    codepoints: number;
+    utf8_bytes: number;
+    contiguous_complete: boolean;
+    privacy: { known_unresolved_flags: number };
+    sourceMappingURL_comments: unknown[];
+    range_proof: { start: number; endExclusive: number; text_sha256: string; utf8_bytes: number }[];
+  };
+  const text = readFileSync(path.join(delivery, "main-js/index-PLmoiPYI.dom-captured.js"), "utf8");
+  assert.equal(sha256(Buffer.from(text, "utf8")), MAIN_JS_SHA);
+  assert.equal(manifest.sha256, MAIN_JS_SHA);
+  assert.equal([...text].length, 578596);
+  assert.equal(Buffer.byteLength(text), 581692);
+  assert.equal(manifest.contiguous_complete, true);
+  assert.equal(manifest.privacy.known_unresolved_flags, 0);
+  assert.deepEqual(manifest.sourceMappingURL_comments, []);
+  assert.equal(text.includes("sourceMappingURL"), false);
+  let cursor = 0;
+  for (const range of manifest.range_proof) {
+    assert.equal(range.start, cursor);
+    const slice = [...text].slice(range.start, range.endExclusive).join("");
+    assert.equal(Buffer.byteLength(slice), range.utf8_bytes);
+    assert.equal(sha256(Buffer.from(slice, "utf8")), range.text_sha256);
+    cursor = range.endExclusive;
+  }
+  assert.equal(cursor, manifest.codepoints);
+  const workerCopy = path.join(root, "recovered-source");
+  assert.equal(filesUnder(workerCopy).some((name) => name.includes("index-PLmoiPYI")), false);
+});
+
+test("main-bundle literals name the person switch and do not call the view-plan route", () => {
+  const text = readFileSync(path.join(delivery, "main-js/index-PLmoiPYI.dom-captured.js"), "utf8");
+  const surface = mainSurface(text);
+  assert.deepEqual(surface.dynamicImports, [
+    "./AgentPage-DHJmJKpV.js",
+    "./AgentPanel-Dn16YgEH.js",
+    "./BrainViews-DoMdPJUS.js",
+    "./PinnedGrid-CuaLdMPY.js",
+    "./SettingsSection-f2wwgrYJ.js",
+    "./SharedView-CEqhSdzS.js",
+  ]);
+  assert.equal(surface.personaKey, true);
+  assert.equal(surface.personaDefaultCeo, true);
+  assert.equal(surface.demoHeader, true);
+  assert.equal(surface.sameOrigin, true);
+  assert.equal(surface.callsMe, true);
+  assert.equal(surface.callsGenuiPlan, false);
+  assert.deepEqual(surface.logos, ["/brand/logo_main.png", "/brand/logo_main_white.png"]);
+  assert.equal(surface.assetLiterals.includes("assets/index-DiBYRwP4.css"), false);
+  assert.equal(surface.assetLiterals.includes("assets/index-DZRyvnzT.js"), false);
+  const auth = readFileSync(path.join(root, "recovered-source/worker/src/auth.ts"), "utf8");
+  assert.equal(auth.includes('c.env.ENVIRONMENT !== "dev"'), true);
+  assert.equal(auth.includes('c.req.header("X-Demo-Persona")'), true);
+  const worker = filesUnder(path.join(root, "recovered-source/worker/src"))
+    .map((name) => readFileSync(path.join(root, "recovered-source/worker/src", name), "utf8"))
+    .join("\n");
+  for (const route of ["/v1/me", "/v1/activity", "/v1/ux/prefs", "/v1/brains/nav", "/v1/brain/tree", "/v1/ask", "/v1/genui/plan"]) {
+    assert.equal(worker.includes(`"${route.slice(3)}"`) || worker.includes(`"${route}"`), true, route);
+  }
+  assert.equal(worker.includes('"/genui/plan"'), true);
 });
