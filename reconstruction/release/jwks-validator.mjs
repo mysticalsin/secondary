@@ -32,9 +32,7 @@ export function boundedMaxAge(header) {
 }
 
 function fail(reason) {
-  const error = new Error(reason);
-  error.reason = reason;
-  return error;
+  return Object.assign(new Error(reason), { reason });
 }
 
 export function resolveJwksTarget(env) {
@@ -72,8 +70,16 @@ function publicKeys(body) {
 
 export async function fetchJwks(env, fetchImpl, now, force) {
   const target = resolveJwksTarget(env);
-  const fresh = !force && cache.url === target.url && cache.keys && now < cache.fetchedAt + cache.maxAgeSeconds * 1000;
-  if (fresh) return { ...cache, target, refreshed: false };
+  if (!force && cache.url === target.url && cache.keys && now < cache.fetchedAt + cache.maxAgeSeconds * 1000) {
+    return {
+      url: cache.url,
+      fetchedAt: cache.fetchedAt,
+      maxAgeSeconds: cache.maxAgeSeconds,
+      keys: cache.keys,
+      target,
+      refreshed: false,
+    };
+  }
   let response;
   try {
     response = await fetchImpl(target.url, { method: "GET", redirect: "manual" });
@@ -87,7 +93,7 @@ export async function fetchJwks(env, fetchImpl, now, force) {
   cache.fetchedAt = now;
   cache.maxAgeSeconds = boundedMaxAge(response.headers.get("cache-control"));
   cache.keys = keys;
-  return { ...cache, target, refreshed: true };
+  return { url: cache.url, fetchedAt: cache.fetchedAt, maxAgeSeconds: cache.maxAgeSeconds, keys, target, refreshed: true };
 }
 
 function presentedToken(request) {
@@ -116,7 +122,8 @@ export async function verifyRemoteJwt(token, env, audience, fetchImpl = fetch, n
       loaded = await fetchJwks(env, fetchImpl, now, true);
     }
   } catch (error) {
-    return { ok: false, reason: error.reason || "jwks_unavailable" };
+    const reason = error && typeof error === "object" && "reason" in error && typeof error.reason === "string" ? error.reason : "jwks_unavailable";
+    return { ok: false, reason };
   }
   if (!loaded.keys.keys.some((key) => key.kid === header.kid)) return { ok: false, reason: "unknown_kid" };
   try {

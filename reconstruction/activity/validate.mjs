@@ -19,9 +19,7 @@ async function sha256Hex(bytes) {
 }
 
 function fail(reason) {
-  const error = new Error(reason);
-  error.reason = reason;
-  return error;
+  return Object.assign(new Error(reason), { reason });
 }
 
 function nullableString(value) {
@@ -56,7 +54,7 @@ export function parseStoredRecord(text) {
   try {
     return validateRecord(parsed);
   } catch (error) {
-    if (error instanceof Error && error.reason) throw error;
+    if (error instanceof Error && "reason" in error && error.reason) throw error;
     throw fail("stored_record_invalid");
   }
 }

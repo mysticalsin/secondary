@@ -78,11 +78,12 @@ export function validateClientReport(input) {
     if (typeof input.reportedAt !== "string" || !ISO.test(input.reportedAt)) return { ok: false, error: "invalid_time" };
     reportedAt = input.reportedAt;
   }
+  /** @type {Record<string, number | null>} */
   const tokens = {};
   for (const key of TOKEN_KEYS) {
     const parsed = token(input[key], key);
     if (!parsed.ok) return parsed;
-    tokens[key] = parsed.value;
+    tokens[key] = parsed.value ?? null;
   }
   const { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalTokens } = tokens;
   if (inputTokens !== null && outputTokens !== null && totalTokens !== null && totalTokens !== inputTokens + outputTokens) {

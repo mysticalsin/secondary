@@ -1,0 +1,127 @@
+{
+  "before": {
+    "command": "npm run typecheck:worker",
+    "project": "tsconfig.worker.json",
+    "exit": 2,
+    "diagnostics": 119,
+    "codes": {
+      "TS2304": 68,
+      "TS2307": 43,
+      "TS7053": 1,
+      "TS2366": 1,
+      "TS7006": 3,
+      "TS7016": 1,
+      "TS2322": 2
+    }
+  },
+  "after": {
+    "snapshot": {
+      "command": "npm run typecheck:worker",
+      "exit": 2,
+      "diagnostics": 119,
+      "codes": {
+        "TS2304": 68,
+        "TS2307": 43,
+        "TS7053": 1,
+        "TS2366": 1,
+        "TS7006": 3,
+        "TS7016": 1,
+        "TS2322": 2
+      }
+    },
+    "derivedProgram": {
+      "command": "tsc --noEmit -p reconstruction/tsconfig.json",
+      "exit": 0,
+      "diagnostics": 0,
+      "note": "The same recovered files that carry the 8 snapshot diagnostics contribute 0 diagnostics here because this program includes the derived Env, types.ts, agent-ui, view-plan, and validator declaration. That does not change the snapshot command."
+    },
+    "jsBodies": {
+      "command": "npm run typecheck:js-bodies",
+      "project": "reconstruction/tsconfig.check-js.json",
+      "exit": 2,
+      "diagnostics": 157,
+      "codes": {
+        "TS7006": 145,
+        "TS7023": 1,
+        "TS7024": 1,
+        "TS2345": 1,
+        "TS7034": 1,
+        "TS2362": 1,
+        "TS2363": 1,
+        "TS7005": 1,
+        "TS7031": 5
+      },
+      "includedBodies": [
+        "reconstruction/activity/validate.mjs",
+        "reconstruction/import/policy.mjs",
+        "reconstruction/ledger/object.mjs",
+        "reconstruction/ledger/policy.mjs",
+        "reconstruction/personal/plan.mjs",
+        "reconstruction/release/identity.mjs",
+        "reconstruction/release/jwks-validator.mjs",
+        "reconstruction/release/routes.mjs",
+        "reconstruction/ui/pages.mjs"
+      ],
+      "notBodyChecked": [
+        "recovered-source/worker/src/generated/view-plan.validator.js"
+      ]
+    }
+  },
+  "causes": [
+    {
+      "code": "TS2304",
+      "count": 68,
+      "cause": "No interface Env exists in recovered-source or in @cloudflare/workers-types. The derived ambient is reconstruction/env.d.ts and is not part of tsconfig.worker.json."
+    },
+    {
+      "code": "TS2307",
+      "count": 43,
+      "cause": "Missing archive modules: recovered-source/worker/src/types.ts, packages/contracts/src/agent-ui/index.ts, and view-plan.ts. Derived copies exist only under reconstruction/."
+    },
+    {
+      "code": "TS7016",
+      "count": 1,
+      "file": "recovered-source/worker/src/genui.ts:10",
+      "cause": "The generated validator JavaScript is in the archive and has no declaration beside it. A derived declaration exists only under reconstruction/worker-root."
+    },
+    {
+      "code": "TS7053",
+      "count": 1,
+      "file": "recovered-source/worker/src/admin/routes.ts:910",
+      "cause": "PERSONAS resolved from @secondary/policy as a role record. s.persona is any because Session is imported from the missing types.ts. The diagnostic is absent from the derived program."
+    },
+    {
+      "code": "TS2366",
+      "count": 1,
+      "file": "recovered-source/worker/src/agent/tools.ts:260",
+      "cause": "AgentToolName does not narrow while agent-ui is unresolved. The same switch has a return for every member once that module is present."
+    },
+    {
+      "code": "TS7006",
+      "count": 3,
+      "files": [
+        "ai/planner.ts:38",
+        "auth/config.ts:54",
+        "ux/notify.ts:45"
+      ],
+      "cause": "The callback parameters sit on expressions whose types are missing ViewPlan, Env, or org-role types. They are absent from the derived program."
+    },
+    {
+      "code": "TS2322",
+      "count": 2,
+      "file": "recovered-source/worker/src/stubs.ts:33 and :42",
+      "cause": "Without Env, get() is DurableObjectStub<DurableObjectBranded | undefined>, which is not DurableObjectStub<TenantPolicy> or DurableObjectStub<Workspace>. reconstruction/env.d.ts types those bindings, and the derived program accepts both assignments. stubs.ts was not edited."
+    },
+    {
+      "code": "JS-TS2345",
+      "count": 1,
+      "file": "reconstruction/activity/validate.mjs:134",
+      "cause": "@cloudflare/workers-types TextDecoderConstructorOptions does not include fatal. The Workers runtime accepts fatal: true. The call was not removed."
+    },
+    {
+      "code": "JS-implicit-any",
+      "count": 156,
+      "cause": "strict checkJs on unannotated JavaScript parameters. TS2362 and TS2363 in ledger/policy.mjs summarize() are the error type of those parameters, not a separate arithmetic bug."
+    }
+  ]
+}

@@ -211,6 +211,12 @@ The main file's dynamic imports are the six chunks `AgentPage`, `AgentPanel`, `B
 
 The delivered renderer names a different component set from the recovered view-plan schema. The only shared names are `Callout` and `Table`. `KpiTile` is in the renderer and not in the schema. `KpiRow` is in the schema and not in the renderer. The view-plan gate remains the recovered rejection of inline data. It is not a claim that the delivered renderer matches that schema, and it is not a visual match.
 
+## Whole-API typecheck, current measurement
+
+`npm run typecheck:worker` is still `tsc --noEmit -p tsconfig.worker.json`. It still exits 2 with 119 diagnostics: 68 `TS2304` (no `Env` in the archive or in `@cloudflare/workers-types`), 43 `TS2307` (missing `types.ts`, agent-ui, `view-plan.ts`), and 8 others. Those 8 are absent from `tsc -p reconstruction/tsconfig.json` (exit 0), which is a different program that includes the derived modules. The snapshot command was not pointed at that program. Recovered source bytes were not edited.
+
+`npm run typecheck:js-bodies` is `tsc --noEmit -p reconstruction/tsconfig.check-js.json` with `checkJs`. It includes the nine reconstruction `.mjs` bodies and exits 2 with 157 diagnostics. The generated `view-plan.validator.js` is not in that program. `fatal: true` on `TextDecoder` remains because workers types omit that option. The other diagnostics are unannotated JavaScript parameters under `strict`.
+
 ## Still absent
 
 Original API `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, original worker `wrangler.jsonc`, and original compatibility date. Fonts and both logos. `env.ASSETS` is still unresolved. Original TypeScript for the shell is not in these archives. The HTML shell and the main bundle are preserved DOM or source-view text, not wire bytes. Live Graph, Entra, Access, and production objects are not connected. `compatibility_date` `2026-11-07` is the reconstruction date, not a recovered deploy date. Local workerd sets Miniflare `dev.outboundService` to a deny worker; a probe fetch to `https://example.invalid` must return `egress_denied`. That is the network guard. Synthetic bindings alone are not that guard. The recovered MCP entry still returns `MCP_PUBLIC_URL is not configured` before `OAuthProvider` runs, so a bearer token does not reach a tool. Wrangler dry-run of the MCP bundle is not a workerd tool success. The unbundled MCP validator still throws `require is not defined`. A passing local test is not production, security, Microsoft identity, or visual acceptance. No pull request URL is recorded.

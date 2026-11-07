@@ -1,4 +1,6 @@
 export function personalBrain(principalId: string): string;
+export function decideAppend(existingById: unknown, streamRow: unknown, incoming: unknown): { action: string; event?: unknown };
+export function summarize(events: unknown[]): unknown;
 export function canonicalHash(value: unknown): Promise<string>;
 export function syntheticFixture(name: unknown): {
   trust: string;
