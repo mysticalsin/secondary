@@ -1,0 +1,416 @@
+{
+  "note": "TypeScript program membership covers bundled .ts files. A sibling .d.mts does not typecheck the .mjs body. The original 119-line snapshot remains a separate failing compile, and its 8 non-missing-module diagnostics are not proven to be only missing-module fallout.",
+  "programs": [
+    "reconstruction/tsconfig.json",
+    "reconstruction/audit/tsconfig.json",
+    "reconstruction/connector/tsconfig.json",
+    "reconstruction/mcp/tsconfig.json",
+    "reconstruction/ops/tsconfig.json",
+    "reconstruction/pages/tsconfig.json"
+  ],
+  "bundledTsInProgram": [
+    "harness/adapters/policy-entry.ts",
+    "reconstruction/audit/worker/src/index.ts",
+    "reconstruction/connector/worker/src/acl.ts",
+    "reconstruction/connector/worker/src/api-client.ts",
+    "reconstruction/connector/worker/src/calendar.ts",
+    "reconstruction/connector/worker/src/extract.ts",
+    "reconstruction/connector/worker/src/graph.ts",
+    "reconstruction/connector/worker/src/ids.ts",
+    "reconstruction/connector/worker/src/index.ts",
+    "reconstruction/connector/worker/src/internal-auth.ts",
+    "reconstruction/connector/worker/src/records.ts",
+    "reconstruction/connector/worker/src/registry.ts",
+    "reconstruction/connector/worker/src/runtime.ts",
+    "reconstruction/connector/worker/src/state.ts",
+    "reconstruction/connector/worker/src/sync.ts",
+    "reconstruction/connector/worker/src/types.ts",
+    "reconstruction/connector/worker/src/workflow.ts",
+    "reconstruction/mcp/worker/src/access.ts",
+    "reconstruction/mcp/worker/src/api-client.ts",
+    "reconstruction/mcp/worker/src/audit.ts",
+    "reconstruction/mcp/worker/src/authorize.ts",
+    "reconstruction/mcp/worker/src/config.ts",
+    "reconstruction/mcp/worker/src/consent-page.ts",
+    "reconstruction/mcp/worker/src/import-entry.ts",
+    "reconstruction/mcp/worker/src/internal-auth.ts",
+    "reconstruction/mcp/worker/src/jwt-consent.ts",
+    "reconstruction/mcp/worker/src/rate-limit.ts",
+    "reconstruction/mcp/worker/src/switch.ts",
+    "reconstruction/mcp/worker/src/tools.ts",
+    "reconstruction/mcp/worker/src/view/plan.ts",
+    "reconstruction/mcp/worker/src/view/resolve.ts",
+    "reconstruction/mcp/worker/src/view/text.ts",
+    "reconstruction/mcp/worker/src/view/ui.ts",
+    "reconstruction/ops/worker/src/access.ts",
+    "reconstruction/ops/worker/src/backup.ts",
+    "reconstruction/ops/worker/src/crypto.ts",
+    "reconstruction/ops/worker/src/index.ts",
+    "reconstruction/packages/contracts/src/agent-host.ts",
+    "reconstruction/packages/contracts/src/agent-ui/index.ts",
+    "reconstruction/packages/contracts/src/agent-ui/library.ts",
+    "reconstruction/packages/contracts/src/agent-ui/lock.ts",
+    "reconstruction/packages/contracts/src/agent-ui/planner.ts",
+    "reconstruction/packages/contracts/src/agent-ui/schemas.ts",
+    "reconstruction/packages/contracts/src/agent-ui/view.ts",
+    "reconstruction/packages/contracts/src/audit-receipt.ts",
+    "reconstruction/packages/contracts/src/log.ts",
+    "reconstruction/packages/contracts/src/ops-auth.ts",
+    "reconstruction/packages/contracts/src/signed-call.ts",
+    "reconstruction/packages/contracts/src/source-record.ts",
+    "reconstruction/pages/worker/src/counter.ts",
+    "reconstruction/pages/worker/src/index.ts",
+    "reconstruction/release/entry.ts",
+    "reconstruction/worker-root/worker/src/admin/client.ts",
+    "reconstruction/worker-root/worker/src/admin/routes.ts",
+    "reconstruction/worker-root/worker/src/admin/store.ts",
+    "reconstruction/worker-root/worker/src/admin/validate.ts",
+    "reconstruction/worker-root/worker/src/agent/index.ts",
+    "reconstruction/worker-root/worker/src/agent/lines.ts",
+    "reconstruction/worker-root/worker/src/agent/loop.ts",
+    "reconstruction/worker-root/worker/src/agent/stream.ts",
+    "reconstruction/worker-root/worker/src/agent/tools.ts",
+    "reconstruction/worker-root/worker/src/agent/turn.ts",
+    "reconstruction/worker-root/worker/src/agent/views.ts",
+    "reconstruction/worker-root/worker/src/ai/anthropic.ts",
+    "reconstruction/worker-root/worker/src/ai/brief.ts",
+    "reconstruction/worker-root/worker/src/ai/budget.ts",
+    "reconstruction/worker-root/worker/src/ai/config.ts",
+    "reconstruction/worker-root/worker/src/ai/evidence.ts",
+    "reconstruction/worker-root/worker/src/ai/planner.ts",
+    "reconstruction/worker-root/worker/src/ai/prompt.ts",
+    "reconstruction/worker-root/worker/src/ai/proof.ts",
+    "reconstruction/worker-root/worker/src/ai/routes.ts",
+    "reconstruction/worker-root/worker/src/ai/segments.ts",
+    "reconstruction/worker-root/worker/src/audit.ts",
+    "reconstruction/worker-root/worker/src/auth.ts",
+    "reconstruction/worker-root/worker/src/auth/config.ts",
+    "reconstruction/worker-root/worker/src/auth/identity-store.ts",
+    "reconstruction/worker-root/worker/src/auth/identity.ts",
+    "reconstruction/worker-root/worker/src/auth/limits.ts",
+    "reconstruction/worker-root/worker/src/auth/oidc.ts",
+    "reconstruction/worker-root/worker/src/auth/routes.ts",
+    "reconstruction/worker-root/worker/src/auth/session.ts",
+    "reconstruction/worker-root/worker/src/brains/agents.ts",
+    "reconstruction/worker-root/worker/src/brains/data.ts",
+    "reconstruction/worker-root/worker/src/brains/fields.ts",
+    "reconstruction/worker-root/worker/src/brains/importers.ts",
+    "reconstruction/worker-root/worker/src/brains/index.ts",
+    "reconstruction/worker-root/worker/src/brains/insights-routes.ts",
+    "reconstruction/worker-root/worker/src/brains/insights.ts",
+    "reconstruction/worker-root/worker/src/brains/model.ts",
+    "reconstruction/worker-root/worker/src/brains/nav.ts",
+    "reconstruction/worker-root/worker/src/brains/open.ts",
+    "reconstruction/worker-root/worker/src/brains/push.ts",
+    "reconstruction/worker-root/worker/src/brains/routes.ts",
+    "reconstruction/worker-root/worker/src/brains/sanitize.ts",
+    "reconstruction/worker-root/worker/src/brains/shared.ts",
+    "reconstruction/worker-root/worker/src/brains/store.ts",
+    "reconstruction/worker-root/worker/src/brains/unzip.ts",
+    "reconstruction/worker-root/worker/src/connector.ts",
+    "reconstruction/worker-root/worker/src/genui.ts",
+    "reconstruction/worker-root/worker/src/human.ts",
+    "reconstruction/worker-root/worker/src/index.ts",
+    "reconstruction/worker-root/worker/src/internal-auth.ts",
+    "reconstruction/worker-root/worker/src/observe.ts",
+    "reconstruction/worker-root/worker/src/ops-admin.ts",
+    "reconstruction/worker-root/worker/src/ops-internal.ts",
+    "reconstruction/worker-root/worker/src/ops-rights.ts",
+    "reconstruction/worker-root/worker/src/ops-snapshot.ts",
+    "reconstruction/worker-root/worker/src/org.ts",
+    "reconstruction/worker-root/worker/src/personal-kind.ts",
+    "reconstruction/worker-root/worker/src/replay.ts",
+    "reconstruction/worker-root/worker/src/routes.ts",
+    "reconstruction/worker-root/worker/src/scim/parse.ts",
+    "reconstruction/worker-root/worker/src/scim/routes.ts",
+    "reconstruction/worker-root/worker/src/scope.ts",
+    "reconstruction/worker-root/worker/src/security-journal.ts",
+    "reconstruction/worker-root/worker/src/security.ts",
+    "reconstruction/worker-root/worker/src/seed.ts",
+    "reconstruction/worker-root/worker/src/sensitivity.ts",
+    "reconstruction/worker-root/worker/src/stubs.ts",
+    "reconstruction/worker-root/worker/src/switches.ts",
+    "reconstruction/worker-root/worker/src/tenant-policy.ts",
+    "reconstruction/worker-root/worker/src/ux/index.ts",
+    "reconstruction/worker-root/worker/src/ux/notify.ts",
+    "reconstruction/worker-root/worker/src/ux/personal.ts",
+    "reconstruction/worker-root/worker/src/ux/records.ts",
+    "reconstruction/worker-root/worker/src/ux/review.ts",
+    "reconstruction/worker-root/worker/src/ux/util.ts",
+    "reconstruction/worker-root/worker/src/uxv2/ask.ts",
+    "reconstruction/worker-root/worker/src/uxv2/classifier.ts",
+    "reconstruction/worker-root/worker/src/uxv2/export.ts",
+    "reconstruction/worker-root/worker/src/uxv2/index.ts",
+    "reconstruction/worker-root/worker/src/uxv2/ledger.ts",
+    "reconstruction/worker-root/worker/src/uxv2/questions.ts",
+    "reconstruction/worker-root/worker/src/uxv2/routines.ts",
+    "reconstruction/worker-root/worker/src/uxv2/shared.ts",
+    "reconstruction/worker-root/worker/src/uxv2/tree.ts",
+    "reconstruction/worker-root/worker/src/uxv2/usage.ts",
+    "reconstruction/worker-root/worker/src/uxv2/zip.ts",
+    "reconstruction/worker-root/worker/src/wiki/changes.ts",
+    "reconstruction/worker-root/worker/src/wiki/engine.ts",
+    "reconstruction/worker-root/worker/src/wiki/hooks.ts",
+    "reconstruction/worker-root/worker/src/wiki/review.ts",
+    "reconstruction/worker-root/worker/src/wiki/routes.ts",
+    "reconstruction/worker-root/worker/src/wiki/seed-content.ts",
+    "reconstruction/worker-root/worker/src/wiki/seed.ts",
+    "reconstruction/worker-root/worker/src/wiki/store.ts",
+    "reconstruction/worker-root/worker/src/wiki/text.ts",
+    "reconstruction/worker-root/worker/src/wiki/types.ts",
+    "reconstruction/worker-root/worker/src/workspace.ts",
+    "reconstruction/workerd/api-harness.ts",
+    "reconstruction/workerd/connector-refresh-harness.ts",
+    "reconstruction/workerd/view-plan-entry.ts",
+    "recovered-source/shared/packages/policy/src/brains.ts",
+    "recovered-source/shared/packages/policy/src/engine.ts",
+    "recovered-source/shared/packages/policy/src/map.ts",
+    "recovered-source/shared/packages/policy/src/org.ts",
+    "recovered-source/shared/packages/policy/src/personal.ts",
+    "recovered-source/shared/packages/policy/src/personas.ts",
+    "recovered-source/shared/packages/policy/src/roles.ts",
+    "recovered-source/shared/packages/policy/src/seed.ts",
+    "recovered-source/shared/packages/policy/src/types.ts"
+  ],
+  "bundledTsMissingFromPrograms": [],
+  "externalLibraries": [
+    "@cloudflare/workers-oauth-provider",
+    "@modelcontextprotocol/ext-apps/server",
+    "@modelcontextprotocol/server",
+    "@openuidev/lang-core",
+    "agents/mcp",
+    "ajv/dist/runtime/equal",
+    "ajv/dist/runtime/ucs2length",
+    "cloudflare:workers",
+    "hono",
+    "hono/body-limit",
+    "hono/cookie",
+    "hono/http-exception",
+    "jose",
+    "zod"
+  ],
+  "staticAssets": [
+    "recovered-delivery/html-shell/index.html",
+    "recovered-delivery/main-js/index-PLmoiPYI.dom-captured.js",
+    "recovered-delivery/shell-six/assets/index-DiBYRwP4.css"
+  ],
+  "uncheckedDeclaredJs": [
+    {
+      "body": "reconstruction/activity/validate.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/activity/validate.d.mts"
+    },
+    {
+      "body": "reconstruction/import/policy.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/import/policy.d.mts"
+    },
+    {
+      "body": "reconstruction/ledger/object.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/ledger/object.d.mts"
+    },
+    {
+      "body": "reconstruction/ledger/policy.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/ledger/policy.d.mts"
+    },
+    {
+      "body": "reconstruction/mcp/worker/src/generated/view-plan-validator.js",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/mcp/worker/src/generated/view-plan-validator.d.ts"
+    },
+    {
+      "body": "reconstruction/personal/plan.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/personal/plan.d.mts"
+    },
+    {
+      "body": "reconstruction/release/identity.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/release/identity.d.mts"
+    },
+    {
+      "body": "reconstruction/release/jwks-validator.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/release/jwks-validator.d.mts"
+    },
+    {
+      "body": "reconstruction/release/routes.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/release/routes.d.mts"
+    },
+    {
+      "body": "reconstruction/ui/pages.mjs",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/ui/pages.d.mts"
+    },
+    {
+      "body": "reconstruction/worker-root/worker/src/generated/view-plan.validator.js",
+      "bodyInProgram": false,
+      "declaration": "reconstruction/worker-root/worker/src/generated/view-plan.validator.d.ts"
+    }
+  ],
+  "remainingDerivedCasts": [
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 51,
+      "text": "const me = (await res.json()) as { principal?: { id?: unknown }; tenantId?: unknown };"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 59,
+      "text": "const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as unknown as {"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 68,
+      "text": "const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as unknown as {"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 79,
+      "text": "const verified = await verifyInternalRequest(request, internalKeys(env as never));"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 143,
+      "text": "payload = JSON.parse(await request.clone().text()) as Record<string, unknown>;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 238,
+      "text": "const made = (await saved.json()) as { id?: string };"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 295,
+      "text": "const body = (await res.json()) as { outcome?: string; error?: string; event?: Record<string, unknown> };"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 306,
+      "text": "const body = (await res.json()) as Record<string, unknown>;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 314,
+      "text": "const parsed = (await res.json()) as Record<string, unknown>;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 360,
+      "text": "const verified = await verifyInternalRequest(request, internalKeys(env as never));"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 408,
+      "text": "payload = JSON.parse(await request.text()) as Record<string, unknown>;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 487,
+      "text": "const verified = await verifyInternalRequest(request, internalKeys(env as never));"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 569,
+      "text": "const reason = error instanceof Error && \"reason\" in error ? String((error as { reason?: string }).reason) : \"stored_record_invalid\";"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 633,
+      "text": "payload = JSON.parse(await request.text()) as Record<string, unknown>;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 647,
+      "text": "const reason = error instanceof Error && \"reason\" in error ? String((error as { reason?: string }).reason) : \"malformed_record\";"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 667,
+      "text": "payload = raw ? JSON.parse(raw) as Record<string, unknown> : {};"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 675,
+      "text": "internalKeys(env as never),"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 692,
+      "text": "const body = await me.json() as { principal?: { roleIds?: string[] } };"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 699,
+      "text": "if ((env as { LOCAL_DO_SHIM?: string }).LOCAL_DO_SHIM !== \"workerd\") return env;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 711,
+      "text": "return ns ? wrap(ns as DurableObjectNamespace) : ns;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 716,
+      "text": "}) as HarnessEnv;"
+    },
+    {
+      "file": "reconstruction/workerd/api-harness.ts",
+      "line": 733,
+      "text": "const stub = ns.get(ns.idFromName(name)) as unknown as {"
+    },
+    {
+      "file": "reconstruction/release/entry.ts",
+      "line": 31,
+      "text": "return value !== null && typeof value === \"object\" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/jwt-consent.ts",
+      "line": 22,
+      "text": "const isScope = (value: string): value is Scope => (SCOPES as readonly string[]).includes(value);"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/jwt-consent.ts",
+      "line": 33,
+      "text": "const audience = String((env as { AUTH_MCP_AUD?: string }).AUTH_MCP_AUD ?? \"\").trim();"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/jwt-consent.ts",
+      "line": 37,
+      "text": "const tenant = admittedTenant(verified.email, (env as { ADMITTED_TENANT_DOMAINS?: string }).ADMITTED_TENANT_DOMAINS);"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/import-entry.ts",
+      "line": 130,
+      "text": "const tools = Reflect.get(server, \"_registeredTools\") as Record<string, { remove?: () => void }> | undefined;"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/import-entry.ts",
+      "line": 316,
+      "text": "const ctx = rawCtx as ExecutionContext & OAuthResourceContext<AuthProps>;"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/import-entry.ts",
+      "line": 352,
+      "text": "const parsed = Number((env as { ACCESS_TOKEN_TTL?: string }).ACCESS_TOKEN_TTL);"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/import-entry.ts",
+      "line": 365,
+      "text": "apiHandler: mcpApi as never,"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/import-entry.ts",
+      "line": 368,
+      "text": "if ((env.ENVIRONMENT as string) !== \"dev\" && new URL(request.url).pathname === \"/authorize\") {"
+    },
+    {
+      "file": "reconstruction/mcp/worker/src/import-entry.ts",
+      "line": 371,
+      "text": "return authorizeHandler.fetch!(request as never, env, ctx);"
+    }
+  ]
+}

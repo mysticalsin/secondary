@@ -40,12 +40,15 @@ test("usage reports reject extra fields, bad totals, and keep unknown distinct f
   assert.equal(ok.report.totalTokens, 4);
   assert.equal(ok.report.cacheReadTokens, 5);
   const zero = syntheticFixture("measured-zero");
+  const sample = syntheticFixture("provider-sample");
   const cancelled = syntheticFixture("cancelled-unknown");
-  assert.equal(zero.inputTokens, 0);
+  const tokenKeys = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "totalTokens"] as const;
   assert.equal(zero.trust, "synthetic_fixture");
   assert.equal(zero.evidence, "synthetic_fixture");
-  assert.equal(cancelled.inputTokens, null);
+  for (const key of tokenKeys) assert.equal(typeof zero[key], "number");
+  for (const key of tokenKeys) assert.equal(typeof sample[key], "number");
   assert.equal(cancelled.outcome, "cancelled");
+  for (const key of tokenKeys) assert.equal(cancelled[key], null);
   const summary = summarize([
     { eventId: "a", operation: "import", requestId: "r1", trust: "unknown", evidence: "server_clock", inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null, totalTokens: null, providerRequestId: null, describesRequestId: null, streamSeq: null },
     { eventId: "b", operation: "provider_fixture", requestId: "r2", trust: "server_measured", evidence: "server_clock", inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0, providerRequestId: null, describesRequestId: null, streamSeq: null },

@@ -46,6 +46,21 @@ function utf8Bytes(text) {
   return new TextEncoder().encode(text).byteLength;
 }
 
+export function parseStoredRecord(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(String(text ?? ""));
+  } catch {
+    throw fail("stored_record_invalid");
+  }
+  try {
+    return validateRecord(parsed);
+  } catch (error) {
+    if (error instanceof Error && error.reason) throw error;
+    throw fail("stored_record_invalid");
+  }
+}
+
 export function validateRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("malformed_record");
   const encoded = JSON.stringify(value);

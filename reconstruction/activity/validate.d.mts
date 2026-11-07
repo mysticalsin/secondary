@@ -16,6 +16,7 @@ export type ReviewRecord = {
   notes: string;
 };
 
+export function parseStoredRecord(text: string): ReviewRecord;
 export function parseNdjson(bytes: string | Uint8Array): Promise<{
   records: ReviewRecord[];
   incomplete: boolean;

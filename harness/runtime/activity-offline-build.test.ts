@@ -20,6 +20,6 @@ test("the offline activity page is one file and contains no review records", () 
   assert.equal(html.includes("x-dev-email"), false);
   assert.equal(html.includes("fetch("), false);
   assert.equal(html.includes("import "), false);
-  assert.equal(createHash("sha256").update(readFileSync("reconstruction/activity/offline/index.html")).digest("hex"), "ec2c8071aecf3f85cbf7fe32a4b5ccdb46a9bed3e4364f09809fd98f01d25456");
+  assert.equal(createHash("sha256").update(readFileSync("reconstruction/activity/offline/index.html")).digest("hex"), "ecb209b35dd8ca140b3763334f83912f76586575d0cb1173465abf2ec0b68638");
   assert.equal(html.includes("Buffer.byteLength"), false);
 });

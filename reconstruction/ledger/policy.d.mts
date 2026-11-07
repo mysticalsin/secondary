@@ -7,11 +7,11 @@ export function syntheticFixture(name: unknown): {
   provider: string;
   model: string;
   outcome: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  totalTokens: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  totalTokens: number | null;
 } | null;
 export function validateClientReport(input: unknown):
   | { ok: false; error: string; field?: string }

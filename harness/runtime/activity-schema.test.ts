@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { SCHEMA_SHA256, parseNdjson, recordHash, validateRecord } from "../../reconstruction/activity/validate.mjs";
+import { SCHEMA_SHA256, parseNdjson, parseStoredRecord, recordHash, validateRecord } from "../../reconstruction/activity/validate.mjs";
 
 function record(id, notes = "synthetic fixture") {
   return {
@@ -47,4 +47,7 @@ test("the review schema hash is pinned and extra fields fail closed", async () =
   const huge = record("relay-synthetic-1", "x");
   huge.notes = "x".repeat(70_000);
   assert.throws(() => validateRecord(huge), /record_too_large/);
+  assert.equal(parseStoredRecord(JSON.stringify(record("relay-synthetic-1"))).record_id, "relay-synthetic-1");
+  assert.throws(() => parseStoredRecord("{"), /stored_record_invalid/);
+  assert.throws(() => parseStoredRecord("{}"), /unknown_field/);
 });

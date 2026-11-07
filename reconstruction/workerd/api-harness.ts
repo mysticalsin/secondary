@@ -14,7 +14,7 @@ import { matchReceipt, readReceipt, sha256Hex, storedBody, validateImport, visib
 import { UsageLedger } from "../ledger/object.mjs";
 import { canonicalHash, personalBrain, syntheticFixture, validateClientReport } from "../ledger/policy.mjs";
 import { personalPlan } from "../personal/plan.mjs";
-import { brtNow, parseNdjson, recordHash, sortRecords, viewRecord } from "../activity/validate.mjs";
+import { brtNow, parseNdjson, parseStoredRecord, recordHash, sortRecords, viewRecord } from "../activity/validate.mjs";
 
 export { TenantPolicy, Workspace, UsageLedger };
 
@@ -552,6 +552,35 @@ function identityMismatch(who: { principalId: string; tenantId: string; email?: 
   return value !== who.principalId;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readStoredActivity(body: Record<string, unknown>):
+  | { ok: true; records: Parameters<typeof viewRecord>[0][]; meta: { incomplete: boolean; readAt: string | null; ledgerSha256: string | null } | null }
+  | { ok: false; reason: string } {
+  if (!Array.isArray(body.records)) return { ok: false, reason: "stored_record_invalid" };
+  const records: Parameters<typeof viewRecord>[0][] = [];
+  for (const row of body.records) {
+    if (!isRecord(row) || typeof row.body !== "string") return { ok: false, reason: "stored_record_invalid" };
+    try {
+      records.push(parseStoredRecord(row.body));
+    } catch (error) {
+      const reason = error instanceof Error && "reason" in error ? String((error as { reason?: string }).reason) : "stored_record_invalid";
+      return { ok: false, reason };
+    }
+  }
+  if (body.meta == null) return { ok: true, records, meta: null };
+  if (!isRecord(body.meta) || typeof body.meta.incomplete !== "boolean") return { ok: false, reason: "stored_meta_invalid" };
+  if (!(body.meta.readAt === null || typeof body.meta.readAt === "string")) return { ok: false, reason: "stored_meta_invalid" };
+  if (!(body.meta.ledgerSha256 === null || typeof body.meta.ledgerSha256 === "string")) return { ok: false, reason: "stored_meta_invalid" };
+  return {
+    ok: true,
+    records,
+    meta: { incomplete: body.meta.incomplete, readAt: body.meta.readAt, ledgerSha256: body.meta.ledgerSha256 },
+  };
+}
+
 async function activityGate(request: Request, env: HarnessEnv, ctx: ExecutionContext): Promise<Response> {
   const write = request.method === "POST";
   const who = await ledgerCaller(request, env, ctx, write);
@@ -565,9 +594,10 @@ async function activityGate(request: Request, env: HarnessEnv, ctx: ExecutionCon
   if (request.method === "GET") {
     const listed = await importRpc(env, who.tenantId, "/activity/list", { principalId: who.principalId });
     if (!listed.ok) return Response.json(listed.body, { status: listed.status });
-    const meta = listed.body.meta as { incomplete?: boolean; readAt?: string | null; ledgerSha256?: string | null } | null | undefined;
-    const rows = Array.isArray(listed.body.records) ? listed.body.records : [];
-    const all = rows.map((row) => JSON.parse(String((row as { body?: unknown }).body)) as Parameters<typeof viewRecord>[0]);
+    const stored = readStoredActivity(listed.body);
+    if (!stored.ok) return Response.json({ error: stored.reason, reason: stored.reason }, { status: 500 });
+    const meta = stored.meta;
+    const all = stored.records;
     let records = all;
     const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
     const capture = url.searchParams.get("capture") ?? "";
