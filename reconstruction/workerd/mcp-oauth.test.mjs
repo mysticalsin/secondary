@@ -105,11 +105,13 @@ test.before(async () => {
           ),
           TENANT_POLICY: { type: "durable-object", worker: "api", exportName: "TenantPolicy" },
           WORKSPACE: { type: "durable-object", worker: "api", exportName: "Workspace" },
+          USAGE_LEDGER: { type: "durable-object", worker: "api", exportName: "UsageLedger" },
           BLOBS: { type: "r2" },
         },
         exports: {
           TenantPolicy: { type: "durable-object", storage: "sqlite" },
           Workspace: { type: "durable-object", storage: "sqlite" },
+          UsageLedger: { type: "durable-object", storage: "sqlite" },
         },
         triggers: [{ type: "fetch", pattern: "127.0.0.1/*" }],
       }),

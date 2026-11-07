@@ -240,9 +240,38 @@ const SETTINGS_LINKS = [
   ["/settings/observability", "Observability"],
 ];
 
+function tokenLabel(dimension) {
+  if (!dimension || dimension.value === null) return "Unknown";
+  if (dimension.value === 0 && dimension.complete) return "0 measured";
+  if (!dimension.complete) return `${dimension.value} known, coverage incomplete`;
+  return String(dimension.value);
+}
+
+function trustChip(event) {
+  if (event.evidence === "synthetic_fixture") return chip("unknown", "Synthetic fixture");
+  if (event.trust === "client_reported") return chip("", "Client-reported");
+  if (event.trust === "server_measured") return chip("ok", "Server-measured");
+  return chip("unknown", "Unknown");
+}
+
 export function renderObservability(model) {
-  const prefs = Boolean(model.prefMessage);
+  const prefs = model.section === "prefs" || Boolean(model.prefMessage);
+  const usageOn = model.section === "usage";
   const failed = model.prefMessage.startsWith("Save failed");
+  const ledger = model.ledger ?? { events: [], summary: null, error: "", status: 0, operation: "", trust: "", requestId: "" };
+  const usageEmpty = ledger.status === 200 && ledger.events.length === 0 && !ledger.requestId;
+  const usageDenied = ledger.status === 404 || ledger.error === "not_found";
+  const usageRows = ledger.events
+    .map(
+      (event) => `<tr>
+        <td>${trustChip(event)}</td>
+        <td>${esc(event.operation)}</td>
+        <td>${esc(event.outcome)}</td>
+        <td>${event.inputTokens === null || event.inputTokens === undefined ? "Unknown" : esc(event.inputTokens)}</td>
+        <td><code>${esc(event.requestId)}</code></td>
+      </tr>`,
+    )
+    .join("");
   const rows = model.routes
     .map(
       (row) => `<tr><td>${esc(row.path)}</td><td>${esc(row.status)}</td><td>${esc(row.meaning)}</td></tr>`,
@@ -266,12 +295,13 @@ export function renderObservability(model) {
   <p class="banner"><i></i>Local preview · synthetic data</p>
   <nav class="pills" aria-label="Settings">${settings}</nav>
   <div class="tabs" role="tablist" aria-label="Observability sections">
-    ${tab("tab-status", "panel-status", "Status", !prefs)}
+    ${tab("tab-status", "panel-status", "Status", !prefs && !usageOn)}
     ${tab("tab-agents", "panel-agents", "Agents", false)}
     ${tab("tab-audit", "panel-audit", "Audit", false)}
-    ${tab("tab-prefs", "panel-prefs", "Preferences", prefs)}
+    ${tab("tab-usage", "panel-usage", "Usage", usageOn)}
+    ${tab("tab-prefs", "panel-prefs", "Preferences", prefs && !usageOn)}
   </div>
-  <section id="panel-status" role="tabpanel" aria-labelledby="tab-status"${prefs ? " hidden" : ""}>
+  <section id="panel-status" role="tabpanel" aria-labelledby="tab-status"${prefs || usageOn ? " hidden" : ""}>
     <div class="grid">
       <article class="stat">${mark('<circle cx="12" cy="12" r="8"/><path d="m8.5 12.2 2.2 2.2 4.6-5"/>')}<p class="k">Readiness</p><p class="value">${esc(model.ready.label)}</p><p class="hint">${esc(model.ready.detail)}</p></article>
       <article class="stat">${mark('<path d="M3 12h4l2-5 3 10 2-5h7"/>')}<p class="k">Health</p><p class="value">${esc(model.health.label)}</p><p class="hint">${esc(model.health.detail)}</p></article>
@@ -295,7 +325,35 @@ export function renderObservability(model) {
       <pre>${esc(model.audit.raw)}</pre>
     </details>
   </section>
-  <section id="panel-prefs" role="tabpanel" aria-labelledby="tab-prefs"${prefs ? "" : " hidden"}>
+  <section id="panel-usage" role="tabpanel" aria-labelledby="tab-usage"${usageOn ? "" : " hidden"}>
+    <p class="banner"><i></i>Local preview · synthetic data</p>
+    <p class="muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. Switching session loads that person's ledger. Cost is unknown. Client-reported numbers are not provider-verified.</p>
+    <form method="post" action="/settings/observability/session" class="tabs">
+      <button type="submit" name="preset" value="person_a" aria-pressed="${model.preset === "person_b" ? "false" : "true"}">Consultant session</button>
+      <button type="submit" name="preset" value="person_b" aria-pressed="${model.preset === "person_b" ? "true" : "false"}">Plus-address session</button>
+    </form>
+    <form method="get" action="/settings/observability">
+      <input type="hidden" name="section" value="usage">
+      <label>Operation <input name="operation" value="${esc(ledger.operation)}" placeholder="import"></label>
+      <label>Trust <input name="trust" value="${esc(ledger.trust)}" placeholder="unknown"></label>
+      <label>Request <input name="requestId" value="${esc(ledger.requestId)}" placeholder="Request id"></label>
+      <button class="save" type="submit">Filter</button>
+    </form>
+    ${usageDenied ? `<p class="alert" role="status">That operation is not in this session. Nothing from another person is shown.</p>` : ""}
+    ${usageEmpty ? `<p role="status">No usage events for this session. That is an empty ledger, not a measured zero.</p>` : ""}
+    ${ledger.summary ? `<div class="grid">
+      <article class="stat"><p class="k">Import operations</p><p class="value">${esc(ledger.summary.operations)}</p><p class="hint">Distinct import requests. Not a token count.</p></article>
+      <article class="stat"><p class="k">Unknown usage</p><p class="value">${esc(ledger.summary.tokenCoverage.unknown)}</p><p class="hint">Events with no measured tokens.</p></article>
+      <article class="stat"><p class="k">Input tokens</p><p class="value">${esc(tokenLabel(ledger.summary.input))}</p><p class="hint">Known inputs are not summed with unknown events. Cache is separate. Cost is unknown.</p></article>
+    </div>` : ""}
+    ${usageRows ? `<table><thead><tr><th>Evidence</th><th>Operation</th><th>State</th><th>Input</th><th>Request</th></tr></thead><tbody>${usageRows}</tbody></table>` : ""}
+    <form method="post" action="/settings/observability/usage">
+      <button class="save" type="submit" name="kind" value="report">Record synthetic client report (2 + 2)</button>
+      <button class="save" type="submit" name="kind" value="fixture">Record measured zero fixture</button>
+    </form>
+    <p class="muted">The client report is client-reported and uses the synthetic-echo label. The zero fixture is server-measured and is not a live bill. Provider-verified billing is not available.</p>
+  </section>
+  <section id="panel-prefs" role="tabpanel" aria-labelledby="tab-prefs"${prefs && !usageOn ? "" : " hidden"}>
     <div class="callout">
       <h2>Language</h2>
       <p class="muted">Saves the recovered language preference for this local session. It does not change telemetry.</p>

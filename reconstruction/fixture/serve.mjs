@@ -122,7 +122,20 @@ function jsonBody(text) {
   }
 }
 
-async function observabilityModel(persona, prefMessage) {
+async function observabilityModel(persona, prefMessage, preset, url) {
+  const section = url?.searchParams.get("section") ?? (prefMessage ? "prefs" : "status");
+  const ledgerQuery = new URLSearchParams();
+  const operation = url?.searchParams.get("operation") ?? "";
+  const trust = url?.searchParams.get("trust") ?? "";
+  const requestId = url?.searchParams.get("requestId") ?? "";
+  if (operation) ledgerQuery.set("operation", operation);
+  if (trust) ledgerQuery.set("trust", trust);
+  if (requestId) ledgerQuery.set("requestId", requestId);
+  const ledgerResponse = await callImport(`/harness/ledger?${ledgerQuery}`, {
+    email: fixtureEmail(persona),
+    persona,
+  });
+  const ledger = jsonBody(ledgerResponse.text);
   const routes = [
     ["/v1/health", "Liveness from the recovered worker. Not uptime."],
     ["/v1/ready", "Durable Object and R2 reachability only."],
@@ -185,6 +198,17 @@ async function observabilityModel(persona, prefMessage) {
     lang: prefsJson.lang ?? "",
     prefMessage,
     routes: results.map(({ path, status, meaning }) => ({ path, status, meaning })),
+    preset: preset === "person_b" ? "person_b" : "person_a",
+    section,
+    ledger: {
+      status: ledgerResponse.status,
+      events: Array.isArray(ledger.events) ? ledger.events : [],
+      summary: ledger.summary ?? null,
+      error: ledger.reason || ledger.error || "",
+      operation,
+      trust,
+      requestId,
+    },
   };
 }
 
@@ -388,7 +412,7 @@ export function listen(port = 0) {
       const message = saved.status === 200
         ? "Saved through /v1/ux/prefs."
         : `Save failed (${saved.status}${savedBody.error ? `, ${savedBody.error}` : ""}). Nothing else was changed.`;
-      const html = renderObservability(await observabilityModel(persona, message));
+      const html = renderObservability(await observabilityModel(persona, message, session.preset, url));
       send(res, 200, "text/html; charset=utf-8", html, cookie);
       return;
     }
@@ -429,8 +453,55 @@ export function listen(port = 0) {
       send(res, 200, "text/html; charset=utf-8", renderGenui(await genuiState(session)), cookie);
       return;
     }
+    if (req.method === "POST" && url.pathname === "/settings/observability/session") {
+      const fields = form(await readBody(req));
+      const preset = fields.get("preset");
+      const current = sessions.get(session.id);
+      if (preset === "person_a" || preset === "person_b") current.preset = preset;
+      res.writeHead(303, {
+        location: "/settings/observability?section=usage",
+        "set-cookie": `fixture=${encodeURIComponent(session.id)}; HttpOnly; Path=/; SameSite=Lax`,
+      });
+      res.end();
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/settings/observability/usage") {
+      const fields = form(await readBody(req));
+      const kind = fields.get("kind");
+      const email = fixtureEmail(persona);
+      if (kind === "fixture") {
+        await callImport("/harness/ledger/fixture", {
+          method: "POST",
+          email,
+          persona,
+          body: { fixture: "measured-zero", eventId: `fixture-${Date.now()}` },
+        });
+      } else if (kind === "report") {
+        await callImport("/harness/ledger", {
+          method: "POST",
+          email,
+          persona,
+          body: {
+            eventId: `client-${Date.now()}`,
+            outcome: "ok",
+            provider: "synthetic",
+            model: "synthetic-echo",
+            inputTokens: 2,
+            outputTokens: 2,
+            cacheReadTokens: 1,
+            totalTokens: 4,
+          },
+        });
+      }
+      res.writeHead(303, {
+        location: "/settings/observability?section=usage",
+        "set-cookie": cookie ?? `fixture=${encodeURIComponent(session.id)}; HttpOnly; Path=/; SameSite=Lax`,
+      });
+      res.end();
+      return;
+    }
     if (url.pathname === "/reconstruction/observability" || url.pathname === "/settings/observability") {
-      send(res, 200, "text/html; charset=utf-8", renderObservability(await observabilityModel(persona, "")), cookie);
+      send(res, 200, "text/html; charset=utf-8", renderObservability(await observabilityModel(persona, "", session.preset, url)), cookie);
       return;
     }
     if (url.pathname === "/settings" || (url.pathname.startsWith("/settings/") && !url.pathname.startsWith("/settings/observability"))) {

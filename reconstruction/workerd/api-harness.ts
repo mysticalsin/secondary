@@ -11,8 +11,10 @@ import { internalKeys } from "../worker-root/worker/src/replay.ts";
 import { personalScope } from "../worker-root/worker/src/scope.ts";
 import { workspaceStub } from "../worker-root/worker/src/stubs.ts";
 import { matchReceipt, readReceipt, sha256Hex, storedBody, validateImport, visibleText } from "../import/policy.mjs";
+import { UsageLedger } from "../ledger/object.mjs";
+import { canonicalHash, personalBrain, syntheticFixture, validateClientReport } from "../ledger/policy.mjs";
 
-export { TenantPolicy, Workspace };
+export { TenantPolicy, Workspace, UsageLedger };
 
 interface HarnessEnv {
   WORKSPACE: DurableObjectNamespace;
@@ -21,6 +23,7 @@ interface HarnessEnv {
   DEFAULT_TENANT_ID?: string;
   TENANT_DOMAINS?: string;
   ENVIRONMENT?: string;
+  USAGE_LEDGER?: DurableObjectNamespace;
 }
 
 const MAX_STORED = 8000;
@@ -131,6 +134,10 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
   if (found.conflict) return Response.json({ error: "version_conflict", reason: "version_conflict", outcome: "rejected" }, { status: 409 });
   if (found.same) {
     const view = present(found.same);
+    const recorded = view?.requestId ? await recordImportOperation(env, who, view.requestId) : { ok: false, body: {} };
+    if (!recorded.ok) {
+      return Response.json({ error: "ledger_not_confirmed", reason: "ledger_not_confirmed", outcome: "failed" }, { status: 503 });
+    }
     return Response.json({
       ...view,
       outcome: "duplicate",
@@ -187,7 +194,11 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
   if (!after.some((item) => item.id === made.id)) {
     return Response.json({ error: "not_confirmed", reason: "not_confirmed", outcome: "failed" }, { status: 503 });
   }
-  return Response.json({ ...receipt, id: made.id, text: checked.text }, { status: 201 });
+  const recorded = await recordImportOperation(env, who, requestId);
+  if (!recorded.ok) {
+    return Response.json({ error: "ledger_not_confirmed", reason: "ledger_not_confirmed", outcome: "failed" }, { status: 503 });
+  }
+  return Response.json({ ...receipt, id: made.id, text: checked.text, ledger: recorded.body.outcome }, { status: 201 });
 }
 
 function present(item: { id: string; body: string | null; authorId: string | null }) {
@@ -222,9 +233,194 @@ function searchTokens(q: string): string[] | null {
   return tokens.length === 0 ? null : tokens;
 }
 
+async function ledgerStub(env: HarnessEnv, tenantId: string) {
+  const ns = env.USAGE_LEDGER;
+  if (!ns) return null;
+  return ns.get(ns.idFromName(tenantId));
+}
+
+async function ledgerAppend(env: HarnessEnv, tenantId: string, event: Record<string, unknown>) {
+  const stub = await ledgerStub(env, tenantId);
+  if (!stub) return { ok: false, status: 503, body: { error: "ledger_unavailable", outcome: "failed" } };
+  const res = await stub.fetch("https://ledger.internal/append", {
+    method: "POST",
+    body: JSON.stringify(event),
+  });
+  const body = (await res.json()) as { outcome?: string; error?: string; event?: Record<string, unknown> };
+  return { ok: res.ok, status: res.status, body };
+}
+
+async function ledgerQuery(env: HarnessEnv, tenantId: string, filter: Record<string, unknown>) {
+  const stub = await ledgerStub(env, tenantId);
+  if (!stub) return { ok: false, status: 503, body: { error: "ledger_unavailable" } };
+  const res = await stub.fetch("https://ledger.internal/query", {
+    method: "POST",
+    body: JSON.stringify(filter),
+  });
+  const body = (await res.json()) as Record<string, unknown>;
+  return { ok: res.ok, status: res.status, body };
+}
+
+async function recordImportOperation(
+  env: HarnessEnv,
+  who: { principalId: string; tenantId: string },
+  requestId: string,
+) {
+  const event = {
+    eventId: `import:${requestId}`,
+    tenantId: who.tenantId,
+    principalId: who.principalId,
+    brainId: personalBrain(who.principalId),
+    runId: requestId,
+    operation: "import",
+    requestId,
+    providerRequestId: null,
+    streamSeq: null,
+    retryOf: null,
+    describesRequestId: null,
+    payloadHash: await canonicalHash({ operation: "import", requestId, outcome: "ok", trust: "unknown" }),
+    trust: "unknown",
+    evidence: "server_clock",
+    providerVerified: false,
+    outcome: "ok",
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    totalTokens: null,
+    reportedAt: null,
+    serverAt: new Date().toISOString(),
+    updatedAt: null,
+    provider: null,
+    model: null,
+  };
+  return ledgerAppend(env, who.tenantId, event);
+}
+
+async function ledgerCaller(request: Request, env: HarnessEnv, ctx: ExecutionContext, write: boolean) {
+  if (request.headers.get("cf-connecting-ip")) {
+    return Response.json({ error: "public_edge", reason: "public_edge" }, { status: 401 });
+  }
+  const verified = await verifyInternalRequest(request, internalKeys(env as never));
+  if (!verified.ok) return Response.json({ error: "unauthorized", reason: verified.reason }, { status: 401 });
+  const read = verified.principal.scope.includes("secondary.read");
+  const canWrite = verified.principal.scope.includes("secondary.personal.write");
+  if (!read || (write && !canWrite)) {
+    return Response.json({ error: "insufficient_scope", reason: "insufficient_scope" }, { status: 403 });
+  }
+  const who = await sessionIdentity(env, ctx, verified.principal);
+  if (who instanceof Response) return who;
+  return who;
+}
+
+function deniedBrain(who: { principalId: string; tenantId: string }, brain: unknown, tenantId: unknown, principalId: unknown) {
+  if (typeof tenantId === "string" && tenantId !== who.tenantId) return "foreign_tenant";
+  if (typeof principalId === "string" && principalId !== who.principalId) return "foreign_principal";
+  if (typeof brain === "string" && brain !== personalBrain(who.principalId)) return "foreign_brain";
+  return null;
+}
+
+async function ledgerGate(request: Request, env: HarnessEnv, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(request.url);
+  const write = request.method === "POST";
+  const who = await ledgerCaller(request, env, ctx, write);
+  if (who instanceof Response) return who;
+  if (request.method === "GET") {
+    const brain = url.searchParams.get("brain");
+    const tenantId = url.searchParams.get("tenantId");
+    const principalId = url.searchParams.get("principalId");
+    const reason = deniedBrain(who, brain, tenantId, principalId);
+    if (reason) return Response.json({ error: reason, reason }, { status: 403 });
+    const result = await ledgerQuery(env, who.tenantId, {
+      principalId: who.principalId,
+      operation: url.searchParams.get("operation"),
+      trust: url.searchParams.get("trust"),
+      requestId: url.searchParams.get("requestId"),
+      brainId: brain,
+    });
+    return Response.json(
+      { ...result.body, principalId: who.principalId, tenantId: who.tenantId, brainId: personalBrain(who.principalId) },
+      { status: result.status },
+    );
+  }
+  if (!write) return Response.json({ error: "method" }, { status: 405 });
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(await request.text()) as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: "invalid_json", reason: "invalid_json" }, { status: 400 });
+  }
+  const reason = deniedBrain(who, payload.brain, payload.tenantId, payload.principalId);
+  if (reason) return Response.json({ error: reason, reason }, { status: 403 });
+  if (url.pathname === "/harness/ledger/fixture") {
+    const keys = Object.keys(payload);
+    if (keys.some((key) => key !== "fixture" && key !== "eventId")) {
+      return Response.json({ error: "unknown_field", reason: "unknown_field" }, { status: 400 });
+    }
+    const fixture = syntheticFixture(payload.fixture);
+    if (!fixture || typeof payload.eventId !== "string") {
+      return Response.json({ error: "invalid_fixture", reason: "invalid_fixture" }, { status: 400 });
+    }
+    const requestId = crypto.randomUUID();
+    const event = {
+      eventId: payload.eventId,
+      tenantId: who.tenantId,
+      principalId: who.principalId,
+      brainId: personalBrain(who.principalId),
+      runId: requestId,
+      operation: "provider_fixture",
+      requestId,
+      providerRequestId: null,
+      streamSeq: null,
+      retryOf: null,
+      describesRequestId: null,
+      payloadHash: await canonicalHash({ fixture: payload.fixture, eventId: payload.eventId, ...fixture }),
+      reportedAt: null,
+      serverAt: new Date().toISOString(),
+      updatedAt: null,
+      ...fixture,
+    };
+    const saved = await ledgerAppend(env, who.tenantId, event);
+    return Response.json({ ...saved.body, usageTrust: fixture.trust, providerVerified: false }, { status: saved.status });
+  }
+  const checked = validateClientReport(payload);
+  if (!checked.ok) return Response.json({ error: checked.error, reason: checked.error, field: checked.field ?? null }, { status: 400 });
+  if (checked.report.brain && checked.report.brain !== personalBrain(who.principalId)) {
+    return Response.json({ error: "foreign_brain", reason: "foreign_brain" }, { status: 403 });
+  }
+  if (checked.report.describesRequestId) {
+    const prior = await ledgerQuery(env, who.tenantId, {
+      principalId: who.principalId,
+      requestId: checked.report.describesRequestId,
+    });
+    if (!prior.ok) return Response.json({ error: "foreign_request", reason: "foreign_request" }, { status: 403 });
+  }
+  const requestId = crypto.randomUUID();
+  const event = {
+    ...checked.report,
+    brainId: personalBrain(who.principalId),
+    tenantId: who.tenantId,
+    principalId: who.principalId,
+    runId: requestId,
+    operation: "usage_report",
+    requestId,
+    trust: "client_reported",
+    evidence: "client_report",
+    providerVerified: false,
+    payloadHash: await canonicalHash({ ...checked.report, trust: "client_reported" }),
+    serverAt: new Date().toISOString(),
+    updatedAt: null,
+  };
+  const saved = await ledgerAppend(env, who.tenantId, event);
+  return Response.json({ ...saved.body, providerVerified: false }, { status: saved.status });
+}
+
 export default {
   async fetch(request: Request, env: HarnessEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/harness/ledger" || url.pathname === "/harness/ledger/fixture") {
+      return ledgerGate(request, env, ctx);
+    }
     if (url.pathname === "/harness/import") return importGate(request, env, ctx);
     if (url.pathname === "/harness/workspace") {
       const name = url.searchParams.get("name") ?? "";

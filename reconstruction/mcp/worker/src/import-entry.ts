@@ -1,8 +1,8 @@
 /**
- * NEW RECONSTRUCTION MCP entry. The recovered OAuth worker is not edited.
- * This composes the recovered provider, consent, and tool server, then adds
- * personal import, read, and search. personal_note_create keeps its name and
- * now stores an import receipt instead of bypassing the policy.
+ * NEW RECONSTRUCTION MCP entry. Not the recovered worker entry.
+ * Recovered index.ts is unchanged. This file composes those handlers and
+ * replaces personal_note_create through the installed SDK tool map so the
+ * legacy name stores an import receipt. /harness routes are local only.
  */
 import OAuthProvider, { type OAuthResourceContext } from "@cloudflare/workers-oauth-provider";
 import { createMcpHandler } from "agents/mcp";
@@ -227,6 +227,83 @@ function attachImportTools(server: ReturnType<typeof buildServer>, env: Env, cal
         "personal_import_search",
         await api.get(`/harness/import?q=${encodeURIComponent(q)}`),
       );
+    },
+  );
+  server.registerTool(
+    "usage_report",
+    {
+      title: "Report client-observed model usage",
+      description:
+        "Store one bounded usage report for the signed-in user. The trust level is client_reported. A caller cannot mark it provider-verified. Model usage that was not measured stays unknown, not zero.",
+      inputSchema: z
+        .object({
+          eventId: z.string().trim().min(1).max(80),
+          outcome: z.enum(["ok", "failed", "cancelled", "partial"]),
+          provider: z.string().trim().max(64).optional(),
+          model: z.string().trim().max(64).optional(),
+          providerRequestId: z.string().trim().max(80).optional(),
+          streamSeq: z.number().int().min(0).max(10000).optional(),
+          retryOf: z.string().trim().max(80).optional(),
+          describesRequestId: z.string().trim().max(80).optional(),
+          reportedAt: z.string().trim().max(40).optional(),
+          brain: z.string().trim().max(96).optional(),
+          inputTokens: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+          outputTokens: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+          cacheReadTokens: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+          cacheWriteTokens: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+          totalTokens: z.number().int().min(0).max(1_000_000_000).nullable().optional(),
+        })
+        .strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      scopeChallenge: requireScopes(...WRITE),
+    },
+    async (args) => {
+      if (!allowed(caller, WRITE)) return denied(env, caller, "usage_report", WRITE);
+      const api = new ApiClient(env, caller, "usage_report");
+      return finish(env, caller, "usage_report", await api.post("/harness/ledger", args));
+    },
+  );
+  server.registerTool(
+    "usage_lookup",
+    {
+      title: "Read your usage ledger",
+      description:
+        "Read usage events for the signed-in user only. Another person's request id is not found. This is not a company-wide total.",
+      inputSchema: z
+        .object({
+          requestId: z.string().trim().max(80).optional(),
+          operation: z.string().trim().max(40).optional(),
+          trust: z.string().trim().max(40).optional(),
+          brain: z.string().trim().max(96).optional(),
+        })
+        .strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      scopeChallenge: requireScopes(...READ),
+    },
+    async (args) => {
+      if (!allowed(caller, READ)) return denied(env, caller, "usage_lookup", READ);
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(args)) {
+        if (typeof value === "string" && value) query.set(key, value);
+      }
+      const api = new ApiClient(env, caller, "usage_lookup");
+      return finish(env, caller, "usage_lookup", await api.get(`/harness/ledger?${query}`));
+    },
+  );
+  server.registerTool(
+    "usage_fixture",
+    {
+      title: "Record a synthetic usage fixture",
+      description:
+        "Record a named synthetic fixture. Numbers are not a live provider bill. measured-zero is a server-measured zero. cancelled-unknown stays unknown. provider-sample is labeled synthetic.",
+      inputSchema: z.object({ fixture: z.enum(["measured-zero", "provider-sample", "cancelled-unknown"]), eventId: z.string().trim().min(1).max(80) }).strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      scopeChallenge: requireScopes(...WRITE),
+    },
+    async (args) => {
+      if (!allowed(caller, WRITE)) return denied(env, caller, "usage_fixture", WRITE);
+      const api = new ApiClient(env, caller, "usage_fixture");
+      return finish(env, caller, "usage_fixture", await api.post("/harness/ledger/fixture", args));
     },
   );
 }

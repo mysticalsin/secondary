@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
+import { sha256Hex } from "../import/policy.mjs";
 import { signInternalRequest } from "../../recovered-source/worker/src/internal-auth.ts";
 import { bundleWorkerd } from "./bundle-workerd.mjs";
 
@@ -23,6 +24,7 @@ const HMAC = "synthetic-mcp-import-hmac-key-32";
 const AUDIT_MCP = "synthetic-audit-mcp-key-32chars!!";
 const ADA = "ada@tenant-a.test";
 const BOB = "bob@tenant-b.test";
+const CARA = "cara@tenant-a.test";
 const PERSIST = mkdtempSync(join(tmpdir(), "secondary-mcp-import-"));
 const WRITE = ["secondary.read", "secondary.personal.write"];
 
@@ -92,11 +94,13 @@ async function boot() {
           ),
           TENANT_POLICY: { type: "durable-object", worker: "api", exportName: "TenantPolicy" },
           WORKSPACE: { type: "durable-object", worker: "api", exportName: "Workspace" },
+          USAGE_LEDGER: { type: "durable-object", worker: "api", exportName: "UsageLedger" },
           BLOBS: { type: "r2" },
         },
         exports: {
           TenantPolicy: { type: "durable-object", storage: "sqlite" },
           Workspace: { type: "durable-object", storage: "sqlite" },
+          UsageLedger: { type: "durable-object", storage: "sqlite" },
         },
         triggers: [{ type: "fetch", pattern: "127.0.0.1/*" }],
       }),
@@ -318,6 +322,7 @@ async function gateRead(email, id) {
 }
 
 test("two OAuth users roundtrip import receipts through MCP and the same gate", async () => {
+  let adaImportRequest = "";
   await boot();
   try {
     const clientId = await registerClient();
@@ -342,6 +347,17 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     );
     assert.equal(refused.raw.includes("insufficient_scope"), true);
     assert.equal(refused.raw.includes("FORBIDDEN_IMPORT_BODY"), false);
+    const reportDenied = parsed(
+      await callTool(adaRead, readSession, "usage_report", {
+        eventId: "denied-report",
+        outcome: "ok",
+        inputTokens: 4,
+        outputTokens: 4,
+        totalTokens: 8,
+      }, 30),
+    );
+    assert.equal(reportDenied.raw.includes("insufficient_scope"), true);
+    assert.equal(reportDenied.raw.includes("denied-report"), false);
 
     const adaWrite = await tokenFor(clientId, ADA, WRITE);
     const adaSession = await sessionFor(adaWrite);
@@ -363,6 +379,7 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     const adaItem = imported.json;
     assert.equal(adaItem.outcome, "stored");
     assert.equal(adaItem.text, "Ada provenance note");
+    assert.equal(adaItem.contentSha256, await sha256Hex("Ada provenance note"));
     assert.equal(adaItem.version, 1);
     assert.equal(adaItem.externalId, "ada-note");
     assert.equal(typeof adaItem.contentSha256, "string");
@@ -406,6 +423,7 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     const correctedItem = corrected.json;
     assert.equal(correctedItem.outcome, "stored");
     assert.equal(correctedItem.previous, adaItem.id);
+    assert.equal(correctedItem.contentSha256, await sha256Hex("Ada corrected provenance"));
     assert.notEqual(correctedItem.contentSha256, adaItem.contentSha256);
     const legacy = parsed(
       await callTool(adaWrite, adaSession, "personal_note_create", {
@@ -444,6 +462,111 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     assert.equal(gate.json.item.contentSha256, adaItem.contentSha256);
     assert.equal(gate.json.item.requestId, adaItem.requestId);
     assert.equal(gate.json.usage, "unknown");
+    const ledger = parsed(await callTool(adaWrite, adaSession, "usage_lookup", {}, 31));
+    adaImportRequest = adaItem.requestId;
+    const importEvent = ledger.json.events.find((event) => event.requestId === adaItem.requestId);
+    assert.equal(importEvent.trust, "unknown");
+    assert.equal(importEvent.operation, "import");
+    assert.equal(importEvent.inputTokens, null);
+    assert.equal(importEvent.providerVerified, false);
+    assert.equal(ledger.json.summary.tokenCoverage.unknown >= 1, true);
+    assert.equal(ledger.json.summary.input.value, null);
+    const reported = parsed(
+      await callTool(adaWrite, adaSession, "usage_report", {
+        eventId: "client-evt-1",
+        outcome: "ok",
+        provider: "synthetic",
+        model: "synthetic-echo",
+        inputTokens: 2,
+        outputTokens: 2,
+        cacheReadTokens: 1,
+        totalTokens: 4,
+      }, 32),
+    );
+    assert.equal(reported.json.event.trust, "client_reported");
+    assert.equal(reported.json.event.providerVerified, false);
+    assert.equal(reported.json.event.inputTokens, 2);
+    const replay = parsed(
+      await callTool(adaWrite, adaSession, "usage_report", {
+        eventId: "client-evt-1",
+        outcome: "ok",
+        provider: "synthetic",
+        model: "synthetic-echo",
+        inputTokens: 2,
+        outputTokens: 2,
+        cacheReadTokens: 1,
+        totalTokens: 4,
+      }, 33),
+    );
+    assert.equal(replay.json.outcome, "idempotent");
+    assert.equal(replay.json.event.eventId, "client-evt-1");
+    const clash = parsed(
+      await callTool(adaWrite, adaSession, "usage_report", {
+        eventId: "client-evt-1",
+        outcome: "ok",
+        provider: "synthetic",
+        model: "synthetic-echo",
+        inputTokens: 9,
+        outputTokens: 9,
+        totalTokens: 18,
+      }, 34),
+    );
+    assert.equal(clash.raw.includes("conflict"), true);
+    const stream = parsed(
+      await callTool(adaWrite, adaSession, "usage_report", {
+        eventId: "stream-1",
+        outcome: "ok",
+        providerRequestId: "preq-stream",
+        streamSeq: 1,
+        inputTokens: 2,
+        outputTokens: 1,
+        totalTokens: 3,
+      }, 35),
+    );
+    assert.equal(stream.json.outcome, "stored");
+    const streamNext = parsed(
+      await callTool(adaWrite, adaSession, "usage_report", {
+        eventId: "stream-2",
+        outcome: "ok",
+        providerRequestId: "preq-stream",
+        streamSeq: 2,
+        inputTokens: 5,
+        outputTokens: 4,
+        totalTokens: 9,
+      }, 36),
+    );
+    assert.equal(streamNext.json.outcome, "replaced");
+    assert.equal(streamNext.json.event.eventId, "stream-1");
+    assert.equal(streamNext.json.event.inputTokens, 5);
+    const retry = parsed(
+      await callTool(adaWrite, adaSession, "usage_report", {
+        eventId: "retry-1",
+        outcome: "ok",
+        providerRequestId: "preq-retry",
+        retryOf: "client-evt-1",
+        inputTokens: 1,
+        outputTokens: 0,
+        totalTokens: 1,
+      }, 37),
+    );
+    assert.equal(retry.json.outcome, "stored");
+    assert.notEqual(retry.json.event.eventId, "client-evt-1");
+    const measured = parsed(
+      await callTool(adaWrite, adaSession, "usage_fixture", { fixture: "measured-zero", eventId: "fixture-zero" }, 38),
+    );
+    assert.equal(measured.json.event.trust, "server_measured");
+    assert.equal(measured.json.event.inputTokens, 0);
+    assert.equal(measured.json.event.providerVerified, false);
+    const cancelled = parsed(
+      await callTool(adaWrite, adaSession, "usage_fixture", { fixture: "cancelled-unknown", eventId: "fixture-cancel" }, 39),
+    );
+    assert.equal(cancelled.json.event.outcome, "cancelled");
+    assert.equal(cancelled.json.event.inputTokens, null);
+    const covered = parsed(await callTool(adaWrite, adaSession, "usage_lookup", {}, 40));
+    assert.equal(covered.json.summary.input.value, 8);
+    assert.equal(covered.json.summary.input.complete, false);
+    assert.equal(covered.json.summary.cost, "unknown");
+    assert.equal(covered.json.summary.providerVerified, false);
 
     const bobWrite = await tokenFor(clientId, BOB, WRITE);
     const bobSession = await sessionFor(bobWrite);
@@ -461,16 +584,57 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     assert.notEqual(bobItem.id, adaItem.id);
     assert.equal(bobItem.tenantId, "tenant_beta");
     assert.notEqual(bobItem.principalId, adaItem.principalId);
-    assert.equal(bobItem.contentSha256, adaItem.contentSha256);
+    assert.equal(bobItem.contentSha256, await sha256Hex("Ada provenance note"));
+    const bobMarker = parsed(
+      await callTool(bobWrite, bobSession, "personal_import", {
+        source: "paste",
+        externalId: "bob-marker",
+        version: 1,
+        text: "Bob private marker zeta",
+      }, 41),
+    );
+    assert.equal(bobMarker.json.text, "Bob private marker zeta");
+    assert.equal(bobMarker.json.contentSha256, await sha256Hex("Bob private marker zeta"));
+    const caraWrite = await tokenFor(clientId, CARA, WRITE);
+    const caraSession = await sessionFor(caraWrite);
+    const caraItem = parsed(
+      await callTool(caraWrite, caraSession, "personal_import", {
+        source: "paste",
+        externalId: "cara-marker",
+        version: 1,
+        text: "Cara same-tenant marker",
+      }, 42),
+    ).json;
+    assert.equal(caraItem.tenantId, "tenant_alpha");
+    assert.notEqual(caraItem.principalId, adaItem.principalId);
+    assert.equal(caraItem.contentSha256, await sha256Hex("Cara same-tenant marker"));
     const bobReadsAda = parsed(await callTool(bobWrite, bobSession, "personal_import_read", { id: adaItem.id }, 13));
     assert.equal(bobReadsAda.raw.includes("not_found"), true);
     assert.equal(bobReadsAda.raw.includes("Ada corrected provenance"), false);
     const bobSearch = parsed(await callTool(bobWrite, bobSession, "personal_import_search", { q: "corrected provenance" }, 14));
     const bobHits = bobSearch.json;
     assert.equal(bobHits.items.some((item) => item.text === "Ada corrected provenance"), false);
-    const adaSearchBob = parsed(await callTool(adaWrite, adaSession, "personal_import_search", { q: "bob private marker" }, 15));
-    const adaHits = adaSearchBob.json;
-    assert.equal(adaHits.items.length, 0);
+    const adaSearchBob = parsed(await callTool(adaWrite, adaSession, "personal_import_search", { q: "Bob private marker zeta" }, 15));
+    assert.equal(adaSearchBob.json.items.length, 0);
+    const bobSearchAda = parsed(await callTool(bobWrite, bobSession, "personal_import_search", { q: "Ada corrected provenance" }, 43));
+    assert.equal(bobSearchAda.json.items.length, 0);
+    const bobOwnMarker = parsed(await callTool(bobWrite, bobSession, "personal_import_search", { q: "private marker zeta" }, 52));
+    assert.equal(bobOwnMarker.json.items.some((item) => item.id === bobMarker.json.id), true);
+    const adaReadsBob = parsed(await callTool(adaWrite, adaSession, "personal_import_read", { id: bobMarker.json.id }, 44));
+    assert.equal(adaReadsBob.raw.includes("not_found"), true);
+    assert.equal(adaReadsBob.raw.includes("Bob private marker zeta"), false);
+    const adaReadsCara = parsed(await callTool(adaWrite, adaSession, "personal_import_read", { id: caraItem.id }, 45));
+    assert.equal(adaReadsCara.raw.includes("not_found"), true);
+    const caraReadsAda = parsed(await callTool(caraWrite, caraSession, "personal_import_read", { id: adaItem.id }, 46));
+    assert.equal(caraReadsAda.raw.includes("not_found"), true);
+    const adaSearchCara = parsed(await callTool(adaWrite, adaSession, "personal_import_search", { q: "Cara same-tenant marker" }, 47));
+    assert.equal(adaSearchCara.json.items.length, 0);
+    const caraSearchAda = parsed(await callTool(caraWrite, caraSession, "personal_import_search", { q: "Ada corrected provenance" }, 48));
+    assert.equal(caraSearchAda.json.items.length, 0);
+    const bobLedger = parsed(await callTool(bobWrite, bobSession, "usage_lookup", { requestId: adaItem.requestId }, 49));
+    assert.equal(bobLedger.raw.includes("not_found"), true);
+    const adaLedgerBob = parsed(await callTool(adaWrite, adaSession, "usage_lookup", { requestId: bobMarker.json.requestId }, 50));
+    assert.equal(adaLedgerBob.raw.includes("not_found"), true);
     const orgSearch = parsed(await callTool(adaWrite, adaSession, "personal_import_search", { q: "accounts", brain: "company" }, 16));
     const orgHits = orgSearch.json;
     assert.equal(orgHits.items.length, 0);
@@ -492,6 +656,9 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     const legacy = parsed(await callTool(adaWrite, adaSession, "personal_import_search", { q: "Legacy receipt" }, 5));
     const legacyHits = legacy.json;
     assert.equal(legacyHits.items.some((item) => item.externalId === "Legacy-note" && item.usage === "unknown"), true);
+    const ledgerAgain = parsed(await callTool(adaWrite, adaSession, "usage_lookup", { requestId: adaImportRequest }, 51));
+    assert.equal(ledgerAgain.json.events[0].trust, "unknown");
+    assert.equal(ledgerAgain.json.events[0].inputTokens, null);
     const bobWrite = await tokenFor(clientId, BOB, WRITE);
     const bobSession = await sessionFor(bobWrite);
     const bobSearch = parsed(await callTool(bobWrite, bobSession, "personal_import_search", { q: "corrected provenance" }));
