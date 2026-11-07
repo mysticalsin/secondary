@@ -11,7 +11,6 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
-import { sha256Hex } from "../import/policy.mjs";
 import { signInternalRequest } from "../../recovered-source/worker/src/internal-auth.ts";
 import { bundleWorkerd } from "./bundle-workerd.mjs";
 
@@ -29,6 +28,7 @@ const PERSIST = mkdtempSync(join(tmpdir(), "secondary-mcp-import-"));
 const WRITE = ["secondary.read", "secondary.personal.write"];
 
 const b64url = (bytes) => Buffer.from(bytes).toString("base64url");
+const digest = (value) => createHash("sha256").update(value).digest("hex");
 const text = (value) => ({ type: "text", value });
 const guarded = (config) => ({ config, dev: { outboundService: { type: "worker", worker: "deny-egress" } } });
 const moduleOf = (contents) => ({ mainModule: "index.js", modules: { "index.js": { type: "esm", contents } } });
@@ -379,7 +379,7 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     const adaItem = imported.json;
     assert.equal(adaItem.outcome, "stored");
     assert.equal(adaItem.text, "Ada provenance note");
-    assert.equal(adaItem.contentSha256, await sha256Hex("Ada provenance note"));
+    assert.equal(adaItem.contentSha256, digest("Ada provenance note"));
     assert.equal(adaItem.version, 1);
     assert.equal(adaItem.externalId, "ada-note");
     assert.equal(typeof adaItem.contentSha256, "string");
@@ -423,7 +423,7 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     const correctedItem = corrected.json;
     assert.equal(correctedItem.outcome, "stored");
     assert.equal(correctedItem.previous, adaItem.id);
-    assert.equal(correctedItem.contentSha256, await sha256Hex("Ada corrected provenance"));
+    assert.equal(correctedItem.contentSha256, digest("Ada corrected provenance"));
     assert.notEqual(correctedItem.contentSha256, adaItem.contentSha256);
     const legacy = parsed(
       await callTool(adaWrite, adaSession, "personal_note_create", {
@@ -587,7 +587,7 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     assert.notEqual(bobItem.id, adaItem.id);
     assert.equal(bobItem.tenantId, "tenant_beta");
     assert.notEqual(bobItem.principalId, adaItem.principalId);
-    assert.equal(bobItem.contentSha256, await sha256Hex("Ada provenance note"));
+    assert.equal(bobItem.contentSha256, digest("Ada provenance note"));
     const bobMarker = parsed(
       await callTool(bobWrite, bobSession, "personal_import", {
         source: "paste",
@@ -597,7 +597,7 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
       }, 41),
     );
     assert.equal(bobMarker.json.text, "Bob private marker zeta");
-    assert.equal(bobMarker.json.contentSha256, await sha256Hex("Bob private marker zeta"));
+    assert.equal(bobMarker.json.contentSha256, digest("Bob private marker zeta"));
     const caraWrite = await tokenFor(clientId, CARA, WRITE);
     const caraSession = await sessionFor(caraWrite);
     const caraItem = parsed(
@@ -610,7 +610,7 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     ).json;
     assert.equal(caraItem.tenantId, "tenant_alpha");
     assert.notEqual(caraItem.principalId, adaItem.principalId);
-    assert.equal(caraItem.contentSha256, await sha256Hex("Cara same-tenant marker"));
+    assert.equal(caraItem.contentSha256, digest("Cara same-tenant marker"));
     const bobReadsAda = parsed(await callTool(bobWrite, bobSession, "personal_import_read", { id: adaItem.id }, 13));
     assert.equal(bobReadsAda.raw.includes("not_found"), true);
     assert.equal(bobReadsAda.raw.includes("Ada corrected provenance"), false);
@@ -634,6 +634,39 @@ test("two OAuth users roundtrip import receipts through MCP and the same gate", 
     assert.equal(adaSearchCara.json.items.length, 0);
     const caraSearchAda = parsed(await callTool(caraWrite, caraSession, "personal_import_search", { q: "Ada corrected provenance" }, 48));
     assert.equal(caraSearchAda.json.items.length, 0);
+    const caraUsage = parsed(await callTool(caraWrite, caraSession, "usage_lookup", { requestId: adaItem.requestId }, 53));
+    assert.equal(caraUsage.raw.includes("not_found"), true);
+    assert.equal(caraUsage.raw.includes("Ada corrected provenance"), false);
+    const adaUsageCara = parsed(await callTool(adaWrite, adaSession, "usage_lookup", { requestId: caraItem.requestId }, 55));
+    assert.equal(adaUsageCara.raw.includes("not_found"), true);
+    assert.equal(adaUsageCara.raw.includes("Cara same-tenant marker"), false);
+    const caraReport = parsed(
+      await callTool(caraWrite, caraSession, "usage_report", {
+        eventId: "client-evt-1",
+        outcome: "ok",
+        inputTokens: 3,
+        outputTokens: 3,
+        totalTokens: 6,
+      }, 54),
+    );
+    assert.equal(caraReport.raw.includes("foreign_request"), true);
+    assert.equal(caraReport.raw.includes("\"inputTokens\":3"), false);
+    const adaStill = parsed(await callTool(adaWrite, adaSession, "usage_lookup", { requestId: "client-evt-1" }, 56));
+    assert.equal(adaStill.json.events[0].inputTokens, 2);
+    assert.equal(adaStill.json.events[0].trust, "client_reported");
+    const adaReportCara = parsed(
+      await callTool(adaWrite, adaSession, "usage_report", {
+        eventId: `import:${caraItem.requestId}`,
+        outcome: "ok",
+        inputTokens: 9,
+        outputTokens: 9,
+        totalTokens: 18,
+      }, 57),
+    );
+    assert.equal(adaReportCara.raw.includes("foreign_request"), true);
+    const caraOwn = parsed(await callTool(caraWrite, caraSession, "usage_lookup", { requestId: caraItem.requestId }, 58));
+    assert.equal(caraOwn.json.events[0].trust, "unknown");
+    assert.equal(caraOwn.json.events[0].inputTokens, null);
     const bobLedger = parsed(await callTool(bobWrite, bobSession, "usage_lookup", { requestId: adaItem.requestId }, 49));
     assert.equal(bobLedger.raw.includes("not_found"), true);
     const adaLedgerBob = parsed(await callTool(adaWrite, adaSession, "usage_lookup", { requestId: bobMarker.json.requestId }, 50));

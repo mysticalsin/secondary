@@ -1,34 +1,25 @@
 # Protected-dev edge inventory
 
-This is a reconstruction checklist for a later review. It does not provision accounts, routes, or secrets, and it is not approval to deploy.
+This file records a reconstruction checklist and a read-only metadata snapshot from 2026-11-07. It is not approval to deploy, not proof that these bindings are healthy, and not a source of truth for connecting a new preview. Do not copy the live ids below into a new Wrangler file or write to those namespaces.
 
-The edge worker name is `secondary-release-edge-reconstruction-local-only`. The API name it would call privately is `secondary-api-reconstruction-local-only`. Neither name is a recovered Wrangler service. Do not reuse an existing live binding or copy a local Durable Object database into one.
+The reconstruction edge name is `secondary-release-edge-reconstruction-local-only`. Its private API and MCP names in `wrangler.jsonc` are reconstruction placeholders, not `secondary-api-dev` or `secondary-mcp-dev`. `npm run deploy` does not upload it. `RESTORE_ENABLED` is not set on this edge.
 
-## Entry
+## Observed live facts, not targets
 
-`reconstruction/release/entry.ts` is the browser edge. The local fixture server and `import-entry.ts` remain the dev test entry. Tests of this edge load `entry.ts`. Tests of MCP OAuth load the reconstruction `import-entry.ts` bundle, not the recovered `index.ts`.
+Issuer `https://tony-walteur.cloudflareaccess.com`. Documented JWKS path `https://tony-walteur.cloudflareaccess.com/cdn-cgi/access/certs`. That document was not fetched by the earlier metadata pass, and this reconstruction does not treat a local key test as that JWKS.
 
-## Route map
+API audience `0efbc36f4d84025cc095efdc94f9891dbf90a7d718f5c4e0c2837a7aae0a8974` is a worker-targeted Access application. It is not the MCP audience `feb4350db153fcca208d1e398e2f5660ab2abf50f3e1d366464addcda517dd89`, which was observed only on `secondary-mcp-dev` `/authorize`. Machine `/mcp` uses the server's own OAuth resource, not that browser Access audience. No Entra provider was in the returned IdP list. The allow policy that was returned is Cloudflare account members, not every Mantu user. Managed OAuth was not configured. Do not stack it onto the server's own OAuth.
 
-| Path | Release behavior | Identity |
-| --- | --- | --- |
-| `/harness/*` | 404 `harness_closed` | none |
-| `/settings/observability/session`, `/settings/observability/usage`, `/reconstruction/import/session` | 404 `fixture_closed` | none |
-| `/settings/observability`, `/reconstruction/import` | JWT required | `Authorization: Bearer` or `Cf-Access-Jwt-Assertion`, verified locally |
-| `/mcp`, `/authorize`, `/token`, `/register`, `/.well-known/*` | forwarded to the private API binding | OAuth on that worker, not this edge's dev headers |
-| anything else | 404 | none |
+The six live workers were observed at compatibility date `2026-10-01` with `nodejs_compat`. The live MCP worker also has `global_fetch_strictly_public`. Reconstruction configs stay on `2026-11-07` and do not enable that fetch flag. Live `ENVIRONMENT` is `dev`. Live `DO_JURISDICTION` is `eu`. API and ops were observed with `RESTORE_ENABLED=yes`. Settings `migrations` being absent is the write-only schema, not proof that migration history is empty.
 
-`X-Dev-Email`, `X-Dev-Persona`, `X-Demo-Persona`, and `X-User-Email` are ignored. An empty issuer, audience, or local key set is `503 auth_unconfigured` and does not authenticate.
+Observed dev resource ids, including Durable Object namespaces, KV, R2, and `secondary-sync-dev`, are existing dev resources. They are not staging targets for this edge.
 
-## Bindings this edge expects later
+## What this edge serves
 
-- `API`: service binding to the reconstruction API worker. Not public.
-- `AUTH_ISSUER`, `AUTH_AUDIENCE`: set at review time. Empty in the checked-in file.
-- `LOCAL_JWKS`: public JWK set only. No private key fields. No JWK URL.
-- `INTERNAL_HMAC_KEY`: secret, not committed. Used only on the private hop.
+`reconstruction/release/entry.ts` is the only client entry for its tests. `GET /` and `GET /settings` return the captured shell bytes plus an Observability link, without editing the stored file. `GET /settings/observability` returns the Mantu Observability page with `release: true`, so fixture and session buttons are absent. `GET /reconstruction/import` is the import form under the same rule. `/mcp`, `/authorize`, `/token`, `/register`, and `/.well-known/*` are forwarded to the MCP binding, not the API binding. `/harness/*` is 404. Missing issuer, audience, or local keys is 503.
 
-No static asset binding is declared. The edge HTML is generated. Captured shell bytes stay in `recovered-delivery/` and are not the release document.
+Tests of this file are `protected-dev edge ignores dev headers and closes harness routes` and `the release edge is the only client path for pages and MCP`. The local JWT in those tests is not an Access login. The MCP worker behind the edge in that test is still the reconstruction `import-entry.ts` bundle.
 
-## Not done
+## Not established
 
-Live Access or Entra account wiring, remote JWKS fetch, production hostname, and copying local fixture data are not part of this file.
+A live Access handshake, a fetch of the live certs, key rotation against those certs, admission of a real user, OAuth access-token wall-clock expiry, and a protected Cloudflare preview.

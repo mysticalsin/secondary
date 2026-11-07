@@ -53,6 +53,15 @@ async function sessionIdentity(
   return { principalId: me.principal.id, tenantId: me.tenantId };
 }
 
+async function ownItem(env: HarnessEnv, tenantId: string, principalId: string, id: string) {
+  const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as DurableObjectStub<{
+    get(id: string): Promise<{ id: string; body: string | null; authorId: string | null; kind?: string } | null>;
+  }>;
+  const item = await stub.get(id);
+  if (!item || item.kind !== "personalitem") return null;
+  return item;
+}
+
 async function ownItems(env: HarnessEnv, tenantId: string, principalId: string) {
   const stub = workspaceStub(env as never, tenantId, personalScope(principalId)) as DurableObjectStub<{
     listByKind(kind: string, limit: number): Promise<{ id: string; body: string | null; authorId: string | null; createdAt: number }[]>;
@@ -74,39 +83,55 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     if (!read) return Response.json({ error: "insufficient_scope", reason: "insufficient_scope" }, { status: 403 });
     const who = await sessionIdentity(env, ctx, principal);
     if (who instanceof Response) return who;
-    const rows = await ownItems(env, who.tenantId, who.principalId);
-    const items = rows.flatMap((item) => {
-      const view = present(item);
-      return view ? [view] : [];
-    });
     const url = new URL(request.url);
     const id = url.searchParams.get("id");
     if (id !== null) {
-      const found = items.find((item) => item.id === id);
-      if (!found) return Response.json({ error: "not_found", reason: "not_found", outcome: "denied" }, { status: 404 });
-      return Response.json({ principalId: who.principalId, tenantId: who.tenantId, usage: "unknown", item: found });
+      const item = await ownItem(env, who.tenantId, who.principalId, id);
+      const view = item ? present(item) : null;
+      if (!view) return Response.json({ error: "not_found", reason: "not_found", outcome: "denied" }, { status: 404 });
+      return Response.json({ principalId: who.principalId, tenantId: who.tenantId, usage: "unknown", item: view });
     }
     const q = url.searchParams.get("q");
-    if (q !== null) {
+    const listed = await importRpc(env, who.tenantId, "/import/list", {
+      principalId: who.principalId,
+      limit: url.searchParams.get("limit"),
+      cursor: url.searchParams.get("cursor"),
+      q,
+    });
+    if (!listed.ok) return Response.json(listed.body, { status: listed.status });
+    const page = Array.isArray(listed.body.items) ? listed.body.items : [];
+    const hydrated = [];
+    for (const row of page) {
+      const full = await ownItem(env, who.tenantId, who.principalId, String(row.id));
+      const view = full ? present(full) : null;
+      if (view) hydrated.push(view);
+    }
+    let items = hydrated;
+    if (q) {
       const tokens = searchTokens(q);
       if (!tokens) return Response.json({ error: "invalid_query", reason: "invalid_query", outcome: "rejected" }, { status: 400 });
-      const hits = items.filter((item) => {
-        const hay = `${item.text}\n${item.externalId ?? ""}`.toLowerCase();
-        return tokens.every((token) => hay.includes(token));
-      });
-      return Response.json({
-        principalId: who.principalId,
-        tenantId: who.tenantId,
-        usage: "unknown",
-        items: hits.slice(0, 20),
-      });
+      const recent = await ownItems(env, who.tenantId, who.principalId);
+      const seen = new Set(items.map((item) => item.id));
+      for (const row of recent) {
+        const view = present(row);
+        if (!view || seen.has(view.id)) continue;
+        const hay = `${view.text}\n${view.externalId ?? ""}`.toLowerCase();
+        if (tokens.every((token) => hay.includes(token))) items.push(view);
+      }
+      items = items.slice(0, 20);
     }
+    const total = Number(listed.body.total ?? items.length);
+    const storeTotal = Number(listed.body.storeTotal ?? total);
+    const complete = q ? storeTotal <= 100 && Boolean(listed.body.complete) : Boolean(listed.body.complete);
     return Response.json({
       principalId: who.principalId,
       tenantId: who.tenantId,
       usage: "unknown",
-      kept: rows.length - items.length,
       items,
+      total,
+      complete,
+      coverage: complete ? "full" : "partial",
+      nextCursor: listed.body.nextCursor ?? null,
     });
   }
   if (request.method !== "POST") return Response.json({ error: "method" }, { status: 405 });
@@ -128,23 +153,41 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
   if (!checked.ok) return Response.json({ error: checked.error, reason: checked.error, outcome: "rejected" }, { status: 400 });
   const who = await sessionIdentity(env, ctx, principal);
   if (who instanceof Response) return who;
+  const clientId = principal.client_id;
+  if (!clientId) return Response.json({ error: "invalid_client", reason: "invalid_client", outcome: "rejected" }, { status: 400 });
   const contentSha256 = await sha256Hex(checked.text);
-  const items = await ownItems(env, who.tenantId, who.principalId);
-  const found = matchReceipt(items, { ...checked, contentSha256 });
-  if (found.conflict) return Response.json({ error: "version_conflict", reason: "version_conflict", outcome: "rejected" }, { status: 409 });
-  if (found.same) {
-    const view = present(found.same);
-    const recorded = view?.requestId ? await recordImportOperation(env, who, view.requestId) : { ok: false, body: {} };
-    if (!recorded.ok) {
-      return Response.json({ error: "ledger_not_confirmed", reason: "ledger_not_confirmed", outcome: "failed" }, { status: 503 });
-    }
+  const key = {
+    principalId: who.principalId,
+    clientId,
+    source: checked.source,
+    externalId: checked.externalId,
+    version: checked.version,
+    hash: contentSha256,
+  };
+  let began = await importRpc(env, who.tenantId, "/import/begin", key);
+  for (let attempt = 0; began.ok && began.body.outcome === "in_flight" && attempt < 40; attempt += 1) {
+    await scheduler.wait(50);
+    began = await importRpc(env, who.tenantId, "/import/begin", key);
+  }
+  if (!began.ok) return Response.json(began.body, { status: began.status });
+  if (began.body.outcome === "duplicate") {
     return Response.json({
-      ...view,
       outcome: "duplicate",
+      id: began.body.id,
+      requestId: began.body.requestId,
+      previous: began.body.previousId,
+      contentSha256,
+      externalId: checked.externalId,
+      version: checked.version,
+      source: checked.source,
+      client: clientId,
       principalId: who.principalId,
       tenantId: who.tenantId,
       usage: "unknown",
     });
+  }
+  if (began.body.outcome !== "claim") {
+    return Response.json({ error: "in_flight", reason: "in_flight", outcome: "rejected" }, { status: 409 });
   }
   const requestId = crypto.randomUUID();
   const receipt = {
@@ -162,7 +205,7 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     destination: `personal:${who.principalId}`,
     at: new Date().toISOString(),
     outcome: "stored",
-    previous: found.previous?.id ?? null,
+    previous: began.body.previousId ?? null,
     requestId,
     usage: "unknown",
   };
@@ -187,14 +230,15 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     ctx,
   );
   if (saved.status !== 201) {
+    await importRpc(env, who.tenantId, "/import/abort", key);
     return Response.json({ error: "not_stored", reason: "not_stored", status: saved.status, outcome: "failed" }, { status: 502 });
   }
   const made = (await saved.json()) as { id?: string };
-  const after = await ownItems(env, who.tenantId, who.principalId);
-  if (!after.some((item) => item.id === made.id)) {
+  const finished = await importRpc(env, who.tenantId, "/import/finish", { ...key, itemId: made.id, requestId });
+  if (!finished.ok || !made.id) {
     return Response.json({ error: "not_confirmed", reason: "not_confirmed", outcome: "failed" }, { status: 503 });
   }
-  const recorded = await recordImportOperation(env, who, requestId);
+  const recorded = await recordImportOperation(env, who, requestId, clientId);
   if (!recorded.ok) {
     return Response.json({ error: "ledger_not_confirmed", reason: "ledger_not_confirmed", outcome: "failed" }, { status: 503 });
   }
@@ -261,13 +305,23 @@ async function ledgerQuery(env: HarnessEnv, tenantId: string, filter: Record<str
   return { ok: res.ok, status: res.status, body };
 }
 
+async function importRpc(env: HarnessEnv, tenantId: string, pathname: string, body: Record<string, unknown>) {
+  const stub = await ledgerStub(env, tenantId);
+  if (!stub) return { ok: false, status: 503, body: { error: "ledger_unavailable", reason: "ledger_unavailable", outcome: "failed" } };
+  const res = await stub.fetch(`https://ledger.internal${pathname}`, { method: "POST", body: JSON.stringify(body) });
+  const parsed = (await res.json()) as Record<string, unknown>;
+  return { ok: res.ok, status: res.status, body: parsed };
+}
+
 async function recordImportOperation(
   env: HarnessEnv,
   who: { principalId: string; tenantId: string },
   requestId: string,
+  clientId: string,
 ) {
   const event = {
     eventId: `import:${requestId}`,
+    clientId,
     tenantId: who.tenantId,
     principalId: who.principalId,
     brainId: personalBrain(who.principalId),
@@ -310,7 +364,10 @@ async function ledgerCaller(request: Request, env: HarnessEnv, ctx: ExecutionCon
   }
   const who = await sessionIdentity(env, ctx, verified.principal);
   if (who instanceof Response) return who;
-  return who;
+  if (!verified.principal.client_id) {
+    return Response.json({ error: "invalid_client", reason: "invalid_client" }, { status: 400 });
+  }
+  return { ...who, clientId: verified.principal.client_id };
 }
 
 function deniedBrain(who: { principalId: string; tenantId: string }, brain: unknown, tenantId: unknown, principalId: unknown) {
@@ -404,6 +461,7 @@ async function ledgerGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     runId: requestId,
     operation: "usage_report",
     requestId,
+    clientId: who.clientId,
     trust: "client_reported",
     evidence: "client_report",
     providerVerified: false,

@@ -7,8 +7,12 @@
   "compatibility_date": "2026-11-07",
   "workers_dev": false,
   "preview_urls": false,
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html", "**/*.css", "**/*.dom-captured.js"], "fallthrough": true }
+  ],
   "services": [
-    { "binding": "API", "service": "secondary-api-reconstruction-local-only" }
+    { "binding": "API", "service": "secondary-api-reconstruction-local-only" },
+    { "binding": "MCP", "service": "secondary-mcp-reconstruction-local-only" }
   ],
   "vars": {
     "RELEASE_MODE": "protected-dev",

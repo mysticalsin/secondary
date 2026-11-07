@@ -456,10 +456,10 @@ button { width:auto; background:var(--accent); color:white; cursor:pointer; }
 <details><summary>Session limits</summary>
 <p>The server chooses the person and tenant from this fixture session. The form cannot grant either, and it cannot set model usage. The default session is the seeded consultant. The other button is the CEO plus-address in this same local tenant, not a second company. Two new users in two tenants are covered by the local MCP OAuth test.</p>
 </details>
-<form method="post" action="/reconstruction/import/session" class="switch">
+${model.release ? "" : `<form method="post" action="/reconstruction/import/session" class="switch">
 <button name="preset" value="person_a" type="submit" aria-current="${preset === "person_a" ? "true" : "false"}">Consultant session</button>
 <button name="preset" value="person_b" type="submit" aria-current="${preset === "person_b" ? "true" : "false"}">Plus-address session</button>
-</form>
+</form>`}
 <p id="import-status" class="${failed ? "alert" : ""}" role="status">${esc(model.message)}</p>
 <form method="post" action="/reconstruction/import">
 <label>External id <input name="externalId" required maxlength="64" value="note-1"></label>

@@ -75,6 +75,42 @@ test("usage reports reject extra fields, bad totals, and keep unknown distinct f
   assert.equal(fixtureOnly.tokenCoverage.serverMeasured, 0);
   assert.equal(fixtureOnly.tokenCoverage.syntheticFixture, 1);
   assert.equal(fixtureOnly.input.value, null);
+  const legacyMeasured = summarize([
+    {
+      eventId: "legacy-zero",
+      operation: "provider_fixture",
+      requestId: "legacy",
+      trust: "server_measured",
+      evidence: "server_clock",
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+      providerRequestId: null,
+      describesRequestId: null,
+      streamSeq: null,
+    },
+    {
+      eventId: "new-fixture",
+      operation: "provider_fixture",
+      requestId: "new",
+      trust: "synthetic_fixture",
+      evidence: "synthetic_fixture",
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 0,
+      providerRequestId: null,
+      describesRequestId: null,
+      streamSeq: null,
+    },
+  ]);
+  assert.equal(legacyMeasured.tokenCoverage.serverMeasured, 1);
+  assert.equal(legacyMeasured.tokenCoverage.syntheticFixture, 1);
+  assert.equal(legacyMeasured.input.value, 0);
+  assert.equal(legacyMeasured.input.knownEvents, 1);
 });
 
 test("stream snapshots replace totals and a conflicting replay does not add", () => {

@@ -12,7 +12,7 @@ Pinned local packages checked against their own files, not against newer docs:
 Official notes incorporated from the 2026-11-07 research handoff, without running those clients:
 Dust admin MCP onboarding and Claude custom connectors are external-client work. OAuth is the per-person path. A shared bearer is a service identity, not an individual. Hosted clients need a machine-usable OAuth endpoint, not a browser-only Access HTML login. `global_fetch_strictly_public` stays off, so Client ID Metadata Documents are not fetched. Dynamic registration on the loopback issuer was used instead. "my cloud" is not confirmed to mean Claude. No universal client is claimed.
 
-A normal `tools/call` does not carry the caller's model usage. Missing external usage stays unknown, not zero. Client-reported numbers are `client_reported`, never provider-verified. `provider_reported` is set only by the server synthetic fixture adapter, with `providerVerified: false`. Streaming snapshots replace a per-request total. A retried provider request is a separate event from an idempotent import. Cost stays unknown. The served MCP entry is `reconstruction/mcp/worker/src/import-entry.ts`, a reconstruction composition. Recovered `index.ts` is not the bundled entry. `/harness/*` and the dev identity headers are local-only and are not a production entry.
+A normal `tools/call` does not carry the caller's model usage. Missing external usage stays unknown, not zero. Client-reported numbers are `client_reported`, never provider-verified. `provider_reported` is set only by the server synthetic fixture adapter, with `providerVerified: false`. Streaming snapshots replace a per-request total. A retried provider request is a separate event from an idempotent import. Cost stays unknown. The served dev MCP bundle is `reconstruction/mcp/worker/src/import-entry.ts`. Recovered `index.ts` is not that bundle. The protected-dev client entry is `reconstruction/release/entry.ts`. The fixture server on port 43131 is not that edge. `/harness/*` and the dev identity headers are local-only and are not a production entry. The pinned OAuth library accepts an `http` resource only on a loopback host, so the positive edge proof dispatches to `http://127.0.0.1` on the release worker. The MCP worker in that proof is `ENVIRONMENT=dev`, so its local consent header still works after the edge forwards the request. A non-dev MCP worker rejects that header. That is not an Access login.
 
 ## 1. Personal brain
 
@@ -94,7 +94,7 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Production deploy, merge, spend, live provider | Disallowed | NOTRUN |
 | Protected-dev edge rejects dev email headers, closes `/harness/*` and fixture routes, and verifies a local test JWT for issuer, audience, signature, and expiry | `protected-dev edge ignores dev headers and closes harness routes` | PASS |
 | MCP `/mcp` without a bearer is a machine 401 when `ENVIRONMENT` is not dev | `mcp tools stay a machine 401 when dev email is not a configured identity` | PASS |
-| Local test issuer rejects a mismatched resource and an old refresh token after rotation | `a local test issuer rejects the wrong resource and rotates refresh tokens` | PASS |
+| Local test issuer rejects a mismatched resource. The first refresh token is rejected after two rotations. The pinned SDK still accepts the immediately previous refresh token once, so this is not strict one-use | `a local test issuer rejects the wrong resource and rotates refresh tokens` | PASS |
 | Live Access or Entra issuer, remote JWKS, and a public route | Not wired | NOTRUN |
 | Private API worker published without the edge | Local workerd still sets `ENVIRONMENT=dev` so Durable Object jurisdiction can be off. That worker is not the public entry | NOTRUN |
 | OAuth access-token wall-clock expiry | Pinned provider TTL is 3600 and was not shortened | NOTRUN |
@@ -103,11 +103,19 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 
 | Check | Where | Status |
 | --- | --- | --- |
-| Concurrent import retries | Not exercised | NOTRUN |
-| More than 100 receipts and pagination | `ownItems` limit is 100 | NOTRUN |
-| Same external id deduped across two OAuth clients | Not exercised | NOTRUN |
+| More than 100 receipts, an older retry, paged coverage, and concurrent same-body or conflicting imports | `imports and usage stay unique past 100 rows and across concurrent retries` | PASS |
+| Validated client id, not the request body, namespaces a receipt. A second signed client or a second user does not overwrite it | `imports and usage stay unique past 100 rows and across concurrent retries`. The two client ids are signed internal principals. Two OAuth dynamic-registration clients for one user were not registered | PASS |
+| Two OAuth dynamic-registration clients for one user | Not registered in this round | NOTRUN |
+| A stored `server_measured` / `server_clock` row stays a measured zero. New synthetic fixtures are not relabeled onto it | `usage reports reject extra fields, bad totals, and keep unknown distinct from zero` | PASS |
+| Receipt hash checked with `node:crypto` `createHash`, not the importer's own helper | `two OAuth users roundtrip import receipts through MCP and the same gate` | PASS |
+| Same-tenant Cara cannot read Ada's usage request or reuse Ada's usage event id | That roundtrip test | PASS |
+| Release edge serves captured shell bytes and the Mantu Observability page, and MCP initialize/import/ledger go through that edge | `the release edge is the only client path for pages and MCP` | PASS |
+| Encoded harness paths, repeated slash, case, query path, `X-Original-URL`, method override, import cross-origin, future `nbf`, `alg: none`, a bad signature with the same `kid`, and `Cf-Access-Jwt-Assertion` agreement | `protected-dev edge ignores dev headers and closes harness routes` | PASS |
+| A configured JWKS that contains a private-key field is refused. An unknown local `kid` is refused. This is not a fetch of the live certs | `API and MCP audiences stay distinct and a JWKS failure stays closed` | PASS |
+| Live JWKS fetch, rotation against those live certs, Access admission, and a real browser login | Recorded issuer and audiences only | NOTRUN |
 | Wrong OAuth resource, audience, expiry, refresh rotation, or a real identity provider | Local dev issuer only | NOTRUN |
-| Private SDK `_registeredTools` override pinned against an SDK upgrade | Current install only | NOTRUN |
+| Installed `@modelcontextprotocol/sdk` is 1.32.2 and public `registerTool` refuses a second `personal_note_create` | `the MCP SDK pin cannot replace a tool through the public registerTool API` | PASS |
+| A later SDK still exposes the private tool map used to swap that tool | Not an upgrade test | NOTRUN |
 | Old access token still presented after process restart | Restart path mints a new token | NOTRUN |
 | Production entry without `/harness/*` or dev synthetic identity | Local harness only | NOTRUN |
 | Hosted Dust or Claude, production auth review, protected Cloudflare preview | Not run | NOTRUN |

@@ -1,12 +1,16 @@
 /**
  * NEW RECONSTRUCTION protected-dev edge. Not a recovered worker and not a deploy.
+ * Browser pages are the reconstruction Settings UI. Machine MCP is a different binding.
  * Public /harness routes and fixture impersonation are closed.
- * Browser identity is a verified JWT. Dev email headers are ignored.
- * The API binding is private. This file does not name a live account or secret.
+ * A local test JWT is not production Access. Live audiences are not configured here.
  */
+import shellHtml from "../../recovered-delivery/html-shell/index.html";
+import shellCss from "../../recovered-delivery/shell-six/assets/index-DiBYRwP4.css";
+import shellJs from "../../recovered-delivery/main-js/index-PLmoiPYI.dom-captured.js";
 import { signInternalRequest } from "../worker-root/worker/src/internal-auth.ts";
 import { verifyReleaseJwt } from "./identity.mjs";
 import { DEV_IDENTITY_HEADERS, releaseDecision } from "./routes.mjs";
+import { renderImport, renderObservability } from "../ui/pages.mjs";
 
 interface Env {
   RELEASE_MODE?: string;
@@ -15,38 +19,45 @@ interface Env {
   LOCAL_JWKS?: string;
   INTERNAL_HMAC_KEY?: string;
   API?: { fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response> };
+  MCP?: { fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response> };
 }
 
+const ASSETS: Record<string, { type: string; body: string }> = {
+  "/assets/index-DiBYRwP4.css": { type: "text/css; charset=utf-8", body: shellCss },
+  "/assets/index-PLmoiPYI.js": { type: "text/javascript; charset=utf-8", body: shellJs },
+};
+
 function text(body: string, status: number, type = "text/plain; charset=utf-8") {
-  return new Response(body, { status, headers: { "content-type": type, "cache-control": "no-store" } });
+  return new Response(body, { status, headers: { "content-type": type, "cache-control": "no-store", "x-secondary-edge": "protected-dev" } });
 }
 
 function bearer(request: Request): string {
   const header = request.headers.get("authorization") ?? "";
   if (header.toLowerCase().startsWith("bearer ")) return header.slice(7).trim();
-  return request.headers.get("cf-access-jwt-assertion")?.trim() ?? "";
+  return "";
+}
+
+function configured(env: Env): boolean {
+  return Boolean(env.AUTH_ISSUER?.trim() && env.AUTH_AUDIENCE?.trim() && env.LOCAL_JWKS?.trim());
 }
 
 async function identity(request: Request, env: Env) {
-  for (const name of DEV_IDENTITY_HEADERS) {
-    if (request.headers.get(name)) {
-      // Present and ignored. Identity never comes from these headers.
-    }
-  }
+  const access = request.headers.get("cf-access-jwt-assertion")?.trim() ?? "";
   const token = bearer(request);
-  if (!token) return { ok: false as const, reason: "unauthorized" };
-  return verifyReleaseJwt(token, env);
+  if (access && token && access !== token) return { ok: false as const, reason: "invalid_token" };
+  const presented = token || access;
+  if (!presented) return { ok: false as const, reason: "unauthorized" };
+  return verifyReleaseJwt(presented, env);
 }
 
-async function privateImport(env: Env, email: string, body: string) {
+async function signedFetch(env: Env, email: string, method: string, path: string, body?: string) {
   if (!env.API || !env.INTERNAL_HMAC_KEY) return text("auth_unconfigured\n", 503);
-  const payload = JSON.stringify({ source: "paste", externalId: "release-note", version: 1, text: body });
-  const url = "https://api.internal/harness/import";
+  const url = `https://api.internal${path}`;
   const headers = await signInternalRequest({
     secret: env.INTERNAL_HMAC_KEY,
-    method: "POST",
+    method,
     url,
-    body: payload,
+    ...(body === undefined ? {} : { body }),
     principal: {
       v: 1,
       iss: "secondary-mcp",
@@ -54,55 +65,119 @@ async function privateImport(env: Env, email: string, body: string) {
       sub: `release-${email}`,
       email,
       client_id: "release-edge",
-      scope: ["secondary.read", "secondary.personal.write"],
+      scope: method === "GET" ? ["secondary.read"] : ["secondary.read", "secondary.personal.write"],
       tool: "personal_import",
       grant_id: "g_release_edge",
       host: "other",
     },
   });
-  const response = await env.API.fetch(url, {
-    method: "POST",
-    headers: { ...headers, "content-type": "application/json", accept: "application/json" },
-    body: payload,
-  });
-  return new Response(await response.text(), {
-    status: response.status,
-    headers: { "content-type": "application/json", "cache-control": "no-store" },
+  return env.API.fetch(url, {
+    method,
+    headers: {
+      ...headers,
+      accept: "application/json",
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(body === undefined ? {} : { body }),
   });
 }
 
-function page(email: string) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Protected dev</title>
-<meta name="viewport" content="width=device-width, initial-scale=1"></head><body>
-<main>
-<p>Protected dev preview. Not live billing.</p>
-<p>Signed in as ${email.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}. The token was verified. Dev headers are ignored.</p>
-<form method="post" action="/reconstruction/import"><label>Text <textarea name="text"></textarea></label>
-<button type="submit">Store in my personal brain</button></form>
-</main></body></html>`;
+function shell() {
+  const nav = `<nav data-reconstruction="settings" style="font:14px sans-serif;padding:8px 16px;background:#fcf3ff;color:#17121a"><a href="/settings" style="color:#6600ae">Settings</a> · <a href="/settings/observability" style="color:#6600ae">Observability</a> · <a href="/reconstruction/import" style="color:#6600ae">Import</a></nav>`;
+  return shellHtml.replace("<body>", `<body>${nav}`);
+}
+
+async function observability(env: Env, email: string, url: URL) {
+  const ledgerResponse = await signedFetch(env, email, "GET", `/harness/ledger?${url.searchParams.toString()}`);
+  const ledger = ledgerResponse.ok ? await ledgerResponse.json() : { events: [], summary: null, error: "unavailable", status: ledgerResponse.status };
+  return renderObservability({
+    roleLabel: "Verified token",
+    principalId: email,
+    tenantId: String(ledger.tenantId ?? "unknown"),
+    persona: "none",
+    prefMessage: "",
+    section: url.searchParams.get("section") ?? "usage",
+    release: true,
+    preset: "person_a",
+    routes: [],
+    ready: { kind: "unknown", label: "Unknown", detail: "This edge does not claim worker readiness.", technical: "" },
+    health: { kind: "unknown", label: "Unknown", detail: "No live uptime is measured." },
+    ai: { kind: "unknown", label: "Unknown", detail: "No model is called." },
+    agentRows: "<p>Agent rows are not loaded on this edge.</p>",
+    audit: { kind: "unknown", label: "Not loaded", detail: "Audit is not claimed from this page.", raw: "" },
+    lang: "",
+    ledger: {
+      status: ledgerResponse.status,
+      events: Array.isArray(ledger.events) ? ledger.events : [],
+      summary: ledger.summary ?? null,
+      error: ledger.reason || ledger.error || "",
+      operation: url.searchParams.get("operation") ?? "",
+      trust: url.searchParams.get("trust") ?? "",
+      requestId: url.searchParams.get("requestId") ?? "",
+    },
+  });
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (request.headers.get("x-original-url") || request.headers.get("x-rewrite-url") || request.headers.get("x-http-method-override")) {
+      return text("header_override\n", 400);
+    }
     const url = new URL(request.url);
     const decision = releaseDecision(url.pathname, env.RELEASE_MODE);
     if (decision.kind === "closed") return text("release_mode\n", decision.status);
     if (decision.kind === "deny") return text(`${decision.reason}\n`, decision.status);
-    if (decision.kind === "asset") return text("", 204);
+    if (decision.kind === "asset") {
+      const asset = ASSETS[url.pathname];
+      if (!asset) return text("", 204);
+      return text(asset.body, 200, asset.type);
+    }
     if (decision.kind === "mcp") {
-      if (!env.API) return text("auth_unconfigured\n", 503);
-      return env.API.fetch(request);
+      if (!env.MCP) return text("auth_unconfigured\n", 503);
+      return env.MCP.fetch(request);
+    }
+    if (!configured(env)) return text("auth_unconfigured\n", 503);
+    if (request.method === "POST") {
+      const origin = request.headers.get("origin");
+      if (origin && origin !== url.origin) return text("cross_origin\n", 403);
     }
     const who = await identity(request, env);
     if (!who.ok) return text(`${who.reason}\n`, who.reason === "auth_unconfigured" ? 503 : 401);
-    if (request.method === "GET") return text(page(who.email), 200, "text/html; charset=utf-8");
+    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/settings" || url.pathname === "/settings/profile")) {
+      return text(shell(), 200, "text/html; charset=utf-8");
+    }
+    if (request.method === "GET" && url.pathname === "/settings/observability") {
+      return text(await observability(env, who.email, url), 200, "text/html; charset=utf-8");
+    }
+    if (request.method === "GET" && url.pathname === "/reconstruction/import") {
+      const listed = await signedFetch(env, who.email, "GET", "/harness/import");
+      const body = listed.ok ? await listed.json() : { items: [] };
+      return text(renderImport({
+        who: who.email,
+        tenant: String(body.tenantId ?? "unknown"),
+        message: "",
+        items: Array.isArray(body.items) ? body.items : [],
+        kept: 0,
+        preset: "person_a",
+        release: true,
+      }), 200, "text/html; charset=utf-8");
+    }
     if (request.method === "POST" && url.pathname === "/reconstruction/import") {
       const raw = await request.text();
       const textValue = raw.trim().startsWith("{")
         ? String((JSON.parse(raw) as { text?: unknown }).text ?? "")
         : (new URLSearchParams(raw).get("text") ?? "");
       if (!textValue || textValue.length > 7000) return text("invalid_text\n", 400);
-      return privateImport(env, who.email, textValue);
+      const saved = await signedFetch(env, who.email, "POST", "/harness/import", JSON.stringify({
+        source: "paste",
+        externalId: "release-note",
+        version: 1,
+        text: textValue,
+      }));
+      return new Response(await saved.text(), {
+        status: saved.status,
+        headers: { "content-type": "application/json", "cache-control": "no-store", "x-secondary-edge": "protected-dev" },
+      });
     }
     return text("method\n", 405);
   },
