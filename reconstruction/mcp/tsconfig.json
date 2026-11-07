@@ -4,5 +4,5 @@
     "preserveSymlinks": true,
     "types": ["node", "@cloudflare/workers-types"]
   },
-  "include": ["env.d.ts", "worker/src/**/*.ts", "../packages/**/*.ts"]
+  "include": ["env.d.ts", "worker/src/**/*.ts", "worker/src/**/*.d.ts", "../packages/**/*.ts"]
 }

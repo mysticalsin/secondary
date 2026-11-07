@@ -5,13 +5,26 @@
  * A passing local test issuer is not production Access or Entra.
  */
 import { createLocalJWKSet, jwtVerify } from "jose";
+import { verifyRemoteJwt } from "./jwks-validator.mjs";
 
 const PRIVATE = new Set(["d", "p", "q", "dp", "dq", "qi"]);
 
+export function browserAudience(env) {
+  return String(env.AUTH_BROWSER_AUD ?? env.AUTH_AUDIENCE ?? "").trim();
+}
+
 export async function verifyReleaseJwt(token, env, now = new Date()) {
+  const remote = String(env.AUTH_JWKS_URL ?? "").trim();
+  const local = String(env.LOCAL_JWKS ?? "").trim();
+  if (remote && local) return { ok: false, reason: "auth_unconfigured" };
+  if (remote) {
+    const audience = browserAudience(env);
+    if (!audience) return { ok: false, reason: "auth_unconfigured" };
+    return verifyRemoteJwt(token, env, audience, fetch, now.getTime());
+  }
   const issuer = String(env.AUTH_ISSUER ?? "").trim();
-  const audience = String(env.AUTH_AUDIENCE ?? "").trim();
-  const raw = String(env.LOCAL_JWKS ?? "").trim();
+  const audience = browserAudience(env);
+  const raw = local;
   if (!issuer || !audience || !raw) return { ok: false, reason: "auth_unconfigured" };
   let parsed;
   try {

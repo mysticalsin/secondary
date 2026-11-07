@@ -8,6 +8,7 @@ import shellHtml from "../../recovered-delivery/html-shell/index.html";
 import shellCss from "../../recovered-delivery/shell-six/assets/index-DiBYRwP4.css";
 import shellJs from "../../recovered-delivery/main-js/index-PLmoiPYI.dom-captured.js";
 import { signInternalRequest } from "../worker-root/worker/src/internal-auth.ts";
+import { admittedTenant, tokenFromRequest } from "./jwks-validator.mjs";
 import { verifyReleaseJwt } from "./identity.mjs";
 import { DEV_IDENTITY_HEADERS, releaseDecision } from "./routes.mjs";
 import { renderImport, renderObservability, renderPersonal } from "../ui/pages.mjs";
@@ -16,6 +17,10 @@ interface Env {
   RELEASE_MODE?: string;
   AUTH_ISSUER?: string;
   AUTH_AUDIENCE?: string;
+  AUTH_BROWSER_AUD?: string;
+  AUTH_JWKS_URL?: string;
+  AUTH_ALLOW_LOOPBACK_JWKS?: string;
+  ADMITTED_TENANT_DOMAINS?: string;
   LOCAL_JWKS?: string;
   INTERNAL_HMAC_KEY?: string;
   API?: { fetch: (input: RequestInfo, init?: RequestInit) => Promise<Response> };
@@ -31,23 +36,26 @@ function text(body: string, status: number, type = "text/plain; charset=utf-8") 
   return new Response(body, { status, headers: { "content-type": type, "cache-control": "no-store", "x-secondary-edge": "protected-dev" } });
 }
 
-function bearer(request: Request): string {
-  const header = request.headers.get("authorization") ?? "";
-  if (header.toLowerCase().startsWith("bearer ")) return header.slice(7).trim();
-  return "";
-}
-
 function configured(env: Env): boolean {
-  return Boolean(env.AUTH_ISSUER?.trim() && env.AUTH_AUDIENCE?.trim() && env.LOCAL_JWKS?.trim());
+  const issuer = env.AUTH_ISSUER?.trim();
+  const audience = (env.AUTH_BROWSER_AUD ?? env.AUTH_AUDIENCE)?.trim();
+  const remote = env.AUTH_JWKS_URL?.trim();
+  const local = env.LOCAL_JWKS?.trim();
+  if (!issuer || !audience || (remote && local) || (!remote && !local)) return false;
+  return true;
 }
 
 async function identity(request: Request, env: Env) {
-  const access = request.headers.get("cf-access-jwt-assertion")?.trim() ?? "";
-  const token = bearer(request);
-  if (access && token && access !== token) return { ok: false as const, reason: "invalid_token" };
-  const presented = token || access;
-  if (!presented) return { ok: false as const, reason: "unauthorized" };
-  return verifyReleaseJwt(presented, env);
+  const presented = tokenFromRequest(request);
+  if (!presented.ok) return presented;
+  const verified = await verifyReleaseJwt(presented.token, env);
+  if (!verified.ok) return verified;
+  if (env.AUTH_JWKS_URL?.trim()) {
+    const tenant = admittedTenant(verified.email, env.ADMITTED_TENANT_DOMAINS);
+    if (!tenant) return { ok: false as const, reason: "tenant_not_admitted" };
+    return { ...verified, tenant };
+  }
+  return verified;
 }
 
 async function signedFetch(env: Env, email: string, method: string, path: string, body?: string) {
@@ -167,7 +175,10 @@ export default {
       if (origin && origin !== url.origin) return text("cross_origin\n", 403);
     }
     const who = await identity(request, env);
-    if (!who.ok) return text(`${who.reason}\n`, who.reason === "auth_unconfigured" ? 503 : 401);
+    if (!who.ok) {
+      const status = who.reason === "auth_unconfigured" || who.reason === "jwks_unavailable" || who.reason === "jwks_redirect" ? 503 : who.reason === "tenant_not_admitted" ? 403 : 401;
+      return text(`${who.reason}\n`, status);
+    }
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/settings" || url.pathname === "/settings/profile")) {
       return text(shell(), 200, "text/html; charset=utf-8");
     }

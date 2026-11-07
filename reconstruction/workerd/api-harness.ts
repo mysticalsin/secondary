@@ -580,8 +580,30 @@ async function genuiGate(request: Request, env: HarnessEnv, ctx: ExecutionContex
   return next();
 }
 
+function shimLocalDurableObjects(env: HarnessEnv): HarnessEnv {
+  if ((env as { LOCAL_DO_SHIM?: string }).LOCAL_DO_SHIM !== "workerd") return env;
+  const wrap = (ns: DurableObjectNamespace) => new Proxy(ns, {
+    get(target, prop, receiver) {
+      if (prop === "jurisdiction") return () => target;
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  return new Proxy(env, {
+    get(target, prop, receiver) {
+      if (prop === "TENANT_POLICY" || prop === "WORKSPACE" || prop === "USAGE_LEDGER") {
+        const ns = Reflect.get(target, prop, receiver);
+        return ns ? wrap(ns as DurableObjectNamespace) : ns;
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as HarnessEnv;
+}
+
 export default {
   async fetch(request: Request, env: HarnessEnv, ctx: ExecutionContext): Promise<Response> {
+    env = shimLocalDurableObjects(env);
     const url = new URL(request.url);
     if (url.pathname === "/harness/personal/plan") return personalPlanGate(request, env, ctx);
     if (url.pathname === "/v1/genui/plan" && request.method === "POST") return genuiGate(request, env, ctx);

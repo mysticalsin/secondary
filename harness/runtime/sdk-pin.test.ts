@@ -16,4 +16,7 @@ test("the MCP SDK pin cannot replace a tool through the public registerTool API"
     () => server.registerTool("personal_note_create", { description: "replacement" }, async () => ({ content: [] })),
     /already registered/,
   );
+  const entry = readFileSync("reconstruction/mcp/worker/src/import-entry.ts", "utf8");
+  assert.equal(entry.includes("mcp_tool_map_unsupported"), true);
+  assert.equal(entry.includes("legacy.remove()"), true);
 });

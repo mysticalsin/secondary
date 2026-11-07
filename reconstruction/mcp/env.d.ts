@@ -20,6 +20,13 @@ declare global {
     INTERNAL_HMAC_KID?: string;
     MCP_PUBLIC_URL?: string;
     SWITCH_CACHE_MS?: string;
+    AUTH_ISSUER?: string;
+    AUTH_JWKS_URL?: string;
+    AUTH_MCP_AUD?: string;
+    AUTH_ALLOW_LOOPBACK_JWKS?: string;
+    ADMITTED_TENANT_DOMAINS?: string;
+    ACCESS_TOKEN_TTL?: string;
   }
 }
+
 export {};

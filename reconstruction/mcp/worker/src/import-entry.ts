@@ -12,6 +12,7 @@ import { hostOf } from "../../../packages/contracts/src/agent-host.ts";
 import { ApiClient, type Caller } from "./api-client.ts";
 import { writeAudit } from "./audit.ts";
 import { authorizeHandler } from "./authorize.ts";
+import { jwtConsent } from "./jwt-consent.ts";
 import { type AuthProps, allowedRedirects, BASELINE_SCOPES, isRedirectAllowed, publicBase, SCOPES } from "./config.ts";
 import { rateLimited } from "./rate-limit.ts";
 import { mcpEnabled } from "./switch.ts";
@@ -127,7 +128,9 @@ function legacyExternalId(title: string): string {
 
 function attachImportTools(server: ReturnType<typeof buildServer>, env: Env, caller: Caller) {
   const tools = Reflect.get(server, "_registeredTools") as Record<string, { remove?: () => void }> | undefined;
-  tools?.personal_note_create?.remove?.();
+  const legacy = tools?.personal_note_create;
+  if (!legacy || typeof legacy.remove !== "function") throw new Error("mcp_tool_map_unsupported");
+  legacy.remove();
   const ignored = {
     principalId: z.string().optional(),
     tenantId: z.string().optional(),
@@ -360,7 +363,14 @@ function providerFor(env: Env, base: string): OAuthProvider<Env> {
   const provider = new OAuthProvider<Env>({
     apiRoute: "/mcp",
     apiHandler: mcpApi as never,
-    defaultHandler: authorizeHandler,
+    defaultHandler: {
+      async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+        if ((env.ENVIRONMENT as string) !== "dev" && new URL(request.url).pathname === "/authorize") {
+          return jwtConsent(request, env);
+        }
+        return authorizeHandler.fetch!(request as never, env, ctx);
+      },
+    },
     authorizeEndpoint: "/authorize",
     tokenEndpoint: "/token",
     clientRegistrationEndpoint: "/register",
