@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ViewBoundary } from "../genui/boundary.ts";
-import { renderGenui, renderImport, renderObservability } from "../ui/pages.mjs";
+import { RELEASE_APP_LINKS, renderGenui, renderHome, renderImport, renderObservability, renderPersonal } from "../ui/pages.mjs";
 import { callApi, callImport, fixtureEmail, probeEgress, startRecoveredApi } from "./recovered-api.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -314,6 +314,61 @@ async function genuiState(session) {
   };
 }
 
+async function fixtureHome(persona) {
+  const email = fixtureEmail(persona);
+  let who = email;
+  let tenant = "unknown";
+  try {
+    const me = jsonBody((await callApi("/v1/me", { persona })).text);
+    who = typeof me.principal?.id === "string" ? me.principal.id : email;
+    tenant = typeof me.tenantId === "string" ? me.tenantId : "unknown";
+  } catch {
+    who = email;
+  }
+  let brain = { state: "unavailable", shown: null, total: null, coverage: null, detail: "The personal brain did not load." };
+  try {
+    const planned = await callImport("/harness/personal/plan", { email, persona });
+    const plan = jsonBody(planned.text);
+    if (planned.status === 200 && plan && (plan.empty === true || plan.total === 0)) {
+      brain = { state: "empty", shown: plan.shown ?? 0, total: plan.total ?? 0, coverage: plan.coverage ?? "full", detail: "This personal brain has no imported notes yet. That is an empty brain, not a task list." };
+    } else if (planned.status === 200 && plan) {
+      brain = { state: "open", shown: typeof plan.shown === "number" ? plan.shown : null, total: typeof plan.total === "number" ? plan.total : null, coverage: typeof plan.coverage === "string" ? plan.coverage : null, detail: "Stored notes for this sign-in. Not a company task list." };
+    } else if (planned.status === 403 || planned.status === 404) {
+      brain = { state: "denied", shown: null, total: null, coverage: null, detail: "That brain is not open to this session. Nothing from another owner is shown." };
+    } else {
+      brain = { state: "unavailable", shown: null, total: null, coverage: null, detail: `The personal brain did not load (${planned.status}).` };
+    }
+  } catch {
+    brain = { state: "unavailable", shown: null, total: null, coverage: null, detail: "The personal brain did not load." };
+  }
+  let activity = { state: "unavailable", count: null, detail: "Review activity did not load." };
+  try {
+    const listed = await callImport("/harness/activity", { email, persona });
+    const body = jsonBody(listed.text);
+    const items = Array.isArray(body.items) ? body.items : null;
+    if (listed.status === 200 && items) {
+      activity = items.length === 0
+        ? { state: "empty", count: 0, detail: "No review records for this sign-in. Nothing has been imported." }
+        : { state: "open", count: items.length, detail: "Counts are stored records for this sign-in only." };
+    } else {
+      activity = { state: "unavailable", count: null, detail: `Review activity did not load (${listed.status}).` };
+    }
+  } catch {
+    activity = { state: "unavailable", count: null, detail: "Review activity did not load." };
+  }
+  return renderHome({
+    surface: "release",
+    who,
+    tenant,
+    links: RELEASE_APP_LINKS,
+    currentHref: "/",
+    brain,
+    activity,
+    usage: { state: "unknown", detail: "Cost is unknown. Open Observability for the usage ledger." },
+    notice: "",
+  });
+}
+
 function withSettingsLink(html) {
   const script = `<script>
 (function () {
@@ -502,6 +557,17 @@ export function listen(port = 0) {
     }
     if (url.pathname === "/reconstruction/observability" || url.pathname === "/settings/observability") {
       send(res, 200, "text/html; charset=utf-8", renderObservability(await observabilityModel(persona, "", session.preset, url)), cookie);
+      return;
+    }
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+      send(res, 200, "text/html; charset=utf-8", await fixtureHome(persona), cookie);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/brains/me") {
+      const email = fixtureEmail(persona);
+      const planned = await callImport("/harness/personal/plan", { email, persona });
+      const plan = jsonBody(planned.text);
+      send(res, 200, "text/html; charset=utf-8", renderPersonal({ status: planned.status, plan, email }), cookie);
       return;
     }
     if (url.pathname === "/settings" || (url.pathname.startsWith("/settings/") && !url.pathname.startsWith("/settings/observability"))) {

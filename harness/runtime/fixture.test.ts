@@ -30,18 +30,19 @@ test("the fixture serves the recovered shell and blocks fonts, logos, and unknow
   assert.equal(String(gap.body).includes("not in the captured fixture"), true);
 });
 
-test("the fixture listens only on loopback and returns the shell", async () => {
+test("the fixture home is the Second Brain dashboard and settings keeps the captured shell", async () => {
   const { server, port } = await listen(0);
   try {
     const res = await fetch(`http://127.0.0.1:${port}/`);
     assert.equal(res.status, 200);
     assert.equal(res.headers.get("x-secondary-fixture"), "reconstruction");
     const text = await res.text();
-    assert.equal(text.includes("Secondary | Company Brain"), true);
-    assert.equal(text.includes("/assets/index-PLmoiPYI.js"), true);
+    assert.equal(text.includes("Second Brain"), true);
+    assert.equal(text.includes("Open personal brain"), true);
     assert.equal(text.includes("/settings/observability"), true);
     assert.equal(text.includes("/reconstruction/import"), true);
-    assert.equal(text.includes("data-reconstruction"), true);
+    assert.equal(text.includes("Unknown"), true);
+    assert.equal(text.includes("$"), false);
     const imported = await fetch(`http://127.0.0.1:${port}/reconstruction/import`);
     assert.equal(imported.status, 200);
     const importText = await imported.text();

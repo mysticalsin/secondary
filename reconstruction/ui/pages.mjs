@@ -5,6 +5,82 @@
  * Mandate, Nova, SOC 2, and the numbers in that still are not copied.
  */
 
+/**
+ * @typedef {{
+ *   id: string,
+ *   session_id?: string | null,
+ *   capture?: string,
+ *   finished_at?: string | null,
+ *   started_at?: string | null,
+ *   activity_label?: string,
+ *   what_reviewed?: string | null,
+ *   outcome?: { completed?: boolean, exit_code?: number | null, overall_verdict?: string | null, counts?: Record<string, number | null> },
+ *   token_usage?: { value?: number | null, label?: string },
+ *   observed_writes_detected?: boolean,
+ *   context_scope?: { usual_notes_loaded?: boolean | null },
+ *   evidence_provenance_pointers?: string[],
+ *   untrusted_notes?: string,
+ *   synthetic?: boolean,
+ *   reported_by?: { agent?: string, tool?: { name?: string } },
+ *   analysis_kind?: string
+ * }} ActivityView
+ * @typedef {{
+ *   items?: ActivityView[],
+ *   detail?: ActivityView | null,
+ *   empty?: boolean,
+ *   snapshot_complete?: boolean,
+ *   message?: string,
+ *   failed?: boolean,
+ *   q?: string,
+ *   capture?: string,
+ *   kind?: string,
+ *   date?: string
+ * }} ActivityState
+ * @typedef {{ trust?: string, evidence?: string, operation?: string, outcome?: string, inputTokens?: number | null, requestId?: string }} LedgerEventRow
+ * @typedef {{ value: number | null, complete?: boolean }} TokenDimension
+ * @typedef {{
+ *   roleLabel: string,
+ *   principalId: string,
+ *   tenantId: string,
+ *   persona: string,
+ *   prefMessage: string,
+ *   section: string,
+ *   release: boolean,
+ *   preset: string,
+ *   routes: { path: string, status: string, meaning: string }[],
+ *   ready: { kind: string, label: string, detail: string, technical: string },
+ *   health: { kind: string, label: string, detail: string },
+ *   ai: { kind: string, label: string, detail: string },
+ *   agentRows: string,
+ *   audit: { kind: string, label: string, detail: string, raw: string },
+ *   lang: string,
+ *   ledger: { status: number, events: LedgerEventRow[], summary: null | { operations: number, tokenCoverage: { unknown: number }, input: TokenDimension | null }, error: string, operation: string, trust: string, requestId: string },
+ *   activity?: ActivityState,
+ *   links?: [string, string][],
+ *   currentHref?: string,
+ *   banner?: string,
+ *   identity?: string,
+ *   allowImport?: boolean,
+ *   activityAction?: string
+ * }} ObservabilityModel
+ * @typedef {{
+ *   who: string,
+ *   tenant: string,
+ *   message?: string,
+ *   items: { externalId?: string, version?: number | string | null, text?: string, contentSha256?: string | null }[],
+ *   kept?: number,
+ *   total?: number,
+ *   shown?: number,
+ *   coverage?: string,
+ *   preset?: string,
+ *   release: boolean,
+ *   links?: [string, string][],
+ *   currentHref?: string
+ * }} ImportModel
+ * @typedef {{ status: number, email: string, links?: [string, string][], currentHref?: string, plan?: { error?: string, principalId?: string, tenantId?: string, context?: { externalId?: string, version?: number | null, text?: string, contentSha256?: string | null }[], empty?: boolean, coverage?: string, shown?: number, total?: number } }} PersonalModel
+ * @typedef {{ who?: string, personal?: string, request?: string, planStatus?: string | number, planHtml?: string }} GenuiState
+ */
+
 export const CSS = `
 :root {
   color-scheme: light;
@@ -82,6 +158,10 @@ input[type="search"] { width: min(100%, 280px); }
 }
 `;
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 const esc = (value) =>
   String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -89,7 +169,17 @@ const esc = (value) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
+/**
+ * @param {string} current
+ * @returns {string}
+ */
 function nav(current) {
+  /**
+   * @param {string} href
+   * @param {string} label
+   * @param {string} [badge]
+   * @returns {string}
+   */
   const item = (href, label, badge) =>
     `<a href="${href}" ${current === href ? 'aria-current="page"' : ""}>${label}${
       badge ? `<span class="badge">${badge}</span>` : ""
@@ -101,6 +191,12 @@ function nav(current) {
   </nav>`;
 }
 
+/**
+ * @param {string} title
+ * @param {string} current
+ * @param {string} body
+ * @returns {string}
+ */
 function page(title, current, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -108,6 +204,11 @@ function page(title, current, body) {
 ${nav(current)}<main class="wrap">${body}</main></body></html>`;
 }
 
+/**
+ * @param {string} kind
+ * @param {unknown} text
+ * @returns {string}
+ */
 function chip(kind, text) {
   return `<span class="chip ${kind}">${esc(text)}</span>`;
 }
@@ -267,14 +368,67 @@ th, td { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line
   #panel-activity .run { grid-template-columns: 1fr; }
   #panel-activity .run-side { justify-content: flex-start; }
 }
+.home-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dest, .unknowns article {
+  background: white; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+  padding: 18px; min-width: 0; max-width: 100%;
+}
+.dest h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.dest p, .unknowns p, .lede, .eyebrow { overflow-wrap: anywhere; max-width: 100%; }
+.dest .goto {
+  display: inline-block; margin-top: 14px; background: var(--accent); color: white; text-decoration: none;
+  border-radius: 999px; padding: 9px 14px; font-weight: 650;
+}
+.unknowns { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 22px; }
+.unknowns .value { font-size: 22px; margin: 4px 0; letter-spacing: -0.03em; }
+.eyebrow { margin: 0; color: var(--accent); font-size: 13px; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
+@media (max-width: 720px) {
+  .home-grid, .unknowns { grid-template-columns: 1fr; }
+}
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
 }
 `;
 
+/**
+ * @param {string} paths
+ * @returns {string}
+ */
 function mark(paths) {
   return `<span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>`;
 }
+
+/**
+ * @param {[string, string][]} links
+ * @param {string} currentHref
+ * @returns {string}
+ */
+function textNav(links, currentHref) {
+  return `<nav aria-label="Second Brain">${links.map(([href, text]) =>
+    `<a href="${href}"${href === currentHref ? ' aria-current="page"' : ""}>${esc(text)}</a>`,
+  ).join("")}</nav>`;
+}
+
+/**
+ * @param {[string, string][]} links
+ * @param {string} currentHref
+ * @param {string} label
+ * @returns {string}
+ */
+function appPills(links, currentHref, label) {
+  return `<nav class="pills" aria-label="${esc(label)}">${links.map(([href, text]) =>
+    `<a href="${href}"${href === currentHref ? ' aria-current="page"' : ""}>${esc(text)}</a>`,
+  ).join("")}</nav>`;
+}
+
+/** @type {[string, string][]} */
+export const RELEASE_APP_LINKS = [
+  ["/", "Home"],
+  ["/brains/me", "Personal brain"],
+  ["/reconstruction/import", "Import"],
+  ["/settings/observability", "Observability"],
+  ["/settings/observability?section=activity", "Activity"],
+];
 
 const SETTINGS_LINKS = [
   ["/settings/profile", "Profile"],
@@ -287,6 +441,10 @@ const SETTINGS_LINKS = [
   ["/settings/observability", "Observability"],
 ];
 
+/**
+ * @param {TokenDimension | null | undefined} dimension
+ * @returns {string}
+ */
 function tokenLabel(dimension) {
   if (!dimension || dimension.value === null) return "Unknown";
   if (dimension.value === 0 && dimension.complete) return "0 measured";
@@ -294,17 +452,29 @@ function tokenLabel(dimension) {
   return String(dimension.value);
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function reported(value) {
   if (value === null || value === undefined || value === "") return "Not reported";
   return esc(value);
 }
 
+/**
+ * @param {string | undefined} capture
+ * @returns {string}
+ */
 function captureLabel(capture) {
   if (capture === "historical-manual") return "Historical manual";
   if (capture === "live-exporter") return "Reported completion export";
   return "Capture not reported";
 }
 
+/**
+ * @param {ObservabilityModel} model
+ * @returns {string}
+ */
 function activityPanel(model) {
   const activity = model.activity;
   if (!activity) {
@@ -315,7 +485,10 @@ function activityPanel(model) {
   const filtering = Boolean(activity.q || activity.capture || activity.kind || activity.date);
   const list = items.map((item) => {
     const query = new URLSearchParams({ section: "activity", record: item.id });
-    for (const key of ["q", "capture", "kind", "date"]) if (activity[key]) query.set(key, activity[key]);
+    if (activity.q) query.set("q", activity.q);
+    if (activity.capture) query.set("capture", activity.capture);
+    if (activity.kind) query.set("kind", activity.kind);
+    if (activity.date) query.set("date", activity.date);
     const synthetic = item.synthetic ? `<span class="chip fixture">Synthetic fixture</span>` : "";
     return `<a class="run" href="/settings/observability?${esc(query.toString())}"${detail?.id === item.id ? ' aria-current="page"' : ""}>
       <span><strong>${reported(item.what_reviewed)}</strong><span class="muted">${esc(item.activity_label)} · ${esc(captureLabel(item.capture))}</span></span>
@@ -337,7 +510,7 @@ function activityPanel(model) {
   const status = activity.empty
     ? (filtering ? "No supplied records match this filter." : "No review records for this session. Nothing has been imported.")
     : `Showing ${items.length} supplied record${items.length === 1 ? "" : "s"}. ${activity.snapshot_complete === false ? "The final line was incomplete and was not imported. This is not a full snapshot." : "Coverage is the supplied records only."}`;
-  const importForm = model.release ? `<form class="import-card" method="post" action="/settings/observability/activity">
+  const importForm = model.release && model.allowImport !== false ? `<form class="import-card" method="post" action="/settings/observability/activity">
       <h2>${activity.empty ? "Import a ledger" : "Import another ledger"}</h2>
       <p class="muted">Paste review records, or choose a file on this computer. The file is read here and stored for this signed-in user only. It is not sent to a model. Evidence paths are not opened.</p>
       <label>Ledger file <input id="activity-file" type="file" accept=".ndjson,.jsonl,.txt,text/plain"></label>
@@ -345,10 +518,10 @@ function activityPanel(model) {
       <button class="save" type="submit">Import review records</button>
     </form>` : "";
   return `<p class="banner"><i></i>Read-only review activity. No model was called. AI is disabled.</p>
-    <p class="activity-lead muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. Only records imported for this sign-in are shown. Evidence paths are untrusted text and are not opened.</p>
+    <p class="activity-lead muted">${model.identity ? esc(model.identity) : `Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}.`} Only records imported for this sign-in are shown. Evidence paths are untrusted text and are not opened.</p>
     <p class="coverage" role="status">${esc(status)}</p>
     ${activity.message ? `<p class="${activity.failed ? "alert" : ""}" role="status">${esc(activity.message)}</p>` : ""}
-    <form class="toolbar" method="get" action="/settings/observability">
+    <form class="toolbar" method="get" action="${esc(model.activityAction ?? "/settings/observability")}">
       <input type="hidden" name="section" value="activity">
       <label>Search <input name="q" value="${esc(activity.q ?? "")}" placeholder="Notes or label"></label>
       <label>Capture <select name="capture"><option value="">Any</option><option value="historical-manual" ${activity.capture === "historical-manual" ? "selected" : ""}>Historical manual</option><option value="live-exporter" ${activity.capture === "live-exporter" ? "selected" : ""}>Reported completion export</option></select></label>
@@ -390,6 +563,10 @@ function activityPanel(model) {
     ${activity.empty ? "" : importForm}`;
 }
 
+/**
+ * @param {LedgerEventRow} event
+ * @returns {string}
+ */
 function trustChip(event) {
   if (event.trust === "synthetic_fixture" || event.evidence === "synthetic_fixture") return chip("fixture", "Synthetic fixture");
   if (event.trust === "client_reported") return chip("", "Client-reported");
@@ -397,6 +574,10 @@ function trustChip(event) {
   return chip("unknown", "Unknown");
 }
 
+/**
+ * @param {ObservabilityModel} model
+ * @returns {string}
+ */
 export function renderObservability(model) {
   const prefs = model.section === "prefs" || Boolean(model.prefMessage);
   const usageOn = model.section === "usage";
@@ -421,13 +602,19 @@ export function renderObservability(model) {
       (row) => `<tr><td>${esc(row.path)}</td><td>${esc(row.status)}</td><td>${esc(row.meaning)}</td></tr>`,
     )
     .join("");
-  const linkRows = model.release
-    ? [["/settings", "Settings"], ["/brains/me", "Personal brain"], ["/reconstruction/import", "Import"], ["/settings/observability", "Observability"]]
-    : SETTINGS_LINKS;
+  const linkRows = model.links ?? (model.release ? RELEASE_APP_LINKS : SETTINGS_LINKS);
+  const currentHref = model.currentHref ?? (activityOn ? "/settings/observability?section=activity" : "/settings/observability");
   const settings = linkRows.map(
     ([href, label]) =>
-      `<a href="${href}" ${href.endsWith("/observability") ? 'aria-current="page"' : ""}>${label}</a>`,
+      `<a href="${href}" ${model.links || model.release ? (href === currentHref ? 'aria-current="page"' : "") : href.endsWith("/observability") ? 'aria-current="page"' : ""}>${label}</a>`,
   ).join("");
+  /**
+   * @param {string} id
+   * @param {string} panel
+   * @param {string} label
+   * @param {boolean} on
+   * @returns {string}
+   */
   const tab = (id, panel, label, on) =>
     `<button type="button" role="tab" id="${id}" aria-controls="${panel}" aria-selected="${on ? "true" : "false"}">${label}</button>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -439,7 +626,7 @@ export function renderObservability(model) {
   <p class="crumb"><a href="/settings">Settings</a> <span aria-hidden="true">/</span> Observability</p>
   <h1>Observability</h1>
   <p class="lede">${esc(model.roleLabel)}</p>
-  <p class="banner"><i></i>${model.release ? "Deterministic view. No model was called. AI is disabled." : "Local preview · synthetic data"}</p>
+  <p class="banner"><i></i>${esc(model.banner ?? (model.release ? "Deterministic view. No model was called. AI is disabled." : "Local preview · synthetic data"))}</p>
   <nav class="pills" aria-label="Settings">${settings}</nav>
   <div class="tabs" role="tablist" aria-label="Observability sections">
     ${tab("tab-status", "panel-status", "Status", !prefs && !usageOn && !activityOn)}
@@ -570,6 +757,10 @@ if (activityFile) activityFile.addEventListener("change", async () => {
 </body></html>`;
 }
 
+/**
+ * @param {ImportModel} model
+ * @returns {string}
+ */
 export function renderImport(model) {
   const failed = /Nothing was stored|could not be read back|was not reported/.test(model.message ?? "");
   const items = model.items
@@ -607,7 +798,7 @@ button { width:auto; background:var(--accent); color:white; cursor:pointer; }
 <p><a href="/settings">Settings</a> / Import</p>
 <h1>Import into your brain</h1>
 <p class="banner">${model.release ? "Deterministic import. No model was called. AI is disabled." : "Local preview"}</p>
-<nav aria-label="Settings"><a href="/settings">Settings</a> · <a href="/brains/me">Personal brain</a> · <a href="/settings/observability?section=usage">Usage</a> · <a href="/reconstruction/import" aria-current="page">Import</a></nav>
+${model.links ? textNav(model.links, model.currentHref ?? "") : `<nav aria-label="Settings"><a href="/">Home</a> · <a href="/settings">Settings</a> · <a href="/brains/me">Personal brain</a> · <a href="/settings/observability?section=usage">Usage</a> · <a href="/reconstruction/import" aria-current="page">Import</a></nav>`}
 <p class="muted">Paste text, or choose a .txt or .md file. Limit 7000 characters and 8000 bytes. Other types, path names, scripts, and URL fetches are refused. Model usage stays unknown.</p>
 <p>Signed in as <strong>${esc(model.who)}</strong> in <strong>${esc(model.tenant)}</strong>.</p>
 <details><summary>Session limits</summary>
@@ -649,6 +840,10 @@ document.getElementById("local-file").addEventListener("change", async (event) =
 </main></body></html>`;
 }
 
+/**
+ * @param {GenuiState} state
+ * @returns {string}
+ */
 export function renderGenui(state) {
   return page(
     "GenUI flow",
@@ -673,6 +868,10 @@ export function renderGenui(state) {
   );
 }
 
+/**
+ * @param {PersonalModel} model
+ * @returns {string}
+ */
 export function renderPersonal(model) {
   const plan = model.plan ?? {};
   const denied = model.status !== 200;
@@ -713,10 +912,95 @@ h2 { margin: 0 0 4px; font-size: 18px; overflow-wrap: anywhere; }
 .alert { color: var(--bad); font-weight: 650; }
 @media (max-width: 720px) { h1 { font-size: 30px; } .frame { padding: 20px 12px 48px; } }
 </style></head><body><main class="frame">
-<nav aria-label="Settings"><a href="/settings">Settings</a><a href="/settings/observability">Observability</a><a href="/reconstruction/import">Import</a><a href="/brains/me" aria-current="page">Personal brain</a></nav>
+${model.links ? textNav(model.links, model.currentHref ?? "") : `<nav aria-label="Settings"><a href="/">Home</a><a href="/settings">Settings</a><a href="/settings/observability">Observability</a><a href="/reconstruction/import">Import</a><a href="/brains/me" aria-current="page">Personal brain</a></nav>`}
 <p class="banner">Deterministic plan. No model was called. AI is disabled.</p>
 <h1>Your personal brain</h1>
 <p class="meta">Signed in as ${esc(plan.principalId || model.email || "unknown")} in ${esc(plan.tenantId || "unknown")}. The server chose this owner. A requested brain id is not a grant. Provider configuration is absent, so this is not a live model view.</p>
 ${state}
+</main></body></html>`;
+}
+
+/**
+ * @typedef {{
+ *   surface: "release" | "preview",
+ *   who: string,
+ *   tenant: string,
+ *   links: [string, string][],
+ *   currentHref: string,
+ *   brain: { state: "empty" | "open" | "denied" | "unavailable", shown: number | null, total: number | null, coverage: string | null, detail: string },
+ *   activity: { state: "empty" | "open" | "unavailable", count: number | null, detail: string },
+ *   usage: { state: "unknown" | "empty" | "recorded" | "unavailable", detail: string },
+ *   notice: string
+ * }} HomeModel
+ */
+
+/**
+ * @param {HomeModel} model
+ * @returns {string}
+ */
+export function renderHome(model) {
+  /**
+   * @param {string} label
+   * @returns {string}
+   */
+  const href = (label) => model.links.find((entry) => entry[1] === label)?.[0] ?? "#";
+  const brainLine = model.brain.state === "open" && model.brain.shown !== null && model.brain.total !== null
+    ? `Showing ${model.brain.shown} of ${model.brain.total}. Coverage is ${model.brain.coverage ?? "unknown"}.`
+    : model.brain.detail;
+  const activityLine = model.activity.state === "open" && model.activity.count !== null
+    ? `${model.activity.count} review record${model.activity.count === 1 ? "" : "s"} stored for this sign-in.`
+    : model.activity.detail;
+  const banner = model.surface === "preview"
+    ? "Opened from a file on this computer. No account was contacted. This file has no review records."
+    : "Signed in. No model was called. AI is disabled.";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Brain</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236600ae'/%3E%3C/svg%3E">
+<style>${OBS_CSS}</style></head><body>
+<main class="frame">
+  <p class="eyebrow">Mantu</p>
+  <h1>Second Brain</h1>
+  <p class="lede">Notes, personal brain, and review activity for this sign-in. Cost, uptime, and agent coverage are not measured here.</p>
+  <p class="banner"><i></i>${esc(banner)}</p>
+  <p class="muted">Shown for <strong>${esc(model.who)}</strong> · <strong>${esc(model.tenant)}</strong>.</p>
+  ${model.notice ? `<p class="alert" role="status">${esc(model.notice)}</p>` : ""}
+  ${appPills(model.links, model.currentHref, "Second Brain")}
+  <section class="home-grid" aria-label="Work">
+    <article class="dest">
+      <p class="k">Personal brain</p>
+      <h2>${model.brain.state === "empty" ? "No notes yet" : model.brain.state === "denied" ? "Not open" : model.brain.state === "unavailable" ? "Not loaded" : "Your notes"}</h2>
+      <p>${esc(brainLine)}</p>
+      <a class="goto" href="${esc(href("Personal brain"))}">Open personal brain</a>
+    </article>
+    <article class="dest">
+      <p class="k">Review activity</p>
+      <h2>${model.activity.state === "empty" ? "Nothing imported" : model.activity.state === "unavailable" ? "Not loaded" : "Imported reviews"}</h2>
+      <p>${esc(activityLine)}</p>
+      <a class="goto" href="${esc(href("Activity"))}">Open activity</a>
+    </article>
+    <article class="dest">
+      <p class="k">Observability</p>
+      <h2>Status is unknown</h2>
+      <p>${esc(model.usage.detail)}</p>
+      <a class="goto" href="${esc(href("Observability"))}">Open observability</a>
+    </article>
+    <article class="dest">
+      <p class="k">Import</p>
+      <h2>Add a note</h2>
+      <p>Paste text or a .txt or .md file into your personal brain. The form cannot grant a person, a tenant, or model usage.</p>
+      <a class="goto" href="${esc(href("Import"))}">Open import</a>
+    </article>
+  </section>
+  <section class="unknowns" aria-label="Not measured">
+    <article><p class="k">Cost</p><p class="value">Unknown</p><p class="muted">No price list is loaded. Unknown is not zero.</p></article>
+    <article><p class="k">Uptime</p><p class="value">Unknown</p><p class="muted">This page does not report live uptime.</p></article>
+    <article><p class="k">Agent coverage</p><p class="value">Unknown</p><p class="muted">No live agent roster is claimed from this home screen.</p></article>
+    <article><p class="k">Freshness</p><p class="value">Unknown</p><p class="muted">Source refresh success is not reported.</p></article>
+  </section>
+  <details>
+    <summary>Where these facts come from</summary>
+    <p class="muted">Personal-brain wording comes from the stored plan for this sign-in, or says it did not load. Review counts come only from records already imported for this sign-in. Cost, uptime, agent coverage, and freshness stay unknown because this screen does not measure them. ${model.surface === "preview" ? "This file does not call a server and does not contain review records." : "The release edge chooses the person from the verified token. A requested id is not a grant."}</p>
+  </details>
 </main></body></html>`;
 }

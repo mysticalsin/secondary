@@ -17,15 +17,15 @@ export function renderObservability(model: {
   ledger: {
     status: number;
     events: { trust?: string; evidence?: string; operation?: string; outcome?: string; inputTokens?: number | null; requestId?: string }[];
-    summary: unknown;
+    summary: null | { operations: number; tokenCoverage: { unknown: number }; input: { value: number | null; complete?: boolean } | null };
     error: string;
     operation: string;
     trust: string;
     requestId: string;
   };
   activity?: {
-    items: unknown[];
-    detail: unknown;
+    items?: { id: string; synthetic?: boolean; what_reviewed?: string | null; activity_label?: string; capture?: string; finished_at?: string | null }[];
+    detail?: { id?: string; what_reviewed?: string | null; activity_label?: string; capture?: string } | null;
     empty: boolean;
     snapshot_complete: boolean;
     message: string;
@@ -40,7 +40,7 @@ export function renderImport(model: {
   who: string;
   tenant: string;
   message: string;
-  items: unknown[];
+  items: { externalId?: string; version?: number | string | null; text?: string; contentSha256?: string | null }[];
   kept: number;
   total: number;
   shown: number;
@@ -48,5 +48,17 @@ export function renderImport(model: {
   preset: string;
   release: boolean;
 }): string;
-export function renderPersonal(model: { status: number; plan: unknown; email: string }): string;
-export function renderGenui(state: unknown): string;
+export function renderPersonal(model: { status: number; plan?: { error?: string; principalId?: string; tenantId?: string; context?: { externalId?: string; version?: number | null; text?: string; contentSha256?: string | null }[]; empty?: boolean; coverage?: string; shown?: number; total?: number }; email: string }): string;
+export function renderGenui(state: { who?: string; personal?: string; request?: string; planStatus?: string | number; planHtml?: string }): string;
+export const RELEASE_APP_LINKS: [string, string][];
+export function renderHome(model: {
+  surface: "release" | "preview";
+  who: string;
+  tenant: string;
+  links: [string, string][];
+  currentHref: string;
+  brain: { state: "empty" | "open" | "denied" | "unavailable"; shown: number | null; total: number | null; coverage: string | null; detail: string };
+  activity: { state: "empty" | "open" | "unavailable"; count: number | null; detail: string };
+  usage: { state: "unknown" | "empty" | "recorded" | "unavailable"; detail: string };
+  notice: string;
+}): string;

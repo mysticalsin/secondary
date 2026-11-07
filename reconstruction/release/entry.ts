@@ -11,7 +11,7 @@ import { signInternalRequest } from "../worker-root/worker/src/internal-auth.ts"
 import { admittedTenant, tokenFromRequest } from "./jwks-validator.mjs";
 import { verifyReleaseJwt } from "./identity.mjs";
 import { DEV_IDENTITY_HEADERS, releaseDecision } from "./routes.mjs";
-import { renderImport, renderObservability, renderPersonal } from "../ui/pages.mjs";
+import { RELEASE_APP_LINKS, renderHome, renderImport, renderObservability, renderPersonal } from "../ui/pages.mjs";
 
 interface Env {
   RELEASE_MODE?: string;
@@ -33,6 +33,42 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function asText(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function personalView(value: unknown): { error?: string; principalId?: string; tenantId?: string; context?: { externalId?: string; version?: number | null; text?: string; contentSha256?: string | null }[]; empty?: boolean; coverage?: string; shown?: number; total?: number } | undefined {
+  if (!isRecord(value)) return undefined;
+  const context = Array.isArray(value.context) ? value.context.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    return [{
+      externalId: typeof item.externalId === "string" ? item.externalId : undefined,
+      version: typeof item.version === "number" ? item.version : null,
+      text: typeof item.text === "string" ? item.text : undefined,
+      contentSha256: typeof item.contentSha256 === "string" ? item.contentSha256 : null,
+    }];
+  }) : undefined;
+  return {
+    error: typeof value.error === "string" ? value.error : undefined,
+    principalId: typeof value.principalId === "string" ? value.principalId : undefined,
+    tenantId: typeof value.tenantId === "string" ? value.tenantId : undefined,
+    context,
+    empty: typeof value.empty === "boolean" ? value.empty : undefined,
+    coverage: typeof value.coverage === "string" ? value.coverage : undefined,
+    shown: typeof value.shown === "number" ? value.shown : undefined,
+    total: typeof value.total === "number" ? value.total : undefined,
+  };
+}
+
+function usageSummary(value: unknown): { operations: number; tokenCoverage: { unknown: number }; input: { value: number | null; complete?: boolean } | null } | null {
+  if (!isRecord(value) || typeof value.operations !== "number" || !isRecord(value.tokenCoverage) || typeof value.tokenCoverage.unknown !== "number") return null;
+  const input = value.input;
+  const parsedInput = isRecord(input) && (input.value === null || typeof input.value === "number")
+    ? { value: input.value, complete: typeof input.complete === "boolean" ? input.complete : undefined }
+    : null;
+  return { operations: value.operations, tokenCoverage: { unknown: value.tokenCoverage.unknown }, input: parsedInput };
 }
 
 const ASSETS: Record<string, { type: string; body: string }> = {
@@ -159,7 +195,7 @@ async function observability(env: Env, email: string, url: URL, message = "") {
     ledger: {
       status: ledgerResponse.status,
       events: Array.isArray(ledger.events) ? ledger.events : [],
-      summary: ledger.summary ?? null,
+      summary: usageSummary(ledger.summary),
       error: asText(ledger.reason) || asText(ledger.error),
       operation: url.searchParams.get("operation") ?? "",
       trust: url.searchParams.get("trust") ?? "",
@@ -177,6 +213,45 @@ async function observability(env: Env, email: string, url: URL, message = "") {
       kind: url.searchParams.get("kind") ?? "",
       date: url.searchParams.get("date") ?? "",
     },
+  });
+}
+
+async function homePage(env: Env, email: string) {
+  const planned = await signedFetch(env, email, "GET", "/harness/personal/plan");
+  const plan = personalView(await planned.json().catch(() => null));
+  const activityResponse = await signedFetch(env, email, "GET", "/harness/activity");
+  const activityBody = asRecord(activityResponse.ok ? await activityResponse.json().catch(() => ({})) : {});
+  const ledgerResponse = await signedFetch(env, email, "GET", "/harness/ledger");
+  const ledger = asRecord(ledgerResponse.ok ? await ledgerResponse.json().catch(() => ({})) : {});
+  const items = Array.isArray(activityBody.items) ? activityBody.items : null;
+  const events = Array.isArray(ledger.events) ? ledger.events : null;
+  const brain = planned.status === 200 && plan && (plan.empty === true || plan.total === 0)
+    ? { state: "empty" as const, shown: typeof plan.shown === "number" ? plan.shown : 0, total: typeof plan.total === "number" ? plan.total : 0, coverage: typeof plan.coverage === "string" ? plan.coverage : "full", detail: "This personal brain has no imported notes yet. That is an empty brain, not a task list." }
+    : planned.status === 200 && plan
+      ? { state: "open" as const, shown: typeof plan.shown === "number" ? plan.shown : null, total: typeof plan.total === "number" ? plan.total : null, coverage: typeof plan.coverage === "string" ? plan.coverage : null, detail: "Stored notes for this sign-in. Not a company task list." }
+      : planned.status === 403 || planned.status === 404
+        ? { state: "denied" as const, shown: null, total: null, coverage: null, detail: "That brain is not open to this session. Nothing from another owner is shown." }
+        : { state: "unavailable" as const, shown: null, total: null, coverage: null, detail: `The personal brain did not load (${planned.status}).` };
+  const activity = activityResponse.ok && items
+    ? items.length === 0
+      ? { state: "empty" as const, count: 0, detail: "No review records for this sign-in. Nothing has been imported." }
+      : { state: "open" as const, count: items.length, detail: "Counts are stored records for this sign-in only." }
+    : { state: "unavailable" as const, count: null, detail: `Review activity did not load (${activityResponse.status}).` };
+  const usage = ledgerResponse.ok && events
+    ? events.length === 0
+      ? { state: "empty" as const, detail: "No usage events for this sign-in. That is an empty ledger, not a measured zero. Cost is unknown." }
+      : { state: "recorded" as const, detail: "Usage events exist for this sign-in. Cost is unknown and is not shown as a number." }
+    : { state: "unavailable" as const, detail: `Usage did not load (${ledgerResponse.status}). Cost stays unknown.` };
+  return renderHome({
+    surface: "release",
+    who: email,
+    tenant: String(ledger.tenantId ?? plan?.tenantId ?? "unknown"),
+    links: RELEASE_APP_LINKS,
+    currentHref: "/",
+    brain,
+    activity,
+    usage,
+    notice: "",
   });
 }
 
@@ -208,13 +283,16 @@ export default {
       const status = who.reason === "auth_unconfigured" || who.reason === "jwks_unavailable" || who.reason === "jwks_redirect" ? 503 : who.reason === "tenant_not_admitted" ? 403 : 401;
       return text(`${who.reason}\n`, status);
     }
-    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/settings" || url.pathname === "/settings/profile")) {
+    if (request.method === "GET" && url.pathname === "/") {
+      return text(await homePage(env, who.email), 200, "text/html; charset=utf-8");
+    }
+    if (request.method === "GET" && (url.pathname === "/settings" || url.pathname === "/settings/profile")) {
       return text(shell(), 200, "text/html; charset=utf-8");
     }
     if (request.method === "GET" && url.pathname === "/brains/me") {
       const planned = await signedFetch(env, who.email, "GET", `/harness/personal/plan${url.search}`);
       const plan = await planned.json().catch(() => ({ error: "unavailable" }));
-      return text(renderPersonal({ status: planned.status, plan, email: who.email }), planned.status === 200 ? 200 : planned.status, "text/html; charset=utf-8");
+      return text(renderPersonal({ status: planned.status, plan: personalView(plan), email: who.email }), planned.status === 200 ? 200 : planned.status, "text/html; charset=utf-8");
     }
     if (request.method === "GET" && url.pathname === "/settings/observability") {
       return text(await observability(env, who.email, url), 200, "text/html; charset=utf-8");

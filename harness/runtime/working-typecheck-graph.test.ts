@@ -147,7 +147,7 @@ test("bundled TypeScript files are members of a compiler program", () => {
     return [{ file, line: index + 1, text: line.trim().slice(0, 180) }];
   }));
   const report = {
-    note: "TypeScript program membership covers bundled .ts files. The six projects above still do not typecheck .mjs bodies; reconstruction/tsconfig.check-js.json does, and it still fails. The original 119-line snapshot remains a separate failing compile. Its 8 non-module diagnostics are absent from reconstruction/tsconfig.json, which supplies Env, types.ts, agent-ui, and view-plan. They remain on the snapshot because those modules are not in the recovered archive. remainingDerivedCasts is the set of matching lines in four derived files, not an exhaustive cast count.",
+    note: "TypeScript program membership covers bundled .ts files. The six projects above still do not typecheck .mjs bodies. reconstruction/tsconfig.check-js.json does check the nine reconstruction bodies and is a separate command from the original 119-line snapshot. That snapshot remains a failing compile. Its 8 non-module diagnostics are absent from reconstruction/tsconfig.json, which supplies Env, types.ts, agent-ui, and view-plan. They remain on the snapshot because those modules are not in the recovered archive. The two generated validators are not in the checkJs program. remainingDerivedCasts is the set of matching lines in four derived files, not an exhaustive cast count.",
     programs: projects,
     bundledTsInProgram: bundledTs.filter((file) => listed(file, programs)).sort(),
     bundledTsMissingFromPrograms: missing,

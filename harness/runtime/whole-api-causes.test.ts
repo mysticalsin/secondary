@@ -3,14 +3,20 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { test } from "node:test";
 
-function tsc(project: string) {
+function tsc(project: string, extra: string[] = []) {
   try {
-    const stdout = execFileSync("node_modules/.bin/tsc", ["--noEmit", "--pretty", "false", "-p", project], { encoding: "utf8" });
+    const stdout = execFileSync("node_modules/.bin/tsc", ["--noEmit", "--pretty", "false", ...extra, "-p", project], { encoding: "utf8" });
     return { status: 0, output: stdout };
   } catch (error) {
     const failed = error as { status?: number; stdout?: string; stderr?: string };
     return { status: failed.status ?? 1, output: `${failed.stdout ?? ""}\n${failed.stderr ?? ""}` };
   }
+}
+
+function tscList(project: string) {
+  const listed = tsc(project, ["--listFiles"]);
+  assert.equal(listed.status, 0);
+  return listed.output.split("\n").filter((line) => line.startsWith("/"));
 }
 
 function codes(output: string) {
@@ -54,18 +60,29 @@ test("the snapshot command, the derived program, and the JS body check stay sepa
   }
   assert.equal(derived.status, 0);
   assert.equal(derived.output.includes("error TS"), false);
-  assert.equal(bodies.status, 2);
-  assert.deepEqual(bodyCodes, {
-    TS7006: 145,
-    TS7023: 1,
-    TS7024: 1,
-    TS2345: 1,
-    TS7034: 1,
-    TS2362: 1,
-    TS2363: 1,
-    TS7005: 1,
-    TS7031: 5,
-  });
+  const bodyList = tscList("reconstruction/tsconfig.check-js.json");
+  const includedBodies = [
+    "reconstruction/activity/validate.mjs",
+    "reconstruction/import/policy.mjs",
+    "reconstruction/ledger/object.mjs",
+    "reconstruction/ledger/policy.mjs",
+    "reconstruction/personal/plan.mjs",
+    "reconstruction/release/identity.mjs",
+    "reconstruction/release/jwks-validator.mjs",
+    "reconstruction/release/routes.mjs",
+    "reconstruction/ui/pages.mjs",
+  ];
+  assert.equal(bodies.status, 0);
+  assert.deepEqual(bodyCodes, {});
+  for (const body of includedBodies) {
+    assert.equal(bodyList.some((file) => file.endsWith(body)), true, body);
+  }
+  for (const excluded of [
+    "recovered-source/worker/src/generated/view-plan.validator.js",
+    "recovered-other/secondary-mcp-dev/worker/src/generated/view-plan-validator.js",
+  ]) {
+    assert.equal(bodyList.some((file) => file.endsWith(excluded)), false, excluded);
+  }
   const report = {
     before,
     after: {
@@ -82,18 +99,12 @@ test("the snapshot command, the derived program, and the JS body check stay sepa
         exit: bodies.status,
         diagnostics: Object.values(bodyCodes).reduce((sum, count) => sum + count, 0),
         codes: bodyCodes,
-        includedBodies: [
-          "reconstruction/activity/validate.mjs",
-          "reconstruction/import/policy.mjs",
-          "reconstruction/ledger/object.mjs",
-          "reconstruction/ledger/policy.mjs",
-          "reconstruction/personal/plan.mjs",
-          "reconstruction/release/identity.mjs",
-          "reconstruction/release/jwks-validator.mjs",
-          "reconstruction/release/routes.mjs",
-          "reconstruction/ui/pages.mjs",
+        delta: { firstCheck: 170, afterContractFixes: 157, afterAnnotations: 0 },
+        includedBodies,
+        notBodyChecked: [
+          "recovered-source/worker/src/generated/view-plan.validator.js",
+          "recovered-other/secondary-mcp-dev/worker/src/generated/view-plan-validator.js",
         ],
-        notBodyChecked: ["recovered-source/worker/src/generated/view-plan.validator.js"],
       },
     },
     causes: [
@@ -104,8 +115,7 @@ test("the snapshot command, the derived program, and the JS body check stay sepa
       { code: "TS2366", count: 1, file: "recovered-source/worker/src/agent/tools.ts:260", cause: "AgentToolName does not narrow while agent-ui is unresolved. The same switch has a return for every member once that module is present." },
       { code: "TS7006", count: 3, files: ["ai/planner.ts:38", "auth/config.ts:54", "ux/notify.ts:45"], cause: "The callback parameters sit on expressions whose types are missing ViewPlan, Env, or org-role types. They are absent from the derived program." },
       { code: "TS2322", count: 2, file: "recovered-source/worker/src/stubs.ts:33 and :42", cause: "Without Env, get() is DurableObjectStub<DurableObjectBranded | undefined>, which is not DurableObjectStub<TenantPolicy> or DurableObjectStub<Workspace>. reconstruction/env.d.ts types those bindings, and the derived program accepts both assignments. stubs.ts was not edited." },
-      { code: "JS-TS2345", count: 1, file: "reconstruction/activity/validate.mjs:134", cause: "@cloudflare/workers-types TextDecoderConstructorOptions does not include fatal. The Workers runtime accepts fatal: true. The call was not removed." },
-      { code: "JS-implicit-any", count: 156, cause: "strict checkJs on unannotated JavaScript parameters. TS2362 and TS2363 in ledger/policy.mjs summarize() are the error type of those parameters, not a separate arithmetic bug." },
+      { code: "JS-bodies", count: 0, cause: "The nine reconstruction modules typecheck under strict checkJs. TextDecoder now passes fatal and ignoreBOM because workers-types requires both. ignoreBOM false is the runtime default. The two generated validators stay outside this program." },
     ],
   };
   mkdirSync("reconstruction/coverage", { recursive: true });

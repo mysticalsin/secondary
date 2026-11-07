@@ -3,6 +3,33 @@
  * The caller does not choose the owner. Text is stored context, not a model prompt.
  */
 
+/**
+ * @param {{
+ *   principalId: string,
+ *   tenantId: string,
+ *   items?: { id: string, externalId?: string | null, version?: number | null, text?: string, contentSha256?: string | null }[] | null,
+ *   total: number,
+ *   complete: boolean
+ * }} input
+ * @returns {{
+ *   planner: "deterministic_no_model",
+ *   ai: "disabled",
+ *   providerConfigured: false,
+ *   write: false,
+ *   scope: "secondary.read",
+ *   title: string,
+ *   principalId: string,
+ *   tenantId: string,
+ *   nodeId: string,
+ *   orgAcl: false,
+ *   empty: boolean,
+ *   total: number,
+ *   shown: number,
+ *   complete: boolean,
+ *   coverage: "full" | "partial",
+ *   context: { id: string, externalId: string | null, version: number | null, text: string, contentSha256: string | null }[]
+ * }}
+ */
 export function personalPlan({ principalId, tenantId, items, total, complete }) {
   const shown = Array.isArray(items) ? items.length : 0;
   const count = Number.isInteger(total) ? total : shown;

@@ -5,10 +5,58 @@
  */
 import { decideAppend, summarize } from "./policy.mjs";
 
-function json(body, status) {
+/**
+ * @typedef {import("./policy.mjs").UsageEvent} UsageEvent
+ */
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is unknown[]}
+ */
+function isUnknownArray(value) {
+  return Array.isArray(value);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is UsageEvent}
+ */
+function isUsageEvent(value) {
+  return isRecord(value) && typeof value.eventId === "string" && typeof value.principalId === "string";
+}
+
+/**
+ * @param {SqlStorageValue | undefined} value
+ * @returns {string | null}
+ */
+function cellText(value) {
+  return typeof value === "string" ? value : null;
+}
+
+/**
+ * @param {unknown} body
+ * @param {number} [status]
+ * @returns {Response}
+ */
+function json(body, status = 200) {
   return Response.json(body, { status });
 }
 
+/**
+ * @param {unknown} value
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ * @returns {number}
+ */
 function clamp(value, min, max, fallback) {
   if (value === null || value === undefined || value === "") return fallback;
   const parsed = Number(value);
@@ -17,8 +65,13 @@ function clamp(value, min, max, fallback) {
 }
 
 export class UsageLedger {
+  /**
+   * @param {DurableObjectState} state
+   */
   constructor(state) {
+    /** @type {DurableObjectState} */
     this.state = state;
+    /** @type {SqlStorage} */
     this.sql = state.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS events (
       event_id TEXT PRIMARY KEY,
@@ -57,12 +110,21 @@ export class UsageLedger {
     )`);
   }
 
+  /**
+   * @param {Request} request
+   * @returns {Promise<Response>}
+   */
   async fetch(request) {
     const url = new URL(request.url);
     const body = request.method === "POST" ? await request.json() : null;
-    return this.state.blockConcurrencyWhile(() => this.route(url.pathname, body));
+    return this.state.blockConcurrencyWhile(async () => this.route(url.pathname, body));
   }
 
+  /**
+   * @param {string} pathname
+   * @param {unknown} body
+   * @returns {Response}
+   */
   route(pathname, body) {
     if (pathname === "/append") return this.append(body);
     if (pathname === "/query") return this.query(body);
@@ -75,11 +137,23 @@ export class UsageLedger {
     return json({ error: "not_found" }, 404);
   }
 
+  /**
+   * @param {string} eventId
+   * @returns {UsageEvent | null}
+   */
   row(eventId) {
     const found = this.sql.exec("SELECT body FROM events WHERE event_id = ?", eventId).toArray()[0];
-    return found ? JSON.parse(found.body) : null;
+    const text = found ? cellText(found.body) : null;
+    if (!text) return null;
+    const parsed = JSON.parse(text);
+    return isUsageEvent(parsed) ? parsed : null;
   }
 
+  /**
+   * @param {string} principalId
+   * @param {string} providerRequestId
+   * @returns {UsageEvent | null}
+   */
   streamRow(principalId, providerRequestId) {
     const found = this.sql
       .exec(
@@ -88,9 +162,15 @@ export class UsageLedger {
         providerRequestId,
       )
       .toArray()[0];
-    return found ? JSON.parse(found.body) : null;
+    const text = found ? cellText(found.body) : null;
+    if (!text) return null;
+    const parsed = JSON.parse(text);
+    return isUsageEvent(parsed) ? parsed : null;
   }
 
+  /**
+   * @param {UsageEvent} event
+   */
   save(event) {
     const body = JSON.stringify(event);
     const existing = this.row(event.eventId);
@@ -114,6 +194,9 @@ export class UsageLedger {
     );
   }
 
+  /**
+   * @param {{ principalId: string, clientId: string, source: string, externalId: string, version: unknown }} key
+   */
   importRow(key) {
     return this.sql
       .exec(
@@ -128,11 +211,21 @@ export class UsageLedger {
       .toArray()[0];
   }
 
+  /**
+   * @param {unknown} key
+   * @returns {Response}
+   */
   beginImport(key) {
-    if (!key?.principalId || !key.clientId || !key.source || !key.externalId || !key.hash) {
+    if (!isRecord(key) || typeof key.principalId !== "string" || !key.principalId || typeof key.clientId !== "string" || !key.clientId || typeof key.source !== "string" || !key.source || typeof key.externalId !== "string" || !key.externalId || typeof key.hash !== "string" || !key.hash) {
       return json({ error: "invalid_import", reason: "invalid_import" }, 400);
     }
-    const row = this.importRow(key);
+    const row = this.importRow({
+      principalId: key.principalId,
+      clientId: key.clientId,
+      source: key.source,
+      externalId: key.externalId,
+      version: key.version,
+    });
     if (row?.item_id) {
       if (row.content_hash === key.hash) {
         return json({
@@ -175,8 +268,21 @@ export class UsageLedger {
     return json({ outcome: "claim", previousId: previous?.item_id ?? null });
   }
 
+  /**
+   * @param {unknown} key
+   * @returns {Response}
+   */
   finishImport(key) {
-    const row = this.importRow(key);
+    if (!isRecord(key) || typeof key.principalId !== "string" || typeof key.clientId !== "string" || typeof key.source !== "string" || typeof key.externalId !== "string" || typeof key.hash !== "string") {
+      return json({ error: "invalid_import", reason: "invalid_import" }, 400);
+    }
+    const row = this.importRow({
+      principalId: key.principalId,
+      clientId: key.clientId,
+      source: key.source,
+      externalId: key.externalId,
+      version: key.version,
+    });
     if (!row || row.content_hash !== key.hash) return json({ error: "conflict", reason: "conflict" }, 409);
     if (row.item_id) {
       return json({ outcome: "duplicate", id: row.item_id, requestId: row.request_id, previousId: row.previous_id });
@@ -195,7 +301,14 @@ export class UsageLedger {
     return json({ outcome: "finished", previousId: row.previous_id });
   }
 
+  /**
+   * @param {unknown} key
+   * @returns {Response}
+   */
   abortImport(key) {
+    if (!isRecord(key) || typeof key.principalId !== "string" || typeof key.clientId !== "string" || typeof key.source !== "string" || typeof key.externalId !== "string") {
+      return json({ error: "invalid_import", reason: "invalid_import" }, 400);
+    }
     this.sql.exec(
       `DELETE FROM imports
        WHERE principal_id = ? AND client_id = ? AND source = ? AND external_id = ? AND version = ? AND pending = 1 AND item_id IS NULL`,
@@ -208,13 +321,19 @@ export class UsageLedger {
     return json({ outcome: "aborted" });
   }
 
+  /**
+   * @param {unknown} filter
+   * @returns {Response}
+   */
   listImports(filter) {
+    if (!isRecord(filter) || typeof filter.principalId !== "string") return json({ error: "invalid_query", reason: "invalid_query" }, 400);
     const limit = clamp(filter.limit, 1, 50, 20);
     const offset = clamp(filter.cursor, 0, 100000, 0);
-    const tokens = typeof filter.q === "string" && filter.q
-      ? filter.q.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 2)
+    const query = typeof filter.q === "string" ? filter.q : "";
+    const tokens = query
+      ? query.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 2)
       : [];
-    if (typeof filter.q === "string" && filter.q && tokens.length === 0) {
+    if (query && tokens.length === 0) {
       return json({ error: "invalid_query", reason: "invalid_query" }, 400);
     }
     const all = this.sql
@@ -253,8 +372,12 @@ export class UsageLedger {
     });
   }
 
+  /**
+   * @param {unknown} event
+   * @returns {Response}
+   */
   append(event) {
-    if (!event || typeof event.eventId !== "string" || typeof event.principalId !== "string") {
+    if (!isUsageEvent(event)) {
       return json({ error: "invalid_event", reason: "invalid_event" }, 400);
     }
     const byId = this.row(event.eventId);
@@ -279,32 +402,45 @@ export class UsageLedger {
     return json({ outcome: "stored", event }, 201);
   }
 
+  /**
+   * @param {unknown} filter
+   * @returns {Response}
+   */
   query(filter) {
-    const principalId = filter?.principalId;
-    if (typeof principalId !== "string") return json({ error: "invalid_query" }, 400);
+    if (!isRecord(filter) || typeof filter.principalId !== "string") return json({ error: "invalid_query" }, 400);
+    const principalId = filter.principalId;
     const rows = this.sql.exec("SELECT body FROM events WHERE principal_id = ? ORDER BY event_id", principalId).toArray();
-    let events = rows.map((row) => JSON.parse(row.body));
-    if (filter.clientId) events = events.filter((event) => event.clientId === filter.clientId);
-    if (filter.operation) events = events.filter((event) => event.operation === filter.operation);
-    if (filter.trust) events = events.filter((event) => event.trust === filter.trust);
-    if (filter.brainId) events = events.filter((event) => event.brainId === filter.brainId);
-    if (filter.requestId) {
-      events = events.filter((event) =>
-        event.requestId === filter.requestId ||
-        event.eventId === filter.requestId ||
-        event.providerRequestId === filter.requestId,
-      );
-      if (events.length === 0) return json({ error: "not_found", reason: "not_found" }, 404);
+    /** @type {UsageEvent[]} */
+    const events = [];
+    for (const row of rows) {
+      const text = cellText(row.body);
+      if (!text) continue;
+      const parsed = JSON.parse(text);
+      if (isUsageEvent(parsed)) events.push(parsed);
     }
-    const summary = summarize(events);
+    let matched = events;
+    if (typeof filter.clientId === "string" && filter.clientId) matched = matched.filter((event) => event.clientId === filter.clientId);
+    if (typeof filter.operation === "string" && filter.operation) matched = matched.filter((event) => event.operation === filter.operation);
+    if (typeof filter.trust === "string" && filter.trust) matched = matched.filter((event) => event.trust === filter.trust);
+    if (typeof filter.brainId === "string" && filter.brainId) matched = matched.filter((event) => event.brainId === filter.brainId);
+    if (typeof filter.requestId === "string" && filter.requestId) {
+      const requestId = filter.requestId;
+      matched = matched.filter((event) =>
+        event.requestId === requestId ||
+        event.eventId === requestId ||
+        event.providerRequestId === requestId,
+      );
+      if (matched.length === 0) return json({ error: "not_found", reason: "not_found" }, 404);
+    }
+    const summary = summarize(matched);
     const limit = clamp(filter.limit, 1, 50, 20);
     const offset = clamp(filter.cursor, 0, 100000, 0);
-    const page = events.slice(offset, offset + limit);
-    const complete = offset + page.length >= events.length;
+    const page = matched.slice(offset, offset + limit);
+    const complete = offset + page.length >= matched.length;
     return json({
       events: page,
       summary,
-      total: events.length,
+      total: matched.length,
       complete,
       coverage: complete ? "full" : "partial",
       nextCursor: complete ? null : String(offset + page.length),
@@ -312,17 +448,23 @@ export class UsageLedger {
     }, 200);
   }
 
+  /**
+   * @param {unknown} body
+   * @returns {Response}
+   */
   applyActivity(body) {
-    const principalId = body?.principalId;
-    const records = Array.isArray(body?.records) ? body.records : null;
-    if (typeof principalId !== "string" || !records) return json({ error: "invalid_import", reason: "invalid_import" }, 400);
+    if (!isRecord(body) || typeof body.principalId !== "string" || !isUnknownArray(body.records)) {
+      return json({ error: "invalid_import", reason: "invalid_import" }, 400);
+    }
+    const principalId = body.principalId;
+    const records = body.records;
     const existing = new Map(
       this.sql.exec("SELECT record_id, content_hash, body FROM activity_records WHERE principal_id = ?", principalId).toArray()
         .map((row) => [row.record_id, row]),
     );
     const next = new Map();
     for (const record of records) {
-      if (!record || typeof record.record_id !== "string" || typeof record.hash !== "string" || typeof record.body !== "string") {
+      if (!isRecord(record) || typeof record.record_id !== "string" || typeof record.hash !== "string" || typeof record.body !== "string") {
         return json({ error: "invalid_import", reason: "invalid_import" }, 400);
       }
       const prior = next.get(record.record_id) ?? existing.get(record.record_id);
@@ -354,9 +496,13 @@ export class UsageLedger {
     return json({ outcome: "stored", count: next.size }, 200);
   }
 
+  /**
+   * @param {unknown} body
+   * @returns {Response}
+   */
   listActivity(body) {
-    const principalId = body?.principalId;
-    if (typeof principalId !== "string") return json({ error: "invalid_query" }, 400);
+    if (!isRecord(body) || typeof body.principalId !== "string") return json({ error: "invalid_query" }, 400);
+    const principalId = body.principalId;
     const rows = this.sql.exec(
       "SELECT record_id, content_hash, body FROM activity_records WHERE principal_id = ? ORDER BY record_id",
       principalId,

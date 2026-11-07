@@ -9,10 +9,29 @@ import { verifyRemoteJwt } from "./jwks-validator.mjs";
 
 const PRIVATE = new Set(["d", "p", "q", "dp", "dq", "qi"]);
 
+/**
+ * @param {unknown} value
+ * @returns {value is { keys: Record<string, unknown>[] }}
+ */
+function isLocalJwks(value) {
+  if (!value || typeof value !== "object" || !("keys" in value) || !Array.isArray(value.keys)) return false;
+  return value.keys.every((key) => key && typeof key === "object" && !Array.isArray(key));
+}
+
+/**
+ * @param {{ AUTH_BROWSER_AUD?: string, AUTH_AUDIENCE?: string }} env
+ * @returns {string}
+ */
 export function browserAudience(env) {
   return String(env.AUTH_BROWSER_AUD ?? env.AUTH_AUDIENCE ?? "").trim();
 }
 
+/**
+ * @param {string} token
+ * @param {{ AUTH_JWKS_URL?: string, LOCAL_JWKS?: string, AUTH_ISSUER?: string, AUTH_BROWSER_AUD?: string, AUTH_AUDIENCE?: string, AUTH_ALLOW_LOOPBACK_JWKS?: string }} env
+ * @param {Date} [now]
+ * @returns {Promise<{ ok: true, email: string, sub: string } | { ok: false, reason: string }>}
+ */
 export async function verifyReleaseJwt(token, env, now = new Date()) {
   const remote = String(env.AUTH_JWKS_URL ?? "").trim();
   const local = String(env.LOCAL_JWKS ?? "").trim();
@@ -32,10 +51,10 @@ export async function verifyReleaseJwt(token, env, now = new Date()) {
   } catch {
     return { ok: false, reason: "auth_unconfigured" };
   }
-  if (!parsed || !Array.isArray(parsed.keys) || parsed.keys.length === 0 || parsed.keys.length > 4) {
+  if (!isLocalJwks(parsed) || parsed.keys.length === 0 || parsed.keys.length > 4) {
     return { ok: false, reason: "auth_unconfigured" };
   }
-  if (parsed.keys.some((key) => !key || typeof key !== "object" || Object.keys(key).some((name) => PRIVATE.has(name)))) {
+  if (parsed.keys.some((key) => Object.keys(key).some((name) => PRIVATE.has(name)))) {
     return { ok: false, reason: "auth_unconfigured" };
   }
   try {

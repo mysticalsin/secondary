@@ -5,6 +5,10 @@
 
 const MCP = new Set(["/mcp", "/authorize", "/token", "/register"]);
 
+/**
+ * @param {string} pathname
+ * @returns {string}
+ */
 export function canonicalPath(pathname) {
   let path = pathname;
   for (let i = 0; i < 2; i += 1) {
@@ -26,6 +30,11 @@ export function canonicalPath(pathname) {
   return `/${parts.join("/")}`.toLowerCase();
 }
 
+/**
+ * @param {string} pathname
+ * @param {string | undefined} mode
+ * @returns {{ kind: "closed", status: number, reason: string } | { kind: "deny", status: number, reason: string } | { kind: "mcp", auth: "oauth" } | { kind: "browser", auth: "jwt" } | { kind: "asset", auth: "none" }}
+ */
 export function releaseDecision(pathname, mode) {
   const path = canonicalPath(pathname);
   if (mode !== "protected-dev") return { kind: "closed", status: 503, reason: "release_mode" };

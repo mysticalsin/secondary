@@ -5,14 +5,20 @@ export function personalPlan(input: {
   total: number;
   complete: boolean;
 }): {
-  planner: string;
-  ai: string;
+  planner: "deterministic_no_model";
+  ai: "disabled";
+  providerConfigured: false;
+  write: false;
+  scope: "secondary.read";
+  title: string;
   principalId: string;
   tenantId: string;
+  nodeId: string;
+  orgAcl: false;
   empty: boolean;
   total: number;
   shown: number;
   complete: boolean;
-  coverage: string;
-  context: unknown[];
+  coverage: "full" | "partial";
+  context: { id: string; externalId: string | null; version: number | null; text: string; contentSha256: string | null }[];
 };

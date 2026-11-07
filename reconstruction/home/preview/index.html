@@ -1,0 +1,225 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Brain</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236600ae'/%3E%3C/svg%3E">
+<style>
+/* Palette for this page only.
+   Official public tokens, https://mantu.com/_next/static/chunks/0f4n.iw4c7x10.css :root
+   (fetched 2026-11-07): --primary-main #6600ae, --primary-50 #fcf3ff, --primary-950 #41007c,
+   --dark-main #17121a, --dark-50 #f8f6f9, --white #fff, --grey-200 #d8d8df, --grey-600 #5c5d6d,
+   --yellow-main #ffc709, --red-50 #fff1f1, --red-200 #ffcccf, --red-700 #c70e1d.
+   The same primary #6600ae is also --purple in recovered-delivery/shell-six/assets/index-DiBYRwP4.css.
+   Success uses that recovered stylesheet's --st-done #1e6b34 and --add-bg #e6f6ea.
+   mantu.com publishes no success-green token. The reel accent #6d5bd0 is not used. */
+:root {
+  color-scheme: light;
+  --canvas: #f8f6f9;
+  --ink: #17121a;
+  --nav: #6600ae;
+  --panel: #ffffff;
+  --muted: #5c5d6d;
+  --line: #d8d8df;
+  --accent: #6600ae;
+  --ok: #1e6b34;
+  --ok-bg: #e6f6ea;
+  --bad: #c70e1d;
+  --bad-bg: #fff1f1;
+  --focus-on-dark: #ffc709;
+  --shadow: 0 16px 40px rgba(23, 18, 26, 0.08);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; max-width: 100%; }
+body { background: var(--canvas); color: var(--ink); line-height: 1.45; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.frame { max-width: 980px; margin: 0 auto; padding: 32px 20px 72px; }
+.crumb { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+.crumb a { text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
+h1 { margin: 8px 0 0; font-size: 40px; line-height: 1.05; letter-spacing: -0.035em; font-weight: 650; }
+.lede { margin: 14px 0 0; font-size: 17px; color: var(--ink); }
+.banner {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 16px;
+  padding: 6px 12px; border-radius: 999px; background: #fcf3ff; color: var(--accent);
+  font-size: 13px; font-weight: 650;
+}
+.banner i { width: 8px; height: 8px; border-radius: 99px; background: var(--accent); display: block; }
+.pills, .tabs {
+  display: flex; flex-wrap: wrap; gap: 6px; max-width: 100%;
+}
+.pills {
+  width: fit-content; margin: 26px 0 22px; padding: 7px;
+  background: var(--nav); border-radius: 28px;
+}
+.pills a, .tabs button {
+  border: 0; border-radius: 999px; font: inherit; font-size: 14px;
+  text-decoration: none; padding: 9px 14px; cursor: pointer; line-height: 1.2;
+}
+.pills a { color: #ffffff; background: transparent; }
+.pills a[aria-current="page"] { background: #ffffff; color: var(--ink); }
+.pills a:hover { background: rgba(255,255,255,0.14); }
+.pills a[aria-current="page"]:hover { background: #ffffff; }
+.pills a:focus-visible { outline-color: var(--focus-on-dark); }
+.tabs { margin: 0 0 18px; }
+.tabs button, .tabs a[role="tab"] {
+  background: transparent; color: var(--muted); border: 1px solid transparent;
+  border-radius: 999px; font: inherit; font-size: 14px; text-decoration: none; padding: 9px 14px; line-height: 1.2;
+}
+.tabs button[aria-selected="true"], .tabs a[role="tab"][aria-selected="true"] {
+  background: white; color: var(--ink); border-color: var(--line); box-shadow: var(--shadow);
+}
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); }
+.stat, .sheet, .callout {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+.stat { padding: 18px 18px 16px; min-width: 0; }
+.mark {
+  width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center;
+  background: #fcf3ff; color: var(--accent); margin-bottom: 14px;
+}
+.k { margin: 0; color: var(--muted); font-size: 13px; }
+.value { margin: 8px 0 0; font-size: 22px; letter-spacing: -0.03em; }
+.hint { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.sheet { padding: 8px 8px 4px; }
+.host { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 14px 12px; border-bottom: 1px solid var(--line); }
+.host:last-child { border-bottom: 0; }
+.host strong { display: block; font-size: 15px; }
+.host span { color: var(--muted); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 650; background: #fcf3ff; color: var(--accent); white-space: nowrap; }
+.chip.ok { background: var(--ok-bg); color: var(--ok); }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
+.chip.unknown { background: #eeeef0; color: #4b4c59; }
+.chip.fixture { background: #fff6d8; color: #5c4300; }
+.callout { padding: 18px 20px; }
+.callout.bad { background: var(--bad-bg); border-color: #ffcccf; }
+.callout h2, .block h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.02em; }
+.block { margin-top: 16px; }
+label { display: block; margin: 12px 0; font-size: 14px; }
+select, button.save, input[type="search"] {
+  font: inherit; border-radius: 12px; border: 1px solid var(--line); background: white; padding: 10px 12px;
+}
+button.save { background: var(--accent); color: white; cursor: pointer; }
+button.save:hover { background: #41007c; }
+input:disabled { opacity: 0.6; }
+.alert { margin: 12px 0 0; color: var(--bad); font-weight: 650; }
+details { margin-top: 28px; background: white; border: 1px solid var(--line); border-radius: 18px; padding: 12px 16px; }
+summary { cursor: pointer; font-weight: 650; }
+pre, table { max-width: 100%; overflow-wrap: anywhere; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 8px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.muted { color: var(--muted); font-size: 14px; }
+#panel-activity .activity-lead { margin: 8px 0 0; max-width: 62ch; }
+#panel-activity .coverage { margin: 14px 0; }
+#panel-activity .toolbar, #panel-activity .import-card, #panel-activity .empty-card, #panel-activity .detail-card {
+  background: white; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+}
+#panel-activity .toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: end; padding: 12px;
+}
+#panel-activity .toolbar label, #panel-activity .import-card label {
+  margin: 0; display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; font-weight: 650;
+}
+#panel-activity .toolbar label:first-of-type { flex: 1 1 240px; }
+#panel-activity .toolbar label { flex: 1 1 140px; }
+#panel-activity .toolbar input, #panel-activity .toolbar select, #panel-activity .import-card textarea, #panel-activity .import-card input[type="file"] {
+  width: 100%; min-height: 44px; font: inherit; font-size: 16px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 10px 12px;
+}
+#panel-activity .toolbar button, #panel-activity .import-card button { min-height: 44px; padding: 10px 16px; }
+#panel-activity .empty-card, #panel-activity .import-card, #panel-activity .detail-card { padding: 18px 18px 16px; margin-top: 14px; }
+#panel-activity .empty-card h2, #panel-activity .import-card h2, #panel-activity .detail-card h2 {
+  margin: 0; font-size: 22px; letter-spacing: -0.03em;
+}
+#panel-activity .runs { display: grid; gap: 10px; margin: 14px 0 0; min-width: 0; max-width: 100%; }
+#panel-activity .run {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; align-items: center;
+  text-decoration: none; background: white; border: 1px solid var(--line); border-radius: 18px;
+  padding: 14px 16px; box-shadow: var(--shadow); width: 100%; max-width: 100%; min-width: 0;
+}
+#panel-activity .run[aria-current="page"] { border-color: #c9a4e4; box-shadow: 0 0 0 3px #fcf3ff; }
+#panel-activity .run strong, #panel-activity .id, #panel-activity .path, #panel-activity .detail-card, #panel-activity .detail-card p, #panel-activity .detail-card h2, #panel-activity .detail-card h3 {
+  overflow-wrap: anywhere; min-width: 0; max-width: 100%;
+}
+#panel-activity .run strong { display: block; font-size: 16px; letter-spacing: -0.02em; }
+#panel-activity .run-side { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; align-items: center; min-width: 0; max-width: 100%; }
+#panel-activity .id { color: var(--muted); font-size: 12px; }
+#panel-activity .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+#panel-activity .detail-card details { margin-top: 16px; max-width: 100%; min-width: 0; }
+#panel-activity .path { margin: 4px 0; }
+@media (max-width: 720px) {
+  .frame { padding: 20px 16px 48px; }
+  h1 { font-size: 32px; }
+  .value { font-size: 20px; }
+  .host { align-items: flex-start; }
+  #panel-activity .toolbar label, #panel-activity .toolbar label:first-of-type { flex-basis: 100%; }
+  #panel-activity .run { grid-template-columns: 1fr; }
+  #panel-activity .run-side { justify-content: flex-start; }
+}
+.home-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dest, .unknowns article {
+  background: white; border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
+  padding: 18px; min-width: 0; max-width: 100%;
+}
+.dest h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.dest p, .unknowns p, .lede, .eyebrow { overflow-wrap: anywhere; max-width: 100%; }
+.dest .goto {
+  display: inline-block; margin-top: 14px; background: var(--accent); color: white; text-decoration: none;
+  border-radius: 999px; padding: 9px 14px; font-weight: 650;
+}
+.unknowns { display: grid; gap: 14px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 22px; }
+.unknowns .value { font-size: 22px; margin: 4px 0; letter-spacing: -0.03em; }
+.eyebrow { margin: 0; color: var(--accent); font-size: 13px; font-weight: 750; letter-spacing: 0.04em; text-transform: uppercase; }
+@media (max-width: 720px) {
+  .home-grid, .unknowns { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
+</style></head><body>
+<main class="frame">
+  <p class="eyebrow">Mantu</p>
+  <h1>Second Brain</h1>
+  <p class="lede">Notes, personal brain, and review activity for this sign-in. Cost, uptime, and agent coverage are not measured here.</p>
+  <p class="banner"><i></i>Opened from a file on this computer. No account was contacted. This file has no review records.</p>
+  <p class="muted">Shown for <strong>Not signed in</strong> · <strong>Not connected</strong>.</p>
+  
+  <nav class="pills" aria-label="Second Brain"><a href="index.html" aria-current="page">Home</a><a href="personal.html">Personal brain</a><a href="import.html">Import</a><a href="observability.html">Observability</a><a href="activity.html">Activity</a></nav>
+  <section class="home-grid" aria-label="Work">
+    <article class="dest">
+      <p class="k">Personal brain</p>
+      <h2>No notes yet</h2>
+      <p>No personal brain is loaded in this file. Nothing has been imported here.</p>
+      <a class="goto" href="personal.html">Open personal brain</a>
+    </article>
+    <article class="dest">
+      <p class="k">Review activity</p>
+      <h2>Nothing imported</h2>
+      <p>No review records are in this file.</p>
+      <a class="goto" href="activity.html">Open activity</a>
+    </article>
+    <article class="dest">
+      <p class="k">Observability</p>
+      <h2>Status is unknown</h2>
+      <p>Usage was not loaded. Cost is unknown. Unknown is not zero.</p>
+      <a class="goto" href="observability.html">Open observability</a>
+    </article>
+    <article class="dest">
+      <p class="k">Import</p>
+      <h2>Add a note</h2>
+      <p>Paste text or a .txt or .md file into your personal brain. The form cannot grant a person, a tenant, or model usage.</p>
+      <a class="goto" href="import.html">Open import</a>
+    </article>
+  </section>
+  <section class="unknowns" aria-label="Not measured">
+    <article><p class="k">Cost</p><p class="value">Unknown</p><p class="muted">No price list is loaded. Unknown is not zero.</p></article>
+    <article><p class="k">Uptime</p><p class="value">Unknown</p><p class="muted">This page does not report live uptime.</p></article>
+    <article><p class="k">Agent coverage</p><p class="value">Unknown</p><p class="muted">No live agent roster is claimed from this home screen.</p></article>
+    <article><p class="k">Freshness</p><p class="value">Unknown</p><p class="muted">Source refresh success is not reported.</p></article>
+  </section>
+  <details>
+    <summary>Where these facts come from</summary>
+    <p class="muted">Personal-brain wording comes from the stored plan for this sign-in, or says it did not load. Review counts come only from records already imported for this sign-in. Cost, uptime, agent coverage, and freshness stay unknown because this screen does not measure them. This file does not call a server and does not contain review records.</p>
+  </details>
+</main></body></html>

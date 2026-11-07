@@ -215,7 +215,7 @@ The delivered renderer names a different component set from the recovered view-p
 
 `npm run typecheck:worker` is still `tsc --noEmit -p tsconfig.worker.json`. It still exits 2 with 119 diagnostics: 68 `TS2304` (no `Env` in the archive or in `@cloudflare/workers-types`), 43 `TS2307` (missing `types.ts`, agent-ui, `view-plan.ts`), and 8 others. Those 8 are absent from `tsc -p reconstruction/tsconfig.json` (exit 0), which is a different program that includes the derived modules. The snapshot command was not pointed at that program. Recovered source bytes were not edited.
 
-`npm run typecheck:js-bodies` is `tsc --noEmit -p reconstruction/tsconfig.check-js.json` with `checkJs`. It includes the nine reconstruction `.mjs` bodies and exits 2 with 157 diagnostics. The generated `view-plan.validator.js` is not in that program. `fatal: true` on `TextDecoder` remains because workers types omit that option. The other diagnostics are unannotated JavaScript parameters under `strict`.
+`npm run typecheck:js-bodies` is `tsc --noEmit -p reconstruction/tsconfig.check-js.json` with strict `checkJs`. The first run of that program reported 170 diagnostics. After the contract fixes it reported 157 and exited 2. Annotations and the Workers `TextDecoder` options (`fatal: true` plus required `ignoreBOM: false`) bring it to exit 0. The program lists the nine reconstruction `.mjs` files. `recovered-source/worker/src/generated/view-plan.validator.js` and `recovered-other/secondary-mcp-dev/worker/src/generated/view-plan-validator.js` are not in it. A fresh offline page build would inline the annotated validator and would differ from the frozen `index.html` pin `d089ce6272f02ae8a0df129a710a9c98c47a76f6627ff199739fb301c8d5ce94`. That file was not replaced.
 
 ## Still absent
 

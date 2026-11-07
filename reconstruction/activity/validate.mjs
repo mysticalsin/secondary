@@ -13,37 +13,114 @@ const HEX64 = /^[a-f0-9]{64}$/;
 const HEX40 = /^[a-f0-9]{40}$/;
 const PATH = /^\/workspace\/[^\n\r]+$/;
 
+/**
+ * @typedef {{
+ *   record_id: string,
+ *   session_id: string | null,
+ *   capture: string,
+ *   agent: string,
+ *   tool: { name: string },
+ *   started_at: string | null,
+ *   finished_at: string | null,
+ *   analysis_kind: string,
+ *   target: { label: string | null },
+ *   outcome: { completed: boolean, exit_code: number | null, overall_verdict: string | null, counts: Record<string, number | null> },
+ *   tokens_used: number | null,
+ *   writes_detected: boolean,
+ *   context_scope: { usual_notes_loaded: boolean | null },
+ *   evidence_paths: string[],
+ *   notes: string
+ * }} ReviewRecord
+ */
+
+/**
+ * @param {BufferSource} bytes
+ * @returns {Promise<string>}
+ */
 async function sha256Hex(bytes) {
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((item) => item.toString(16).padStart(2, "0")).join("");
 }
 
+/**
+ * @param {string} reason
+ * @returns {Error & { reason: string }}
+ */
 function fail(reason) {
   return Object.assign(new Error(reason), { reason });
 }
 
+/**
+ * @param {unknown} error
+ * @returns {error is Error & { reason: string }}
+ */
+function hasReason(error) {
+  return error instanceof Error && "reason" in error && typeof error.reason === "string" && error.reason !== "";
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is unknown[]}
+ */
+function isUnknownArray(value) {
+  return Array.isArray(value);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
 function nullableString(value) {
   return value === null || typeof value === "string";
 }
 
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
 function nullableInt(value) {
   return value === null || (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 1_000_000_000);
 }
 
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
 function nullableTime(value) {
   return value === null || (typeof value === "string" && TIME.test(value));
 }
 
+/**
+ * @param {unknown} value
+ * @param {readonly string[]} keys
+ * @returns {value is Record<string, unknown>}
+ */
 function exactKeys(value, keys) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!isRecord(value)) return false;
   const present = Object.keys(value);
   return present.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
+/**
+ * @param {string} text
+ * @returns {number}
+ */
 function utf8Bytes(text) {
   return new TextEncoder().encode(text).byteLength;
 }
 
+/**
+ * @param {string} text
+ * @returns {ReviewRecord}
+ */
 export function parseStoredRecord(text) {
   let parsed;
   try {
@@ -54,13 +131,26 @@ export function parseStoredRecord(text) {
   try {
     return validateRecord(parsed);
   } catch (error) {
-    if (error instanceof Error && "reason" in error && error.reason) throw error;
+    if (hasReason(error)) throw error;
     throw fail("stored_record_invalid");
   }
 }
 
+/**
+ * @param {unknown} value
+ * @returns {ReviewRecord}
+ */
 export function validateRecord(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("malformed_record");
+  if (reviewRecordOk(value)) return value;
+  throw fail("malformed_record");
+}
+
+/**
+ * @param {unknown} value
+ * @returns {value is ReviewRecord}
+ */
+function reviewRecordOk(value) {
+  if (!isRecord(value)) throw fail("malformed_record");
   const encoded = JSON.stringify(value);
   if (utf8Bytes(encoded) > RECORD_BYTES) throw fail("record_too_large");
   if (!exactKeys(value, [
@@ -103,35 +193,52 @@ export function validateRecord(value) {
   const reads = value.context_scope.out_of_folder_reads_observed;
   if (!(reads === null || (typeof reads === "string" && reads.length <= 200) || nullableInt(reads))) throw fail("invalid_context");
   if (value.context_scope.artifact_only_enforced !== false) throw fail("invalid_context");
-  if (!Array.isArray(value.evidence_paths) || value.evidence_paths.length < 1 || value.evidence_paths.some((item) => typeof item !== "string" || !PATH.test(item))) {
+  if (!isUnknownArray(value.evidence_paths) || value.evidence_paths.length < 1 || value.evidence_paths.some((item) => typeof item !== "string" || !PATH.test(item))) {
     throw fail("invalid_evidence");
   }
   if (typeof value.notes !== "string" || value.notes.length > 2000) throw fail("invalid_notes");
-  return value;
+  return true;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function stable(value) {
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  if (value && typeof value === "object") {
+  if (isUnknownArray(value)) return `[${value.map((item) => stable(item)).join(",")}]`;
+  if (isRecord(value)) {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stable(value[key])}`).join(",")}}`;
   }
   return JSON.stringify(value);
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 export function canonicalRecord(value) {
   return stable(value);
 }
 
+/**
+ * @param {unknown} value
+ * @returns {Promise<string>}
+ */
 export async function recordHash(value) {
   return sha256Hex(new TextEncoder().encode(canonicalRecord(value)));
 }
 
+/**
+ * @param {string | Uint8Array} bytes
+ * @returns {Promise<{ records: ReviewRecord[], incomplete: boolean, ledgerSha256: string, byteLength: number }>}
+ */
 export async function parseNdjson(bytes) {
   const encoded = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
   if (encoded.byteLength > LEDGER_BYTES) throw fail("ledger_too_large");
   let text;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(encoded);
+    // workers-types requires ignoreBOM beside fatal. false is the runtime default.
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(encoded);
   } catch {
     throw fail("malformed_record");
   }
@@ -149,6 +256,7 @@ export async function parseNdjson(bytes) {
       }
     }
   }
+  /** @type {ReviewRecord[]} */
   const records = [];
   for (const line of lines) {
     if (line.trim() === "") continue;
@@ -163,12 +271,21 @@ export async function parseNdjson(bytes) {
   return { records, incomplete, ledgerSha256, byteLength: encoded.byteLength };
 }
 
+/**
+ * @param {string} kind
+ * @returns {string}
+ */
 export function activityLabel(kind) {
   if (kind === "static") return "Static review";
   if (kind === "runtime") return "Runtime review";
   return "Review";
 }
 
+/**
+ * @template {ReviewRecord} T
+ * @param {T[]} records
+ * @returns {T[]}
+ */
 export function sortRecords(records) {
   return [...records].sort((a, b) => {
     const finished = String(a.finished_at ?? "").localeCompare(String(b.finished_at ?? ""));
@@ -179,11 +296,39 @@ export function sortRecords(records) {
   });
 }
 
+/**
+ * @param {Date} [date]
+ * @returns {string}
+ */
 export function brtNow(date = new Date()) {
   const shifted = new Date(date.getTime() - 3 * 60 * 60 * 1000);
   return `${shifted.toISOString().slice(0, 19)}-03:00`;
 }
 
+/**
+ * @param {ReviewRecord} record
+ * @returns {{
+ *   id: string,
+ *   session_id: string | null,
+ *   capture: string,
+ *   reported_by: { agent: string, tool: { name: string } },
+ *   started_at: string | null,
+ *   finished_at: string | null,
+ *   when_brt: { start: string | null, finish: string | null },
+ *   analysis_kind: string,
+ *   activity_label: string,
+ *   artifact_identity: { label: string | null },
+ *   what_reviewed: string | null,
+ *   outcome: ReviewRecord["outcome"],
+ *   token_usage: { value: number | null, label: string },
+ *   observed_writes_detected: boolean,
+ *   context_scope: ReviewRecord["context_scope"],
+ *   evidence_provenance_pointers: string[],
+ *   untrusted_notes: string,
+ *   trusted_runtime_capture: false,
+ *   synthetic: boolean
+ * }}
+ */
 export function viewRecord(record) {
   return {
     id: record.record_id,

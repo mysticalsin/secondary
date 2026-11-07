@@ -6,10 +6,52 @@
  */
 
 export const MAX_TOKENS = 1_000_000_000;
+
+/**
+ * @typedef {{
+ *   eventId: string,
+ *   principalId: string,
+ *   payloadHash?: string,
+ *   providerRequestId?: string | null,
+ *   clientId?: string | null,
+ *   streamSeq?: number | null,
+ *   serverAt?: string,
+ *   updatedAt?: string,
+ *   inputTokens?: number | null,
+ *   outputTokens?: number | null,
+ *   cacheReadTokens?: number | null,
+ *   cacheWriteTokens?: number | null,
+ *   totalTokens?: number | null,
+ *   trust?: string,
+ *   evidence?: string,
+ *   operation?: string,
+ *   outcome?: string,
+ *   requestId?: string,
+ *   brainId?: string,
+ *   describesRequestId?: string | null,
+ *   brain?: string | null,
+ *   provider?: string | null,
+ *   model?: string | null,
+ *   retryOf?: string | null,
+ *   reportedAt?: string | null
+ * }} UsageEvent
+ * @typedef {"inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens" | "totalTokens"} TokenKey
+ * @typedef {{ ok: true, value: string | null } | { ok: false, error: string, field: string }} ParsedField
+ * @typedef {{ ok: true, value: number | null } | { ok: false, error: string, field: string }} ParsedToken
+ */
+
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,80}$/;
 const LABEL = /^[A-Za-z0-9][A-Za-z0-9._: /-]{0,63}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const OUTCOMES = new Set(["ok", "failed", "cancelled", "partial"]);
+/** @type {readonly TokenKey[]} */
 const TOKEN_KEYS = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens", "totalTokens"];
 const REPORT_KEYS = new Set([
   "eventId",
@@ -25,10 +67,19 @@ const REPORT_KEYS = new Set([
   ...TOKEN_KEYS,
 ]);
 
+/**
+ * @param {string} principalId
+ * @returns {string}
+ */
 export function personalBrain(principalId) {
   return `personal:${principalId}`;
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} key
+ * @returns {ParsedToken}
+ */
 function token(value, key) {
   if (value === undefined || value === null) return { ok: true, value: null };
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > MAX_TOKENS) {
@@ -37,25 +88,56 @@ function token(value, key) {
   return { ok: true, value };
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} key
+ * @returns {ParsedField}
+ */
 function optionalId(value, key) {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   if (typeof value !== "string" || !ID.test(value)) return { ok: false, error: "invalid_id", field: key };
   return { ok: true, value };
 }
 
+/**
+ * @param {unknown} value
+ * @param {string} key
+ * @returns {ParsedField}
+ */
 function optionalLabel(value, key) {
   if (value === undefined || value === null || value === "") return { ok: true, value: null };
   if (typeof value !== "string" || !LABEL.test(value)) return { ok: false, error: "invalid_label", field: key };
   return { ok: true, value };
 }
 
+/**
+ * @param {unknown} input
+ * @returns {{ ok: false, error: string, field?: string } | { ok: true, report: {
+ *   eventId: string,
+ *   provider: string | null,
+ *   model: string | null,
+ *   providerRequestId: string | null,
+ *   streamSeq: number | null,
+ *   retryOf: string | null,
+ *   describesRequestId: string | null,
+ *   outcome: string,
+ *   reportedAt: string | null,
+ *   brain: string | null,
+ *   inputTokens: number | null,
+ *   outputTokens: number | null,
+ *   cacheReadTokens: number | null,
+ *   cacheWriteTokens: number | null,
+ *   totalTokens: number | null
+ * } }}
+ */
 export function validateClientReport(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "invalid_report" };
+  if (!isRecord(input)) return { ok: false, error: "invalid_report" };
   const extra = Object.keys(input).filter((key) => !REPORT_KEYS.has(key));
   if (extra.length) return { ok: false, error: "unknown_field", field: extra[0] };
   const eventId = optionalId(input.eventId, "eventId");
-  if (!eventId.ok || !eventId.value) return { ok: false, error: eventId.error ?? "invalid_id", field: "eventId" };
-  if (!OUTCOMES.has(input.outcome)) return { ok: false, error: "invalid_outcome" };
+  if (!eventId.ok) return { ok: false, error: eventId.error, field: "eventId" };
+  if (!eventId.value) return { ok: false, error: "invalid_id", field: "eventId" };
+  if (typeof input.outcome !== "string" || !OUTCOMES.has(input.outcome)) return { ok: false, error: "invalid_outcome" };
   const provider = optionalLabel(input.provider, "provider");
   if (!provider.ok) return provider;
   const model = optionalLabel(input.model, "model");
@@ -123,11 +205,19 @@ export function validateClientReport(input) {
       outcome: input.outcome,
       reportedAt,
       brain,
-      ...tokens,
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      totalTokens,
     },
   };
 }
 
+/**
+ * @param {unknown} value
+ * @returns {Promise<string>}
+ */
 export function canonicalHash(value) {
   const text = JSON.stringify(value);
   return crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)).then((digest) =>
@@ -135,6 +225,24 @@ export function canonicalHash(value) {
   );
 }
 
+/**
+ * @param {{
+ *   brain: string | null,
+ *   cacheReadTokens: number | null,
+ *   cacheWriteTokens: number | null,
+ *   describesRequestId: string | null,
+ *   eventId: string,
+ *   inputTokens: number | null,
+ *   model: string | null,
+ *   outcome: string,
+ *   outputTokens: number | null,
+ *   provider: string | null,
+ *   providerRequestId: string | null,
+ *   retryOf: string | null,
+ *   streamSeq: number | null,
+ *   totalTokens: number | null
+ * }} report
+ */
 export function reportPayload(report) {
   return {
     brain: report.brain,
@@ -155,6 +263,11 @@ export function reportPayload(report) {
   };
 }
 
+/**
+ * @param {UsageEvent} previous
+ * @param {UsageEvent} next
+ * @returns {boolean}
+ */
 function monotonic(previous, next) {
   for (const key of TOKEN_KEYS) {
     const before = previous[key];
@@ -162,11 +275,17 @@ function monotonic(previous, next) {
     if (before === null && after === null) continue;
     if (before === null && after !== null) continue;
     if (before !== null && after === null) return false;
-    if (after < before) return false;
+    if (typeof before !== "number" || typeof after !== "number" || after < before) return false;
   }
   return true;
 }
 
+/**
+ * @param {UsageEvent | null} existingById
+ * @param {UsageEvent | null} streamRow
+ * @param {UsageEvent} incoming
+ * @returns {{ action: "idempotent", event: UsageEvent } | { action: "conflict" } | { action: "replace", event: UsageEvent } | { action: "insert" }}
+ */
 export function decideAppend(existingById, streamRow, incoming) {
   if (existingById) {
     if (existingById.payloadHash === incoming.payloadHash) return { action: "idempotent", event: existingById };
@@ -175,7 +294,7 @@ export function decideAppend(existingById, streamRow, incoming) {
   if (incoming.providerRequestId && streamRow) {
     const previous = streamRow.streamSeq;
     const next = incoming.streamSeq;
-    if (previous === null || next === null) return { action: "conflict" };
+    if (typeof previous !== "number" || typeof next !== "number") return { action: "conflict" };
     if (next < previous) return { action: "conflict" };
     if (next === previous) {
       return streamRow.payloadHash === incoming.payloadHash
@@ -197,6 +316,10 @@ export function decideAppend(existingById, streamRow, incoming) {
   return { action: "insert" };
 }
 
+/**
+ * @param {UsageEvent} event
+ * @returns {number}
+ */
 function rank(event) {
   if (event.trust === "provider_reported") return 3;
   if (event.trust === "server_measured") return 2;
@@ -204,9 +327,14 @@ function rank(event) {
   return 0;
 }
 
+/**
+ * @param {UsageEvent[]} events
+ */
 export function summarize(events) {
   const operations = new Set(events.filter((event) => event.operation === "import").map((event) => event.requestId));
+  /** @type {UsageEvent[]} */
   const counted = [];
+  /** @type {Map<string, UsageEvent[]>} */
   const groups = new Map();
   for (const event of events) {
     if (event.describesRequestId) continue;
@@ -216,9 +344,13 @@ export function summarize(events) {
     groups.set(key, list);
   }
   for (const list of groups.values()) {
-    list.sort((a, b) => rank(b) - rank(a) || String(b.streamSeq ?? -1) - String(a.streamSeq ?? -1));
+    list.sort((a, b) => rank(b) - rank(a) || (typeof b.streamSeq === "number" ? b.streamSeq : -1) - (typeof a.streamSeq === "number" ? a.streamSeq : -1));
     counted.push(list[0]);
   }
+  /**
+   * @param {TokenKey} key
+   * @returns {{ value: number | null, complete: boolean, unknownEvents: number, knownEvents: number }}
+   */
   const dimension = (key) => {
     let unknownEvents = 0;
     let knownEvents = 0;
@@ -239,6 +371,10 @@ export function summarize(events) {
     if (knownEvents === 0) return { value: null, complete: false, unknownEvents, knownEvents };
     return { value, complete: unknownEvents === 0, unknownEvents, knownEvents };
   };
+  /**
+   * @param {string} trust
+   * @returns {number}
+   */
   const trustCount = (trust) => events.filter((event) => event.trust === trust).length;
   return {
     operations: operations.size,
@@ -260,6 +396,22 @@ export function summarize(events) {
   };
 }
 
+/**
+ * @param {unknown} name
+ * @returns {{
+ *   trust: "synthetic_fixture",
+ *   evidence: "synthetic_fixture",
+ *   providerVerified: false,
+ *   provider: "synthetic",
+ *   model: "synthetic-echo",
+ *   outcome: "ok" | "cancelled",
+ *   inputTokens: number | null,
+ *   outputTokens: number | null,
+ *   cacheReadTokens: number | null,
+ *   cacheWriteTokens: number | null,
+ *   totalTokens: number | null
+ * } | null}
+ */
 export function syntheticFixture(name) {
   if (name === "measured-zero") {
     return {

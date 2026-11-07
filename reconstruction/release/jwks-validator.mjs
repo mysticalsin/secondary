@@ -11,6 +11,12 @@ const LOOPBACK_JWKS = /^http:\/\/127\.0\.0\.1(?::\d+)?\/jwks$/;
 const MAX_AGE_CAP_SECONDS = 14400;
 const PRIVATE_FIELDS = ["d", "p", "q", "dp", "dq", "qi"];
 
+/**
+ * @typedef {{ AUTH_ISSUER?: string, AUTH_JWKS_URL?: string, AUTH_ALLOW_LOOPBACK_JWKS?: string }} JwksEnv
+ * @typedef {import("jose").JSONWebKeySet} KeySet
+ */
+
+/** @type {{ url: string, fetchedAt: number, maxAgeSeconds: number, keys: KeySet | null }} */
 const cache = {
   url: "",
   fetchedAt: 0,
@@ -25,16 +31,28 @@ export function resetJwksCache() {
   cache.keys = null;
 }
 
+/**
+ * @param {string | null | undefined} header
+ * @returns {number}
+ */
 export function boundedMaxAge(header) {
   const match = /(?:^|,\s*)max-age=(\d+)/i.exec(String(header ?? ""));
   if (!match) return 60;
   return Math.min(MAX_AGE_CAP_SECONDS, Number(match[1]));
 }
 
+/**
+ * @param {string} reason
+ * @returns {Error & { reason: string }}
+ */
 function fail(reason) {
   return Object.assign(new Error(reason), { reason });
 }
 
+/**
+ * @param {JwksEnv} env
+ * @returns {{ issuer: string, url: string }}
+ */
 export function resolveJwksTarget(env) {
   const issuer = String(env.AUTH_ISSUER ?? "").trim();
   const jwks = String(env.AUTH_JWKS_URL ?? "").trim();
@@ -53,21 +71,40 @@ export function resolveJwksTarget(env) {
   return { issuer, url: href };
 }
 
-function publicKeys(body) {
-  if (!body || !Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > 4) throw fail("jwks_unavailable");
-  const kids = new Set();
-  for (const key of body.keys) {
-    if (!key || typeof key !== "object") throw fail("jwks_unavailable");
-    if (key.kty !== "RSA" || key.alg !== "RS256" || key.use !== "sig" || typeof key.kid !== "string" || typeof key.n !== "string") {
-      throw fail("jwks_unavailable");
-    }
-    if (kids.has(key.kid)) throw fail("jwks_unavailable");
-    kids.add(key.kid);
-    if (PRIVATE_FIELDS.some((name) => Object.hasOwn(key, name))) throw fail("jwks_unavailable");
-  }
-  return body;
+/**
+ * @param {unknown} value
+ * @returns {value is Record<string, unknown>}
+ */
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * @param {unknown} body
+ * @returns {body is KeySet}
+ */
+function publicKeys(body) {
+  if (!isRecord(body) || !Array.isArray(body.keys) || body.keys.length === 0 || body.keys.length > 4) return false;
+  const kids = new Set();
+  for (const key of body.keys) {
+    if (!isRecord(key)) return false;
+    if (key.kty !== "RSA" || key.alg !== "RS256" || key.use !== "sig" || typeof key.kid !== "string" || typeof key.n !== "string") {
+      return false;
+    }
+    if (kids.has(key.kid)) return false;
+    kids.add(key.kid);
+    if (PRIVATE_FIELDS.some((name) => Object.hasOwn(key, name))) return false;
+  }
+  return true;
+}
+
+/**
+ * @param {JwksEnv} env
+ * @param {typeof fetch} fetchImpl
+ * @param {number} now
+ * @param {boolean} force
+ * @returns {Promise<{ url: string, fetchedAt: number, maxAgeSeconds: number, keys: KeySet, target: { issuer: string, url: string }, refreshed: boolean }>}
+ */
 export async function fetchJwks(env, fetchImpl, now, force) {
   const target = resolveJwksTarget(env);
   if (!force && cache.url === target.url && cache.keys && now < cache.fetchedAt + cache.maxAgeSeconds * 1000) {
@@ -88,7 +125,8 @@ export async function fetchJwks(env, fetchImpl, now, force) {
   }
   if (response.status >= 300 && response.status < 400) throw fail("jwks_redirect");
   if (!response.ok) throw fail("jwks_unavailable");
-  const keys = publicKeys(await response.json());
+  const keys = await response.json();
+  if (!publicKeys(keys)) throw fail("jwks_unavailable");
   cache.url = target.url;
   cache.fetchedAt = now;
   cache.maxAgeSeconds = boundedMaxAge(response.headers.get("cache-control"));
@@ -96,6 +134,10 @@ export async function fetchJwks(env, fetchImpl, now, force) {
   return { url: cache.url, fetchedAt: cache.fetchedAt, maxAgeSeconds: cache.maxAgeSeconds, keys, target, refreshed: true };
 }
 
+/**
+ * @param {Request} request
+ * @returns {{ ok: true, token: string } | { ok: false, reason: string }}
+ */
 function presentedToken(request) {
   const header = request.headers.get("authorization") ?? "";
   const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
@@ -107,6 +149,14 @@ function presentedToken(request) {
   return { ok: true, token: values[0] };
 }
 
+/**
+ * @param {string} token
+ * @param {JwksEnv} env
+ * @param {string} audience
+ * @param {typeof fetch} [fetchImpl]
+ * @param {number} [now]
+ * @returns {Promise<{ ok: true, email: string, sub: string } | { ok: false, reason: string }>}
+ */
 export async function verifyRemoteJwt(token, env, audience, fetchImpl = fetch, now = Date.now()) {
   let header;
   try {
@@ -144,10 +194,19 @@ export async function verifyRemoteJwt(token, env, audience, fetchImpl = fetch, n
   }
 }
 
+/**
+ * @param {Request} request
+ * @returns {{ ok: true, token: string } | { ok: false, reason: string }}
+ */
 export function tokenFromRequest(request) {
   return presentedToken(request);
 }
 
+/**
+ * @param {string} email
+ * @param {string} [mapJson]
+ * @returns {string | null}
+ */
 export function admittedTenant(email, mapJson) {
   const domain = String(email ?? "").toLowerCase().split("@")[1] ?? "";
   if (!domain) return null;
@@ -157,7 +216,7 @@ export function admittedTenant(email, mapJson) {
   } catch {
     return null;
   }
-  const tenant = map && typeof map === "object" ? map[domain] : undefined;
+  const tenant = isRecord(map) ? map[domain] : undefined;
   if (typeof tenant !== "string" || !/^[a-z0-9_]{3,64}$/.test(tenant)) return null;
   return tenant;
 }
