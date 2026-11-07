@@ -32,7 +32,7 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Paste, `.txt`, and `.md` only, max 7000 characters; path, script, executable, oversize, and URL imports rejected before any personal-item write | `import policy accepts text and markdown and rejects the rest`; workerd `two new users keep separate durable imports across a restart` | PASS |
 | Same source, version, and hash is one item; a changed same version conflicts; a higher version appends and keeps the previous id | Workerd import test | PASS |
 | No cross-tenant text in the other user's list, including the same hash under another external id | Workerd import test | PASS |
-| Unsigned call is 401; a seed-owner id is not rewritten; a consultant plus-address stays `u_consultant_<hash>` | Workerd import test | PASS |
+| Unsigned call is 401. The seeded consultant imports into `u_consultant` only. A consultant plus-address stays `u_consultant_<hash>` | Workerd import test | PASS |
 | Request `principalId` and `tenantId` do not choose the destination | Workerd import test, Ada body names `u_consultant` and `tenant_beta` but the receipt is her own principal in `tenant_alpha` | PASS |
 | Synthetic documents only; no vault, mail, or SharePoint | This round | PASS as a constraint |
 
@@ -54,8 +54,13 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Egress to `https://example.invalid` | `dev.outboundService` deny worker | PASS |
 | Dust, Claude, or any hosted client handshake | Needs a protected public endpoint | NOTRUN |
 | CIMD fetch | Flag intentionally absent | NOTRUN |
-| OAuth write token `personal_note_create` stores synthetic text; a read token is `insufficient_scope` and the refused body is not echoed | `PKCE grant initializes, lists tools, and calls whoami for that principal only` | PASS |
-| Provenance import readback through an MCP `tools/call` | Recovered tools have no personal-item read. `GET /v1/personal/items` is not an internal MCP route. Search reads the org workspace, not this receipt. Not added by editing recovered tools. | NOTRUN |
+| OAuth write token `personal_note_create` stores an import receipt; a read token is `insufficient_scope` and the refused body is not echoed | `PKCE grant initializes, lists tools, and calls whoami for that principal only`; `two OAuth users roundtrip import receipts through MCP and the same gate` | PASS |
+| `ada@tenant-a.test` and `bob@tenant-b.test` initialize, list, import, read, and search the same receipt, hash, and version | `two OAuth users roundtrip import receipts through MCP and the same gate` | PASS |
+| A read token sees `personal_import` in `tools/list` and still cannot import | That roundtrip test | PASS |
+| Cross-user read of a guessed or real id is `not_found`; search does not cross tenants or fall through to company search | That roundtrip test | PASS |
+| Forged principal, tenant, brain, usage, and request id do not change the receipt | That roundtrip test | PASS |
+| The same id, hash, version, and request id are returned by a signed read of `/harness/import` | That roundtrip test | PASS |
+| Receipts and text survive a new workerd process | That roundtrip test's second boot | PASS |
 | Hosted Dust or Claude handshake | Needs a protected public endpoint | NOTRUN |
 
 ## 4. Token ledger

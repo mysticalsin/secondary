@@ -6,6 +6,24 @@
 import { readFileSync } from "node:fs";
 import { Miniflare } from "miniflare";
 import { fileURLToPath } from "node:url";
+import { signInternalRequest } from "../../recovered-source/worker/src/internal-auth.ts";
+
+export const FIXTURE_HMAC = "synthetic-fixture-hmac-key-32chars";
+export const FIXTURE_EMAIL = "consultant@example.invalid";
+
+export function fixtureEmail(persona) {
+  if (!persona) return FIXTURE_EMAIL;
+  const domain = FIXTURE_EMAIL.split("@")[1];
+  return `consultant+${persona}@${domain}`;
+}
+
+const EDGE = `export default { async fetch(request, env) {
+  const headers = new Headers(request.headers);
+  headers.delete("cf-connecting-ip");
+  const url = new URL(request.url);
+  url.hostname = "api.internal";
+  return env.API.fetch(new Request(url, { method: request.method, headers, body: request.body }));
+} };`;
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const DATE = "2026-11-07";
@@ -37,7 +55,8 @@ async function boot() {
     env: {
       ENVIRONMENT: text("dev"),
       DO_JURISDICTION: text("off"),
-      DEV_AUTH_BYPASS_EMAIL: text("consultant@example.invalid"),
+      DEV_AUTH_BYPASS_EMAIL: text(FIXTURE_EMAIL),
+      INTERNAL_HMAC_KEY: text(FIXTURE_HMAC),
       DEFAULT_TENANT_ID: text("tenant_reconstruction"),
       TENANT_DOMAINS: text('{"example.invalid":"tenant_reconstruction"}'),
       RATE_LIMIT_PER_MIN: text("60"),
@@ -68,11 +87,21 @@ async function boot() {
   };
   const outbound = { type: "worker", worker: "deny-egress" };
   const fetcher = { type: "fetcher", handler: () => new Response("egress_denied", { status: 403 }) };
+  const edge = {
+    name: "fixture-edge",
+    compatibilityDate: DATE,
+    workersDev: false,
+    previewUrls: false,
+    manifest: { mainModule: "index.js", modules: { "index.js": { type: "esm", contents: EDGE } } },
+    env: { API: { type: "worker", worker: "api" } },
+    triggers: [{ type: "fetch", pattern: "fixture-edge.local/*" }],
+  };
   const mf = new Miniflare({
     workers: [
       { config: deny, dev: { outboundService: fetcher } },
       { config: api, dev: { outboundService: outbound } },
       { config: probe, dev: { outboundService: outbound } },
+      { config: edge, dev: { outboundService: outbound } },
     ],
   });
   await mf.ready;
@@ -93,6 +122,39 @@ export async function callApi(path, { method = "GET", body, persona } = {}) {
     text: await res.text(),
     type: res.headers.get("content-type") ?? "application/json; charset=utf-8",
   };
+}
+
+export async function callImport(path, { method = "GET", body, email, persona } = {}) {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  const headers = await signInternalRequest({
+    secret: FIXTURE_HMAC,
+    method,
+    url: `https://api.internal${path}`,
+    ...(payload === undefined ? {} : { body: payload }),
+    principal: {
+      v: 1,
+      iss: "secondary-mcp",
+      aud: "secondary-api",
+      sub: `fixture-${email}`,
+      email,
+      ...(persona ? { persona } : {}),
+      client_id: "reconstruction-ui",
+      scope: method === "GET" ? ["secondary.read"] : ["secondary.read", "secondary.personal.write"],
+      tool: "personal_import",
+      grant_id: `g_fixture_${persona || "consultant"}`,
+      host: "other",
+    },
+  });
+  const res = await (await runtime()).dispatchFetch(`http://fixture-edge.local${path}`, {
+    method,
+    headers: {
+      ...headers,
+      accept: "application/json",
+      ...(payload === undefined ? {} : { "content-type": "application/json" }),
+    },
+    ...(payload === undefined ? {} : { body: payload }),
+  });
+  return { status: res.status, text: await res.text() };
 }
 
 export async function probeEgress() {

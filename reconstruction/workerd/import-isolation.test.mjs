@@ -219,12 +219,15 @@ test("two new users keep separate durable imports across a restart", async () =>
       "consultant@example.invalid",
       "POST",
       "/harness/import",
-      note("seed", 1, "Do not rewrite the seed owner"),
+      { ...note("seed", 1, "Seed owner keeps their own note"), requestId: "client-forged", usage: 0 },
       write,
       "consultant",
     );
-    assert.equal(seed.status, 403);
-    assert.equal(seed.json.error, "seed_owner_not_rewritten");
+    assert.equal(seed.status, 201, seed.text);
+    assert.equal(seed.json.principalId, "u_consultant");
+    assert.equal(seed.json.tenantId, "tenant_alpha");
+    assert.equal(seed.json.usage, "unknown");
+    assert.notEqual(seed.json.requestId, "client-forged");
     const empty = await call(mf, ADA, "GET", "/harness/import", undefined, ["secondary.read"]);
     assert.equal(empty.status, 200, empty.text);
     assert.equal(empty.json.items.length, 0);
@@ -289,7 +292,7 @@ test("two new users keep separate durable imports across a restart", async () =>
     assert.equal(adaList.json.items.some((item) => item.text === "Ada corrected note"), true);
     assert.equal(adaList.json.items.some((item) => item.text.includes("<script")), false);
     assert.equal(adaList.json.items.some((item) => item.text === "Unsigned note"), false);
-    assert.equal(adaList.json.items.some((item) => item.text === "Do not rewrite the seed owner"), false);
+    assert.equal(adaList.json.items.some((item) => item.text === "Seed owner keeps their own note"), false);
     assert.equal(adaList.json.usage, "unknown");
     const sameHash = await call(
       mf,

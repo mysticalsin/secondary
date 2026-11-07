@@ -356,9 +356,14 @@ document.getElementById("route-filter").addEventListener("input", (event) => {
 }
 
 export function renderImport(model) {
+  const failed = /Nothing was stored|could not be read back|was not reported/.test(model.message ?? "");
   const items = model.items
-    .map((item) => `<li><strong>${esc(item.id)}</strong><p>${esc(item.text)}</p></li>`)
+    .map((item) => {
+      const hash = String(item.contentSha256 ?? "").slice(0, 12);
+      return `<li><strong>${esc(item.externalId)}</strong> <span class="muted">v${esc(item.version)} · ${esc(hash)}</span><p>${esc(item.text)}</p></li>`;
+    })
     .join("");
+  const preset = model.preset === "person_b" ? "person_b" : "person_a";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Import</title>
@@ -370,10 +375,15 @@ body { margin:0; background:var(--canvas); color:var(--ink); font-family:ui-sans
 h1 { margin: 8px 0; font-size: 36px; letter-spacing: -0.03em; }
 a { color: inherit; }
 .banner { display:inline-flex; margin: 8px 0 16px; padding: 6px 12px; border-radius: 999px; background:#fcf3ff; color:var(--accent); font-size:13px; font-weight:650; }
-form, .sheet { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:16px; }
+form, .sheet, details { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:16px; }
+details { margin: 12px 0 16px; }
+summary { cursor: pointer; font-weight: 650; }
 label { display:block; margin:10px 0; font-size:14px; }
-input, textarea, button { font:inherit; width:100%; border-radius:12px; border:1px solid var(--line); padding:10px; }
+input, textarea, select, button { font:inherit; width:100%; border-radius:12px; border:1px solid var(--line); padding:10px; }
 button { width:auto; background:var(--accent); color:white; cursor:pointer; }
+.switch { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+.switch button { background:#fff; color:var(--ink); }
+.switch button[aria-current="true"] { background:var(--accent); color:#fff; }
 .alert { color:var(--bad); font-weight:650; }
 .muted { color:var(--muted); }
 :focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
@@ -381,10 +391,17 @@ button { width:auto; background:var(--accent); color:white; cursor:pointer; }
 </style></head><body><main class="frame">
 <p><a href="/settings">Settings</a> / Import</p>
 <h1>Import into your brain</h1>
-<p class="banner">Local preview · synthetic data</p>
-<p class="muted">Accepted input is pasted text or a local .txt or .md file, at most 7000 characters and 8000 bytes. Other types, oversize files, path names, scripts, shebangs, and URL fetches are refused. The text is stored as data. External model usage stays unknown.</p>
-<p class="muted">This page writes only into the signed-in local session and then reads that same workspace back. It does not grant a tenant, and it does not map a new person onto a seeded owner. Two newly authenticated users in two tenants are covered by the reconstruction import gate, which refuses a seed-owner rewrite before any save.</p>
-<p class="${model.message.startsWith("Import rejected") || model.message.startsWith("Import failed") || model.message.startsWith("Import was not") ? "alert" : ""}" role="${model.message ? "status" : "none"}">${esc(model.message)}</p>
+<p class="banner">Local preview</p>
+<p class="muted">Paste text, or choose a .txt or .md file. Limit 7000 characters and 8000 bytes. Other types, path names, scripts, and URL fetches are refused. Model usage stays unknown.</p>
+<p>Signed in as <strong>${esc(model.who)}</strong> in <strong>${esc(model.tenant)}</strong>.</p>
+<details><summary>Session limits</summary>
+<p>The server chooses the person and tenant from this fixture session. The form cannot grant either, and it cannot set model usage. The default session is the seeded consultant. The other button is the CEO plus-address in this same local tenant, not a second company. Two new users in two tenants are covered by the local MCP OAuth test.</p>
+</details>
+<form method="post" action="/reconstruction/import/session" class="switch">
+<button name="preset" value="person_a" type="submit" aria-current="${preset === "person_a" ? "true" : "false"}">Consultant session</button>
+<button name="preset" value="person_b" type="submit" aria-current="${preset === "person_b" ? "true" : "false"}">Plus-address session</button>
+</form>
+<p id="import-status" class="${failed ? "alert" : ""}" role="status">${esc(model.message)}</p>
 <form method="post" action="/reconstruction/import">
 <label>External id <input name="externalId" required maxlength="64" value="note-1"></label>
 <label>Version <input name="version" type="number" min="1" max="1000" value="1" required></label>
@@ -400,9 +417,16 @@ button { width:auto; background:var(--accent); color:white; cursor:pointer; }
 document.getElementById("local-file").addEventListener("change", async (event) => {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
-  document.querySelector("[name=filename]").value = file.name;
+  const name = file.name || "";
+  const allowed = /\\.(txt|md)$/i.test(name);
+  document.querySelector("[name=filename]").value = name;
   document.querySelector("[name=source]").value = "file";
-  document.querySelector("[name=text]").value = await file.text();
+  document.querySelector("[name=text]").value = allowed ? await file.text() : "";
+  const status = document.getElementById("import-status");
+  if (!allowed && status) {
+    status.textContent = "Only .txt and .md files are accepted. Nothing was stored.";
+    status.className = "alert";
+  }
 });
 </script>
 <section class="sheet"><h2>Imported text</h2><p class="muted">Existing personal notes left in place: ${Number(model.kept) || 0}. They were not migrated or deleted.</p><ul>${items || "<li>No import is stored for this session.</li>"}</ul></section>

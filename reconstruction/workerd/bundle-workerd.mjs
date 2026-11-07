@@ -3,7 +3,7 @@
  * Nothing is uploaded. compatibility_date is the reconstruction date.
  */
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ function wranglerDryRun(name, config) {
   const configPath = resolve(dir, `${name}.wrangler.jsonc`);
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   const outdir = resolve(dist, name);
+  rmSync(outdir, { recursive: true, force: true });
   mkdirSync(outdir, { recursive: true });
   const run = spawnSync(
     "npx",
@@ -53,7 +54,37 @@ function esbuild(args) {
   if (run.status !== 0) throw new Error(run.stderr || run.stdout || "esbuild failed");
 }
 
+function withBundleLock(run) {
+  mkdirSync(dist, { recursive: true });
+  const lock = resolve(dist, "bundle.lock");
+  const started = Date.now();
+  for (;;) {
+    try {
+      const fd = openSync(lock, "wx");
+      try {
+        return run();
+      } finally {
+        closeSync(fd);
+        unlinkSync(lock);
+      }
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      try {
+        if (Date.now() - statSync(lock).mtimeMs > 180000) unlinkSync(lock);
+      } catch {
+        // Another process released the lock.
+      }
+      if (Date.now() - started > 180000) throw new Error("workerd bundle lock timed out");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+    }
+  }
+}
+
 export function bundleWorkerd() {
+  return withBundleLock(() => buildWorkerd());
+}
+
+function buildWorkerd() {
   mkdirSync(dist, { recursive: true });
   esbuild([
     "reconstruction/workerd/api-harness.ts",
@@ -87,7 +118,7 @@ export function bundleWorkerd() {
   const mcp = wranglerDryRun("mcp-workerd", {
     ...base,
     name: "secondary-mcp-reconstruction-local-only",
-    main: resolve(root, "reconstruction/mcp/worker/src/index.ts"),
+    main: resolve(root, "reconstruction/mcp/worker/src/import-entry.ts"),
   });
   const view = wranglerDryRun("view-plan-workerd", {
     ...base,

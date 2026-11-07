@@ -2,17 +2,15 @@
  * NEW RECONSTRUCTION test harness. Not a recovered route and not an original Worker.
  * Re-exports the recovered API handler and calls recovered Durable Object methods.
  * /harness/import is the reconstruction import gate. It reuses recovered signature
- * checks, tenant derivation, and personal item creation. Query fields do not grant access.
+ * checks and personal item creation. The principal comes from GET /v1/me for the
+ * signed internal caller. Query and body fields do not grant access.
  */
 import app, { TenantPolicy, Workspace } from "../worker-root/worker/src/index.ts";
-import { tenantFor } from "../worker-root/worker/src/auth.ts";
-import { principalIdFor } from "../worker-root/worker/src/auth/identity-store.ts";
 import { verifyInternalRequest, signInternalRequest } from "../worker-root/worker/src/internal-auth.ts";
-import { personaId } from "../worker-root/worker/src/org.ts";
 import { internalKeys } from "../worker-root/worker/src/replay.ts";
 import { personalScope } from "../worker-root/worker/src/scope.ts";
 import { workspaceStub } from "../worker-root/worker/src/stubs.ts";
-import { matchReceipt, sha256Hex, storedBody, validateImport, visibleText } from "../import/policy.mjs";
+import { matchReceipt, readReceipt, sha256Hex, storedBody, validateImport, visibleText } from "../import/policy.mjs";
 
 export { TenantPolicy, Workspace };
 
@@ -27,12 +25,29 @@ interface HarnessEnv {
 
 const MAX_STORED = 8000;
 
-async function identityOf(env: HarnessEnv, email: string, persona: string | undefined) {
-  const tenantId = tenantFor(email, env as never);
-  const principalId = persona
-    ? await personaId(persona as never, email)
-    : await principalIdFor(email);
-  return { tenantId, principalId };
+async function sessionIdentity(
+  env: HarnessEnv,
+  ctx: ExecutionContext,
+  principal: Parameters<typeof signInternalRequest>[0]["principal"],
+): Promise<{ principalId: string; tenantId: string } | Response> {
+  const url = "https://api.internal/v1/me";
+  const headers = await signInternalRequest({
+    secret: env.INTERNAL_HMAC_KEY ?? "",
+    method: "GET",
+    url,
+    principal,
+  });
+  const res = await app.fetch(
+    new Request(url, { method: "GET", headers: { ...headers, accept: "application/json" } }),
+    env,
+    ctx,
+  );
+  if (!res.ok) return Response.json({ error: "identity_unavailable", reason: "identity_unavailable", outcome: "failed" }, { status: 502 });
+  const me = (await res.json()) as { principal?: { id?: unknown }; tenantId?: unknown };
+  if (typeof me.principal?.id !== "string" || typeof me.tenantId !== "string") {
+    return Response.json({ error: "identity_unavailable", reason: "identity_unavailable", outcome: "failed" }, { status: 502 });
+  }
+  return { principalId: me.principal.id, tenantId: me.tenantId };
 }
 
 async function ownItems(env: HarnessEnv, tenantId: string, principalId: string) {
@@ -53,22 +68,46 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
   const write = principal.scope.includes("secondary.personal.write");
   const read = principal.scope.includes("secondary.read");
   if (request.method === "GET") {
-    if (!read) return Response.json({ error: "insufficient_scope" }, { status: 403 });
-    const who = await identityOf(env, principal.email, principal.persona);
-    const items = await ownItems(env, who.tenantId, who.principalId);
+    if (!read) return Response.json({ error: "insufficient_scope", reason: "insufficient_scope" }, { status: 403 });
+    const who = await sessionIdentity(env, ctx, principal);
+    if (who instanceof Response) return who;
+    const rows = await ownItems(env, who.tenantId, who.principalId);
+    const items = rows.flatMap((item) => {
+      const view = present(item);
+      return view ? [view] : [];
+    });
+    const url = new URL(request.url);
+    const id = url.searchParams.get("id");
+    if (id !== null) {
+      const found = items.find((item) => item.id === id);
+      if (!found) return Response.json({ error: "not_found", reason: "not_found", outcome: "denied" }, { status: 404 });
+      return Response.json({ principalId: who.principalId, tenantId: who.tenantId, usage: "unknown", item: found });
+    }
+    const q = url.searchParams.get("q");
+    if (q !== null) {
+      const tokens = searchTokens(q);
+      if (!tokens) return Response.json({ error: "invalid_query", reason: "invalid_query", outcome: "rejected" }, { status: 400 });
+      const hits = items.filter((item) => {
+        const hay = `${item.text}\n${item.externalId ?? ""}`.toLowerCase();
+        return tokens.every((token) => hay.includes(token));
+      });
+      return Response.json({
+        principalId: who.principalId,
+        tenantId: who.tenantId,
+        usage: "unknown",
+        items: hits.slice(0, 20),
+      });
+    }
     return Response.json({
       principalId: who.principalId,
       tenantId: who.tenantId,
       usage: "unknown",
-      items: items.map((item) => ({
-        id: item.id,
-        text: visibleText(item.body),
-        authorId: item.authorId,
-      })),
+      kept: rows.length - items.length,
+      items,
     });
   }
   if (request.method !== "POST") return Response.json({ error: "method" }, { status: 405 });
-  if (!write) return Response.json({ error: "insufficient_scope" }, { status: 403 });
+  if (!write || !read) return Response.json({ error: "insufficient_scope", reason: "insufficient_scope" }, { status: 403 });
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(await request.clone().text()) as Record<string, unknown>;
@@ -83,25 +122,24 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     text: payload.text,
     url: payload.url,
   });
-  if (!checked.ok) return Response.json({ error: checked.error, outcome: "rejected" }, { status: 400 });
-  const who = await identityOf(env, principal.email, principal.persona);
-  if (who.principalId === "u_consultant" || who.principalId === "u_ceo") {
-    return Response.json({ error: "seed_owner_not_rewritten" }, { status: 403 });
-  }
+  if (!checked.ok) return Response.json({ error: checked.error, reason: checked.error, outcome: "rejected" }, { status: 400 });
+  const who = await sessionIdentity(env, ctx, principal);
+  if (who instanceof Response) return who;
   const contentSha256 = await sha256Hex(checked.text);
   const items = await ownItems(env, who.tenantId, who.principalId);
   const found = matchReceipt(items, { ...checked, contentSha256 });
-  if (found.conflict) return Response.json({ error: "version_conflict", outcome: "rejected" }, { status: 409 });
+  if (found.conflict) return Response.json({ error: "version_conflict", reason: "version_conflict", outcome: "rejected" }, { status: 409 });
   if (found.same) {
+    const view = present(found.same);
     return Response.json({
+      ...view,
       outcome: "duplicate",
-      id: found.same.id,
       principalId: who.principalId,
       tenantId: who.tenantId,
-      contentSha256,
       usage: "unknown",
     });
   }
+  const requestId = crypto.randomUUID();
   const receipt = {
     import: 1,
     source: checked.source,
@@ -118,10 +156,11 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     at: new Date().toISOString(),
     outcome: "stored",
     previous: found.previous?.id ?? null,
+    requestId,
     usage: "unknown",
   };
   const body = storedBody(receipt, checked.text);
-  if (body.length > MAX_STORED) return Response.json({ error: "invalid_text", outcome: "rejected" }, { status: 400 });
+  if (body.length > MAX_STORED) return Response.json({ error: "invalid_text", reason: "invalid_text", outcome: "rejected" }, { status: 400 });
   const createBody = JSON.stringify({ kind: "note", title: checked.externalId, body });
   const url = "https://api.internal/v1/personal/items";
   const headers = await signInternalRequest({
@@ -129,7 +168,7 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     method: "POST",
     url,
     body: createBody,
-    principal: { ...principal, tool: "personal_note_create" },
+    principal: { ...principal, tool: principal.tool || "personal_import" },
   });
   const saved = await app.fetch(
     new Request(url, {
@@ -141,14 +180,46 @@ async function importGate(request: Request, env: HarnessEnv, ctx: ExecutionConte
     ctx,
   );
   if (saved.status !== 201) {
-    return Response.json({ error: "not_stored", status: saved.status, outcome: "failed" }, { status: 502 });
+    return Response.json({ error: "not_stored", reason: "not_stored", status: saved.status, outcome: "failed" }, { status: 502 });
   }
   const made = (await saved.json()) as { id?: string };
   const after = await ownItems(env, who.tenantId, who.principalId);
   if (!after.some((item) => item.id === made.id)) {
-    return Response.json({ error: "not_confirmed", outcome: "failed" }, { status: 503 });
+    return Response.json({ error: "not_confirmed", reason: "not_confirmed", outcome: "failed" }, { status: 503 });
   }
-  return Response.json({ ...receipt, id: made.id }, { status: 201 });
+  return Response.json({ ...receipt, id: made.id, text: checked.text }, { status: 201 });
+}
+
+function present(item: { id: string; body: string | null; authorId: string | null }) {
+  const receipt = readReceipt(item.body);
+  if (!receipt) return null;
+  return {
+    id: item.id,
+    text: visibleText(item.body),
+    source: receipt.source ?? null,
+    externalId: receipt.externalId ?? null,
+    version: receipt.version ?? null,
+    contentSha256: receipt.contentSha256 ?? null,
+    author: receipt.author ?? item.authorId,
+    principal: receipt.principal ?? null,
+    tenant: receipt.tenant ?? null,
+    destination: receipt.destination ?? null,
+    at: receipt.at ?? null,
+    outcome: receipt.outcome ?? null,
+    previous: receipt.previous ?? null,
+    requestId: receipt.requestId ?? null,
+    usage: "unknown",
+  };
+}
+
+function searchTokens(q: string): string[] | null {
+  if (q.length > 200) return null;
+  const tokens = q
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 2)
+    .slice(0, 12);
+  return tokens.length === 0 ? null : tokens;
 }
 
 export default {
