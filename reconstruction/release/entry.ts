@@ -87,6 +87,31 @@ function shell() {
   return shellHtml.replace("<body>", `<body>${nav}`);
 }
 
+function notice(result: string | null): string {
+  if (result === "stored") return "Stored. The note below is the server read-back. Open Personal brain to see it in your own plan.";
+  if (result === "duplicate") return "That version and text were already stored. The existing note was kept.";
+  if (result === "conflict") return "That version already has different text. Nothing new was stored.";
+  return "";
+}
+
+async function importPage(env: Env, email: string, message: string) {
+  const listed = await signedFetch(env, email, "GET", "/harness/import?limit=20");
+  const body = listed.ok ? await listed.json() : { items: [] as unknown[] };
+  const rows = Array.isArray(body.items) ? body.items : [];
+  return renderImport({
+    who: email,
+    tenant: String(body.tenantId ?? "unknown"),
+    message,
+    items: rows,
+    kept: Number(body.total ?? rows.length),
+    total: Number(body.total ?? rows.length),
+    shown: rows.length,
+    coverage: String(body.coverage ?? "full"),
+    preset: "person_a",
+    release: true,
+  });
+}
+
 async function observability(env: Env, email: string, url: URL) {
   const ledgerResponse = await signedFetch(env, email, "GET", `/harness/ledger?${url.searchParams.toString()}`);
   const ledger = ledgerResponse.ok ? await ledgerResponse.json() : { events: [], summary: null, error: "unavailable", status: ledgerResponse.status };
@@ -155,33 +180,28 @@ export default {
       return text(await observability(env, who.email, url), 200, "text/html; charset=utf-8");
     }
     if (request.method === "GET" && url.pathname === "/reconstruction/import") {
-      const listed = await signedFetch(env, who.email, "GET", "/harness/import");
-      const body = listed.ok ? await listed.json() : { items: [] };
-      return text(renderImport({
-        who: who.email,
-        tenant: String(body.tenantId ?? "unknown"),
-        message: "",
-        items: Array.isArray(body.items) ? body.items : [],
-        kept: 0,
-        preset: "person_a",
-        release: true,
-      }), 200, "text/html; charset=utf-8");
+      return text(await importPage(env, who.email, notice(url.searchParams.get("result"))), 200, "text/html; charset=utf-8");
     }
     if (request.method === "POST" && url.pathname === "/reconstruction/import") {
       const raw = await request.text();
-      const textValue = raw.trim().startsWith("{")
-        ? String((JSON.parse(raw) as { text?: unknown }).text ?? "")
-        : (new URLSearchParams(raw).get("text") ?? "");
-      if (!textValue || textValue.length > 7000) return text("invalid_text\n", 400);
+      const params = new URLSearchParams(raw);
+      const source = params.get("source") === "file" ? "file" : "paste";
+      const version = Number(params.get("version"));
       const saved = await signedFetch(env, who.email, "POST", "/harness/import", JSON.stringify({
-        source: "paste",
-        externalId: "release-note",
-        version: 1,
-        text: textValue,
+        source,
+        externalId: params.get("externalId") ?? "",
+        version,
+        text: params.get("text") ?? "",
+        ...(params.get("filename") ? { filename: params.get("filename") } : {}),
       }));
-      return new Response(await saved.text(), {
-        status: saved.status,
-        headers: { "content-type": "application/json", "cache-control": "no-store", "x-secondary-edge": "protected-dev" },
+      const body = await saved.json().catch(() => ({ error: "unavailable" }));
+      const result = saved.status === 201 ? "stored" : body.outcome === "duplicate" ? "duplicate" : saved.status === 409 ? "conflict" : "rejected";
+      if (result === "rejected") {
+        return text(await importPage(env, who.email, `Not stored (${String(body.reason || body.error || saved.status)}). Nothing new was written.`), 400, "text/html; charset=utf-8");
+      }
+      return new Response(null, {
+        status: 303,
+        headers: { location: `/reconstruction/import?result=${result}`, "cache-control": "no-store", "x-secondary-edge": "protected-dev" },
       });
     }
     return text("method\n", 405);

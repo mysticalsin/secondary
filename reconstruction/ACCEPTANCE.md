@@ -26,7 +26,8 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | New synthetic users `ada@tenant-a.test` and `bob@tenant-b.test` each get a durable personal workspace that is not `u_consultant` | Reconstruction gate over recovered `POST /v1/personal/items`; workerd `two new users keep separate durable imports across a restart` | PASS |
 | Same items are readable after a new workerd process uses the same persistence directory | That test's second boot | PASS |
 | Plus-address org-graph plan `pb:<hash>` | Recovered `planView` still has no node. A prefix does not inherit the CEO or consultant membership | FAIL closed |
-| Own personal plan for a non-seed owner, including a plus-address, from that person's durable imports. Empty context stays empty. Coverage is partial when only 20 of more than 100 notes are loaded | `new owners get their own personal plan and not a seed org plan` and `the release edge personal page shows only that token's context` | PASS |
+| Own personal plan for a non-seed owner, including a plus-address, from that person's durable imports. This is a notes view, not model GenUI. Empty context stays empty. Coverage is partial when only 20 of more than 100 notes are loaded | `new owners get their own personal plan and not a seed org plan` and `the release edge personal page shows only that token's context` | PASS |
+| Release import form stores the posted id, version, and text, confirms the read-back, and keeps duplicate, conflict, and a higher version distinct. Usage stays unknown. Another token does not see those rows | `the release edge personal page shows only that token's context` | PASS |
 
 ## 2. Selected import
 
@@ -100,7 +101,7 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Local test issuer rejects a mismatched resource. The first refresh token is rejected after two rotations. The pinned SDK still accepts the immediately previous refresh token once, so this is not strict one-use | `a local test issuer rejects the wrong resource and rotates refresh tokens` | PASS |
 | Live Access or Entra issuer, remote JWKS, and a public route | Not wired | NOTRUN |
 | Private API worker published without the edge | Local workerd still sets `ENVIRONMENT=dev` so Durable Object jurisdiction can be off. That worker is not the public entry | NOTRUN |
-| OAuth access-token wall-clock expiry | Pinned provider TTL is 3600 and was not shortened | NOTRUN |
+| OAuth access token expires on the wall clock. The pinned provider rejects a TTL under 60 seconds, so the test sets `accessTokenTTL` to 60 and waits 62 seconds. It is valid before that and `invalid_token` after. No clock was forged | `a 60 second access token expires on the wall clock` | PASS |
 
 ## 7. Review gaps still open
 
@@ -108,7 +109,7 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | --- | --- | --- |
 | More than 100 receipts, an older retry, paged coverage, and concurrent same-body or conflicting imports | `imports and usage stay unique past 100 rows and across concurrent retries` | PASS |
 | Validated client id, not the request body, namespaces a receipt. A second signed client or a second user does not overwrite it | `imports and usage stay unique past 100 rows and across concurrent retries`. The two client ids are signed internal principals. Two OAuth dynamic-registration clients for one user were not registered | PASS |
-| Two OAuth dynamic-registration clients for one user | Not registered in this round | NOTRUN |
+| Two OAuth dynamic-registration clients for one verified user, each with its own PKCE grant, through the release edge. Dedup is principal plus that client id. A body client id does not overwrite. Both clients can read that user's notes. Another user cannot | `two OAuth clients keep separate receipts for one user and survive restart` | PASS |
 | A stored `server_measured` / `server_clock` row stays a measured zero. New synthetic fixtures are not relabeled onto it | `usage reports reject extra fields, bad totals, and keep unknown distinct from zero` | PASS |
 | Receipt hash checked with `node:crypto` `createHash`, not the importer's own helper | `two OAuth users roundtrip import receipts through MCP and the same gate` | PASS |
 | Same-tenant Cara cannot read Ada's usage request or reuse Ada's usage event id | That roundtrip test | PASS |
@@ -120,6 +121,6 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Wrong OAuth resource, audience, expiry, refresh rotation, or a real identity provider | Local dev issuer only | NOTRUN |
 | Installed `@modelcontextprotocol/sdk` is 1.32.2 and public `registerTool` refuses a second `personal_note_create` | `the MCP SDK pin cannot replace a tool through the public registerTool API` | PASS |
 | A later SDK still exposes the private tool map used to swap that tool | Not an upgrade test | NOTRUN |
-| Old access token still presented after process restart | Restart path mints a new token | NOTRUN |
+| OAuth KV survives a new workerd on the same persistence directory. The unrevoked token and its scope still work. A revoked refresh grant stays revoked after the next workerd. The immediately previous refresh token works once. The first refresh token is `invalid_grant` after two rotations | `two OAuth clients keep separate receipts for one user and survive restart` | PASS |
 | Production entry without `/harness/*` or dev synthetic identity | Local harness only | NOTRUN |
 | Hosted Dust or Claude, production auth review, protected Cloudflare preview | Not run | NOTRUN |

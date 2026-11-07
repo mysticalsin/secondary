@@ -239,12 +239,19 @@ test("protected-dev edge ignores dev headers and closes harness routes", async (
     assert.equal((await mf.dispatchFetch("http://release.local/reconstruction/import", { headers: { authorization: `Bearer ${forged}` } })).status, 401);
     const saved = await mf.dispatchFetch("http://release.local/reconstruction/import", {
       method: "POST",
+      redirect: "manual",
       headers: { authorization: `Bearer ${good}`, "content-type": "application/x-www-form-urlencoded" },
-      body: "text=Release+synthetic+note",
+      body: "externalId=release-note&version=1&source=paste&text=Release+synthetic+note",
     });
-    const savedText = await saved.text();
-    assert.equal(saved.status, 201, savedText.slice(0, 300));
-    assert.equal(savedText.includes("unknown"), true);
+    assert.equal(saved.status, 303, (await saved.text()).slice(0, 200));
+    assert.equal(saved.headers.get("location"), "/reconstruction/import?result=stored");
+    const shown = await mf.dispatchFetch("http://release.local/reconstruction/import?result=stored", {
+      headers: { authorization: `Bearer ${good}` },
+    });
+    const savedText = await shown.text();
+    assert.equal(shown.status, 200, savedText.slice(0, 300));
+    assert.equal(savedText.includes("Release synthetic note"), true);
+    assert.equal(savedText.includes("No model was called"), true);
     assert.equal(savedText.includes("bob@tenant-b.test"), false);
   } finally {
     await mf.dispose();

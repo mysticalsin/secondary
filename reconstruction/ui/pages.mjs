@@ -278,7 +278,10 @@ export function renderObservability(model) {
       (row) => `<tr><td>${esc(row.path)}</td><td>${esc(row.status)}</td><td>${esc(row.meaning)}</td></tr>`,
     )
     .join("");
-  const settings = SETTINGS_LINKS.map(
+  const linkRows = model.release
+    ? [["/settings", "Settings"], ["/brains/me", "Personal brain"], ["/reconstruction/import", "Import"], ["/settings/observability", "Observability"]]
+    : SETTINGS_LINKS;
+  const settings = linkRows.map(
     ([href, label]) =>
       `<a href="${href}" ${href.endsWith("/observability") ? 'aria-current="page"' : ""}>${label}</a>`,
   ).join("");
@@ -293,7 +296,7 @@ export function renderObservability(model) {
   <p class="crumb"><a href="/settings">Settings</a> <span aria-hidden="true">/</span> Observability</p>
   <h1>Observability</h1>
   <p class="lede">${esc(model.roleLabel)}</p>
-  <p class="banner"><i></i>Local preview · synthetic data</p>
+  <p class="banner"><i></i>${model.release ? "Deterministic view. No model was called. AI is disabled." : "Local preview · synthetic data"}</p>
   <nav class="pills" aria-label="Settings">${settings}</nav>
   <div class="tabs" role="tablist" aria-label="Observability sections">
     ${tab("tab-status", "panel-status", "Status", !prefs && !usageOn)}
@@ -327,8 +330,8 @@ export function renderObservability(model) {
     </details>
   </section>
   <section id="panel-usage" role="tabpanel" aria-labelledby="tab-usage"${usageOn ? "" : " hidden"}>
-    <p class="banner"><i></i>Local preview · synthetic data</p>
-    <p class="muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. Switching session loads that person's ledger. Cost is unknown. Client-reported numbers are not provider-verified.</p>
+    <p class="banner"><i></i>${model.release ? "Deterministic ledger. No model was called. AI is disabled." : "Local preview · synthetic data"}</p>
+    <p class="muted">Signed in as ${esc(model.principalId)} in ${esc(model.tenantId)}. ${model.release ? "This page shows only this token's ledger." : "Switching session loads that person's ledger."} Cost is unknown. Client-reported numbers are not provider-verified.</p>
     ${model.release ? "" : `<form method="post" action="/settings/observability/session" class="tabs">
       <button type="submit" name="preset" value="person_a" aria-pressed="${model.preset === "person_b" ? "false" : "true"}">Consultant session</button>
       <button type="submit" name="preset" value="person_b" aria-pressed="${model.preset === "person_b" ? "true" : "false"}">Plus-address session</button>
@@ -450,11 +453,12 @@ button { width:auto; background:var(--accent); color:white; cursor:pointer; }
 </style></head><body><main class="frame">
 <p><a href="/settings">Settings</a> / Import</p>
 <h1>Import into your brain</h1>
-<p class="banner">Local preview</p>
+<p class="banner">${model.release ? "Deterministic import. No model was called. AI is disabled." : "Local preview"}</p>
+<nav aria-label="Settings"><a href="/settings">Settings</a> · <a href="/brains/me">Personal brain</a> · <a href="/settings/observability?section=usage">Usage</a> · <a href="/reconstruction/import" aria-current="page">Import</a></nav>
 <p class="muted">Paste text, or choose a .txt or .md file. Limit 7000 characters and 8000 bytes. Other types, path names, scripts, and URL fetches are refused. Model usage stays unknown.</p>
 <p>Signed in as <strong>${esc(model.who)}</strong> in <strong>${esc(model.tenant)}</strong>.</p>
 <details><summary>Session limits</summary>
-<p>The server chooses the person and tenant from this fixture session. The form cannot grant either, and it cannot set model usage. The default session is the seeded consultant. The other button is the CEO plus-address in this same local tenant, not a second company. Two new users in two tenants are covered by the local MCP OAuth test.</p>
+<p>${model.release ? "The release edge chooses the person from the verified token. The form cannot grant a person, a tenant, or model usage. This is not a live model view." : "The server chooses the person and tenant from this fixture session. The form cannot grant either, and it cannot set model usage. The default session is the seeded consultant. The other button is the CEO plus-address in this same local tenant, not a second company. Two new users in two tenants are covered by the local MCP OAuth test."}</p>
 </details>
 ${model.release ? "" : `<form method="post" action="/reconstruction/import/session" class="switch">
 <button name="preset" value="person_a" type="submit" aria-current="${preset === "person_a" ? "true" : "false"}">Consultant session</button>
@@ -477,7 +481,7 @@ document.getElementById("local-file").addEventListener("change", async (event) =
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   const name = file.name || "";
-  const allowed = /\\.(txt|md)$/i.test(name);
+  const allowed = /\.(txt|md)$/i.test(name);
   document.querySelector("[name=filename]").value = name;
   document.querySelector("[name=source]").value = "file";
   document.querySelector("[name=text]").value = allowed ? await file.text() : "";
@@ -488,7 +492,7 @@ document.getElementById("local-file").addEventListener("change", async (event) =
   }
 });
 </script>
-<section class="sheet"><h2>Imported text</h2><p class="muted">Existing personal notes left in place: ${Number(model.kept) || 0}. They were not migrated or deleted.</p><ul>${items || "<li>No import is stored for this session.</li>"}</ul></section>
+<section class="sheet"><h2>Imported text</h2><p class="muted">Showing ${esc(model.shown ?? (Array.isArray(model.items) ? model.items.length : 0))} of ${esc(model.total ?? model.kept ?? 0)}. Coverage is ${esc(model.coverage || "full")}. Existing notes were not deleted.</p><p><a href="/brains/me">Open Personal brain</a></p><ul>${items || "<li>No import is stored for this session.</li>"}</ul></section>
 </main></body></html>`;
 }
 

@@ -309,6 +309,57 @@ test("the release edge personal page shows only that token's context", async () 
     assert.equal((await shell.text()).includes('href="/brains/me"'), true);
     const hidden = await mf.dispatchFetch("http://release.local/v1/genui/plan", { method: "POST", headers: { authorization: `Bearer ${adaToken}` } });
     assert.equal(hidden.status, 404);
+    const postImport = (token, fields) => mf.dispatchFetch("http://release.local/reconstruction/import", {
+      method: "POST",
+      redirect: "manual",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields),
+    });
+    const readImport = async (token, query = "") => {
+      const response = await mf.dispatchFetch(`http://release.local/reconstruction/import${query}`, { headers: { authorization: `Bearer ${token}` } });
+      return { status: response.status, html: await response.text() };
+    };
+    const pasted = await postImport(adaToken, { externalId: "browser-row", version: "1", source: "paste", text: "Browser paste row" });
+    assert.equal(pasted.status, 303);
+    assert.equal(pasted.headers.get("location"), "/reconstruction/import?result=stored");
+    const readBack = await readImport(adaToken, "?result=stored");
+    assert.equal(readBack.html.includes("Browser paste row"), true);
+    assert.equal(readBack.html.includes("server read-back"), true);
+    assert.equal(readBack.html.includes("Open Personal brain"), true);
+    assert.equal(readBack.html.includes("No model was called"), true);
+    assert.equal(readBack.html.includes("Coverage is full"), true);
+    const brain = await mf.dispatchFetch("http://release.local/brains/me", { headers: { authorization: `Bearer ${adaToken}` } });
+    assert.equal((await brain.text()).includes("Browser paste row"), true);
+    const again = await readImport(adaToken);
+    assert.equal(again.html.includes("Browser paste row"), true);
+    const duplicate = await postImport(adaToken, { externalId: "browser-row", version: "1", source: "paste", text: "Browser paste row" });
+    assert.equal(duplicate.headers.get("location"), "/reconstruction/import?result=duplicate");
+    const duplicatePage = await readImport(adaToken, "?result=duplicate");
+    assert.equal(duplicatePage.html.split("Browser paste row").length - 1, 1);
+    const conflict = await postImport(adaToken, { externalId: "browser-row", version: "1", source: "paste", text: "Browser paste replaced" });
+    assert.equal(conflict.headers.get("location"), "/reconstruction/import?result=conflict");
+    const conflictPage = await readImport(adaToken, "?result=conflict");
+    assert.equal(conflictPage.html.includes("Nothing new was stored"), true);
+    assert.equal(conflictPage.html.includes("Browser paste replaced"), false);
+    const next = await postImport(adaToken, { externalId: "browser-row", version: "2", source: "paste", text: "Browser paste revised" });
+    assert.equal(next.headers.get("location"), "/reconstruction/import?result=stored");
+    const revised = await readImport(adaToken, "?result=stored");
+    assert.equal(revised.html.includes("Browser paste revised"), true);
+    assert.equal(revised.html.includes("Browser paste row"), true);
+    const file = await postImport(adaToken, { externalId: "file-row", version: "1", source: "file", filename: "notes.md", text: "File note from md" });
+    assert.equal(file.headers.get("location"), "/reconstruction/import?result=stored");
+    assert.equal((await readImport(adaToken)).html.includes("File note from md"), true);
+    const bobImport = await readImport(bobToken);
+    assert.equal(bobImport.html.includes("Browser paste row"), false);
+    assert.equal(bobImport.html.includes("File note from md"), false);
+    assert.equal(bobImport.html.includes(ESTUARY), true);
+    const adaUsage = await (await mf.dispatchFetch("http://release.local/settings/observability?section=usage", { headers: { authorization: `Bearer ${adaToken}` } })).text();
+    assert.equal(adaUsage.includes("Unknown"), true);
+    assert.equal(adaUsage.includes("No model was called"), true);
+    assert.equal(adaUsage.includes(ESTUARY), false);
+    const bobUsage = await (await mf.dispatchFetch("http://release.local/settings/observability?section=usage", { headers: { authorization: `Bearer ${bobToken}` } })).text();
+    assert.equal(bobUsage.includes("Browser paste"), false);
+    assert.equal(bobUsage.includes("No usage events") || bobUsage.includes("Unknown"), true);
   } finally {
     await mf.dispose();
   }

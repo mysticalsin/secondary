@@ -345,6 +345,11 @@ interface Entry {
 }
 const providers = new Map<string, Entry>();
 
+function accessTokenTtl(env: Env): number {
+  const parsed = Number((env as { ACCESS_TOKEN_TTL?: string }).ACCESS_TOKEN_TTL);
+  return Number.isInteger(parsed) && parsed >= 60 ? parsed : 3600;
+}
+
 function providerFor(env: Env, base: string): OAuthProvider<Env> {
   let entry = providers.get(base);
   if (entry) {
@@ -362,7 +367,7 @@ function providerFor(env: Env, base: string): OAuthProvider<Env> {
     clientIdMetadataDocumentEnabled: true,
     scopesSupported: [...SCOPES],
     requiredScopes: [...BASELINE_SCOPES],
-    accessTokenTTL: 3600,
+    accessTokenTTL: accessTokenTtl(env),
     refreshTokenTTL: 30 * 24 * 3600,
     resourceMetadata: {
       resource: `${base}/mcp`,
