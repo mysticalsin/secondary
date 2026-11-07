@@ -351,6 +351,7 @@ export function renderGenui(state) {
 <h1>Per-person view</h1>
 <p>${esc(state.who)}</p>
 <p>Personal brain from /v1/brains/nav: ${esc(state.personal)}</p>
+<p>Recovered planner ${esc(state.request)} returned ${esc(state.planStatus)}. Another principal's personal node is not substituted.</p>
 <form method="post" action="/reconstruction/session">
   <button class="action" name="preset" value="person_a" type="submit">Person A consultant</button>
   <button class="action" name="preset" value="person_b" type="submit">Person B ceo</button>

@@ -37,7 +37,7 @@ async function boot() {
     env: {
       ENVIRONMENT: text("dev"),
       DO_JURISDICTION: text("off"),
-      DEV_AUTH_BYPASS_EMAIL: text("synthetic.person.a@example.invalid"),
+      DEV_AUTH_BYPASS_EMAIL: text("consultant@example.invalid"),
       DEFAULT_TENANT_ID: text("tenant_reconstruction"),
       TENANT_DOMAINS: text('{"example.invalid":"tenant_reconstruction"}'),
       RATE_LIMIT_PER_MIN: text("60"),

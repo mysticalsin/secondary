@@ -66,7 +66,10 @@ export function fixtureResponse(url) {
 }
 
 const sessions = new Map();
-const PRESETS = { person_a: "consultant", person_b: "ceo" };
+// person_a omits X-Demo-Persona. The bypass address local-part is `consultant`, so the
+// recovered session is the seeded principal u_consultant. A persona header plus-addresses
+// the email and becomes a different principal, whose personal node was not seeded.
+const PRESETS = { person_a: null, person_b: "ceo" };
 
 function sessionOf(cookie) {
   const match = /(?:^|; )fixture=([^;]+)/.exec(cookie ?? "");
@@ -234,6 +237,8 @@ async function genuiState(session) {
   return {
     who: `${me.principal.id} · ${me.tenantId} · ${me.persona}`,
     personal: personal ? `${personal.name} (${personal.id})` : "none returned",
+    request: session.scope === "company" ? "prompt accounts" : `node ${nodeId}`,
+    planStatus: planCall.status,
     planHtml,
   };
 }

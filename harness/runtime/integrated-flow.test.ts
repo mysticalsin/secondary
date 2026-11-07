@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { probeEgress, stopRecoveredApi } from "../../reconstruction/fixture/recovered-api.mjs";
+import { callApi, probeEgress, stopRecoveredApi } from "../../reconstruction/fixture/recovered-api.mjs";
 import { listen } from "../../reconstruction/fixture/serve.mjs";
 
 async function open() {
@@ -23,8 +23,41 @@ test("recovered routes replace the synthetic gap and the genui flow stays on the
     assert.equal(JSON.stringify(navJson).includes("synthetic_gap"), false);
     assert.equal(navJson.items.some((item) => item.type === "personal" && item.name === "My Secondary"), true);
     assert.equal(app.firstHtml.includes("My Secondary"), true);
-    assert.equal(app.firstHtml.includes("returned 404"), true);
-    assert.equal(app.firstHtml.includes("u_consultant_"), true);
+    assert.equal(app.firstHtml.includes("personal_private"), true);
+    assert.equal(app.firstHtml.includes("node pb:u_consultant"), true);
+    assert.equal(app.firstHtml.includes("returned 200"), true);
+    const me = await callApi("/v1/me");
+    const meJson = JSON.parse(me.text);
+    assert.equal(meJson.principal.id, "u_consultant");
+    const own = await callApi("/v1/genui/plan", {
+      method: "POST",
+      body: JSON.stringify({ nodeId: "pb:u_consultant" }),
+    });
+    const ownJson = JSON.parse(own.text);
+    assert.equal(own.status, 200);
+    assert.equal(ownJson.title, "My Secondary");
+    assert.equal(JSON.stringify(ownJson).includes("personal_private"), true);
+    assert.equal(JSON.stringify(ownJson).includes("a_acme"), false);
+    const otherOwner = await callApi("/v1/genui/plan", {
+      method: "POST",
+      persona: "ceo",
+      body: JSON.stringify({ nodeId: "pb:u_consultant", tenantId: "tenant_other" }),
+    });
+    assert.equal(otherOwner.status, 404);
+    assert.equal(otherOwner.text.includes("My Secondary"), false);
+    assert.equal(otherOwner.text.includes("personal_private"), false);
+    const plusMe = JSON.parse((await callApi("/v1/me", { persona: "consultant" })).text);
+    assert.equal(plusMe.principal.id.startsWith("u_consultant_"), true);
+    const plusPlan = await callApi("/v1/genui/plan", {
+      method: "POST",
+      persona: "consultant",
+      body: JSON.stringify({ nodeId: `pb:${plusMe.principal.id}` }),
+    });
+    assert.equal(plusPlan.status, 404);
+    const spoof = await fetch(`http://127.0.0.1:${app.port}/v1/me?tenant=tenant_other`, {
+      headers: { cookie: app.cookie, "x-demo-persona": "ceo" },
+    });
+    assert.equal((await spoof.json()).principal.id, "u_consultant");
     const company = await fetch(`http://127.0.0.1:${app.port}/reconstruction/session`, {
       method: "POST",
       headers: { cookie: app.cookie, "content-type": "application/x-www-form-urlencoded" },
@@ -37,6 +70,7 @@ test("recovered routes replace the synthetic gap and the genui flow stays on the
     });
     const companyHtml = await companyPage.text();
     assert.equal(companyHtml.includes("Accounts"), true);
+    assert.equal(companyHtml.includes("personal_private"), false);
     assert.equal(companyHtml.includes("tenant_other"), false);
     const personal = await fetch(`http://127.0.0.1:${app.port}/reconstruction/session`, {
       method: "POST",
@@ -50,6 +84,7 @@ test("recovered routes replace the synthetic gap and the genui flow stays on the
     });
     const personalHtml = await personalPage.text();
     assert.equal(personalHtml.includes("Accounts"), false);
+    assert.equal(personalHtml.includes("personal_private"), true);
     const other = await fetch(`http://127.0.0.1:${app.port}/reconstruction/session`, {
       method: "POST",
       headers: { cookie: app.cookie, "content-type": "application/x-www-form-urlencoded" },
@@ -62,7 +97,8 @@ test("recovered routes replace the synthetic gap and the genui flow stays on the
     });
     const otherHtml = await otherPage.text();
     assert.equal(otherHtml.includes("u_ceo_"), true);
-    assert.equal(otherHtml.includes("u_consultant_"), false);
+    assert.equal(otherHtml.includes("personal_private"), false);
+    assert.equal(otherHtml.includes("returned 404"), true);
     assert.equal(otherHtml.includes("Accounts"), false);
     const rejected = await fetch(`http://127.0.0.1:${app.port}/reconstruction/genui/reject`, {
       method: "POST",
