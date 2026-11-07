@@ -142,10 +142,10 @@ async function importText(text) {
     byId.set(record.record_id, record);
   }
   save([...byId.values()]);
+  render();
   status.textContent = parsed.incomplete
     ? "Imported the complete lines. The final line was incomplete and was not imported. This is not a full snapshot."
     : "Imported. Coverage is the supplied records only.";
-  render();
 }
 
 labelInput.addEventListener("change", () => {
@@ -167,7 +167,7 @@ importButton.addEventListener("click", async () => {
   try {
     await importText(document.getElementById("ndjson").value);
   } catch (error) {
-    status.textContent = `Not imported (${error.reason || "malformed_record"}). Nothing was written.`;
+    status.textContent = `Not imported (${error.reason || error.name || "malformed_record"}). Nothing was written.`;
     status.className = "alert";
   }
 });

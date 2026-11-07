@@ -174,10 +174,14 @@ function exactKeys(value, keys) {
   return present.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
+function utf8Bytes(text) {
+  return new TextEncoder().encode(text).byteLength;
+}
+
 function validateRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("malformed_record");
   const encoded = JSON.stringify(value);
-  if (Buffer.byteLength(encoded) > RECORD_BYTES) throw fail("record_too_large");
+  if (utf8Bytes(encoded) > RECORD_BYTES) throw fail("record_too_large");
   if (!exactKeys(value, [
     "schema_version", "record_id", "capture", "agent", "tool", "session_id", "started_at", "finished_at",
     "timezone", "analysis_kind", "target", "outcome", "tokens_used", "writes_detected", "context_scope",
@@ -468,10 +472,10 @@ async function importText(text) {
     byId.set(record.record_id, record);
   }
   save([...byId.values()]);
+  render();
   status.textContent = parsed.incomplete
     ? "Imported the complete lines. The final line was incomplete and was not imported. This is not a full snapshot."
     : "Imported. Coverage is the supplied records only.";
-  render();
 }
 
 labelInput.addEventListener("change", () => {
@@ -493,7 +497,7 @@ importButton.addEventListener("click", async () => {
   try {
     await importText(document.getElementById("ndjson").value);
   } catch (error) {
-    status.textContent = `Not imported (${error.reason || "malformed_record"}). Nothing was written.`;
+    status.textContent = `Not imported (${error.reason || error.name || "malformed_record"}). Nothing was written.`;
     status.className = "alert";
   }
 });

@@ -93,7 +93,7 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Original recovered API tree compiled alone | `npm run typecheck:worker` exit 2. 119 lines: 68 missing `Env`, 43 missing modules (`types.ts`, agent-ui, `view-plan.ts`, validator declaration), 8 follow-on errors in those same files. The bytes were not edited | SNAPSHOT, still failing |
 | Derived API, release edge, and harness typecheck, and their esbuild inputs stay in that program | `typecheck:reconstructed` and `runtime bundles stay inside the working typecheck and derived modules have declarations` | PASS for the derived tree. This does not make the original snapshot typecheck |
 | The parent's three historical review records rendered in this environment | Those rows were not attached and were not fetched. The offline HTML file also starts empty | NOTRUN |
-| Offline paste page bytes stay the exported build | SHA-256 `0efa28faac2b0818831e9b651ee8a713515c82c17bae47ac2b3816212ae3fdd0` of `reconstruction/activity/offline/index.html`. The typed label is not authentication | PASS as a byte pin, not a three-row render |
+| Offline paste page bytes stay the exported build | SHA-256 `ec2c8071aecf3f85cbf7fe32a4b5ccdb46a9bed3e4364f09809fd98f01d25456` of `reconstruction/activity/offline/index.html`. The earlier export `0efa28faac2b0818831e9b651ee8a713515c82c17bae47ac2b3816212ae3fdd0` called `Buffer.byteLength` and failed in a browser. The typed label is not authentication | PASS as a byte pin, not a three-row render |
 
 ## 6. Deployment
 

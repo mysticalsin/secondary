@@ -42,10 +42,14 @@ function exactKeys(value, keys) {
   return present.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
 }
 
+function utf8Bytes(text) {
+  return new TextEncoder().encode(text).byteLength;
+}
+
 export function validateRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail("malformed_record");
   const encoded = JSON.stringify(value);
-  if (Buffer.byteLength(encoded) > RECORD_BYTES) throw fail("record_too_large");
+  if (utf8Bytes(encoded) > RECORD_BYTES) throw fail("record_too_large");
   if (!exactKeys(value, [
     "schema_version", "record_id", "capture", "agent", "tool", "session_id", "started_at", "finished_at",
     "timezone", "analysis_kind", "target", "outcome", "tokens_used", "writes_detected", "context_scope",

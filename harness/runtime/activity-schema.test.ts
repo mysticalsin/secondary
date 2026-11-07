@@ -41,4 +41,10 @@ test("the review schema hash is pinned and extra fields fail closed", async () =
   assert.equal(incomplete.incomplete, true);
   assert.equal(incomplete.records.length, 1);
   assert.notEqual(await recordHash(record("relay-synthetic-1", "one")), await recordHash(record("relay-synthetic-1", "two")));
+  const multibyte = record("relay-synthetic-1", "synthetic fixture café 日本語");
+  assert.equal(validateRecord(multibyte).notes, "synthetic fixture café 日本語");
+  assert.equal(new TextEncoder().encode(JSON.stringify(multibyte)).byteLength > JSON.stringify(multibyte).length, true);
+  const huge = record("relay-synthetic-1", "x");
+  huge.notes = "x".repeat(70_000);
+  assert.throws(() => validateRecord(huge), /record_too_large/);
 });
