@@ -5,3 +5,5 @@ reconstruction/dist/
 .dev.vars
 *.log
 uploads/
+
+.playwright-mcp/

@@ -1,0 +1,78 @@
+{
+  "source_url": "view-source:https://secondary-api-dev.tony-walteur.workers.dev/",
+  "tab_reported_url": "https://secondary-api-dev.tony-walteur.workers.dev/",
+  "capture_method": "Native Chrome CtrlU source-view table second cell per row; source cells joined LF, excluding line numbers and UI. Source-view text, not rendered application DOM.",
+  "HTTP_status": "Unavailable in this source capture; earlier normal-root200 is a separate record.",
+  "codepoints": 820,
+  "utf8_bytes": 820,
+  "sha256": "96f1c636da2147743212cbef111a779146664e581ec4d03ba5a038e9f16124ea",
+  "line_count_including_final_blank": 17,
+  "line_codepoint_lengths": [
+    15,
+    16,
+    8,
+    28,
+    76,
+    53,
+    49,
+    305,
+    44,
+    79,
+    73,
+    9,
+    8,
+    25,
+    9,
+    7,
+    0
+  ],
+  "trailing_LF": true,
+  "offset_interpretation": "one-based inclusive ranges1\u2013500 and501\u2013820; actual lengths and contiguity verified",
+  "ranges": [
+    {
+      "transcript_line": 18,
+      "one_based_inclusive_range": {
+        "start": 1,
+        "end": 500
+      },
+      "codepoints": 500,
+      "text_utf8_sha256": "1c919db5ac71f07e1db49e47d1f5017be150e8719f1241b0546c9d063dddaeff",
+      "tool_result_sha256": "f48c70ed86a3ea6ebf8789b42e595bff70c5d4b4680c0563784f2976815e6ee9"
+    },
+    {
+      "transcript_line": 20,
+      "one_based_inclusive_range": {
+        "start": 501,
+        "end": 820
+      },
+      "codepoints": 320,
+      "text_utf8_sha256": "9f6d2f32f4906ae345b4f5f0f53a8fe93cde632cb78430ead9e3ab93748670e3",
+      "tool_result_sha256": "22fd9dc1630e5dd8a61b2f02f051888384b9b3df9d7acfaf3b09de0751a13517"
+    }
+  ],
+  "originating_transcript_sha256": "a243a8aecd8d1e6928198d3163af323eb589211376ec12011a0a8f3a9c47a0cc",
+  "document": {
+    "doctype": "html",
+    "title": "Secondary | Company Brain",
+    "root_mount": "<div id=\"root\"></div>",
+    "entry_JS": "/assets/index-PLmoiPYI.js",
+    "entry_CSS": "/assets/index-DiBYRwP4.css",
+    "entries_match_captured14": true,
+    "inline_script_or_bootstrap": false,
+    "inline_favicon": "data:image/svg+xml static mark, not external asset",
+    "not_TOTO_OS": true
+  },
+  "privacy_pattern_counts": {
+    "credential_patterns": 0,
+    "email": 0,
+    "session_csrf_nonce_bootstrap": 0,
+    "signed_url": 0,
+    "access_login_barrier": 0,
+    "inline_event": 0
+  },
+  "privacy_review": "All820 characters inspected: static metadata, static inlineSVG favicon, title, external module/CSS declarations and empty root; no inline person records/bootstrap/nonce/session/CSRF/signedURL/credential flags. No known unresolved flags; not universal clearance.",
+  "limitations": "UTF8 of LF-joined source-view cells, not wire bytes/original line endings/exact-response identity. Shell requires external assets; not self-contained offline HTML or runtime/build/UI acceptance.",
+  "dependency_inventory_sha256": "fad41dc9f6dac8222a1ab5f5ec245cce7086184f9d25d3bc196ad9fa19259b81",
+  "no_execution_network_upload_repo_changes": true,
+  "excluded_unrelated_preview": "Earlier bodyText+snapshot tool result contains invalid nested JSON escape; not parsed/repaired or used. Complete authoritative range JSON and line metadata parse without repair."
+}

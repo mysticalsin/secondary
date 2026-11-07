@@ -18,6 +18,11 @@ const AUDIT_MCP = "synthetic-audit-mcp-key-32chars!!";
 const AUDIT_READ = "synthetic-audit-read-key-32chars!";
 const OPS_KEY = "synthetic-ops-admin-key-32chars!!";
 const DATE = "2026-11-07";
+const DENY_SOURCE = `export default { fetch() { return new Response("egress_denied", { status: 403 }); } };`;
+const EGRESS_PROBE_SOURCE = `export default { async fetch() {
+  const res = await fetch("https://example.invalid/synthetic-egress-probe");
+  return new Response(await res.text(), { status: res.status });
+} };`;
 
 const sourceBody = (tenantId) =>
   JSON.stringify({
@@ -60,22 +65,43 @@ function doBinding(workerName, exportName) {
   return { type: "durable-object", worker: workerName, exportName };
 }
 
+function blockedOutbound() {
+  return { type: "worker", worker: "deny-egress" };
+}
+
+function guarded(config, outbound = blockedOutbound()) {
+  return { config, dev: { outboundService: outbound } };
+}
+
 function worker(name, file, env, exports) {
-  return {
-    config: {
-      name,
-      compatibilityDate: DATE,
-      workersDev: false,
-      previewUrls: false,
-      manifest: {
-        mainModule: "index.js",
-        modules: { "index.js": { type: "esm", contents: readFileSync(file, "utf8") } },
-      },
-      ...(exports ? { exports } : {}),
-      ...(env ? { env } : {}),
-      triggers: [{ type: "fetch", pattern: `${name}.local/*` }],
+  return guarded({
+    name,
+    compatibilityDate: DATE,
+    workersDev: false,
+    previewUrls: false,
+    manifest: {
+      mainModule: "index.js",
+      modules: { "index.js": { type: "esm", contents: readFileSync(file, "utf8") } },
     },
-  };
+    ...(exports ? { exports } : {}),
+    ...(env ? { env } : {}),
+    triggers: [{ type: "fetch", pattern: `${name}.local/*` }],
+  });
+}
+
+function inlineWorker(name, contents, env) {
+  return guarded({
+    name,
+    compatibilityDate: DATE,
+    workersDev: false,
+    previewUrls: false,
+    manifest: {
+      mainModule: "index.js",
+      modules: { "index.js": { type: "esm", contents } },
+    },
+    ...(env ? { env } : {}),
+    triggers: [{ type: "fetch", pattern: `${name}.local/*` }],
+  });
 }
 
 test.before(async () => {
@@ -83,6 +109,23 @@ test.before(async () => {
   built = bundleWorkerd();
   mf = new Miniflare({
     workers: [
+      guarded(
+        {
+          name: "deny-egress",
+          compatibilityDate: DATE,
+          workersDev: false,
+          previewUrls: false,
+          manifest: {
+            mainModule: "index.js",
+            modules: { "index.js": { type: "esm", contents: DENY_SOURCE } },
+          },
+        },
+        {
+          type: "fetcher",
+          handler: () => new Response("egress_denied", { status: 403 }),
+        },
+      ),
+      inlineWorker("egress-probe", EGRESS_PROBE_SOURCE),
       worker(
         "api",
         built.api,
@@ -185,8 +228,7 @@ test.before(async () => {
         }),
       ),
       worker("view", built.view),
-      {
-        config: {
+      guarded({
           name: "audit-gate",
           compatibilityDate: DATE,
           workersDev: false,
@@ -208,8 +250,7 @@ test.before(async () => {
           },
           env: { AUDIT: { type: "worker", worker: "audit" } },
           triggers: [{ type: "fetch", pattern: "audit-gate.local/*" }],
-        },
-      },
+      }),
     ],
   });
   await mf.ready;
@@ -443,8 +484,15 @@ test("a failed refresh stays an error and is not reported ready", async () => {
     ),
   );
   assert.equal(flow.status, 200, flow.text);
-  assert.equal(flow.json.created === true || typeof flow.json.gap === "string", true);
-  if (flow.json.created === true) assert.equal(typeof flow.json.id, "string");
+  assert.equal(flow.json.created, true);
+  assert.match(flow.json.id, /^local-/);
+  assert.equal(flow.json.gap, undefined);
+});
+
+test("local workerd blocks a non-synthetic external fetch", async () => {
+  const blocked = await bodyOf(await mf.dispatchFetch("http://egress-probe.local/"));
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.text, "egress_denied");
 });
 
 test("ops restore stays disabled and pages drop events that have no consent", async () => {
@@ -503,6 +551,14 @@ test("mcp without a public URL fails closed in workerd", async () => {
   const res = await bodyOf(await mf.dispatchFetch("http://mcp.local/mcp"));
   assert.equal(res.status, 500);
   assert.equal(res.text, "MCP_PUBLIC_URL is not configured");
+  const authed = await bodyOf(
+    await mf.dispatchFetch("http://mcp.local/mcp", {
+      headers: { authorization: "Bearer user:grant:synthetic" },
+    }),
+  );
+  assert.equal(authed.status, 500);
+  assert.equal(authed.text, "MCP_PUBLIC_URL is not configured");
+  assert.equal(authed.text.includes("tools"), false);
 });
 
 test("wrangler-bundled view plan rejects data and drops an unknown component", async () => {
@@ -547,26 +603,40 @@ test("wrangler-bundled view plan rejects data and drops an unknown component", a
 async function bootModule(name, filename, contents) {
   const local = new Miniflare({
     workers: [
-      {
-        config: {
-          name,
+      guarded({
+        name,
+        compatibilityDate: DATE,
+        workersDev: false,
+        previewUrls: false,
+        manifest: {
+          mainModule: "index.js",
+          modules: {
+            "index.js": {
+              type: "esm",
+              contents: `import * as mod from "./${filename}";
+export default { fetch() { return Response.json({ n: Array.isArray(mod.COMPONENT_TYPES) ? mod.COMPONENT_TYPES.length : 0, validate: typeof mod.validate === "function" }); } };`,
+            },
+            [filename]: { type: "esm", contents },
+          },
+        },
+        triggers: [{ type: "fetch", pattern: `${name}.local/*` }],
+      }),
+      guarded(
+        {
+          name: "deny-egress",
           compatibilityDate: DATE,
           workersDev: false,
           previewUrls: false,
           manifest: {
             mainModule: "index.js",
-            modules: {
-              "index.js": {
-                type: "esm",
-                contents: `import * as mod from "./${filename}";
-export default { fetch() { return Response.json({ n: Array.isArray(mod.COMPONENT_TYPES) ? mod.COMPONENT_TYPES.length : 0, validate: typeof mod.validate === "function" }); } };`,
-              },
-              [filename]: { type: "esm", contents },
-            },
+            modules: { "index.js": { type: "esm", contents: DENY_SOURCE } },
           },
-          triggers: [{ type: "fetch", pattern: `${name}.local/*` }],
         },
-      },
+        {
+          type: "fetcher",
+          handler: () => new Response("egress_denied", { status: 403 }),
+        },
+      ),
     ],
   });
   try {

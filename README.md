@@ -21,4 +21,4 @@ npm run test:workerd
 
 `npm test` runs the Node tests, including hash checks of the delivered shell text. Those tests do not execute the delivered JavaScript. `npm run test:workerd` runs the recovered Workers in local workerd through Miniflare, with synthetic bindings and no upload. `npm run typecheck:workers` typechecks the six reconstruction overlays. `npm run build:workers` writes local esbuild bundles; the MCP esbuild bundle is Node-only. `npm run build:workerd` is Wrangler's dry-run bundler for the MCP entry. `npm run typecheck:worker` still typechecks the recovered API tree alone and fails with 119 errors. `npm run deploy` refuses.
 
-Delivered CSS and JS text is under `recovered-delivery/`, including the main bundle as DOM text. It is not executed. Fonts, logos, and any HTML document are absent, and no substitute page was added.
+Delivered shell text is under `recovered-delivery/`, including the source-view HTML shell and the main bundle. `node reconstruction/fixture/serve.mjs` serves those preserved bytes on `http://127.0.0.1:43127`. Fonts and logos are missing and are not fetched. `/v1/me` is synthetic. Other `/v1` paths return `synthetic_gap`.

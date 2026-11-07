@@ -149,7 +149,8 @@ test("the final module closes the declared import and does not add another code 
 
 test("local bytes are not a closed shell and the renderer catalog is not the view-plan catalog", () => {
   const onDisk = filesUnder(delivery);
-  assert.equal(onDisk.some((name) => /\.(html|woff2?|png)$/i.test(name)), false);
+  assert.equal(onDisk.some((name) => /\.(woff2?|png)$/i.test(name)), false);
+  assert.equal(onDisk.filter((name) => name.endsWith(".html")).length, 1);
   const renderer = readFileSync(path.join(delivery, "shell-six/assets/Renderer-0G0MSIPy.js"), "utf8");
   const leaf = renderer.match(/pt=\[((?:"[A-Za-z]+",)*"[A-Za-z]+")\]/);
   assert.ok(leaf);
@@ -233,4 +234,41 @@ test("main-bundle literals name the person switch and do not call the view-plan 
     assert.equal(worker.includes(`"${route.slice(3)}"`) || worker.includes(`"${route}"`), true, route);
   }
   assert.equal(worker.includes('"/genui/plan"'), true);
+});
+
+const HTML_ARCHIVE_SHA = "ef60564d4572b60e95d8bf14d995801c884ede02376765b0b41a59f083e6d16b";
+const HTML_SHA = "96f1c636da2147743212cbef111a779146664e581ec4d03ba5a038e9f16124ea";
+
+test("the recovered HTML shell is source-view text and names the captured entry assets", () => {
+  const archive = readFileSync(
+    path.join(delivery, "html-shell/secondary-html-sourceview-private-candidate.tar.gz"),
+  );
+  assert.equal(archive.length, 2536);
+  assert.equal(sha256(archive), HTML_ARCHIVE_SHA);
+  const text = readFileSync(path.join(delivery, "html-shell/index.html"), "utf8");
+  assert.equal(sha256(Buffer.from(text, "utf8")), HTML_SHA);
+  assert.equal([...text].length, 820);
+  assert.equal(Buffer.byteLength(text), 820);
+  const manifest = JSON.parse(readFileSync(path.join(delivery, "html-shell/manifest.json"), "utf8")) as {
+    ranges: { one_based_inclusive_range: { start: number; end: number }; text_utf8_sha256: string }[];
+    line_count_including_final_blank: number;
+    document: { title: string; entry_JS: string; entry_CSS: string };
+    privacy_pattern_counts: Record<string, number>;
+  };
+  let cursor = 0;
+  for (const range of manifest.ranges) {
+    assert.equal(range.one_based_inclusive_range.start, cursor + 1);
+    const slice = [...text].slice(range.one_based_inclusive_range.start - 1, range.one_based_inclusive_range.end).join("");
+    assert.equal(sha256(Buffer.from(slice, "utf8")), range.text_utf8_sha256);
+    cursor = range.one_based_inclusive_range.end;
+  }
+  assert.equal(cursor, 820);
+  assert.equal(text.split("\n").length, manifest.line_count_including_final_blank);
+  assert.equal(text.includes("<title>Secondary | Company Brain</title>"), true);
+  assert.equal(text.includes('<div id="root"></div>'), true);
+  assert.equal(text.includes('src="/assets/index-PLmoiPYI.js"'), true);
+  assert.equal(text.includes('href="/assets/index-DiBYRwP4.css"'), true);
+  assert.equal(text.includes("<script"), true);
+  assert.equal(/<script(?![^>]*type="module")/.test(text), false);
+  for (const count of Object.values(manifest.privacy_pattern_counts)) assert.equal(count, 0);
 });
