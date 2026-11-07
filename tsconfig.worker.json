@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"],
+    "paths": {
+      "@secondary/policy": ["./harness/adapters/policy-entry.ts"]
+    }
+  },
+  "include": [
+    "recovered-source/worker/src/**/*.ts",
+    "recovered-source/shared/packages/**/*.ts",
+    "harness/adapters/**/*.ts"
+  ]
+}

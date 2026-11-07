@@ -1,0 +1,730 @@
+{
+  "status": "PRIVATE repository/cloud handoff candidate only; not uploaded",
+  "provenance": {
+    "origin": "sourcesContent recovered from exact deployed secondary-api-dev Worker source-map export via official Cloudflare GET",
+    "source_map_sha256": "fbbb2928d9aa8ea9cfd043e1b1ea0226323784e9a71ff27a407e1d6571737985",
+    "no_git_history": true,
+    "original_build_structure_unverified": true,
+    "safe_mapping": "worker/src and shared/packages are explicit inert local mappings; imports unchanged; no buildability assertion"
+  },
+  "privacy_review": {
+    "known_unresolved_flags": 0,
+    "summary": "Six filename-only flags resolved as synthetic fixtures/constants or source declarations; extra structural matches resolved as synthetic templates, labels or illustrative comments. Scoped screening only, not security clearance.",
+    "full_local_report_sha256": "f52bb022cb0829b6fc503a444bd7b707ddc661d47004ab7eb416d3f7f4f84909"
+  },
+  "counts": {
+    "files": 117,
+    "source_bytes": 1227833,
+    "third_party_files_excluded": 165
+  },
+  "files": [
+    {
+      "path": "recovered-source/shared/packages/policy/src/brains.ts",
+      "bytes": 6615,
+      "sha256": "e2af5879d17fa7948661e2f198aec542451ff0bad96850641f21fe870589a827",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/seed.ts",
+      "bytes": 3734,
+      "sha256": "c28cbe1dbc0a9f7cd6e77aa2c65ada937261e0db01dfbd3d85f744eceef19916",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/personal.ts",
+      "bytes": 2579,
+      "sha256": "00078a7e0c847052f1da332e75c1ebc749e31439a9b22077b3019239647ec18d",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/roles.ts",
+      "bytes": 5824,
+      "sha256": "d576ebf76c6db5c56ec0a88805c97d405ef9c10481d6540d5bc14c835f9da714",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/engine.ts",
+      "bytes": 17432,
+      "sha256": "65807ce6ced86816d2244d46da9a4b85dd700fa355430398340132f8bdf82b69",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/personas.ts",
+      "bytes": 1071,
+      "sha256": "bcfd496ca46b56adfb00f788a8fac3a943e8ca088867ef02bfe86d0e8baa1837",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/org.ts",
+      "bytes": 23523,
+      "sha256": "cbc999be907088e280e3e0135fa740106efe7eb5432301b0c53b10f3077cc9e8",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/map.ts",
+      "bytes": 8489,
+      "sha256": "9b53fac97a794ccae9443727b497692edb321ca427eba210997f3d0bd585a08e",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/policy/src/types.ts",
+      "bytes": 7534,
+      "sha256": "13563a795b0f237d3dfd8b974613ed9b5a2fd6d5b52fbdf3ef84a53a3559ab5f",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/stubs.ts",
+      "bytes": 1728,
+      "sha256": "740af2b70fa12fdc51b9793f97f648e7e5450eb00c171c8ffd917950fa2e6b48",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/admin/client.ts",
+      "bytes": 1748,
+      "sha256": "52adeecb2ffdceff1dcaaf5a95a12d104908c74604525a159bf04f4f53f8c621",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth/config.ts",
+      "bytes": 2523,
+      "sha256": "a7111c622f6e5a48d398108f12e28177a44c531bc32e5c517d6a651d16db5ac4",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth/limits.ts",
+      "bytes": 518,
+      "sha256": "749c49567537cb1b73e0f277fa74a15674123824c7abbca619da7411a0ea92f3",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/log.ts",
+      "bytes": 2252,
+      "sha256": "f88437805361ee3cfdd50c480eaa2842a6f8cf11635f6bdc176a14c19b3e1ff0",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/security.ts",
+      "bytes": 5409,
+      "sha256": "36e9ee92f0e60be36720487c5de3322fcc384f69236316fb72d7e9fcf87e5e7b",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth/oidc.ts",
+      "bytes": 8605,
+      "sha256": "b9482d0d6799cf6fa41c4aa44642ed7adb127b7dfa15fb12aa1b4fd4c044f9c0",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth/session.ts",
+      "bytes": 3268,
+      "sha256": "5588fc2a6f4abc0073157636b6bbd148ac4417dc3e13eaa92139ab450e21c0cf",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth/identity.ts",
+      "bytes": 460,
+      "sha256": "19c22b2c0a887c7a79fabc9b0266051e06af75e00ebe233dddba7a4cd9c7b203",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/signed-call.ts",
+      "bytes": 2549,
+      "sha256": "19bf5dac87cf62f92ab3dc238e28d4bc44d9352dd8153ffca5c2afdf626a7ebb",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/internal-auth.ts",
+      "bytes": 10442,
+      "sha256": "412a9b50822a622879f3a760c5f057f9e681a76d6610c2a64e2f90a17670b982",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/org.ts",
+      "bytes": 2808,
+      "sha256": "94b4741524ed485524bfa73b7fde32cbf6fb1f7b97bdf38e1bb25a56a007a4d3",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/replay.ts",
+      "bytes": 1515,
+      "sha256": "57bf91de24841c9f86992a30fab0b2f8111dfee76b8b77bd7cafebdf09c74b18",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/scope.ts",
+      "bytes": 1489,
+      "sha256": "b07297c4f56bc1e7f4dace3571aa917a48935a0dc9fefa66771d21053658ffd0",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/seed.ts",
+      "bytes": 2458,
+      "sha256": "bfc98fcdf0ce7be41336b5dc2fb90c21f5cb216046b489b2ffa927580d699b34",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/sensitivity.ts",
+      "bytes": 2552,
+      "sha256": "2f7d2b1b6e2b320e492da11fe06f7f1e3f3e7bfc2988e13b13e2aefa75597216",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/segments.ts",
+      "bytes": 4129,
+      "sha256": "49b1592842ef6820ed5bfe10e3e8650fc6b27f6ad378962c3750fa41a421f84b",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/text.ts",
+      "bytes": 32221,
+      "sha256": "377cdb51a829110255c09058511c64d070baabefbc26a53d34b24f02529179d6",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/seed-content.ts",
+      "bytes": 33131,
+      "sha256": "e10a16c3eefecd4ed3776e9c7ac717a60e2387de64912b4db232c8f3125a64b1",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/seed.ts",
+      "bytes": 2786,
+      "sha256": "ac1953664527a18e60e4b400bccf68c033f68cdf4db33fbb8f487d5206f87eca",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth.ts",
+      "bytes": 13080,
+      "sha256": "5db9228d3b17764023610f02d41934716c005db560f73deb98ec14ebf3e6c52e",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth/routes.ts",
+      "bytes": 6529,
+      "sha256": "be30c6d1272cb2628504385e3b1c3dd9b09762aa81e703ff91d7828e979a3dce",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/hooks.ts",
+      "bytes": 619,
+      "sha256": "fadbd8120ebf172c07bcd2bb02928d361b1b49ccaca7c80f13944ef600bd4d8c",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/connector.ts",
+      "bytes": 8640,
+      "sha256": "e031448eb3b8fc9b63459d0a58e53151d9540be7e6ae355cf02202f38494a43f",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/observe.ts",
+      "bytes": 2677,
+      "sha256": "fc233b1f4f8ad4f2f9f88e79484b241d223c59e23f391b90fcd6d0965b7d324c",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/ops-auth.ts",
+      "bytes": 5059,
+      "sha256": "6fab0716128c37856ec5055e7f24046c56c0160180f75697aa952d7374a391fa",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/audit-receipt.ts",
+      "bytes": 4803,
+      "sha256": "49190f5302ce4bdac2798ccce335fb063d55f447ac3ae4a1989a39e00766bfab",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/audit.ts",
+      "bytes": 2855,
+      "sha256": "fbcf53bfa63c29fa503c00cbaf3ad4d2c75843cad2d726d9c9166f3bcd673e48",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ops-rights.ts",
+      "bytes": 6979,
+      "sha256": "d33995ee914f0ee66f76768155eb552c1c9bbc01c76b0b1a49224ab5f1292408",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ops-internal.ts",
+      "bytes": 10234,
+      "sha256": "a2d814f11d2c91642755f49a397a55180c35a73b55bff191e03748b0656c236c",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/admin/validate.ts",
+      "bytes": 12329,
+      "sha256": "4fb02a3e744a3503e806513921b6ebd93c2a30751d6bfa9a75e243b30e4031aa",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/admin/store.ts",
+      "bytes": 43286,
+      "sha256": "7149891ca6dd6f8cd4de0b006860a1dc6e467f283017d6475bdba179bf25caf8",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/admin/routes.ts",
+      "bytes": 34955,
+      "sha256": "c925d0315634f3dbcf1689704c723c56f0e0a4b5e8831962ea904c1be8155c7d",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/agent-ui/schemas.ts",
+      "bytes": 13373,
+      "sha256": "c992611f8392bd6368fc570954d0bdf8e282cfabf5c22772e4f5006f0301b70d",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/agent-ui/library.ts",
+      "bytes": 4862,
+      "sha256": "97ec5e323eb446bed72d03a12bec4b6a0330c29f81c0df2356648b1340719f13",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/agent-ui/lock.ts",
+      "bytes": 2092,
+      "sha256": "24179c213d2e8da802b8f08c3bdb910d9a573ec46f5743fcbfc09efdd7beeef8",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/agent-ui/planner.ts",
+      "bytes": 8329,
+      "sha256": "c141960ec25d08444269a840ee046df297e13775f827e25c864cfdb51006e8b7",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/agent-ui/view.ts",
+      "bytes": 8251,
+      "sha256": "1261fde3554d774c8473f6a0f9ad778f374ca43128a4251d9f5d83f89e81a1a3",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/config.ts",
+      "bytes": 3395,
+      "sha256": "b302e3de1225d408b342f084846ca15eb2a1ce128fdb9291a13aa536ebcdcc8a",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/human.ts",
+      "bytes": 526,
+      "sha256": "1a3e15f3f6a6bcf4a2d68e187327a74c268e5d9adef990f2e172af78ecd5de8a",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ux/util.ts",
+      "bytes": 3039,
+      "sha256": "08e695ffd1f6122babb06e55f31734417ae701090642e02b20a3e6d63aafa1fa",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/review.ts",
+      "bytes": 3211,
+      "sha256": "2b933cffcec327e1d2a40cc04abb09985364cbef3cc8e2527e8fdb74b8d6693f",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/open.ts",
+      "bytes": 6329,
+      "sha256": "018fc23bea9bd1a63cdfb23c411221bdf0fd7875fd70c3de17edc4d2283171eb",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/anthropic.ts",
+      "bytes": 4143,
+      "sha256": "5488c505daa0239e2040572137bf728da7d9bee23d140efa666a5977038ff615",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/budget.ts",
+      "bytes": 3068,
+      "sha256": "0228b2d682af4c172bcce95430ca899bdb5ea72a95b26863bfc94bb181e89249",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/evidence.ts",
+      "bytes": 5960,
+      "sha256": "2e5485690c941b094418ee4b0f4d4fc9ac2b38ad8955afbb28ad9c89f3b1b138",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/prompt.ts",
+      "bytes": 5558,
+      "sha256": "ea77050f5835563e1ddd45ae7a8da8ba441a7c4bad5a505d0c71dab6255affcc",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/brief.ts",
+      "bytes": 8860,
+      "sha256": "6e37f11438ecdc07fc4b053739cb44cbead0aa682b9c4faece4f3d6b60a2f2c0",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/nav.ts",
+      "bytes": 3309,
+      "sha256": "3e07a198466a34300ff578f1e3029e15ccb90cdbefd76859ad6e628a88efd84f",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/ledger.ts",
+      "bytes": 6528,
+      "sha256": "e37c664414797e9a6b95324d520d0ab8bae09e138c83c35878e56c4400e850e8",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/agent/lines.ts",
+      "bytes": 1625,
+      "sha256": "f9b77ac2ed9de2df3c11567da02c44a0d6b954c7c9329b3d7298b0ad014a7c7a",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/agent/stream.ts",
+      "bytes": 10269,
+      "sha256": "fc4fc7992dd8899ef015bf107906cd935fbd3d00a342b0ce6aa78bd92189bf03",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/agent/loop.ts",
+      "bytes": 6220,
+      "sha256": "e72d7e9e938bd027eeb1531850fd00bc836960a9c63868b3d0c82797d998bd0d",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/model.ts",
+      "bytes": 10295,
+      "sha256": "77aca2203eac29d4607963a62a81b631c14a5234ab11bc9bec14626a282b9f33",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/insights.ts",
+      "bytes": 23860,
+      "sha256": "908a810efa940b785156391b9fece914198931c0b50c086dc2c3d630dd521c24",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/fields.ts",
+      "bytes": 5526,
+      "sha256": "9fcd19626939a89f90b2fc114940b21172d1515a05ba93c389a8ff3677868320",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/changes.ts",
+      "bytes": 2544,
+      "sha256": "4843f52d7102368518e01a570d9d055e67dfe8e230d18957fff611b214e60012",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/types.ts",
+      "bytes": 5230,
+      "sha256": "2781d06c30fd0a74163e31d6582cae2fa0e1878a3574e6c9ec3fc82e93976369",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/engine.ts",
+      "bytes": 20415,
+      "sha256": "29979322e505d8d44fcb4f8c7599842c97770240fe3b71cd292ecf55d46ac7f3",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/store.ts",
+      "bytes": 71208,
+      "sha256": "1ae71ea325a0818a34fadb6f1117cd7753d4000d27abb84d4a9388f23f7304ce",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/wiki/routes.ts",
+      "bytes": 44438,
+      "sha256": "d5254c00fadb93ac8d46f1f8da3557b29503fb245c820cb301615a6dba06d719",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/shared.ts",
+      "bytes": 5773,
+      "sha256": "45c1812eb0dfcefde471939672e0efe5811bf3515ae40ba62f33f92d245b8808",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/agent/tools.ts",
+      "bytes": 9884,
+      "sha256": "b0a9ec396d852125aa7631d22dd39fd9111d1707dc05f9f89badc0e5f113fcb5",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/agent/turn.ts",
+      "bytes": 10789,
+      "sha256": "7f26ff041ad751d5dde70335cda17d1b05721225c0915c1414b5c9d76a087443",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/agent/views.ts",
+      "bytes": 12459,
+      "sha256": "ffefdbf5d348789dde6ff4671f9d3d10eb4b70d69cb9405e60ebbbbd1cb8ecdf",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/agent/index.ts",
+      "bytes": 3979,
+      "sha256": "6ad05eddd47d70f218ee92b6bf5a68e90b69a7d4b5f9e850a5fefe990966a2c7",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/generated/view-plan.validator.js",
+      "bytes": 71006,
+      "sha256": "44eb9707472fa910840048adf431199ce9ca2044cbddb1cca1242239f3f3ca25",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/genui.ts",
+      "bytes": 4910,
+      "sha256": "161c4d777d6c75a04e62d8d592de15b6b39b42c10ff02ec63f60a894b2d6567c",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/planner.ts",
+      "bytes": 4590,
+      "sha256": "9f471283d2129477f7780bb14916fe7c6db2ec96b24af59f4822e6693b86ae71",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/proof.ts",
+      "bytes": 3314,
+      "sha256": "e2fb10e3e73d43253b9ad7ce31811b8c7f076aa7349d52a5eef04e191c6ca630",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ai/routes.ts",
+      "bytes": 15285,
+      "sha256": "a74c504eff737d71cb01c6c086528c9213e50d5a32d12e4f2ad0cd39e356f2c4",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/tenant-policy.ts",
+      "bytes": 41002,
+      "sha256": "c9d2d6b97501ea30f9453e38c1349c193ca0eac4703cc1c74466162367095018",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/auth/identity-store.ts",
+      "bytes": 31026,
+      "sha256": "96d540a693ff8a79cb4367022a7ceba55d9e5dce6255095a920bb86416cf8abd",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ops-snapshot.ts",
+      "bytes": 2323,
+      "sha256": "1f18c24434a5b0daa3366fdbd3b54d3d8c38a8c72f9d655b81e2920dffc83eab",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/security-journal.ts",
+      "bytes": 6106,
+      "sha256": "89cd5242201114289a5eae5f9f7d7a2566378b1c4907fb8e40aa7360e05dd78a",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/switches.ts",
+      "bytes": 526,
+      "sha256": "01a0996ebb9d49132dec2a782b8565c75e172bbb712c466cf7feb46e1403e782",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/shared.ts",
+      "bytes": 3223,
+      "sha256": "1a710a96d6a76d4301db2d3a889c2626290e29fed660a79076e72f43c0055b27",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/agents.ts",
+      "bytes": 7795,
+      "sha256": "2325824cf948f562e718392ec5a30c9804b6f0d1ed984dc10060c7234d069743",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/classifier.ts",
+      "bytes": 6813,
+      "sha256": "b525b606ecce647d914e60083169f8d2f07fcf4239cf506410393e8e5d888bbc",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/sanitize.ts",
+      "bytes": 1941,
+      "sha256": "622ca19da74dc053fb085da01758301e975163bc85711774b710ba9432d0dc58",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/unzip.ts",
+      "bytes": 6549,
+      "sha256": "9ef4c977d81edfb8d2abfc2a57291eec5ff922c7ac2bee4a2d00ea0e2616d53c",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/importers.ts",
+      "bytes": 11516,
+      "sha256": "e74afd72aa74982579380b20d4059d2bf19e144c50497c2ba8839b56203ec67b",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/data.ts",
+      "bytes": 15459,
+      "sha256": "3a61828a32bbe37967f0d1985095a2e6e3c8558b439c38f6b57f34468e790f88",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/insights-routes.ts",
+      "bytes": 8570,
+      "sha256": "d35c1b8e945677f8f809f20827915f82076247f0eb160dec3466954243540f53",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/push.ts",
+      "bytes": 8482,
+      "sha256": "b970ca1e6b220269ff2e915074681de04da9a77cd0a0d75e2b1c7dac744ca733",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/routes.ts",
+      "bytes": 26393,
+      "sha256": "5e8e29a83719df17beb5d8b943b309601d4ba11a53dc1256b61bb3fcf9e6c374",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/index.ts",
+      "bytes": 754,
+      "sha256": "457b53520a2c172a5c084abc006d36f963b11837d5b7b7e187f08d43c0b4588a",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ops-admin.ts",
+      "bytes": 8605,
+      "sha256": "0b0120cdc31e307909f4a3fd62265b121a06b15c6a09dd71c21962c1abd774b0",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/personal-kind.ts",
+      "bytes": 669,
+      "sha256": "ae8f6cbf126730af6fda6ec4da3aceecc8551888ea786f269f13d2002b6011fb",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ux/personal.ts",
+      "bytes": 12914,
+      "sha256": "44f3a92c042a16a7248f50587b99044459642dd9461acd0f0b7f21a15bfb96e5",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ux/records.ts",
+      "bytes": 14539,
+      "sha256": "3699e8323bf2d10e2b8c1d989487066731dc7843d4ab1465a563f58bdf547fcc",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ux/notify.ts",
+      "bytes": 4411,
+      "sha256": "287041bf559c488e76b740508bdb1f969f4d73b2441eecce305f207d953270fd",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ux/review.ts",
+      "bytes": 5630,
+      "sha256": "69fd4fbfe07212878b84bee82f07ac5e3d86183322bd8987bead6813246de6e1",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/ux/index.ts",
+      "bytes": 614,
+      "sha256": "595a936335905ed9fc1e50eb8be11ebcd80a5d7c48480f903c931b2a4d9fc4f6",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/ask.ts",
+      "bytes": 22695,
+      "sha256": "35b452feedd6402aa4d878defae17e7e98642a5c7e1e410600768d8a493762cd",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/zip.ts",
+      "bytes": 2980,
+      "sha256": "8f61483e60c2ea2d13cb452fa2d15627d798db9ddef7a2dacf33b291b12dfa11",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/export.ts",
+      "bytes": 7592,
+      "sha256": "cd43131e32d1f58ec5a535f6d1a055cede2bd5d8ec5d6f58dc8c512f667d618e",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/routines.ts",
+      "bytes": 25201,
+      "sha256": "512f52f4989d2e739320077c28ed8fedc4077be5330f636babd2508fa63aa4a7",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/questions.ts",
+      "bytes": 26423,
+      "sha256": "b2d4bec75e32e95cde489506c7abcca68286567aa9930c406f3a9596ad709583",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/tree.ts",
+      "bytes": 4848,
+      "sha256": "75bb69bd0a669557cbd9b682d41f9205c477a4817e44aba913726514bddc9263",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/usage.ts",
+      "bytes": 1328,
+      "sha256": "9726ae8cd372bbbbad4e8adf0fec9519df0783d18c09974b55a39dd08cee1f7d",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/uxv2/index.ts",
+      "bytes": 854,
+      "sha256": "72c5b6ea408c1ec208af9b3cfef1185b6ab6c8f18aea844454e222911bbd5044",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/routes.ts",
+      "bytes": 41885,
+      "sha256": "47c51d6272397b275b5fbd4e8a0cd200bef3f58db3b55dd0828a6662068cd6ec",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/scim/parse.ts",
+      "bytes": 8580,
+      "sha256": "3c3920630073ff0e08c39cc1cdd9249ceaa824891782dd1bb847a0d65b1da947",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/scim/routes.ts",
+      "bytes": 10630,
+      "sha256": "e874c26f1ab43c2469cb469df9594abbe4cb8a5ae1194f40a9b99eb8a5ded348",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/brains/store.ts",
+      "bytes": 25742,
+      "sha256": "4f75dda95d5009b7230e9ebab5097d3c7c7af68be546e9ae7cb05c04773de5f3",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/workspace.ts",
+      "bytes": 35701,
+      "sha256": "6f2ab61af8ea89ac55b12f51530e1622bbcbf314fb164cf31073c2c8902fe67b",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    },
+    {
+      "path": "recovered-source/worker/src/index.ts",
+      "bytes": 1625,
+      "sha256": "ad56e72ea6fe677d7a137485d50c62808d16d0e11f26025557d489f1e5e44bc1",
+      "privacy_intake": "no_known_sensitive_content_found_within_scoped_static_review"
+    }
+  ],
+  "restrictions": [
+    "PRIVATE ONLY; public direction superseded",
+    "No execution or upload occurred",
+    "No raw bundle/map/data/vault content included",
+    "License/dependencies/build/security review required later; not a prerequisite claim to history reconstruction"
+  ]
+}

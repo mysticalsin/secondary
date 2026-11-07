@@ -1,0 +1,25 @@
+{
+  "name": "secondary-api-recovery",
+  "private": true,
+  "type": "module",
+  "description": "Private local preservation of recovered Secondary API source, with a typecheck and test harness. Not a deployable Worker.",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test --test-reporter=spec harness/tests/*.test.ts harness/runtime/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json"
+  },
+  "dependencies": {
+    "@openuidev/lang-core": "1.1.0",
+    "hono": "4.13.17",
+    "jose": "6.2.15",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261107.1",
+    "@types/node": "22.19.0",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node", "@cloudflare/workers-types"],
+    "paths": {
+      "@secondary/policy": ["./harness/adapters/policy-entry.ts"]
+    }
+  },
+  "include": [
+    "recovered-source/shared/packages/**/*.ts",
+    "harness/adapters/**/*.ts",
+    "harness/tests/**/*.ts",
+    "recovered-source/worker/src/admin/store.ts",
+    "recovered-source/worker/src/admin/validate.ts",
+    "recovered-source/worker/src/agent/stream.ts",
+    "recovered-source/worker/src/ai/anthropic.ts",
+    "recovered-source/worker/src/ai/config.ts",
+    "recovered-source/worker/src/ai/proof.ts",
+    "recovered-source/worker/src/ai/segments.ts",
+    "recovered-source/worker/src/auth/identity-store.ts",
+    "recovered-source/worker/src/auth/limits.ts",
+    "recovered-source/worker/src/brains/importers.ts",
+    "recovered-source/worker/src/brains/model.ts",
+    "recovered-source/worker/src/brains/sanitize.ts",
+    "recovered-source/worker/src/brains/unzip.ts",
+    "recovered-source/worker/src/internal-auth.ts",
+    "recovered-source/worker/src/ops-snapshot.ts",
+    "recovered-source/worker/src/personal-kind.ts",
+    "recovered-source/worker/src/scim/parse.ts",
+    "recovered-source/worker/src/scope.ts",
+    "recovered-source/worker/src/security-journal.ts",
+    "recovered-source/worker/src/sensitivity.ts",
+    "recovered-source/worker/src/switches.ts",
+    "recovered-source/worker/src/uxv2/zip.ts",
+    "recovered-source/worker/src/wiki/changes.ts",
+    "recovered-source/worker/src/wiki/text.ts",
+    "recovered-source/worker/src/wiki/types.ts"
+  ]
+}
