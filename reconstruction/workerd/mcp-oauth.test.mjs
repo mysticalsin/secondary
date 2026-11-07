@@ -180,7 +180,7 @@ async function registerClient() {
   return res.json.client_id;
 }
 
-async function authorizationCode(clientId, email) {
+async function authorizationCode(clientId, email, scopes = ["secondary.read"]) {
   const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
   const state = b64url(randomBytes(16));
@@ -190,7 +190,7 @@ async function authorizationCode(clientId, email) {
     redirect_uri: REDIRECT,
     code_challenge: challenge,
     code_challenge_method: "S256",
-    scope: "secondary.read",
+    scope: scopes.join(" "),
     state,
     resource: RESOURCE,
   });
@@ -213,7 +213,11 @@ async function authorizationCode(clientId, email) {
         "x-dev-email": email,
         "x-dev-persona": "consultant",
       },
-      body: new URLSearchParams({ handle, decision: "approve", scope: "secondary.read" }),
+      body: (() => {
+        const form = new URLSearchParams({ handle, decision: "approve" });
+        for (const scope of scopes) form.append("scope", scope);
+        return form;
+      })(),
     }),
   );
   assert.equal(approved.status, 302, approved.text.slice(0, 300));
@@ -383,6 +387,21 @@ test("PKCE grant initializes, lists tools, and calls whoami for that principal o
   const deniedText = JSON.stringify(denied?.result ?? denied);
   assert.equal(deniedText.includes("insufficient_scope"), true);
   assert.equal(deniedText.includes("SYNTHETIC_IMPORT_BODY"), false);
+  const readDenied = rpc(
+    await mcp(
+      token,
+      {
+        jsonrpc: "2.0",
+        id: 6,
+        method: "tools/call",
+        params: { name: "personal_note_create", arguments: { title: "Should not store", body: "FORBIDDEN_MCP_BODY" } },
+      },
+      session,
+    ),
+  );
+  const readDeniedText = JSON.stringify(readDenied?.result ?? readDenied);
+  assert.equal(readDeniedText.includes("insufficient_scope"), true);
+  assert.equal(readDeniedText.includes("FORBIDDEN_MCP_BODY"), false);
   const other = await authorizationCode(clientId, OTHER);
   const otherToken = await exchange(clientId, other.code, other.verifier);
   const otherInit = await mcp(otherToken, {
@@ -426,6 +445,36 @@ test("PKCE grant initializes, lists tools, and calls whoami for that principal o
   );
   assert.equal(again.status, 400);
   assert.equal(again.json.error, "invalid_grant");
+  const writer = await authorizationCode(clientId, EMAIL, ["secondary.read", "secondary.personal.write"]);
+  const writeToken = await exchange(clientId, writer.code, writer.verifier);
+  const writeInit = await mcp(writeToken, {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "synthetic-local", version: "0" },
+    },
+  });
+  const writeSession = writeInit.headers.get("mcp-session-id");
+  await mcp(writeToken, { jsonrpc: "2.0", method: "notifications/initialized" }, writeSession);
+  const created = rpc(
+    await mcp(
+      writeToken,
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        method: "tools/call",
+        params: { name: "personal_note_create", arguments: { title: "Synthetic MCP note", body: "Synthetic MCP body" } },
+      },
+      writeSession,
+    ),
+  );
+  const createdText = JSON.stringify(created?.result ?? created);
+  assert.equal(created?.result?.isError, undefined);
+  assert.equal(createdText.includes("Synthetic MCP body"), true);
+  assert.equal(createdText.includes("FORBIDDEN_MCP_BODY"), false);
   const revoked = await read(
     await mf.dispatchFetch(`${ORIGIN}/token`, {
       method: "POST",

@@ -40,7 +40,14 @@ test("the fixture listens only on loopback and returns the shell", async () => {
     assert.equal(text.includes("Secondary | Company Brain"), true);
     assert.equal(text.includes("/assets/index-PLmoiPYI.js"), true);
     assert.equal(text.includes("/settings/observability"), true);
+    assert.equal(text.includes("/reconstruction/import"), true);
     assert.equal(text.includes("data-reconstruction"), true);
+    const imported = await fetch(`http://127.0.0.1:${port}/reconstruction/import`);
+    assert.equal(imported.status, 200);
+    const importText = await imported.text();
+    assert.equal(importText.includes("7000"), true);
+    assert.equal(importText.includes("unknown"), true);
+    assert.equal(importText.includes(".txt"), true);
     const settings = await fetch(`http://127.0.0.1:${port}/settings/profile`);
     assert.equal(settings.status, 200);
     assert.equal((await settings.text()).includes("Secondary | Company Brain"), true);

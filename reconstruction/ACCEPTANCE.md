@@ -21,13 +21,19 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Seeded `u_consultant` personal plan `pb:u_consultant` | Recovered planner, reconstruction fixture | PASS |
 | Plus-address principal has no personal node; original 404 kept | Recovered `planView` | FAIL closed |
 | Another owner and a tenant query cannot read that plan | Recovered view | PASS |
-| Persisted personal brain for every new user, beyond the seed list | No recovered creator | NOTRUN |
+| New synthetic users `ada@tenant-a.test` and `bob@tenant-b.test` each get a durable personal workspace that is not `u_consultant` | Reconstruction gate over recovered `POST /v1/personal/items`; workerd `two new users keep separate durable imports across a restart` | PASS |
+| Same items are readable after a new workerd process uses the same persistence directory | That test's second boot | PASS |
+| Plus-address org-graph plan `pb:<hash>` | Recovered `planView` still has no node | FAIL closed |
 
 ## 2. Selected import
 
 | Check | Where | Status |
 | --- | --- | --- |
-| File or text import, limits, hash, provenance, ACL, retry, durable readback | Not built | NOTRUN |
+| Paste, `.txt`, and `.md` only, max 7000 characters; path, script, executable, oversize, and URL imports rejected before any personal-item write | `import policy accepts text and markdown and rejects the rest`; workerd `two new users keep separate durable imports across a restart` | PASS |
+| Same source, version, and hash is one item; a changed same version conflicts; a higher version appends and keeps the previous id | Workerd import test | PASS |
+| No cross-tenant text in the other user's list, including the same hash under another external id | Workerd import test | PASS |
+| Unsigned call is 401; a seed-owner id is not rewritten; a consultant plus-address stays `u_consultant_<hash>` | Workerd import test | PASS |
+| Request `principalId` and `tenantId` do not choose the destination | Workerd import test, Ada body names `u_consultant` and `tenant_beta` but the receipt is her own principal in `tenant_alpha` | PASS |
 | Synthetic documents only; no vault, mail, or SharePoint | This round | PASS as a constraint |
 
 ## 3. MCP
@@ -48,7 +54,9 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | Egress to `https://example.invalid` | `dev.outboundService` deny worker | PASS |
 | Dust, Claude, or any hosted client handshake | Needs a protected public endpoint | NOTRUN |
 | CIMD fetch | Flag intentionally absent | NOTRUN |
-| Import or search through MCP | Not the tool chosen this round | NOTRUN |
+| OAuth write token `personal_note_create` stores synthetic text; a read token is `insufficient_scope` and the refused body is not echoed | `PKCE grant initializes, lists tools, and calls whoami for that principal only` | PASS |
+| Provenance import readback through an MCP `tools/call` | Recovered tools have no personal-item read. `GET /v1/personal/items` is not an internal MCP route. Search reads the org workspace, not this receipt. Not added by editing recovered tools. | NOTRUN |
+| Hosted Dust or Claude handshake | Needs a protected public endpoint | NOTRUN |
 
 ## 4. Token ledger
 
@@ -56,7 +64,8 @@ A normal `tools/call` does not carry the caller's model usage. Missing external 
 | --- | --- | --- |
 | Provider-verified usage when this backend calls a model | No model call this round | NOTRUN |
 | Client-reported usage authenticated and not treated as provider-verified | Contract not added | NOTRUN |
-| Unknown stays unknown; zero is not a substitute | Rule recorded, no UI yet | NOTRUN |
+| Import receipts record `usage: "unknown"` and do not invent token counts | Workerd import test and import page | PASS |
+| Unknown stays unknown; zero is not a substitute | Import path only | PASS for imports, ledger still NOTRUN |
 | Cumulative stream snapshots are not summed; retries are separate from import dedupe | Rule recorded | NOTRUN |
 
 ## 5. Observability

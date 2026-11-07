@@ -355,6 +355,60 @@ document.getElementById("route-filter").addEventListener("input", (event) => {
 </body></html>`;
 }
 
+export function renderImport(model) {
+  const items = model.items
+    .map((item) => `<li><strong>${esc(item.id)}</strong><p>${esc(item.text)}</p></li>`)
+    .join("");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Import</title>
+<style>
+:root { color-scheme: light; --canvas:#f8f6f9; --ink:#17121a; --accent:#6600ae; --line:#d8d8df; --muted:#5c5d6d; --bad:#c70e1d; --panel:#fff; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--canvas); color:var(--ink); font-family:ui-sans-serif,system-ui,sans-serif; }
+.frame { max-width: 760px; margin: 0 auto; padding: 28px 16px 64px; }
+h1 { margin: 8px 0; font-size: 36px; letter-spacing: -0.03em; }
+a { color: inherit; }
+.banner { display:inline-flex; margin: 8px 0 16px; padding: 6px 12px; border-radius: 999px; background:#fcf3ff; color:var(--accent); font-size:13px; font-weight:650; }
+form, .sheet { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:16px; }
+label { display:block; margin:10px 0; font-size:14px; }
+input, textarea, button { font:inherit; width:100%; border-radius:12px; border:1px solid var(--line); padding:10px; }
+button { width:auto; background:var(--accent); color:white; cursor:pointer; }
+.alert { color:var(--bad); font-weight:650; }
+.muted { color:var(--muted); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+@media (max-width:720px) { h1 { font-size:30px; } }
+</style></head><body><main class="frame">
+<p><a href="/settings">Settings</a> / Import</p>
+<h1>Import into your brain</h1>
+<p class="banner">Local preview · synthetic data</p>
+<p class="muted">Accepted input is pasted text or a local .txt or .md file, at most 7000 characters and 8000 bytes. Other types, oversize files, path names, scripts, shebangs, and URL fetches are refused. The text is stored as data. External model usage stays unknown.</p>
+<p class="muted">This page writes only into the signed-in local session and then reads that same workspace back. It does not grant a tenant, and it does not map a new person onto a seeded owner. Two newly authenticated users in two tenants are covered by the reconstruction import gate, which refuses a seed-owner rewrite before any save.</p>
+<p class="${model.message.startsWith("Import rejected") || model.message.startsWith("Import failed") || model.message.startsWith("Import was not") ? "alert" : ""}" role="${model.message ? "status" : "none"}">${esc(model.message)}</p>
+<form method="post" action="/reconstruction/import">
+<label>External id <input name="externalId" required maxlength="64" value="note-1"></label>
+<label>Version <input name="version" type="number" min="1" max="1000" value="1" required></label>
+<label>Source
+<select name="source"><option value="paste">Pasted text</option><option value="file">Text file</option></select>
+</label>
+<label>File name, only for a file <input name="filename" placeholder="notes.md"></label>
+<label>Text <textarea name="text" rows="8" required></textarea></label>
+<label>Optional .txt or .md file <input id="local-file" type="file" accept=".txt,.md,text/plain,text/markdown"></label>
+<button type="submit">Store in my personal brain</button>
+</form>
+<script>
+document.getElementById("local-file").addEventListener("change", async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  document.querySelector("[name=filename]").value = file.name;
+  document.querySelector("[name=source]").value = "file";
+  document.querySelector("[name=text]").value = await file.text();
+});
+</script>
+<section class="sheet"><h2>Imported text</h2><p class="muted">Existing personal notes left in place: ${Number(model.kept) || 0}. They were not migrated or deleted.</p><ul>${items || "<li>No import is stored for this session.</li>"}</ul></section>
+</main></body></html>`;
+}
+
 export function renderGenui(state) {
   return page(
     "GenUI flow",

@@ -8,7 +8,8 @@ import { createServer } from "node:http";
 import { extname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ViewBoundary } from "../genui/boundary.ts";
-import { renderGenui, renderObservability } from "../ui/pages.mjs";
+import { matchReceipt, readReceipt, sha256Hex, storedBody, validateImport, visibleText } from "../import/policy.mjs";
+import { renderGenui, renderImport, renderObservability } from "../ui/pages.mjs";
 import { callApi, probeEgress, startRecoveredApi } from "./recovered-api.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -188,6 +189,69 @@ async function observabilityModel(persona, prefMessage) {
   };
 }
 
+async function importForSession(persona, payload) {
+  const checked = validateImport(payload);
+  if (!checked.ok) return { status: 400, message: `Import rejected (${checked.error}). Nothing was stored.` };
+  const me = jsonBody((await callApi("/v1/me", { persona })).text);
+  const existing = jsonBody((await callApi("/v1/personal/items", { persona })).text);
+  const contentSha256 = await sha256Hex(checked.text);
+  const rows = Array.isArray(existing) ? existing : [];
+  const found = matchReceipt(rows, { ...checked, contentSha256 });
+  if (found.conflict) return { status: 409, message: "Import rejected (version_conflict). Nothing new was stored." };
+  if (found.same) return { status: 200, message: `Already stored as ${found.same.id}. External model usage is unknown.` };
+  const receipt = {
+    import: 1,
+    source: checked.source,
+    client: "reconstruction-ui",
+    externalId: checked.externalId,
+    version: checked.version,
+    contentSha256,
+    author: me.principal?.id ?? "unknown",
+    principal: me.principal?.id ?? "unknown",
+    tenant: me.tenantId ?? "unknown",
+    destination: `personal:${me.principal?.id ?? "unknown"}`,
+    at: new Date().toISOString(),
+    outcome: "stored",
+    previous: found.previous?.id ?? null,
+    usage: "unknown",
+  };
+  const body = storedBody(receipt, checked.text);
+  if (body.length > 8000) return { status: 400, message: "Import rejected (invalid_text). Nothing was stored." };
+  const saved = await callApi("/v1/personal/items", {
+    method: "POST",
+    persona,
+    body: JSON.stringify({ kind: "note", title: checked.externalId, body }),
+  });
+  if (saved.status !== 201) return { status: 502, message: `Import failed (${saved.status}). It was not confirmed stored.` };
+  const made = jsonBody(saved.text);
+  const after = jsonBody((await callApi("/v1/personal/items", { persona })).text);
+  if (!Array.isArray(after) || !after.some((item) => item.id === made.id)) {
+    return { status: 503, message: "Import was not confirmed in the personal workspace." };
+  }
+  return { status: 201, message: `Stored ${made.id}. External model usage is unknown.` };
+}
+
+async function importPage(persona, message) {
+  const me = jsonBody((await callApi("/v1/me", { persona })).text);
+  const rows = jsonBody((await callApi("/v1/personal/items", { persona })).text);
+  const items = [];
+  let kept = 0;
+  for (const item of Array.isArray(rows) ? rows : []) {
+    if (!readReceipt(item.body)) {
+      kept += 1;
+      continue;
+    }
+    items.push({ id: item.id, text: visibleText(item.body) });
+  }
+  return {
+    who: me.principal?.id ?? "unknown",
+    tenant: me.tenantId ?? "unknown",
+    message,
+    items,
+    kept,
+  };
+}
+
 async function genuiState(session) {
   const persona = PRESETS[session.preset];
   const me = jsonBody((await callApi("/v1/me", { persona })).text);
@@ -246,17 +310,23 @@ async function genuiState(session) {
 function withSettingsLink(html) {
   const script = `<script>
 (function () {
-  var href = "/settings/observability";
   function mount() {
     var list = document.querySelector("nav.setnav ul");
-    if (!list || list.querySelector("[data-reconstruction='observability']")) return;
-    var item = document.createElement("li");
-    var link = document.createElement("a");
-    link.href = href;
-    link.textContent = "Observability";
-    link.setAttribute("data-reconstruction", "observability");
-    item.appendChild(link);
-    list.appendChild(item);
+    if (!list) return;
+    var links = [
+      ["/settings/observability", "Observability", "observability"],
+      ["/reconstruction/import", "Import", "import"],
+    ];
+    for (var i = 0; i < links.length; i++) {
+      if (list.querySelector("[data-reconstruction='" + links[i][2] + "']")) continue;
+      var item = document.createElement("li");
+      var link = document.createElement("a");
+      link.href = links[i][0];
+      link.textContent = links[i][1];
+      link.setAttribute("data-reconstruction", links[i][2]);
+      item.appendChild(link);
+      list.appendChild(item);
+    }
   }
   if (!document.body) return;
   new MutationObserver(mount).observe(document.body, { childList: true, subtree: true });
@@ -337,6 +407,27 @@ export function listen(port = 0) {
         : `Save failed (${saved.status}${savedBody.error ? `, ${savedBody.error}` : ""}). Nothing else was changed.`;
       const html = renderObservability(await observabilityModel(persona, message));
       send(res, 200, "text/html; charset=utf-8", html, cookie);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/reconstruction/import") {
+      send(res, 200, "text/html; charset=utf-8", renderImport(await importPage(persona, "")), cookie);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/reconstruction/import") {
+      const raw = await readBody(req);
+      let payload;
+      try {
+        payload = raw.trim().startsWith("{")
+          ? JSON.parse(raw)
+          : Object.fromEntries(new URLSearchParams(raw).entries());
+        if (payload.version !== undefined) payload.version = Number(payload.version);
+        payload.text = payload.text ?? "";
+      } catch {
+        payload = { source: "paste", externalId: "invalid", version: 1, text: "" };
+      }
+      const result = await importForSession(persona, payload);
+      const status = result.status;
+      send(res, status, "text/html; charset=utf-8", renderImport(await importPage(persona, result.message)), cookie);
       return;
     }
     if (url.pathname === "/reconstruction/genui") {
