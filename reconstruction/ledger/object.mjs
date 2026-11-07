@@ -362,8 +362,12 @@ export class UsageLedger {
       principalId,
     ).toArray();
     const meta = this.sql.exec("SELECT ledger_sha256, incomplete, read_at, byte_length FROM activity_meta WHERE principal_id = ?", principalId).toArray()[0];
+    const records = rows.map((row) => ({ record_id: row.record_id, hash: row.content_hash, body: row.body }));
+    if (meta && ((meta.incomplete !== 0 && meta.incomplete !== 1) || typeof meta.read_at !== "string" || typeof meta.ledger_sha256 !== "string")) {
+      return json({ error: "stored_meta_invalid", reason: "stored_meta_invalid" }, 500);
+    }
     return json({
-      records: rows.map((row) => ({ record_id: row.record_id, hash: row.content_hash, body: row.body })),
+      records,
       meta: meta ? {
         ledgerSha256: meta.ledger_sha256,
         incomplete: meta.incomplete === 1,

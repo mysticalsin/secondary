@@ -3,7 +3,8 @@
  * These rows are fixtures. They are not the parent's three historical records.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -250,6 +251,77 @@ test("the release activity page escapes notes and clears across tokens", async (
     const other = await (await mf.dispatchFetch("http://release.local/settings/observability?section=activity", { headers: { authorization: `Bearer ${bob}` } })).text();
     assert.equal(other.includes("relay-synthetic-ada"), false);
     assert.equal(other.includes("Nothing has been imported"), true);
+  } finally {
+    await mf.dispose();
+  }
+});
+
+function filesUnder(dir) {
+  const found = [];
+  for (const name of readdirSync(dir)) {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) found.push(...filesUnder(path));
+    else found.push(path);
+  }
+  return found;
+}
+
+test("malformed stored activity fails closed and does not return the valid row", async () => {
+  const script = readFileSync(bundleWorkerd().api, "utf8");
+  const persist = mkdtempSync(join(tmpdir(), "secondary-activity-bad-"));
+  const marker = "synthetic fixture stored-ok";
+  const line = `${JSON.stringify(record("relay-synthetic-ok", marker))}\n`;
+  let mf = boot(script, [], persist);
+  let principalId = "";
+  try {
+    const saved = await call(mf, ADA, "POST", "/harness/activity", { ndjson: line });
+    assert.equal(saved.status, 200, saved.text);
+    const ok = await call(mf, ADA, "GET", "/harness/activity?q=stored-ok");
+    assert.equal(ok.status, 200, ok.text);
+    assert.equal(ok.json.items.length, 1);
+    assert.equal(ok.json.items[0].untrusted_notes, marker);
+    principalId = ok.json.principalId;
+    const ns = await mf.getDurableObjectNamespace("USAGE_LEDGER", "api");
+    const planted = await ns.get(ns.idFromName("tenant_alpha")).fetch("https://ledger.internal/activity/apply", {
+      method: "POST",
+      body: JSON.stringify({
+        principalId,
+        records: [{ record_id: "relay-synthetic-bad", hash: "b".repeat(64), body: "{\"no\":1}" }],
+        ledgerSha256: "c".repeat(64),
+        incomplete: false,
+        readAt: "2026-11-07T00:00:00-03:00",
+        byteLength: 8,
+      }),
+    });
+    assert.equal(planted.status, 200, await planted.text());
+    const denied = await call(mf, ADA, "GET", "/harness/activity");
+    assert.equal(denied.status, 500, denied.text);
+    assert.equal(denied.json.reason, "unknown_field");
+    assert.equal(Array.isArray(denied.json.items), false);
+    assert.equal(denied.text.includes(marker), false);
+    assert.equal(denied.text.includes("relay-synthetic-ok"), false);
+  } finally {
+    await mf.dispose();
+  }
+  const db = filesUnder(persist).find((path) => path.includes("api-UsageLedger") && path.endsWith(".sqlite") && !path.endsWith("metadata.sqlite"));
+  assert.equal(typeof db, "string");
+  const edited = spawnSync("python3", ["-c", `
+import sqlite3
+db = sqlite3.connect(${JSON.stringify(db)})
+db.execute("DELETE FROM activity_records WHERE record_id = ?", ("relay-synthetic-bad",))
+db.execute("UPDATE activity_meta SET incomplete = ?", (2,))
+db.commit()
+print("meta", db.execute("SELECT incomplete, typeof(incomplete) FROM activity_meta").fetchall())
+`], { encoding: "utf8" });
+  assert.equal(edited.status, 0, edited.stderr);
+  mf = boot(script, [], persist);
+  try {
+    const denied = await call(mf, ADA, "GET", "/harness/activity");
+    assert.equal(denied.status, 500, denied.text);
+    assert.equal(denied.json.reason, "stored_meta_invalid");
+    assert.equal(Array.isArray(denied.json.items), false);
+    assert.equal(denied.text.includes(marker), false);
+    assert.equal(denied.text.includes("relay-synthetic-ok"), false);
   } finally {
     await mf.dispose();
   }
