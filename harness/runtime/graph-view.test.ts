@@ -14,6 +14,14 @@ test("the graph wrapper serves /graph, links it from app pages, and passes every
     assert.equal(html.includes("style=\""), false);
     assert.match(html, /src="\/graph\/app\.js"/);
 
+    const dash = await fetch(`${url}/dashboard`);
+    assert.equal(dash.status, 200);
+    const dashHtml = await dash.text();
+    assert.match(dashHtml, /src="\/graph\/dashboard\.js"/);
+    assert.equal(dashHtml.includes("<script>"), false);
+    assert.equal(dashHtml.includes("style=\""), false);
+    assert.equal((await fetch(`${url}/graph/dashboard.js`)).status, 200);
+
     const app = await fetch(`${url}/brains/me`, { headers: { Accept: "text/html", "If-None-Match": "\"stale\"" } });
     const appHtml = await app.text();
     assert.match(appHtml, /<script src="\/graph\/nav\.js" defer><\/script><\/head>/);

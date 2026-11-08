@@ -27,6 +27,9 @@ export function graphFiles() {
     "/graph/app.css": [read("graph.css"), "text/css; charset=utf-8"],
     "/graph/nav.js": [read("nav.js"), "text/javascript; charset=utf-8"],
     "/graph/nav.css": [read("nav.css"), "text/css; charset=utf-8"],
+    "/dashboard": [read("dashboard.html"), "text/html; charset=utf-8"],
+    "/graph/dashboard.js": [read("dashboard.js"), "text/javascript; charset=utf-8"],
+    "/graph/dashboard.css": [read("dashboard.css"), "text/css; charset=utf-8"],
   };
 }
 

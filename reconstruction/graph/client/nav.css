@@ -1,8 +1,12 @@
-.sb-graph-link {
+.sb-graph-dock {
   position: fixed;
   right: 18px;
   bottom: 18px;
   z-index: 2147483000;
+  display: flex;
+  gap: 6px;
+}
+.sb-graph-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -18,4 +22,4 @@
 .sb-graph-link:hover { background: #6600ae; border-color: #6600ae; }
 .sb-graph-link:focus-visible { outline: 2px solid #ffc709; outline-offset: 2px; }
 .sb-graph-link svg { width: 16px; height: 16px; }
-@media print { .sb-graph-link { display: none; } }
+@media print { .sb-graph-dock { display: none; } }

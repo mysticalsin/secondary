@@ -807,5 +807,12 @@
 
   window.addEventListener("resize", resize);
   resize();
-  load();
+  load().then(() => {
+    const m = /^#focus=(.+)$/.exec(window.location.hash);
+    const n = m ? byId.get(decodeURIComponent(m[1])) : null;
+    if (n) {
+      select(n);
+      setTimeout(() => center(n), 400);
+    }
+  });
 })();
