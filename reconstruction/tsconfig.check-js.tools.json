@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.check-js.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["validators/regenerate.mjs"]
+}

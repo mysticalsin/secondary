@@ -217,6 +217,49 @@ The delivered renderer names a different component set from the recovered view-p
 
 `npm run typecheck:js-bodies` is `tsc --noEmit -p reconstruction/tsconfig.check-js.json` with strict `checkJs`. The first run of that program reported 170 diagnostics. After the contract fixes it reported 157 and exited 2. Annotations and the Workers `TextDecoder` options (`fatal: true` plus required `ignoreBOM: false`) bring it to exit 0. The program lists the nine reconstruction `.mjs` files. `recovered-source/worker/src/generated/view-plan.validator.js` and `recovered-other/secondary-mcp-dev/worker/src/generated/view-plan-validator.js` are not in it. A fresh offline page build would inline the annotated validator and would differ from the frozen `index.html` pin `d089ce6272f02ae8a0df129a710a9c98c47a76f6627ff199739fb301c8d5ce94`. That file was not replaced.
 
+## Generated view-plan validators
+
+Both generated validators are now in a compiler program and under a regeneration check. Their bytes are unchanged.
+
+Provenance. The API file names `scripts/gen-validator.mjs`, and the MCP file names `workers/mcp/scripts/build-validator.ts`. Both name `view-plan.schema.json`. None of those three files is in either intake. The schema survives only as the `schema31` literal inside each file, and the two literals are identical. `reconstruction/validators/regenerate.mjs` is new and is not the original generator. It recompiles that literal with ajv 8.20.0 `Ajv2020` using `{ allErrors: true, code: { source: true, esm: true } }`.
+- MCP file: the four-line header, the standalone output, and `COMPONENT_TYPES` derived from the schema's `oneOf`.
+- API file: the fixed header and the inlined `__ucs2length` and `__equal` helpers, then the same standalone output with its two `require("ajv/dist/runtime/…").default` calls replaced by those helpers.
+
+Both rebuilt files are byte-identical to the recovered files: `44eb9707…` for the API file and `a6065680…` for the MCP file. That shows neither validator body was hand-edited. Changing only the schema literal, or one character of the compiled body, makes the check fail.
+
+Executable membership comes from esbuild metafiles, with each symlink resolved to its recovered file:
+
+| Entry | Loads |
+| --- | --- |
+| API `worker-root/.../index.ts` and `workerd/api-harness.ts` | API validator |
+| MCP `mcp/.../index.ts` and `workerd/view-plan-entry.ts` | MCP validator |
+
+| Command | Before | After |
+| --- | --- | --- |
+| `npm run typecheck:worker` (recovered API tree) | exit 2, 119 | exit 2, 119, unchanged |
+| `npm run typecheck:js-bodies` (nine authored `.mjs`) | exit 0, 0, nine members | exit 0, 0, nine members |
+| `npm run typecheck:js-generated` (new, same strict options as the nine bodies) | the two validators were not members of any checkJs program | both are members. Exit 2, 528 diagnostics |
+| `npm run typecheck:js-tools` (new, the reconstructed generator under strict checkJs with Node types) | not present | exit 0, 0 |
+| `npm run check:validators` | not present | exit 0, both identical |
+
+The 528 diagnostics break down as follows:
+- **Each ajv body (262 per file):** 131 `TS2339`, 71 `TS2345`, 17 `TS2322`, 17 `TS7006`, 16 `TS2353`, 8 `TS2454`, 1 `TS2367`, and 1 `TS2739`.
+- **API helper prelude (4 more):** three `TS7006` on untyped helper parameters and one `TS7023` for the recursive `__equal`.
+
+All of them are inference artifacts of ajv's untyped standalone code:
+- `validateNN.errors` and `evaluated` expando properties.
+- `vErrors` inferred as `null` and then pushed to.
+- Destructured options without types.
+- The `props0` evaluated-properties tracker, which holds either an object or `true`.
+
+None was suppressed. The gate pins the inventory by file and code, so any drift fails.
+
+Strict closure to 0 is blocked by a hard dependency. ajv 8.20.0 standalone output carries no types, and the original generators that could emit typed output are absent. Annotating the files would change pinned bytes that the API and MCP bundles consume. That would be a hand edit, not a regeneration.
+
+The API declaration now names both runtime exports, `validate` and `default`, plus `errors`. Before, it named only `default`.
+
+The new test `harness/runtime/generated-validators.test.ts` runs both actual files, the MCP file with a test-only `require` shim, alongside a freshly compiled validator. It uses 5 valid and 18 malformed synthetic plans. All three validators give the same verdicts and the same error arrays. The malformed cases cover inline data rows, a path-like node id, free-text callouts, a 121-character astral-plane title (the `__ucs2length` helper), duplicate metrics (`__equal`), and a Table with neither `nodeId` nor `lens`. This is generated-code conformance on synthetic input. It is not original-source completeness, live authentication, or real-data acceptance.
+
 ## Still absent
 
 Original API `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, original worker `wrangler.jsonc`, and original compatibility date. Fonts and both logos. `env.ASSETS` is still unresolved. Original TypeScript for the shell is not in these archives. The HTML shell and the main bundle are preserved DOM or source-view text, not wire bytes. Live Graph, Entra, Access, and production objects are not connected. `compatibility_date` `2026-11-07` is the reconstruction date, not a recovered deploy date. Local workerd sets Miniflare `dev.outboundService` to a deny worker; a probe fetch to `https://example.invalid` must return `egress_denied`. That is the network guard. Synthetic bindings alone are not that guard. The recovered MCP entry still returns `MCP_PUBLIC_URL is not configured` before `OAuthProvider` runs, so a bearer token does not reach a tool. Wrangler dry-run of the MCP bundle is not a workerd tool success. The unbundled MCP validator still throws `require is not defined`. A passing local test is not production, security, Microsoft identity, or visual acceptance. No pull request URL is recorded.

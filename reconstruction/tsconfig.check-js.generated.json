@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.check-js.json",
+  "include": [],
+  "files": [
+    "../recovered-source/worker/src/generated/view-plan.validator.js",
+    "../recovered-other/secondary-mcp-dev/worker/src/generated/view-plan-validator.js"
+  ]
+}
