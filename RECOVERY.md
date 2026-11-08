@@ -260,6 +260,35 @@ The API declaration now names both runtime exports, `validate` and `default`, pl
 
 The new test `harness/runtime/generated-validators.test.ts` runs both actual files, the MCP file with a test-only `require` shim, alongside a freshly compiled validator. It uses 5 valid and 18 malformed synthetic plans. All three validators give the same verdicts and the same error arrays. The malformed cases cover inline data rows, a path-like node id, free-text callouts, a 121-character astral-plane title (the `__ucs2length` helper), duplicate metrics (`__equal`), and a Table with neither `nodeId` nor `lens`. This is generated-code conformance on synthetic input. It is not original-source completeness, live authentication, or real-data acceptance.
 
+## Missing view-plan.ts class of the raw 119
+
+Recovered `genui.ts` and `ai/planner.ts` import `packages/contracts/src/view-plan.ts`. That path resolves into `recovered-source/shared/packages/` and is absent. This class is three raw diagnostics:
+- `genui.ts(9,50)`: TS2307.
+- `planner.ts(7,31)`: TS2307.
+- `planner.ts(38,33)`: TS7006, because `c` has no type without `ViewPlan`.
+
+The recovered contract for this module is the schema embedded in the validator, which the previous section reproduces byte for byte. The derived `reconstruction/packages/contracts/src/view-plan.ts` was looser than that schema. It accepted a Table with neither `nodeId` nor `lens` (schema `anyOf`), and empty `metrics` or `columns` (`minItems: 1`). It now carries both rules.
+
+`components` stays a plain array. Recovered `genui.ts` assigns a `ViewPlanComponent[]` variable to it, and a non-empty tuple makes that recovered body fail with TS2322.
+
+`harness/runtime/view-plan-contract.test.ts` rebuilds the raw program from `tsconfig.worker.json` with the same root files and options. It serves only the one missing module from memory; nothing is written to the intake directory.
+
+| Program | Diagnostics |
+| --- | --- |
+| Raw, unchanged (`npm run typecheck:worker`) | exit 2, 119. Historical, unchanged |
+| Raw plus view-plan.ts, before (commit `4ba133b`) | 116. Exactly the three above removed, none added, no member dropped |
+| Raw plus view-plan.ts, after | 116. Same three removed, none added |
+| Raw plus a non-empty `components` variant | 117. One new TS2322 in recovered `genui.ts` |
+
+Type conformance was checked against the validator:
+- 5 schema-valid component shapes pass the type and the validator.
+- 3 shapes the validator rejects (no `nodeId`/`lens` Table, empty metrics, empty columns) were accepted by the old type and are rejected by the new one.
+- 3 more stay rejected by both types.
+
+Every plan the recovered `planView` returns, for 6 node kinds and 6 prompts, passes the validator and has `nodeId` or `lens` on its 3 Tables.
+
+The remaining raw diagnostics are 116 when only this module is present. The historical command still reports 119 because the module is still absent from the intake.
+
 ## Still absent
 
 Original API `types.ts`, `agent-ui/index.ts`, `view-plan.ts`, original worker `wrangler.jsonc`, and original compatibility date. Fonts and both logos. `env.ASSETS` is still unresolved. Original TypeScript for the shell is not in these archives. The HTML shell and the main bundle are preserved DOM or source-view text, not wire bytes. Live Graph, Entra, Access, and production objects are not connected. `compatibility_date` `2026-11-07` is the reconstruction date, not a recovered deploy date. Local workerd sets Miniflare `dev.outboundService` to a deny worker; a probe fetch to `https://example.invalid` must return `egress_denied`. That is the network guard. Synthetic bindings alone are not that guard. The recovered MCP entry still returns `MCP_PUBLIC_URL is not configured` before `OAuthProvider` runs, so a bearer token does not reach a tool. Wrangler dry-run of the MCP bundle is not a workerd tool success. The unbundled MCP validator still throws `require is not defined`. A passing local test is not production, security, Microsoft identity, or visual acceptance. No pull request URL is recorded.

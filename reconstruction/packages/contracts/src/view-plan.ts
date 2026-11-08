@@ -5,7 +5,13 @@
  * contained the file. The component names and props are the API validator schema
  * embedded in recovered `view-plan.validator.js`. The MCP validator names the
  * same eight components and is a different file, not a replacement for this one.
+ *
+ * Schema rules a type can carry are carried: Table's `anyOf` (nodeId or lens) and
+ * `minItems: 1` on `metrics` and `columns`. `components` stays a plain array because
+ * recovered `genui.ts` assigns a `ViewPlanComponent[]` variable to it. Patterns,
+ * lengths, integer ranges, `uniqueItems`, and upper item counts stay with the validator.
  */
+type NonEmpty<T> = [T, ...T[]];
 export type ViewLens = "departments" | "accounts" | "topics" | "governances";
 export type KpiMetric = "items" | "topics" | "open" | "gaps" | "stars";
 export type TableColumn = "label" | "kind" | "items" | "open" | "gaps" | "freshness";
@@ -28,7 +34,7 @@ export interface ViewFilter {
 export type ViewPlanComponent =
   | {
       type: "KpiRow";
-      props: { nodeId?: string; lens?: ViewLens; metrics?: KpiMetric[] };
+      props: { nodeId?: string; lens?: ViewLens; metrics?: NonEmpty<KpiMetric> };
     }
   | { type: "NodeCard"; props: { nodeId: string } }
   | {
@@ -48,13 +54,11 @@ export type ViewPlanComponent =
   | {
       type: "Table";
       props: {
-        nodeId?: string;
-        lens?: ViewLens;
         filter?: ViewFilter;
-        columns?: TableColumn[];
+        columns?: NonEmpty<TableColumn>;
         sort?: { by: "label" | "items" | "open" | "gaps" | "freshness"; dir?: "asc" | "desc" };
         limit?: number;
-      };
+      } & ({ nodeId: string; lens?: ViewLens } | { nodeId?: string; lens: ViewLens });
     };
 
 export interface ViewPlan {
