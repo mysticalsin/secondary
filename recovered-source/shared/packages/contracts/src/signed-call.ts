@@ -16,9 +16,12 @@ export const REPLAY_TTL_MS = 120_000;
 
 export type KeyRing = Readonly<Record<string, string>>;
 
+/** Token exp and the verifier's max clock skew, both in milliseconds. */
+export type NonceWindow = { tokenExpMs: number; maxSkewMs: number };
+
 /** Remembers nonces. `first` is true only the first time a key is seen inside its TTL. */
 export interface ReplayStore {
-  first(key: string, ttlMs: number): Promise<boolean>;
+  first(key: string, ttlMs: number, window?: NonceWindow): Promise<boolean>;
 }
 
 export function newNonce(): string {

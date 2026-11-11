@@ -114,7 +114,13 @@ export async function verifyOpsRequest(
   if (!(await crypto.subtle.verify("HMAC", await key(secret, "verify"), bytes, utf8(data))))
     return false;
   // Only a request that carries a valid signature may spend a nonce.
-  if (o.replay && !(await o.replay.first(`${o.channel ?? "ops"}:${kid}:${nonce}`, REPLAY_TTL_MS)))
+  if (
+    o.replay &&
+    !(await o.replay.first(`${o.channel ?? "ops"}:${kid}:${nonce}`, REPLAY_TTL_MS, {
+      tokenExpMs: Number(ts) * 1000,
+      maxSkewMs: OPS_MAX_SKEW_SECONDS * 1000,
+    }))
+  )
     return false;
   return true;
 }

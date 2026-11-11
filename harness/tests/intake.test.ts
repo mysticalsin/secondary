@@ -30,6 +30,10 @@ const PATCHED_RECOVERED = new Set<string>([
   "recovered-source/worker/src/wiki/seed.ts",
   "recovered-source/worker/src/agent/loop.ts",
   "recovered-source/worker/src/workspace.ts",
+  "recovered-source/worker/src/internal-auth.ts",
+  "recovered-source/worker/src/replay.ts",
+  "recovered-source/shared/packages/contracts/src/signed-call.ts",
+  "recovered-source/shared/packages/contracts/src/ops-auth.ts",
 ]);
 
 function sha256(file: string): string {

@@ -11,8 +11,13 @@ import { directoryTenant } from "./auth/config.ts";
 import { tenantStub } from "./stubs.ts";
 
 export const replayStore = (env: Env, now: number): ReplayStore => ({
-  first: (key, ttlMs) =>
-    tenantStub(env, directoryTenant(env) ?? env.DEFAULT_TENANT_ID).nonceFirst(key, now, ttlMs),
+  first: (key, ttlMs, window) =>
+    tenantStub(env, directoryTenant(env) ?? env.DEFAULT_TENANT_ID).nonceFirst(
+      key,
+      now,
+      ttlMs,
+      window,
+    ),
 });
 
 /** MCP -> API calls. The MCP worker holds this key and no other. */

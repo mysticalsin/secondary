@@ -624,18 +624,49 @@ export class TenantPolicy extends DurableObject<Env> {
   /**
    * Replay guard for the signed service calls. True only the first time a key is stored.
    * A stored key stays refused after expires_at: deleting the row would accept it again.
-   * The row's expires_at is the caller's replay window, kept so the refusal lasts at least that long.
+   * When `bound` is set, the stored expiry must cover the token's own exp plus the max clock skew.
+   * A short window is refused and not inserted. This method does not delete rows.
    */
-  nonceFirst(key: string, now: number, ttlMs: number): boolean {
+  nonceFirst(
+    key: string,
+    now: number,
+    ttlMs: number,
+    bound?: { tokenExpMs: number; maxSkewMs: number },
+  ): boolean {
+    const expiresAt = now + ttlMs;
+    if (bound) {
+      const min = bound.tokenExpMs + bound.maxSkewMs;
+      if (
+        !Number.isSafeInteger(expiresAt) ||
+        !Number.isSafeInteger(bound.tokenExpMs) ||
+        !Number.isSafeInteger(bound.maxSkewMs) ||
+        bound.maxSkewMs < 0 ||
+        expiresAt < min
+      ) {
+        console.warn(JSON.stringify({ at: "nonce_window_short" }));
+        return false;
+      }
+    }
     return (
       this.sql
         .exec(
           "INSERT OR IGNORE INTO nonces (key, expires_at) VALUES (?, ?) RETURNING key",
           key,
-          now + ttlMs,
+          expiresAt,
         )
         .toArray().length === 1
     );
+  }
+
+  /**
+   * Drop nonce rows whose stored window is already over. Not part of accepting a key:
+   * callers run this on a schedule, or beside the guard, never inside `nonceFirst`.
+   * A row is removed only when `expires_at < now`.
+   */
+  pruneNonces(now: number): number {
+    return this.sql
+      .exec("DELETE FROM nonces WHERE expires_at < ? RETURNING key", now)
+      .toArray().length;
   }
 
   /** Fixed one-minute window counter for sensitive low-volume routes such as seeding. */

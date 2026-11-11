@@ -269,7 +269,11 @@ export async function verifyInternalRequest(
   // Only a correctly signed request may spend a nonce, so strangers cannot fill the replay cache.
   if (
     options.replay &&
-    !(await options.replay.first(`${options.channel ?? "internal"}:${kid}:${nonce}`, REPLAY_TTL_MS))
+    !(await options.replay.first(
+      `${options.channel ?? "internal"}:${kid}:${nonce}`,
+      REPLAY_TTL_MS,
+      { tokenExpMs: Number(timestamp) * 1000, maxSkewMs: skew * 1000 },
+    ))
   )
     return { ok: false, reason: "replayed" };
 

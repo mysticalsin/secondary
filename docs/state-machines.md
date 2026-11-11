@@ -30,7 +30,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
 | 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | Jarvis: a personal auto-accept stays a draft. One `publishMode()` defaults to draft, and publishing is an explicit action. Current formulas still disagree. |
 | 12 | Brain member | `brains/store.ts:211`, set from `brains/routes.ts:704` | LATER | High | LATER | Caller passes `active` or `pending`. No transition check. |
-| 13 | Replay nonce | `tenant-policy.ts:629` | FIXED | High | FIX now | Named guard, not a reducer. A seen key stays refused after `expires_at`. |
+| 13 | Replay nonce | `tenant-policy.ts:630` | FIXED | High | FIX now | Named guard, not a reducer. Expiry does not reopen a key. Prune is outside the guard, and only for `expires_at < now`. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
 | 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
 | 16 | Token-budget hold | `src/state/budget-hold.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | A second settle is rejected and does not adjust the counter. |
@@ -85,7 +85,7 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
-- **#13.** `nonceFirst` (`tenant-policy.ts:629`) is `INSERT OR IGNORE ... RETURNING key`. True when one row comes back. The old `DELETE` of expired rows is gone, so a key is not accepted again after `expires_at`.
+- **#13.** `nonceFirst` (`tenant-policy.ts:630`) is `INSERT OR IGNORE ... RETURNING key`. True when one row comes back. The old `DELETE` of expired rows is gone, so a key is not accepted again after `expires_at`.
 - **#6.** The callback clears the login cookie (`auth/routes.ts:105`) before `loginStateTake` (`:116`). `error` (`:108`) and a missing or mismatched state (`:113`) return without taking the record, so the login row stays until its TTL. `loginStateTake` (`identity-store.ts:312`) deletes the row and then returns null when it is already expired, so that path does consume the row.
 
 ## Named areas that are not in this repo
@@ -712,9 +712,9 @@ Restricted brains and heavy roles on a global brain set `needsSecond` before thi
 ## 13. Replay nonce
 
 - Purpose: A signed internal call's nonce is accepted once. Seeing it again is refused for the caller's replay window and after that window, because expiry does not delete the row.
-- Code: a named guard, `nonceFirst` at `tenant-policy.ts:629`. It is not a reducer. Tests call that method on real SQLite in `harness/tests/nonce-first.test.ts`. The in-memory double in `harness/tests/contracts-security.test.ts:26` still only copies accept-once for the HMAC tests.
+- Code: a named guard, `nonceFirst` at `tenant-policy.ts:630`. It is not a reducer. Tests call that method on real SQLite in `harness/tests/nonce-first.test.ts`. The in-memory double in `harness/tests/contracts-security.test.ts:26` still only copies accept-once for the HMAC tests.
 - Persisted: yes, `nonces` (`key` primary key, `expires_at`). Unversioned. `expires_at` records the window. It is not a reason to forget the key.
-- What changed: the `DELETE` of rows with `expires_at <= now` is gone. `INSERT OR IGNORE ... RETURNING key` is the whole guard. One row returned means accept. No row means the key was already stored, including when the stored window has passed.
+- What changed: the `DELETE` of rows with `expires_at <= now` is not part of accepting a key. `INSERT OR IGNORE ... RETURNING key` is the whole guard. One row returned means accept. No row means the key was already stored, including when the stored window has passed. `verifyInternalRequest` and `verifyOpsRequest` already reject a timestamp outside the clock skew before `nonceFirst` runs. On insert, `expires_at` must be at least the token exp plus that skew; a shorter window is refused and not stored. `pruneNonces` deletes only rows with `expires_at < now`, and it is not called from `nonceFirst`.
 
 ### States
 
@@ -736,7 +736,7 @@ Restricted brains and heavy roles on a global brain set `needsSecond` before thi
 | unseen | present | `INSERT OR IGNORE` returns a row | seen | caller accepts the request |
 | seen | present | insert ignored, including when `expires_at <= now` | seen | caller rejects |
 
-There is no expire transition back to unseen. Two states, and seen does not reopen. It is High because it is the replay gate for connector, MCP, and ops calls. The fix stays this guard. It does not add a reducer.
+The guard has no expire transition back to unseen. `pruneNonces` may delete a row only after `expires_at`, which is already past the token exp plus the clock skew, so a replay of that key is refused by the timestamp check and does not reach the guard. It is High because it is the replay gate for connector, MCP, and ops calls. The fix stays this guard. It does not add a reducer.
 
 ```mermaid
 stateDiagram-v2

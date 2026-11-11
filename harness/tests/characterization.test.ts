@@ -154,7 +154,7 @@ test("CHARACTERIZATION: dry-run import state and the real auto-accept are differ
 
 test("replay nonce source does not delete a seen key when it expires", () => {
   const src = read("recovered-source/worker/src/tenant-policy.ts");
-  const body = between(src, "nonceFirst(", "hit(");
+  const body = between(src, "nonceFirst(", "pruneNonces(");
   assert.doesNotMatch(body, /DELETE FROM nonces/);
   assert.match(body, /INSERT OR IGNORE INTO nonces \(key, expires_at\)/);
   assert.match(body, /RETURNING key/);
