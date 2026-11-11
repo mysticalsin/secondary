@@ -21,7 +21,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
 | 2 | Elevation window | `admin/store.ts:38`, writers at 970, 995, 1039, 1062 | LATER | High | LATER | Pending and active expire only in `toElevation` (128–132). |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
-| 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore. #7 and #8 do not call it yet. |
+| 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
 | 5 | Kill switch | `tenant-policy.ts:834`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
@@ -54,7 +54,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 
 ## Review notes
 
-Devin approved the inventory at `b527a8de` with these changes. #6 is the login-record reducer. #4 is the quorum reducer. #7 and #8 do not call it yet. The other High-risk reducers are not written yet.
+Devin approved the inventory at `b527a8de` with these changes. #6 is the login-record reducer. #4 is the quorum reducer. #7 calls that result. #8 does not call it yet. The other High-risk reducers are not written yet.
 
 Right-sizing:
 
@@ -266,7 +266,7 @@ Restricted scopes need a second person on the membership change. That is machine
 
 ## 4. Second-person confirmation
 
-Review: one quorum check. #7 and #8 will reuse it and do not call it yet.
+Review: one quorum check. #7 calls `commitQuorum` before it claims a release. #8 does not call it yet.
 
 - Purpose: The first actor records an intent. A different human confirms it within 24 hours. The same human confirming does nothing.
 - Code: `transitionQuorum` in `src/state/quorum.ts`. `TenantPolicy.requestSecond` performs the effects. Callers use `quorumConfirmed`.
@@ -301,7 +301,9 @@ An ask older than the TTL is an empty ask. The stored row is replaced.
 
 `recorded`, `same_actor`, `replay`, and `refused` do not apply. Only `confirmed` does. The same actor does not refresh `requestedAt`. After a confirm, the next ask is a new `recorded`, not another confirm.
 
-Same actor is `sameActor` in `src/state/actor.ts`. Quorum and `humanIds` both call it. There is no second identity key. The same id is the same actor. When both directory subjects are set, they are the same actor only when those subjects are equal after padding is removed, so two different subjects stay two people even when an address matches. When one or both subjects are missing, they are the same actor if any normalised address matches. An address is the sign-in address or the directory email on either side: NBSP and other padding are removed, then the value is trimmed and lowercased. An email lookup is `lower(trim(replace(email, char(160), ' ')))`. Stored emails and subjects are not rewritten.
+Same actor is `sameActor` in `src/state/actor.ts`. Quorum and `humanIds` both call it. The same id is the same actor. When both directory subjects are set, they are the same actor only when those subjects are equal after padding is removed, so two different subjects stay two people even when an address matches. When one or both subjects are missing, they are the same actor if any normalised address matches. An address is the sign-in address or the directory email on either side: NBSP and other padding are removed, then the value is trimmed and lowercased. Stored emails and subjects are not rewritten.
+
+These identity paths are still open. `admin/store.ts` `sameHuman` (around line 294) is a separate comparison: the same id, or one stored address equal on both sides. `identity-store.ts` `ensurePrincipal` (around line 154) still uses `WHERE email = ?`. `session` and `resolvePrincipalId` (`tenant-policy.ts`, around lines 355 and 980) fold only `char(160)` inside `lower(trim(replace(...)))`. `normalEmail` (`src/state/actor.ts`) also folds the wider padding set (`\u1680`, `\u2000`–`\u200a`, `\u2028`, `\u2029`, `\u202f`, `\u205f`, `\u3000`, `\ufeff`). None of those three are changed in this note.
 
 Logs are `{ at: "illegal_transition", machine: "quorum", reason }` or `{ at: "quorum", reason: "replay" }`. The reason is a code. The line does not carry an id, a subject, or an address.
 
@@ -315,7 +317,7 @@ stateDiagram-v2
 
 ### Platform / flag differences
 
-Callers decide whether to invoke this at all. Prod kill-switch re-enable does. Turning a switch off does not. A dev restore does not ask. #7 and #8 still pass their own id lists and do not use this result yet.
+Callers decide whether to invoke this at all. Prod kill-switch re-enable does. Turning a switch off does not. A dev restore does not ask. #7 calls this result and then claims the candidate row. #8 still passes its own id list and does not use this result yet.
 
 ## 5. Kill switch
 
