@@ -6,6 +6,7 @@
 // never be the one who approves it, whatever the route above decided.
 
 import type { Role } from "@secondary/policy";
+import { actorFromDirectory, type DirectoryPrincipal, sameActor } from "../../../../src/state/actor.ts";
 import type { SecurityJournal } from "../security-journal.ts";
 import { manageAuthority, noticeLabel, type ScopeDesc } from "./validate.ts";
 
@@ -279,22 +280,31 @@ export class GovStore {
     );
   }
 
-  private emailOf(principalId: string): string | null {
-    const r = this.sql
-      .exec(
-        `SELECT email FROM gov_identity WHERE principal_id = ?1
-         UNION SELECT lower(email) FROM principals WHERE id = ?1 LIMIT 1`,
-        principalId,
-      )
-      .toArray()[0];
-    return r ? s(r.email) : null;
+  private directoryRows(): DirectoryPrincipal[] {
+    return this.sql
+      .exec("SELECT id, subject, email FROM principals")
+      .toArray()
+      .map((r) => ({
+        id: s(r.id),
+        subject: sn(r.subject),
+        email: sn(r.email),
+      }));
   }
 
-  /** The same principal id, or two ids that acted with one address. */
+  private signInOf(principalId: string): string | null {
+    const row = this.sql
+      .exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    return row ? sn(row.email) : null;
+  }
+
+  /** The same actor as quorum and humanIds. A display name is not an identity. */
   private sameHuman(a: string, b: string): boolean {
-    if (a === b) return true;
-    const ea = this.emailOf(a);
-    return ea !== null && ea === this.emailOf(b);
+    const rows = this.directoryRows();
+    return sameActor(
+      actorFromDirectory(a, this.signInOf(a), rows),
+      actorFromDirectory(b, this.signInOf(b), rows),
+    );
   }
 
   // ---- roles ----

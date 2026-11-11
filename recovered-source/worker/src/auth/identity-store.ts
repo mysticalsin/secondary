@@ -3,6 +3,7 @@
 // constructs one and exposes thin RPC methods. Nothing here holds organisation content.
 
 import { ROLE_ORDER, ROLES } from "@secondary/policy";
+import { normalEmail, normalizedEmailSql } from "../../../../src/state/actor.ts";
 import type { SecurityJournal } from "../security-journal.ts";
 import {
   ABSOLUTE_MS,
@@ -79,7 +80,7 @@ export type EntraSubject = {
   guest: boolean;
 };
 export type SignInFail = "not_provisioned" | "identity_conflict";
-export type Fail = { ok: false; code: "not_found" | "uniqueness" | "invalid" };
+export type Fail = { ok: false; code: "not_found" | "uniqueness" | "invalid" | "ambiguous" };
 export type Ok<T> = { ok: true } & T;
 
 const fail = (code: Fail["code"]): Fail => ({ ok: false, code });
@@ -149,16 +150,31 @@ export class IdentityStore {
 
   // ---- principals ----
 
-  private async ensurePrincipal(email: string): Promise<string> {
-    const find = () =>
-      this.sql.exec("SELECT id FROM principals WHERE email = ?", email).toArray()[0]?.id as
-        | string
-        | undefined;
+  private async ensurePrincipal(email: string): Promise<string | Fail> {
+    const normalized = normalEmail(email);
+    if (!normalized) return fail("invalid");
+    const find = (): string[] =>
+      this.sql
+        .exec(
+          `SELECT id FROM principals WHERE ${normalizedEmailSql("email")} = ? ORDER BY id`,
+          normalized,
+        )
+        .toArray()
+        .map((r) => r.id as string);
     const have = find();
-    if (have) return have;
-    const id = await principalIdFor(email);
-    this.sql.exec("INSERT OR IGNORE INTO principals (id, email) VALUES (?, ?)", id, email);
-    return find() ?? id;
+    if (have.length > 1) {
+      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: have }));
+      return fail("ambiguous");
+    }
+    if (have.length === 1) return have[0] as string;
+    const id = await principalIdFor(normalized);
+    this.sql.exec("INSERT OR IGNORE INTO principals (id, email) VALUES (?, ?)", id, normalized);
+    const again = find();
+    if (again.length > 1) {
+      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: again }));
+      return fail("ambiguous");
+    }
+    return again[0] ?? id;
   }
 
   isActive(principalId: string): boolean {
@@ -557,6 +573,7 @@ export class IdentityStore {
     if (this.sql.exec("SELECT 1 FROM scim_users WHERE user_name = ?", userName).toArray().length)
       return fail("uniqueness");
     const principalId = await this.ensurePrincipal(userName);
+    if (typeof principalId !== "string") return principalId;
     // One SCIM record per principal: a second userName cannot claim the same login.
     if (
       this.sql.exec("SELECT 1 FROM scim_users WHERE principal_id = ?", principalId).toArray().length

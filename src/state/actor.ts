@@ -19,7 +19,22 @@ export type DirectoryPrincipal = {
 };
 
 /** Padding that String.trim and SQLite trim do not remove, folded to a space. */
-const PAD = /[\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]/g;
+const EMAIL_PAD = [
+  0x00a0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009,
+  0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
+] as const;
+
+const PAD = new RegExp(`[${EMAIL_PAD.map((code) => `\\u${code.toString(16).padStart(4, "0")}`).join("")}]`, "g");
+
+/**
+ * SQL for `normalEmail` over a stored text column. The column is not rewritten.
+ * `column` is a fixed name, never caller input.
+ */
+export function normalizedEmailSql(column: string): string {
+  let expr = column;
+  for (const code of EMAIL_PAD) expr = `replace(${expr}, char(${code}), ' ')`;
+  return `lower(trim(${expr}))`;
+}
 
 /** Trim, drop NBSP and other padding, and lowercase. Empty becomes null. */
 export function normalEmail(value: string | null | undefined): string | null {

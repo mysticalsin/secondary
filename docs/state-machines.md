@@ -1,6 +1,6 @@
 # State machines in secondary-api-recovery (Second Brain API)
 
-Last reviewed: 2026-11-11 at `d85bc8a7e54f7da762de22f281105983f864f18d`
+Last reviewed: 2026-11-11 at `5d147727b70c0c5f7af08128f3377e88354735b2`
 
 Standard: Implicit state machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. No XState or other state-machine dependency. A plain reducer is the intended fix shape.
 
@@ -301,9 +301,11 @@ An ask older than the TTL is an empty ask. The stored row is replaced.
 
 `recorded`, `same_actor`, `replay`, and `refused` do not apply. Only `confirmed` does. The same actor does not refresh `requestedAt`. After a confirm, the next ask is a new `recorded`, not another confirm.
 
-Same actor is `sameActor` in `src/state/actor.ts`. Quorum and `humanIds` both call it. The same id is the same actor. When both directory subjects are set, they are the same actor only when those subjects are equal after padding is removed, so two different subjects stay two people even when an address matches. When one or both subjects are missing, they are the same actor if any normalised address matches. An address is the sign-in address or the directory email on either side: NBSP and other padding are removed, then the value is trimmed and lowercased. Stored emails and subjects are not rewritten.
+Same actor is `sameActor` in `src/state/actor.ts`. Quorum, `humanIds`, and governance `sameHuman` all call it. The same id is the same actor. When both directory subjects are set, they are the same actor only when those subjects are equal after padding is removed, so two different subjects stay two people even when an address matches. When one or both subjects are missing, they are the same actor if any normalised address matches. An address is the sign-in address or the directory email on either side: NBSP and the rest of the padding set are removed, then the value is trimmed and lowercased. Stored emails and subjects are not rewritten.
 
-These identity paths are still open. `admin/store.ts` `sameHuman` (around line 294) is a separate comparison: the same id, or one stored address equal on both sides. `identity-store.ts` `ensurePrincipal` (around line 154) still uses `WHERE email = ?`. `session` and `resolvePrincipalId` (`tenant-policy.ts`, around lines 355 and 980) fold only `char(160)` inside `lower(trim(replace(...)))`. `normalEmail` (`src/state/actor.ts`) also folds the wider padding set (`\u1680`, `\u2000`–`\u200a`, `\u2028`, `\u2029`, `\u202f`, `\u205f`, `\u3000`, `\ufeff`). None of those three are changed in this note.
+`ensurePrincipal`, `session`, and `resolvePrincipalId` look up with `normalizedEmailSql`, which is that same padding set. A lookup that matches more than one stored principal is `ambiguous_principal`: the log carries ids only, nobody is picked, and no new principal is created.
+
+These lookups still compare the stored email bytes: `isEmailActive` and `subjectOfEmail` (`identity-store.ts`, around lines 181 and 187), and the SCIM uniqueness checks around lines 350, 378, and 605. They are not part of this change.
 
 Logs are `{ at: "illegal_transition", machine: "quorum", reason }` or `{ at: "quorum", reason: "replay" }`. The reason is a code. The line does not carry an id, a subject, or an address.
 

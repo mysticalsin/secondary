@@ -9,6 +9,7 @@ import {
   type ActorIdentity,
   type DirectoryPrincipal,
   normalEmail,
+  normalizedEmailSql,
   sameActor,
 } from "../../../src/state/actor.ts";
 import {
@@ -344,19 +345,43 @@ export class TenantPolicy extends DurableObject<Env> {
     return next.state;
   }
 
+  /** Ids whose stored email normalises to `email`. Stored text is not rewritten. */
+  private principalIdsForEmail(email: string): string[] {
+    const normalized = normalEmail(email) ?? "";
+    return this.sql
+      .exec(
+        `SELECT id FROM principals WHERE ${normalizedEmailSql("email")} = ? ORDER BY id`,
+        normalized,
+      )
+      .toArray()
+      .map((r) => r.id as string);
+  }
+
   /**
    * Resolve the caller for one request: identity, roles, grants, elevation and the request counter.
    * `actAs` (dev personas only, decided by the API) replaces stored roles and memberships.
    */
   async session(input: SessionInput): Promise<Session> {
     const email = normalEmail(input.email) ?? "";
-    const row = this.sql
-      .exec(
-        "SELECT id FROM principals WHERE lower(trim(replace(email, char(160), ' '))) = ?",
-        email,
-      )
-      .toArray()[0];
-    const identityId = (row?.id as string | undefined) ?? (await principalIdFor(email));
+    const matches = this.principalIdsForEmail(email);
+    if (matches.length > 1 && !input.actAs) {
+      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: matches }));
+      return {
+        limited: false,
+        retryAfter: 1,
+        principal: { id: "", email, roleIds: [], memberships: [] },
+        ndaGrants: [],
+        openBrains: [],
+        elevatedUntil: null,
+        epoch: this.epoch(),
+        config: this.getConfig(),
+        switches: this.switchState(),
+        active: false,
+        rolesVersion: this.govStore.rolesVersion(),
+      };
+    }
+    const rowId = matches.length === 1 ? matches[0] : undefined;
+    const identityId = rowId ?? (await principalIdFor(email));
 
     const window = Math.floor(input.now / WINDOW_MS);
     const count = this.sql
@@ -388,7 +413,7 @@ export class TenantPolicy extends DurableObject<Env> {
             !memberships.some((x) => x.scope_type === m.scope_type && x.scope_id === m.scope_id),
         ),
       ];
-    } else if (row) {
+    } else if (rowId) {
       roleIds = this.sql
         .exec("SELECT role_id FROM role_assignments WHERE principal_id = ? ORDER BY role_id", id)
         .toArray()
@@ -404,7 +429,7 @@ export class TenantPolicy extends DurableObject<Env> {
     }
     // Grants and elevations load only for a principal that exists (M-10): a renamed or unknown email
     // falls back to a derived id and must not inherit what an earlier holder of that id was given.
-    const known = !!row || !!input.actAs;
+    const known = !!rowId || !!input.actAs;
     const ndaGrants = known
       ? this.sql
           .exec(
@@ -974,14 +999,12 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** Id of the principal behind an email, or the stable anonymous id when the email is not in the directory. */
   async resolvePrincipalId(email: string): Promise<string> {
-    const e = normalEmail(email) ?? "";
-    const row = this.sql
-      .exec(
-        "SELECT id FROM principals WHERE lower(trim(replace(email, char(160), ' '))) = ?",
-        e,
-      )
-      .toArray()[0];
-    return (row?.id as string | undefined) ?? (await principalIdFor(e));
+    const matches = this.principalIdsForEmail(email);
+    if (matches.length > 1) {
+      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: matches }));
+      throw new Error("ambiguous_principal");
+    }
+    return matches[0] ?? (await principalIdFor(normalEmail(email) ?? ""));
   }
 
   /** The address behind a principal id, for erasure (it may be typed into wiki text). */
