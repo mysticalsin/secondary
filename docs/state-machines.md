@@ -33,7 +33,7 @@ Status in the table is the state of the code at this commit. Nothing is fixed ye
 | 13 | Replay nonce | `tenant-policy.ts:599` | LATER | High | LATER | Accept once until TTL, then the row is deleted. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
 | 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
-| 16 | Token-budget hold | `ai/budget.ts:69` | LATER | Medium | FIX now | `settle` can run twice and adjust the counter twice. |
+| 16 | Token-budget hold | `src/state/budget-hold.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | A second settle is rejected and does not adjust the counter. |
 | 17 | Token-counter CAS retry | `ai/budget.ts:22` | LATER | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
 | 18 | Wiki seed claim | `tenant-policy.ts:272` and `wiki/seed.ts:21` | LATER | Medium | FIX now | Dev only. An unexpired claim for an older version is overwritten. `seedDone` can move the version backwards. |
 | 19 | Agent turn round | `agent/loop.ts:75` | LATER | Medium | FIX now | Stop reason, budget, and the last-round tool ban are separate `if`s. |
@@ -800,9 +800,9 @@ None.
 ## 16. Token-budget hold
 
 - Purpose: Reserve an estimate before a model call and settle to the real token count after it.
-- Code: no reducer yet. `reserve` in `ai/budget.ts:69–82`. `withUserCap` (57–66) is a second store that refunds the user when the tenant add fails.
-- Persisted: the day counter is a workspace row (`ai:usage`). The hold object is only in the request. It has no version.
-- What changed: nothing in this commit.
+- Code: `src/state/budget-hold.ts` (`transitionBudgetHold`). Tests: `harness/tests/budget-hold-machine.test.ts`. `reserve` applies the `adjust` effect.
+- Persisted: the day counter is a workspace row (`ai:usage`). The hold is request-local. Version 1 codec loads unknown JSON as `idle`, so a reload cannot settle a reservation it does not trust. `reserve` does not write the hold.
+- What changed: `settle` is once only. A second call is logged and does not add the diff again. A non-finite estimate is rejected before `store.add`. Previously a second `settle` added the diff again, and a non-finite estimate was passed to the counter. `withUserCap`'s refund, when the user add succeeds and the tenant add then fails, is unchanged. If that refund add also returns null, the user counter stays high. That gap is still open.
 
 ### States
 

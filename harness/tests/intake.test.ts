@@ -25,6 +25,7 @@ const MANIFEST_SHA256 = "330452d57b8704a69da263b64342b26c8b7fb1d828f111590a256dd
 const PATCHED_RECOVERED = new Set<string>([
   "recovered-source/worker/src/ai/anthropic.ts",
   "recovered-source/worker/src/agent/stream.ts",
+  "recovered-source/worker/src/ai/budget.ts",
 ]);
 
 function sha256(file: string): string {

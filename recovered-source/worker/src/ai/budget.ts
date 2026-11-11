@@ -2,6 +2,7 @@
 // that no admitted view can reach (`ai:usage`), as one row per day. Updates use the row revision as a
 // compare-and-set, so concurrent requests cannot both spend the last tokens.
 
+import { openHold } from "../../../../src/state/budget-hold.ts";
 import { workspaceStub } from "../stubs.ts";
 
 export interface BudgetStore {
@@ -72,12 +73,5 @@ export async function reserve(
   estimate: number,
   cap: number,
 ): Promise<{ settle: (actual: number) => Promise<void> } | null> {
-  const total = await store.add(estimate, cap);
-  if (total === null) return null;
-  return {
-    settle: async (actual) => {
-      const diff = Math.round(actual) - estimate;
-      if (diff !== 0) await store.add(diff, Number.MAX_SAFE_INTEGER);
-    },
-  };
+  return openHold(store, estimate, cap);
 }
