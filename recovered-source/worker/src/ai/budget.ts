@@ -4,6 +4,7 @@
 
 import { commitBudgetCas, type BudgetCasEvent, type BudgetCasState } from "../../../../src/state/budget-cas.ts";
 import { openHold } from "../../../../src/state/budget-hold.ts";
+import { decodeUsageBody } from "../../../../src/state/usage-body.ts";
 import { workspaceStub } from "../stubs.ts";
 
 export interface BudgetStore {
@@ -46,11 +47,15 @@ export function doBudget(env: Env, tenantId: string, now: number, bucket = "usag
             continue;
           }
         }
-        const used = Number(row.body ?? "0") || 0;
+        const read = decodeUsageBody(row.body, id);
         let event: BudgetCasEvent;
-        if (tokens > 0 && used + tokens > cap) event = { type: "over_cap" };
+        if (!read.ok) {
+          // Key only. The cell text is not a counter and is not logged.
+          console.warn(JSON.stringify({ at: read.at, key: read.key }));
+          event = { type: "over_cap" };
+        } else if (tokens > 0 && read.used + tokens > cap) event = { type: "over_cap" };
         else {
-          const next = Math.max(0, used + tokens);
+          const next = Math.max(0, read.used + tokens);
           const wrote = await ws.edit(id, row.revision, { body: String(next) }, now, "system");
           // A conflict means another request wrote first: read again and retry.
           event = "ok" in wrote && wrote.ok ? { type: "wrote", total: next } : { type: "retry" };

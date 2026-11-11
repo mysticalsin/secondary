@@ -846,7 +846,7 @@ None. The cap is an argument.
 
 - Purpose: Add tokens to the day row using the row revision as a compare-and-set, and retry when another request wrote first.
 - Code: `src/state/budget-cas.ts` (`transitionBudgetCas`). Tests: `harness/tests/budget-cas-machine.test.ts`. `doBudget` reads and writes the row, then applies the step.
-- Persisted: the counter body is the total. The attempt is request-local. Version 1 codec loads unknown JSON as `refused`. `doBudget` does not write the attempt.
+- Persisted: the counter body is the total. `decodeUsageBody` reads it: empty is 0, a canonical non-negative integer is that total, and anything else (corrupt, negative, NaN) is the cap already reached. The log names the row key and not the cell. The attempt is request-local. Version 1 codec loads unknown JSON as `refused`. `doBudget` does not write the attempt.
 - What changed: continue versus stop moved into the reducer. Six attempts and an immediate cap refusal are unchanged. A `wrote` or `over_cap` event after the attempt has finished is rejected and logged.
 
 ### States
