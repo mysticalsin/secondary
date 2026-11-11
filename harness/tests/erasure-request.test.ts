@@ -421,6 +421,72 @@ test("erasure request: a second person plans a damaged ledger in full", async ()
   }
 });
 
+function completedLedger(order: readonly string[]): { status: string; ledger: string } {
+  const mark: Record<string, "done"> = {};
+  for (const id of order) mark[id] = "done";
+  return encodeErasure({ status: { tag: "completed" }, order: [...order], mark });
+}
+
+test("erasure request: a later company scope needs a new quorum and only that step", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const before = buildOrg(["acme"]);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+    };
+    const finished = completedLedger(erasurePlan(rights.companyScopes(before)));
+    putLedger(file, finished.status, finished.ledger);
+    const after = buildOrg(["acme", "beta"]);
+    const { post, audits } = await eraseApp(after);
+    const first = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(first.status, 202);
+    assert.equal(readLedger(file)?.ledger, finished.ledger);
+    assert.equal(readLedger(file)?.updated_at, 5);
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 1_000);
+    assert.equal(second.status, 200);
+    const body = (await second.json()) as { status?: string };
+    assert.equal(body.status, "erased");
+    assert.deepEqual(erasureCalls(), ["pseudonymise:beta"]);
+    assert.equal(audits.some((url) => url.includes("pseudonymise")), false);
+    const stored = decodeErasureLedger(readLedger(file) ?? null);
+    assert.equal(stored.mark["scope:beta"], "done");
+    assert.equal(stored.mark.receipts, "done");
+    assert.equal(stored.status.tag, "completed");
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request: a completed request with nothing new returns erased and writes nothing", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const org = buildOrg(["acme"]);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+    };
+    const finished = completedLedger(erasurePlan(rights.companyScopes(org)));
+    putLedger(file, finished.status, finished.ledger);
+    const { post, audits } = await eraseApp(org);
+    const first = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(first.status, 202);
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 1_000);
+    assert.equal(second.status, 200);
+    const body = (await second.json()) as { status?: string };
+    assert.equal(body.status, "erased");
+    const row = readLedger(file);
+    assert.equal(row?.ledger, finished.ledger);
+    assert.equal(row?.updated_at, 5);
+    assert.equal(row?.status, "completed");
+    assert.deepEqual(erasureCalls(), []);
+    assert.equal(audits.some((url) => url.includes("pseudonymise")), false);
+    assert.equal(tombstones(file), 0);
+  } finally {
+    remove();
+  }
+});
+
 test("erasure request: a proven partial failure resumes without a second person", async () => {
   const { file, remove } = tempFile();
   try {
