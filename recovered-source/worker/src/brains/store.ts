@@ -45,7 +45,13 @@ export interface BrainConfig {
 
 export type MemberHold =
   | { ok: false; code: string }
-  | { ok: true; at: number; inserted: boolean; previousAt: number | null };
+  | {
+      ok: true;
+      at: number;
+      inserted: boolean;
+      previousAt: number | null;
+      previousState: string;
+    };
 
 export interface MemberRow {
   principalId: string;
@@ -253,7 +259,7 @@ export abstract class BrainBase extends WikiBase {
         console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
         return { ok: false, code: "replay" };
       }
-      return { ok: true, at: now, inserted: true, previousAt: null };
+      return { ok: true, at: now, inserted: true, previousAt: null, previousState: "claimed" };
     }
     const previousAt = Number(row?.at);
     const matched = this.sql
@@ -269,7 +275,7 @@ export abstract class BrainBase extends WikiBase {
       console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
       return { ok: false, code: "replay" };
     }
-    return { ok: true, at: now, inserted: false, previousAt };
+    return { ok: true, at: now, inserted: false, previousAt, previousState: from.tag };
   }
 
   brainMemberRead(principalId: string): {
@@ -293,11 +299,27 @@ export abstract class BrainBase extends WikiBase {
     };
   }
 
-  brainMemberDropClaim(principalId: string): void {
-    this.sql.exec(
-      "DELETE FROM brain_members WHERE principal_id = ? AND state IN ('claimed', 'pending')",
-      principalId,
-    );
+  /**
+   * Remove one claim. The predicate is the proposal id plus the state that was read.
+   * A missing id deletes nothing. Zero rows is state_unreadable.
+   */
+  brainMemberDropClaim(
+    principalId: string,
+    key: string | null,
+    previousState: string,
+  ): { ok: true } | { ok: false; code: "state_unreadable" } {
+    if (!key) return { ok: false, code: "state_unreadable" };
+    const matched = this.sql
+      .exec(
+        `DELETE FROM brain_members
+         WHERE principal_id = ? AND change_id = ? AND state = ?
+         RETURNING principal_id`,
+        principalId,
+        key,
+        previousState,
+      )
+      .toArray().length;
+    return matched === 1 ? { ok: true } : { ok: false, code: "state_unreadable" };
   }
 
   /**
@@ -410,23 +432,26 @@ export abstract class BrainBase extends WikiBase {
     principalId: string,
     hold: Extract<MemberHold, { ok: true }>,
   ): { ok: true } | { ok: false; code: "state_unreadable" } {
+    const previousState = hold.previousState;
     const matched = hold.inserted
       ? this.sql
           .exec(
             `DELETE FROM brain_members
-             WHERE principal_id = ? AND at = ? AND state = 'claimed' AND change_id IS NULL
+             WHERE principal_id = ? AND at = ? AND state = ? AND change_id IS NULL
              RETURNING principal_id`,
             principalId,
             hold.at,
+            previousState,
           )
           .toArray().length
       : this.sql
           .exec(
             `UPDATE brain_members SET at = ?
-             WHERE principal_id = ? AND at = ? AND change_id IS NULL RETURNING principal_id`,
+             WHERE principal_id = ? AND at = ? AND state = ? AND change_id IS NULL RETURNING principal_id`,
             hold.previousAt,
             principalId,
             hold.at,
+            previousState,
           )
           .toArray().length;
     return matched === 1 ? { ok: true } : { ok: false, code: "state_unreadable" };
@@ -981,7 +1006,11 @@ type MemberBrain = {
     changeId: string | null;
     addedBy: string;
   } | null>;
-  brainMemberDropClaim(principalId: string): void | Promise<void>;
+  brainMemberDropClaim(
+    principalId: string,
+    key: string | null,
+    previousState: string,
+  ): { ok: true } | { ok: false; code: "state_unreadable" } | Promise<{ ok: true } | { ok: false; code: "state_unreadable" }>;
   brainMemberClaim(
     principalId: string,
     role: BrainRole,
@@ -1014,7 +1043,7 @@ type MemberBrain = {
   ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
 };
 
-/** Look up the proposal and make the claim match it. A claim without an id is a crash and is dropped. */
+/** Look up the proposal and make the claim match it. A claim with no proposal id is left untouched. */
 export async function reconcileBrainMember(
   gov: { change(id: string, now: number): { status: string } | null | Promise<{ status: string } | null> },
   brain: MemberBrain,
@@ -1024,10 +1053,7 @@ export async function reconcileBrainMember(
   const row = await Promise.resolve(brain.brainMemberRead(principalId));
   if (!row) return;
   if (row.state !== "claimed" && !(row.state === "pending" && row.changeId)) return;
-  if (!row.changeId) {
-    if (row.state === "claimed") await Promise.resolve(brain.brainMemberDropClaim(principalId));
-    return;
-  }
+  if (!row.changeId) return;
   const change = await Promise.resolve(gov.change(row.changeId, now));
   const status = change?.status;
   if (
@@ -1037,7 +1063,7 @@ export async function reconcileBrainMember(
     status === "withdrawn" ||
     status === "unknown"
   ) {
-    await Promise.resolve(brain.brainMemberDropClaim(principalId));
+    await Promise.resolve(brain.brainMemberDropClaim(principalId, row.changeId, row.state));
     return;
   }
   if (status === "applied") {
@@ -1068,8 +1094,14 @@ export async function placeScopedMember(
   let made: Proposed | undefined;
   try {
     made = await Promise.resolve(gov.propose(proposal, now));
-  } finally {
-    if (made === undefined) await Promise.resolve(brain.brainMemberRelease(principalId, hold));
+  } catch (error) {
+    const released = await Promise.resolve(brain.brainMemberRelease(principalId, hold));
+    if (!released.ok) {
+      console.warn(
+        JSON.stringify({ at: "brain_member", reason: released.code, principalId }),
+      );
+    }
+    throw error;
   }
   if (!made.ok) {
     const released = await Promise.resolve(brain.brainMemberRelease(principalId, hold));

@@ -208,7 +208,48 @@ test("brain reconcile: finish matches zero rows after a pending proposal, and th
   }
 });
 
-test("brain reconcile: a crash between claim and propose grants nothing and the next read drops the claim", async () => {
+test("brain reconcile: a read while propose is in flight changes nothing", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const db = openSqlite(file);
+    db.exec(`
+      CREATE TABLE brain_members (
+        principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
+        added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT);
+      CREATE TABLE wiki_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
+        kind TEXT NOT NULL, detail TEXT NOT NULL);
+    `);
+    db.prepare(
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, change_id) VALUES ('ada', 'owner', 'claimed', 'bea', ?, NULL)",
+    ).run(NOW);
+    const sql = sqliteStorage(db);
+    const mod = (await import(storeSpecifier)) as {
+      BrainBase: { prototype: Brain & { brainMemberDropClaim(...args: unknown[]): { ok: boolean; code?: string } } };
+      reconcileBrainMember: Function;
+    };
+    const brain = Object.create(mod.BrainBase.prototype) as Brain & {
+      sql: SqlStorage;
+      brainMemberDropClaim(...args: unknown[]): { ok: boolean; code?: string };
+    };
+    brain.sql = sql;
+    const before = row(db);
+    assert.equal(brain.brainRoleOf(["ada"]), null);
+    await mod.reconcileBrainMember({ change() { return null; } }, brain, "ada", NOW + 1);
+    assert.deepEqual(row(db), before);
+    assert.equal(brain.brainRoleOf(["ada"]), null);
+    assert.equal(logs(db).length, 0);
+    const dropped = brain.brainMemberDropClaim("ada", "chg_other", "claimed");
+    assert.equal(dropped.ok, false);
+    assert.equal(dropped.code, "state_unreadable");
+    assert.deepEqual(row(db), before);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("brain reconcile: a claim with no proposal id stays and grants nothing", async () => {
   const { file, remove } = tempFile();
   try {
     const db = openSqlite(file);
@@ -231,6 +272,7 @@ test("brain reconcile: a crash between claim and propose grants nothing and the 
     const brain = Object.create(mod.BrainBase.prototype) as Brain;
     brain.sql = sql;
     assert.equal(brain.brainRoleOf(["ada"]), null);
+    const before = row(db);
     await mod.reconcileBrainMember(
       {
         change() {
@@ -241,7 +283,7 @@ test("brain reconcile: a crash between claim and propose grants nothing and the 
       "ada",
       NOW + 1,
     );
-    assert.equal(row(db), undefined);
+    assert.deepEqual(row(db), before);
     assert.equal(brain.brainRoleOf(["ada"]), null);
     assert.equal(logs(db).length, 0);
     db.close();

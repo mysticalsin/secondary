@@ -26,7 +26,7 @@ type Brain = {
   brainRoleOf(principalIds: string[]): string | null;
   brainMemberRelease(
     principalId: string,
-    hold: { ok: true; at: number; inserted: boolean; previousAt: number | null },
+    hold: { ok: true; at: number; inserted: boolean; previousAt: number | null; previousState: string },
   ): Release;
 };
 
@@ -124,6 +124,7 @@ test("brain claim: release of a missing row is state_unreadable", async () => {
       at: NOW,
       inserted: true,
       previousAt: null,
+      previousState: "claimed",
     });
     assert.equal(released.ok, false);
     if (!released.ok) assert.equal(released.code, "state_unreadable");
