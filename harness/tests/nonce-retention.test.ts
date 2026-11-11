@@ -24,6 +24,7 @@ type NonceHost = {
 
 const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
 const authSpecifier = "../../recovered-source/worker/src/internal-auth.ts";
+const opsSpecifier = "../../recovered-source/shared/packages/contracts/src/ops-auth.ts";
 
 const SECRET = "synthetic-test-secret-not-a-key!!";
 const ENDPOINT = "https://api.invalid/v1/internal/ping";
@@ -82,7 +83,7 @@ function expiresAt(file: string, key: string): number | undefined {
   return row?.expires_at;
 }
 
-test("nonce retention: a short window is not stored", async () => {
+test("nonce retention: an unsafe bound is not stored", async () => {
   const { file, remove } = tempFile();
   try {
     const policy = await openPolicy(file);
@@ -93,13 +94,18 @@ test("nonce retention: a short window is not stored", async () => {
       lines.push(String(line));
     };
     try {
-      const accepted = policy.nonceFirst("short-SECRET", now, 1_000, {
-        tokenExpMs: now,
-        maxSkewMs: SKEW_MS,
-      });
-      assert.equal(accepted, false);
-      assert.equal(expiresAt(file, "short-SECRET"), undefined);
-      assert.deepEqual(lines, [JSON.stringify({ at: "nonce_window_short" })]);
+      for (const bound of [
+        { tokenExpMs: now, maxSkewMs: -1 },
+        { tokenExpMs: Number.NaN, maxSkewMs: SKEW_MS },
+      ]) {
+        const accepted = policy.nonceFirst("short-SECRET", now, 1_000, bound);
+        assert.equal(accepted, false);
+        assert.equal(expiresAt(file, "short-SECRET"), undefined);
+      }
+      assert.deepEqual(lines, [
+        JSON.stringify({ at: "nonce_window_short" }),
+        JSON.stringify({ at: "nonce_window_short" }),
+      ]);
     } finally {
       console.warn = warn;
     }
@@ -176,6 +182,204 @@ test("nonce retention: a key inside its window is not pruned, and a pruned repla
     const late = await auth.verifyInternalRequest(request(), SECRET, { now: T + 61, replay });
     assert.deepEqual(late, { ok: false, reason: "stale_timestamp" });
     assert.equal(guardCalls, callsBefore);
+  } finally {
+    remove();
+  }
+});
+
+/**
+ * Receipt time is milliseconds. The verifier's `now` is the floored unix second, matching
+ * auth.ts and ops-internal.ts. nonceFirst receives the same receipt the production store does.
+ */
+function replayAt(policy: NonceHost, atMs: { value: number }, calls: { n: number }) {
+  return {
+    async first(key: string, ttlMs: number, bound?: Bound) {
+      calls.n += 1;
+      return policy.nonceFirst(key, atMs.value, ttlMs, bound);
+    },
+  };
+}
+
+test("nonce retention: an early accept stays refused at the far second after a mid-window prune", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const auth = (await import(authSpecifier)) as {
+      signInternalRequest(input: {
+        secret: string;
+        method: string;
+        url: string;
+        body?: string;
+        principal: typeof principal;
+        now?: number;
+      }): Promise<Record<string, string>>;
+      verifyInternalRequest(
+        request: Request,
+        keys: string,
+        options: {
+          now?: number;
+          replay?: {
+            first(key: string, ttlMs: number, bound?: Bound): Promise<boolean>;
+          };
+        },
+      ): Promise<{ ok: true } | { ok: false; reason: string }>;
+    };
+    const ops = (await import(opsSpecifier)) as {
+      signOpsRequest(input: {
+        secret: string;
+        method: string;
+        url: string;
+        body?: string;
+        now?: number;
+      }): Promise<Record<string, string>>;
+      verifyOpsRequest(
+        request: Request,
+        keys: string,
+        options: {
+          now?: number;
+          replay?: {
+            first(key: string, ttlMs: number, bound?: Bound): Promise<boolean>;
+          };
+        },
+      ): Promise<boolean>;
+    };
+    const earlyMs = (T - 60) * 1000;
+    const pruneMs = (T + 60) * 1000 + 500;
+    const farMs = (T + 60) * 1000;
+    const body = "{}";
+    const headers = await auth.signInternalRequest({
+      secret: SECRET,
+      method: "POST",
+      url: ENDPOINT,
+      body,
+      principal,
+      now: T,
+    });
+    const request = () => new Request(ENDPOINT, { method: "POST", headers, body });
+    const at = { value: earlyMs };
+    const calls = { n: 0 };
+    const replay = replayAt(policy, at, calls);
+    const first = await auth.verifyInternalRequest(request(), SECRET, {
+      now: Math.floor(earlyMs / 1000),
+      replay,
+    });
+    assert.equal(first.ok, true);
+    const rows = openSqlite(file).prepare("SELECT key, expires_at FROM nonces").all() as {
+      key: string;
+      expires_at: number;
+    }[];
+    assert.equal(rows.length, 1);
+    const row = rows[0];
+    assert.ok(row);
+    const pruned = policy.pruneNonces(pruneMs);
+    at.value = farMs;
+    const again = await auth.verifyInternalRequest(request(), SECRET, { now: T + 60, replay });
+    assert.equal(again.ok, false);
+    assert.equal(pruned, 0);
+    assert.equal(expiresAt(file, row.key), row.expires_at);
+
+    const opsBody = "{}";
+    const opsUrl = "https://api.invalid/v1/ops/export";
+    const opsHeaders = await ops.signOpsRequest({
+      secret: SECRET,
+      method: "POST",
+      url: opsUrl,
+      body: opsBody,
+      now: T,
+    });
+    const opsRequest = () => new Request(opsUrl, { method: "POST", headers: opsHeaders, body: opsBody });
+    const opsAt = { value: earlyMs };
+    const opsCalls = { n: 0 };
+    const opsReplay = replayAt(policy, opsAt, opsCalls);
+    const opsFirst = await ops.verifyOpsRequest(opsRequest(), SECRET, {
+      now: Math.floor(earlyMs / 1000),
+      replay: opsReplay,
+    });
+    assert.equal(opsFirst, true);
+    const opsRows = openSqlite(file).prepare("SELECT key, expires_at FROM nonces").all() as {
+      key: string;
+      expires_at: number;
+    }[];
+    const opsRow = opsRows.find((item) => item.key !== row.key);
+    assert.ok(opsRow);
+    const opsPruned = policy.pruneNonces(pruneMs);
+    opsAt.value = farMs;
+    const opsAgain = await ops.verifyOpsRequest(opsRequest(), SECRET, {
+      now: T + 60,
+      replay: opsReplay,
+    });
+    assert.equal(opsAgain, false);
+    assert.equal(opsPruned, 0);
+    assert.equal(expiresAt(file, opsRow.key), opsRow.expires_at);
+  } finally {
+    remove();
+  }
+});
+
+test("nonce retention: the row survives every accepted instant, and one millisecond later is stale", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const auth = (await import(authSpecifier)) as {
+      signInternalRequest(input: {
+        secret: string;
+        method: string;
+        url: string;
+        body?: string;
+        principal: typeof principal;
+        now?: number;
+      }): Promise<Record<string, string>>;
+      verifyInternalRequest(
+        request: Request,
+        keys: string,
+        options: {
+          now?: number;
+          replay?: {
+            first(key: string, ttlMs: number, bound?: Bound): Promise<boolean>;
+          };
+        },
+      ): Promise<{ ok: true } | { ok: false; reason: string }>;
+    };
+    const body = "{}";
+    const headers = await auth.signInternalRequest({
+      secret: SECRET,
+      method: "POST",
+      url: ENDPOINT,
+      body,
+      principal,
+      now: T,
+    });
+    const request = () => new Request(ENDPOINT, { method: "POST", headers, body });
+    const at = { value: (T - 60) * 1000 };
+    const calls = { n: 0 };
+    const replay = replayAt(policy, at, calls);
+    const first = await auth.verifyInternalRequest(request(), SECRET, {
+      now: Math.floor(at.value / 1000),
+      replay,
+    });
+    assert.equal(first.ok, true);
+    const stored = openSqlite(file).prepare("SELECT expires_at FROM nonces").all() as {
+      expires_at: number;
+    }[];
+    assert.equal(stored.length, 1);
+    const expires = stored[0]?.expires_at;
+    assert.equal(typeof expires, "number");
+    for (let second = T - 60; second <= T + 60; second += 1) {
+      assert.equal(policy.pruneNonces(second * 1000), 0, String(second));
+      assert.equal(policy.pruneNonces(second * 1000 + 999), 0, String(second));
+    }
+    const left = openSqlite(file).prepare("SELECT COUNT(*) AS n FROM nonces").get() as { n: number };
+    assert.equal(left.n, 1);
+    const before = calls.n;
+    const lateMs = (T + 60) * 1000 + 999 + 1;
+    at.value = lateMs;
+    const late = await auth.verifyInternalRequest(request(), SECRET, {
+      now: Math.floor(lateMs / 1000),
+      replay,
+    });
+    assert.deepEqual(late, { ok: false, reason: "stale_timestamp" });
+    assert.equal(calls.n, before);
+    assert.equal(expires, (T + 60 + 1) * 1000);
   } finally {
     remove();
   }

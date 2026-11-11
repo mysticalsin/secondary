@@ -1,6 +1,6 @@
 // Replay protection and key rings for the signed service calls into the API (MCP, connector, ops).
-// The nonce cache is a table in the directory tenant's TenantPolicy Durable Object: a nonce is stored
-// for twice the clock skew, so a captured request is accepted once even inside the timestamp window.
+// The nonce cache is a table in the directory tenant's TenantPolicy Durable Object. The stored
+// expiry comes from the token time and the shared clock window, not from the receive time.
 
 import {
   type KeyRing,

@@ -4,15 +4,38 @@
 // Every signed call carries a key id (`kid`) and a random nonce, both inside the signed string.
 //  - kid: the verifier holds a ring {kid: secret}, so a key can be rotated with an overlap (the new key
 //    is current, the old one stays as `*_PREVIOUS` until every sender has moved) instead of a lockstep deploy.
-//  - nonce: the verifier remembers it for REPLAY_TTL_MS (twice the clock skew) in a Durable Object, so a
-//    captured request cannot be sent twice even inside the timestamp window.
+//  - nonce: the verifier stores it until after the last millisecond that timestamp can still pass
+//    the clock check. Both verifiers use MAX_SKEW_SECONDS and CLOCK_GRANULARITY_MS below.
 
 export const DEFAULT_KID = "k1";
 export const PREVIOUS_KID = "k0";
 export const KID_PATTERN = /^[A-Za-z0-9_.-]{1,32}$/;
 export const NONCE_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
-/** Twice the 60 s clock skew: a nonce outlives every timestamp that could still be accepted. */
-export const REPLAY_TTL_MS = 120_000;
+/** Clock skew both signed-call verifiers allow, in whole unix seconds. */
+export const MAX_SKEW_SECONDS = 60;
+/**
+ * Verifiers floor the clock to this many milliseconds. A timestamp T is still accepted at
+ * (T + MAX_SKEW_SECONDS) * CLOCK_GRANULARITY_MS + (CLOCK_GRANULARITY_MS - 1).
+ */
+export const CLOCK_GRANULARITY_MS = 1_000;
+/**
+ * Passed through to the replay store. The stored expiry is `nonceExpiresAt`, not receipt plus this.
+ * The span is from the earliest accepted millisecond to that expiry.
+ */
+export const REPLAY_TTL_MS = (MAX_SKEW_SECONDS * 2 + 1) * CLOCK_GRANULARITY_MS;
+
+/** Last millisecond a verifier can accept a token time of `tokenExpMs` with `maxSkewMs`. */
+export function lastAcceptedMs(tokenExpMs: number, maxSkewMs: number): number {
+  return tokenExpMs + maxSkewMs + (CLOCK_GRANULARITY_MS - 1);
+}
+
+/**
+ * Nonce expiry derived from the token time and the acceptance window. Strictly after
+ * `lastAcceptedMs`: for one-second clocks that is (T + skew + 1) * CLOCK_GRANULARITY_MS.
+ */
+export function nonceExpiresAt(tokenExpMs: number, maxSkewMs: number): number {
+  return tokenExpMs + maxSkewMs + CLOCK_GRANULARITY_MS;
+}
 
 export type KeyRing = Readonly<Record<string, string>>;
 

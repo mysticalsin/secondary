@@ -13,6 +13,7 @@ import {
   seedWrites,
   storeSeed,
 } from "../../../src/state/wiki-seed.ts";
+import { lastAcceptedMs, nonceExpiresAt } from "../../../packages/contracts/src/signed-call.ts";
 import { GOV_METHODS, GovStore } from "./admin/store.ts";
 import {
   type EntraSubject,
@@ -624,8 +625,9 @@ export class TenantPolicy extends DurableObject<Env> {
   /**
    * Replay guard for the signed service calls. True only the first time a key is stored.
    * A stored key stays refused after expires_at: deleting the row would accept it again.
-   * When `bound` is set, the stored expiry must cover the token's own exp plus the max clock skew.
-   * A short window is refused and not inserted. This method does not delete rows.
+   * When `bound` is set, expires_at comes from the token time and the verifier's acceptance
+   * window, not from this call's receive time. It must be strictly after the last millisecond
+   * that window still accepts. An unsafe bound is refused and not inserted. This method does not delete rows.
    */
   nonceFirst(
     key: string,
@@ -633,15 +635,16 @@ export class TenantPolicy extends DurableObject<Env> {
     ttlMs: number,
     bound?: { tokenExpMs: number; maxSkewMs: number },
   ): boolean {
-    const expiresAt = now + ttlMs;
+    let expiresAt = now + ttlMs;
     if (bound) {
-      const min = bound.tokenExpMs + bound.maxSkewMs;
+      const last = lastAcceptedMs(bound.tokenExpMs, bound.maxSkewMs);
+      expiresAt = nonceExpiresAt(bound.tokenExpMs, bound.maxSkewMs);
       if (
-        !Number.isSafeInteger(expiresAt) ||
         !Number.isSafeInteger(bound.tokenExpMs) ||
         !Number.isSafeInteger(bound.maxSkewMs) ||
         bound.maxSkewMs < 0 ||
-        expiresAt < min
+        !Number.isSafeInteger(expiresAt) ||
+        !(expiresAt > last)
       ) {
         console.warn(JSON.stringify({ at: "nonce_window_short" }));
         return false;
