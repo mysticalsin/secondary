@@ -11,6 +11,14 @@ import {
   decodeImportStatus,
 } from "../../../../src/state/import-outcome.ts";
 import { claimPage, commitPage, decodePageStatus } from "../../../../src/state/page-visibility.ts";
+import {
+  claimProposal,
+  commitProposal,
+  decodeFindingStatus,
+  decodeProposalStatus,
+  type FindingStatus,
+} from "../../../../src/state/proposal-review.ts";
+import { commitQuorum } from "../../../../src/state/quorum.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import {
@@ -144,6 +152,18 @@ class PageRefusal extends Error {
     super(fail.code);
     this.fail = fail;
   }
+}
+
+function proposalFail(reason: string): Fail {
+  if (reason === "replay")
+    return { ok: false, code: "replay", message: "The proposal changed since it was read" };
+  if (reason === "not_pending")
+    return { ok: false, code: "not_pending", message: "The proposal was already decided" };
+  if (reason === "same_actor" || reason === "already_done")
+    return { ok: false, code: "already_done", message: "You already approved this revision" };
+  if (reason === "clock_unreadable")
+    return { ok: false, code: "clock_unreadable", message: "The clock cannot be read" };
+  return { ok: false, code: "state_unreadable", message: "The proposal status cannot be read" };
 }
 
 function importFail(reason: string): Fail {
@@ -1458,6 +1478,13 @@ export abstract class WikiBase extends DurableObject<Env> {
     return false;
   }
 
+  /** The finding named by a proposal. A missing row is unknown and writes nothing. */
+  private findingOf(key: string | null): FindingStatus | null {
+    if (!key) return null;
+    const row = this.sql.exec("SELECT status FROM wiki_findings WHERE key = ?", key).toArray()[0];
+    return decodeFindingStatus(row ? row.status : null);
+  }
+
   /**
    * The decision on one review item. The API has already checked that the actor may decide.
    * Approving names the exact revision (`revisionHash`); a proposal edited since gives a conflict.
@@ -1477,8 +1504,9 @@ export abstract class WikiBase extends DurableObject<Env> {
     const m = this.wikiMeta();
     if (!item || !m || !isWikiKind(item.kind))
       return { ok: false, code: "not_found", message: "No such proposal" };
-    if (item.status !== "candidate")
-      return { ok: false, code: "not_pending", message: "The proposal was already decided" };
+    const from = decodeProposalStatus(item.status);
+    if (from.tag === "unknown") return proposalFail("state_unreadable");
+    if (from.tag !== "candidate") return proposalFail("not_pending");
     const personal = isPersonalScope(m.scopeId);
     if (!personal && this.wikiAuthored(item, ids))
       return {
@@ -1501,22 +1529,36 @@ export abstract class WikiBase extends DurableObject<Env> {
         message: "You wrote a source of this proposal, so a different person must decide it",
       };
     if (decision === "reject") {
-      this.ctx.storage.transactionSync(() => {
-        this.sql.exec("UPDATE items SET status = 'rejected', updated_at = ? WHERE id = ?", now, id);
-        this.sql.exec(
-          "INSERT OR REPLACE INTO approvals (item_id, revision, actor_id, kind, at, verdict) VALUES (?, ?, ?, 'review', ?, 'rejected')",
-          id,
-          item.revision,
-          actorId,
-          now,
-        );
-        if (p.findingKey)
+      const step = commitProposal(from, { type: "reject" }, this.findingOf(p.findingKey));
+      if (!step.ok) return proposalFail(step.reason);
+      try {
+        this.ctx.storage.transactionSync(() => {
+          const wrote = this.sql
+            .exec(
+              "UPDATE items SET status = 'rejected', updated_at = ? WHERE id = ? AND status = 'candidate' RETURNING id",
+              now,
+              id,
+            )
+            .toArray();
+          if (claimProposal(wrote.length).tag !== "applied") throw new PageRefusal(proposalFail("replay"));
           this.sql.exec(
-            "UPDATE wiki_findings SET status = 'dismissed' WHERE key = ?",
-            p.findingKey,
+            "INSERT OR REPLACE INTO approvals (item_id, revision, actor_id, kind, at, verdict) VALUES (?, ?, ?, 'review', ?, 'rejected')",
+            id,
+            item.revision,
+            actorId,
+            now,
           );
-        this.wikiLogAppend(actorId, `${p.kind}.rejected`, { id }, now);
-      });
+          if (p.findingKey && step.effects.some((effect) => effect.type === "dismiss_finding"))
+            this.sql.exec(
+              "UPDATE wiki_findings SET status = 'dismissed' WHERE key = ? AND status = 'open'",
+              p.findingKey,
+            );
+          this.wikiLogAppend(actorId, `${p.kind}.rejected`, { id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
       return { ok: true, status: "rejected", applied: null, approvals: 0, required: 0 };
     }
     if (!opts.revisionHash)
@@ -1545,19 +1587,37 @@ export abstract class WikiBase extends DurableObject<Env> {
         };
     }
     const required = personal ? 1 : item.required;
-    const already = this.sql
+    const prior = this.sql
       .exec(
-        `SELECT 1 FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'
-         AND actor_id IN (${ids.map(() => "?").join(",")}) LIMIT 1`,
+        "SELECT actor_id FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'",
         id,
         item.revision,
-        ...ids,
       )
-      .toArray();
-    if (already.length)
+      .toArray()
+      .map((r) => r.actor_id as string);
+    if (prior.some((actor) => ids.includes(actor)))
       return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const approvals = item.approvals + 1;
-    if (approvals < required) {
+    const requester = prior[0];
+    const asked = commitQuorum(
+      requester
+        ? {
+            tag: "waiting",
+            requester: { id: requester, subject: null, email: null, directoryEmail: null },
+            requestedAt: item.updatedAt,
+          }
+        : { tag: "empty" },
+      { type: "ask", actor: { id: actorId, subject: null, email: null, directoryEmail: null }, now },
+    );
+    if (!asked.ok) return proposalFail(asked.reason);
+    const step = commitProposal(
+      from,
+      { type: "approve", quorum: { tag: asked.decision }, required, approvals: prior.length },
+      this.findingOf(p.findingKey),
+    );
+    if (!step.ok) return proposalFail(step.reason);
+    const approvals = prior.length + 1;
+    const releasing = step.effects.some((effect) => effect.type === "approve");
+    if (!releasing) {
       try {
         this.ctx.storage.transactionSync(() => {
           const noted = this.sql
@@ -1619,8 +1679,11 @@ export abstract class WikiBase extends DurableObject<Env> {
             message: "The proposal was already decided",
           });
         applied = out;
-        if (p.findingKey)
-          this.sql.exec("UPDATE wiki_findings SET status = 'resolved' WHERE key = ?", p.findingKey);
+        if (p.findingKey && step.effects.some((effect) => effect.type === "resolve_finding"))
+          this.sql.exec(
+            "UPDATE wiki_findings SET status = 'resolved' WHERE key = ? AND status = 'open'",
+            p.findingKey,
+          );
       });
     } catch (e) {
       if (e instanceof PageRefusal) return e.fail;
@@ -1648,8 +1711,8 @@ export abstract class WikiBase extends DurableObject<Env> {
     const item = this.get(id);
     if (!item || !isWikiKind(item.kind))
       return { ok: false, code: "not_found", message: "No such proposal" };
-    if (item.status !== "candidate")
-      return { ok: false, code: "not_pending", message: "The proposal was already decided" };
+    const edited = commitProposal(decodeProposalStatus(item.status), { type: "edit" }, null);
+    if (!edited.ok) return proposalFail(edited.reason);
     const p = this.parse(item);
     const d = p?.pages.find((x) => x.pageId === pageId);
     if (!p || !d) return { ok: false, code: "not_found", message: "No such page in this proposal" };
@@ -1668,23 +1731,32 @@ export abstract class WikiBase extends DurableObject<Env> {
     d.markdown = clean;
     d.edited = true;
     const revision = item.revision + 1;
-    this.ctx.storage.transactionSync(() => {
-      this.sql.exec(
-        "UPDATE items SET body = ?, revision = ?, updated_at = ? WHERE id = ?",
-        JSON.stringify(p),
-        revision,
-        now,
-        id,
-      );
-      this.sql.exec(
-        "INSERT INTO edits (item_id, revision, actor_id, at) VALUES (?, ?, ?, ?)",
-        id,
-        revision,
-        actorId,
-        now,
-      );
-      this.wikiLogAppend(actorId, "proposal.edited", { id, pageId, revision }, now);
-    });
+    try {
+      this.ctx.storage.transactionSync(() => {
+        const wrote = this.sql
+          .exec(
+            "UPDATE items SET body = ?, revision = ?, updated_at = ? WHERE id = ? AND status = 'candidate' AND revision = ? RETURNING id",
+            JSON.stringify(p),
+            revision,
+            now,
+            id,
+            item.revision,
+          )
+          .toArray();
+        if (claimProposal(wrote.length).tag !== "applied") throw new PageRefusal(proposalFail("replay"));
+        this.sql.exec(
+          "INSERT INTO edits (item_id, revision, actor_id, at) VALUES (?, ?, ?, ?)",
+          id,
+          revision,
+          actorId,
+          now,
+        );
+        this.wikiLogAppend(actorId, "proposal.edited", { id, pageId, revision }, now);
+      });
+    } catch (e) {
+      if (e instanceof PageRefusal) return e.fail;
+      throw e;
+    }
     return { ok: true, revision };
   }
 

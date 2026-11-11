@@ -113,20 +113,20 @@ test("CHARACTERIZATION: savePage does not republish an archived page", () => {
   assert.equal(outcome(null, false), "published");
 });
 
-test("CHARACTERIZATION: wikiDecide apply reports pending before the row is approved", () => {
+test("wikiDecide partial approval reports pending and leaves the item candidate", () => {
   const src = read("recovered-source/worker/src/wiki/store.ts");
-  const partial = between(src, "if (approvals < required)", "let applied");
-  // CHARACTERIZATION: current behaviour, flagged. The response says pending.
-  // The item row is not updated in this branch, so it stays candidate.
-  assert.match(partial, /status: "pending"/);
-  assert.doesNotMatch(partial, /UPDATE items SET status/);
+  const pending = between(src, "if (!releasing)", "let applied");
+  assert.match(pending, /status: "pending"/);
+  assert.doesNotMatch(pending, /UPDATE items SET status/);
   const final = between(src, "let applied", "for (const src of p.reingest)");
   assert.match(final, /this\.applyProposal\(/);
   assert.match(final, /UPDATE items SET status = 'approved'/);
-  assert.match(final, /UPDATE wiki_findings SET status = 'resolved'/);
+  assert.match(final, /AND status = 'candidate'/);
+  assert.match(final, /UPDATE wiki_findings SET status = 'resolved' WHERE key = \? AND status = 'open'/);
   const reject = between(src, 'if (decision === "reject")', "if (!opts.revisionHash)");
   assert.match(reject, /UPDATE items SET status = 'rejected'/);
-  assert.match(reject, /UPDATE wiki_findings SET status = 'dismissed'/);
+  assert.match(reject, /AND status = 'candidate'/);
+  assert.match(reject, /UPDATE wiki_findings SET status = 'dismissed' WHERE key = \? AND status = 'open'/);
 });
 
 test("dry-run import and a personal auto-accept both stay a draft", () => {
