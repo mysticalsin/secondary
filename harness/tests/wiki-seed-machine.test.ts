@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { requireFail, requireOk } from "./require-ok.ts";
 import {
   commitWikiSeed,
   decodeSeed,
@@ -69,34 +70,26 @@ const legal = new Set<string>([
 ]);
 
 test("wiki seed: every legal transition", () => {
-  const claimed = transitionWikiSeed(fresh(), events.claim2);
-  assert.equal(claimed.ok, true);
-  if (claimed.ok) {
-    assert.deepEqual(claimed.state.claim, { version: 2, at: 1000 });
-    assert.equal(claimed.state.completed, 0);
-    assert.deepEqual(claimed.effects, [{ type: "write" }]);
-  }
-  const late = transitionWikiSeed(held, events.claim2late);
-  assert.equal(late.ok, true);
-  if (late.ok) assert.deepEqual(late.state.claim, { version: 2, at: 1000 + LEASE });
-  const finished = transitionWikiSeed(held, events.complete2);
-  assert.equal(finished.ok, true);
-  if (finished.ok) assert.deepEqual(finished.state, { v: 1, completed: 2, claim: null, unreadable: false });
-  const again = transitionWikiSeed(current, events.complete2);
-  assert.equal(again.ok, true);
-  if (again.ok) assert.equal(again.state.completed, 2);
-  const higher = transitionWikiSeed(current, events.claim3);
-  assert.equal(higher.ok, true);
-  if (higher.ok) {
-    assert.equal(higher.state.completed, 2);
-    assert.equal(higher.state.claim?.version, 3);
-  }
-  const cleared = transitionWikiSeed(heldOlder, events.reset);
-  assert.equal(cleared.ok, true);
-  if (cleared.ok) assert.deepEqual(cleared.state, fresh());
-  const repaired = transitionWikiSeed(corrupt, events.reset);
-  assert.equal(repaired.ok, true);
-  if (repaired.ok) assert.equal(repaired.state.unreadable, false);
+  const claimed = requireOk(transitionWikiSeed(fresh(), events.claim2));
+  assert.deepEqual(claimed.state.claim, { version: 2, at: 1000 });
+  assert.equal(claimed.state.completed, 0);
+  assert.deepEqual(claimed.effects, [{ type: "write" }]);
+  assert.deepEqual(requireOk(transitionWikiSeed(held, events.claim2late)).state.claim, {
+    version: 2,
+    at: 1000 + LEASE,
+  });
+  assert.deepEqual(requireOk(transitionWikiSeed(held, events.complete2)).state, {
+    v: 1,
+    completed: 2,
+    claim: null,
+    unreadable: false,
+  });
+  assert.equal(requireOk(transitionWikiSeed(current, events.complete2)).state.completed, 2);
+  const higher = requireOk(transitionWikiSeed(current, events.claim3));
+  assert.equal(higher.state.completed, 2);
+  assert.equal(higher.state.claim?.version, 3);
+  assert.deepEqual(requireOk(transitionWikiSeed(heldOlder, events.reset)).state, fresh());
+  assert.equal(requireOk(transitionWikiSeed(corrupt, events.reset)).state.unreadable, false);
 });
 
 test("wiki seed: illegal pairs are the complement of the legal table", () => {
@@ -107,11 +100,8 @@ test("wiki seed: illegal pairs are the complement of the legal table", () => {
     for (const eventId of eventIds) {
       const id = `${stateId}:${eventId}`;
       const result = transitionWikiSeed(states[stateId], events[eventId] as SeedEvent);
-      if (legal.has(id)) assert.equal(result.ok, true, id);
-      else {
-        assert.equal(result.ok, false, id);
-        if (!result.ok) assert.equal(result.machine, "wiki_seed");
-      }
+      if (legal.has(id)) requireOk(result);
+      else assert.equal(requireFail(result).machine, "wiki_seed", id);
     }
   }
 });
@@ -143,12 +133,8 @@ test("wiki seed: legacy cells round-trip and unknown input does not look fresh",
 });
 
 test("wiki seed: an unexpired older claim is not overwritten, and a run status stays the old mapping", () => {
-  const overwritten = transitionWikiSeed(heldOlder, events.claim2);
-  assert.equal(overwritten.ok, false);
-  if (!overwritten.ok) assert.match(overwritten.reason, /unexpired/);
-  const backwards = transitionWikiSeed(current, events.complete1);
-  assert.equal(backwards.ok, false);
-  if (!backwards.ok) assert.match(backwards.reason, /backwards/);
+  assert.match(requireFail(transitionWikiSeed(heldOlder, events.claim2)).reason, /unexpired/);
+  assert.match(requireFail(transitionWikiSeed(current, events.complete1)).reason, /backwards/);
 
   assert.deepEqual(seedRunStatus({ enabled: false }), { status: "off" });
   assert.deepEqual(seedRunStatus({ enabled: true, hasConfig: false }), { status: "unseeded" });

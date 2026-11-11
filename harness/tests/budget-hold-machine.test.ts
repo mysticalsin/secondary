@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { requireFail, requireOk } from "./require-ok.ts";
 import {
   commitBudgetHold,
   finiteHoldNumber,
@@ -42,23 +43,14 @@ const fakeStore = () => {
 };
 
 test("budget hold: every legal transition", () => {
-  const reserved = transitionBudgetHold(idle, events.reserved);
-  assert.equal(reserved.ok, true);
-  if (reserved.ok) assert.deepEqual(reserved.state, held);
-
-  const refused = transitionBudgetHold(idle, events.denied);
-  assert.equal(refused.ok, true);
-  if (refused.ok) assert.deepEqual(refused.state, denied);
-
-  const once = transitionBudgetHold(held, { type: "settle", actual: 7.6 });
-  assert.equal(once.ok, true);
-  if (once.ok) {
-    assert.deepEqual(once.state, { tag: "settled", actual: 7.6 });
-    assert.deepEqual(once.effects, [{ type: "adjust", delta: -2 }]);
-  }
-  const same = transitionBudgetHold(held, { type: "settle", actual: 10 });
-  assert.equal(same.ok, true);
-  if (same.ok) assert.deepEqual(same.effects, [{ type: "none" }]);
+  assert.deepEqual(requireOk(transitionBudgetHold(idle, events.reserved)).state, held);
+  assert.deepEqual(requireOk(transitionBudgetHold(idle, events.denied)).state, denied);
+  const once = requireOk(transitionBudgetHold(held, { type: "settle", actual: 7.6 }));
+  assert.deepEqual(once.state, { tag: "settled", actual: 7.6 });
+  assert.deepEqual(once.effects, [{ type: "adjust", delta: -2 }]);
+  assert.deepEqual(requireOk(transitionBudgetHold(held, { type: "settle", actual: 10 })).effects, [
+    { type: "none" },
+  ]);
 });
 
 test("budget hold: illegal pairs are the complement of the legal table", () => {
@@ -69,11 +61,8 @@ test("budget hold: illegal pairs are the complement of the legal table", () => {
     for (const eventId of eventIds) {
       const id = `${stateId}:${eventId}`;
       const result = transitionBudgetHold(states[stateId], events[eventId] as BudgetHoldEvent);
-      if (legal.has(id)) assert.equal(result.ok, true, id);
-      else {
-        assert.equal(result.ok, false, id);
-        if (!result.ok) assert.equal(result.reason.length > 0, true);
-      }
+      if (legal.has(id)) requireOk(result);
+      else assert.equal(requireFail(result).reason.length > 0, true, id);
     }
   }
 });

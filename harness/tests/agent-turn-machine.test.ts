@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { requireFail, requireOk, requireTag } from "./require-ok.ts";
 import {
   commitAgentTurn,
   hasToolUses,
@@ -71,33 +72,28 @@ const legal = new Set<string>([
 ]);
 
 test("agent turn: every legal transition", () => {
-  const answer = transitionAgentTurn(round(1), events.stop_end);
-  assert.equal(answer.ok, true);
-  if (answer.ok) assert.deepEqual(answer.state, { tag: "answered", truncated: false });
-  const cut = transitionAgentTurn(round(4), events.stop_max_tokens);
-  assert.equal(cut.ok, true);
-  if (cut.ok) assert.deepEqual(cut.state, { tag: "answered", truncated: true });
-  const budget = transitionAgentTurn(round(2), events.budget_denied);
-  assert.equal(budget.ok, true);
-  if (budget.ok && budget.state.tag === "failed") assert.equal(budget.state.code, "ai_budget_exhausted");
-  const run = transitionAgentTurn(round(1), events.stop_tool);
-  assert.equal(run.ok, true);
-  if (run.ok && run.state.tag === "tools") {
-    assert.equal(run.state.toolUses, 2);
-    assert.deepEqual(run.effects, [{ type: "run_tools" }]);
-  }
-  const banned = transitionAgentTurn(round(4), events.stop_tool);
-  assert.equal(banned.ok, true);
-  if (banned.ok && banned.state.tag === "failed") assert.equal(banned.state.code, "ai_unavailable");
-  const empty = transitionAgentTurn(round(1), events.stop_empty);
-  assert.equal(empty.ok, true);
-  if (empty.ok) assert.equal(empty.state.tag, "failed");
-  const other = transitionAgentTurn(round(1), events.stop_other);
-  assert.equal(other.ok, true);
-  if (other.ok) assert.equal(other.state.tag, "failed");
-  const next = transitionAgentTurn(tools, events.tools_finished);
-  assert.equal(next.ok, true);
-  if (next.ok) assert.deepEqual(next.state, round(2, 4, 2));
+  assert.deepEqual(requireOk(transitionAgentTurn(round(1), events.stop_end)).state, {
+    tag: "answered",
+    truncated: false,
+  });
+  assert.deepEqual(requireOk(transitionAgentTurn(round(4), events.stop_max_tokens)).state, {
+    tag: "answered",
+    truncated: true,
+  });
+  assert.equal(
+    requireTag(requireOk(transitionAgentTurn(round(2), events.budget_denied)).state, "failed").code,
+    "ai_budget_exhausted",
+  );
+  const run = requireOk(transitionAgentTurn(round(1), events.stop_tool));
+  assert.equal(requireTag(run.state, "tools").toolUses, 2);
+  assert.deepEqual(run.effects, [{ type: "run_tools" }]);
+  assert.equal(
+    requireTag(requireOk(transitionAgentTurn(round(4), events.stop_tool)).state, "failed").code,
+    "ai_unavailable",
+  );
+  assert.equal(requireTag(requireOk(transitionAgentTurn(round(1), events.stop_empty)).state, "failed").tag, "failed");
+  assert.equal(requireTag(requireOk(transitionAgentTurn(round(1), events.stop_other)).state, "failed").tag, "failed");
+  assert.deepEqual(requireOk(transitionAgentTurn(tools, events.tools_finished)).state, round(2, 4, 2));
   assert.equal(startAgentTurn(0).tag, "failed");
   assert.deepEqual(startAgentTurn(4), round(1));
 });
@@ -110,8 +106,8 @@ test("agent turn: illegal pairs are the complement of the legal table", () => {
     for (const eventId of eventIds) {
       const id = `${stateId}:${eventId}`;
       const result = transitionAgentTurn(states[stateId], events[eventId] as AgentTurnEvent);
-      if (legal.has(id)) assert.equal(result.ok, true, id);
-      else assert.equal(result.ok, false, id);
+      if (legal.has(id)) requireOk(result);
+      else requireFail(result);
     }
   }
 });
@@ -124,15 +120,19 @@ test("agent turn: guards allow and deny", () => {
 });
 
 test("agent turn: tools on the last round fail, and finishing tools counts every use", () => {
-  const last = transitionAgentTurn(round(4, 4, 3), { type: "stop_tool", count: 1 });
-  assert.equal(last.ok, true);
-  if (last.ok) assert.equal(last.state.tag, "failed");
-  const continued = transitionAgentTurn(
-    { tag: "tools", round: 2, calls: 3, maxRounds: 4, toolUses: 2 },
-    events.tools_finished,
+  assert.equal(
+    requireTag(requireOk(transitionAgentTurn(round(4, 4, 3), { type: "stop_tool", count: 1 })).state, "failed").tag,
+    "failed",
   );
-  assert.equal(continued.ok, true);
-  if (continued.ok) assert.deepEqual(continued.state, round(3, 4, 5));
+  assert.deepEqual(
+    requireOk(
+      transitionAgentTurn(
+        { tag: "tools", round: 2, calls: 3, maxRounds: 4, toolUses: 2 },
+        events.tools_finished,
+      ),
+    ).state,
+    round(3, 4, 5),
+  );
   const lines: string[] = [];
   const original = console.warn;
   console.warn = (line?: unknown) => {

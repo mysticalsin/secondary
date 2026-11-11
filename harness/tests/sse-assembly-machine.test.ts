@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { streamRound } from "../../recovered-source/worker/src/agent/stream.ts";
+import { requireOk, requireTag } from "./require-ok.ts";
 import {
   canApplyDelta,
   commitSse,
@@ -82,25 +83,15 @@ const legal = new Set<string>([
   "withText:other",
 ]);
 
-const apply = (state: SseState, event: SseEvent): SseState => {
-  const step = transitionSse(state, event);
-  assert.equal(step.ok, true);
-  return step.ok ? step.state : state;
-};
+const apply = (state: SseState, event: SseEvent): SseState => requireOk(transitionSse(state, event)).state;
 
 test("sse assembly: every legal transition", () => {
-  const started = apply(fresh, events.message_start);
-  assert.equal(started.tag, "assembling");
-  if (started.tag === "assembling") assert.equal(started.model, "m2");
-  const wrote = apply(withText, events.delta_text);
-  assert.equal(wrote.tag, "assembling");
-  if (wrote.tag === "assembling") assert.equal(wrote.blocks[0]?.text, "A");
+  assert.equal(requireTag(apply(fresh, events.message_start), "assembling").model, "m2");
+  assert.equal(requireTag(apply(withText, events.delta_text), "assembling").blocks[0]?.text, "A");
   assert.equal(apply(fresh, events.delta_text).tag, "broken");
   assert.equal(apply(fresh, events.block_start_bad).tag, "broken");
   assert.equal(apply(fresh, events.error).tag, "broken");
-  const stopped = apply(fresh, events.message_stop);
-  assert.equal(stopped.tag, "assembling");
-  if (stopped.tag === "assembling") assert.equal(stopped.stopped, true);
+  assert.equal(requireTag(apply(fresh, events.message_stop), "assembling").stopped, true);
   const ignored = apply(withText, { type: "content_block_delta", index: 0, delta: { type: "unknown" } });
   assert.deepEqual(ignored, withText);
 });
@@ -113,7 +104,7 @@ test("sse assembly: illegal pairs are the complement of the legal table", () => 
     for (const eventId of eventIds) {
       const id = `${stateId}:${eventId}`;
       const result = transitionSse(states[stateId], events[eventId]);
-      if (legal.has(id)) assert.equal(result.ok, true, id);
+      if (legal.has(id)) requireOk(result);
       else assert.equal(result.ok, false, id);
     }
   }
@@ -124,11 +115,9 @@ test("sse assembly: guards allow and deny", () => {
   assert.equal(hasBlockType(null), false);
   assert.equal(hasBlockType({}), false);
   assert.equal(canApplyDelta(fresh, 0, { type: "text_delta", text: "A" }), false);
-  assert.equal(
-    withText.tag === "assembling" && canApplyDelta(withText, 0, { type: "text_delta", text: "A" }),
-    true,
-  );
-  assert.equal(withText.tag === "assembling" && canApplyDelta(withText, 0, null), false);
+  const text = requireTag(withText, "assembling");
+  assert.equal(canApplyDelta(text, 0, { type: "text_delta", text: "A" }), true);
+  assert.equal(canApplyDelta(text, 0, null), false);
 });
 
 test("sse assembly: a missing index shares slot 0, and token sums keep the old rules", () => {
@@ -148,21 +137,20 @@ test("sse assembly: a missing index shares slot 0, and token sums keep the old r
     delta: {},
     usage: { input_tokens: 1, cache_creation_input_tokens: 1, cache_read_input_tokens: 1, output_tokens: 0 },
   });
-  assert.equal(state.tag, "assembling");
-  if (state.tag === "assembling") {
-    assert.equal(state.inputTokens, 3);
-    assert.equal(state.outputTokens, 1);
-  }
-  state = apply(state, {
-    type: "message_delta",
-    delta: { stop_reason: "end_turn" },
-    usage: { input_tokens: 10, output_tokens: 4 },
-  });
-  if (state.tag === "assembling") {
-    assert.equal(state.inputTokens, 10);
-    assert.equal(state.outputTokens, 4);
-    assert.equal(state.stopReason, "end_turn");
-  }
+  const afterQuiet = requireTag(state, "assembling");
+  assert.equal(afterQuiet.inputTokens, 3);
+  assert.equal(afterQuiet.outputTokens, 1);
+  const afterCap = requireTag(
+    apply(state, {
+      type: "message_delta",
+      delta: { stop_reason: "end_turn" },
+      usage: { input_tokens: 10, output_tokens: 4 },
+    }),
+    "assembling",
+  );
+  assert.equal(afterCap.inputTokens, 10);
+  assert.equal(afterCap.outputTokens, 4);
+  assert.equal(afterCap.stopReason, "end_turn");
 
   const before = structuredClone(fresh);
   assert.equal(apply(fresh, events.delta_missing).tag, "broken");
@@ -247,25 +235,23 @@ test("sse assembly: a local stream rebuilds blocks, and a bad frame fails the ro
       tools += 1;
     },
   });
-  assert.equal(ok.ok, true);
-  if (ok.ok) {
-    assert.equal(ok.text, "Hi");
-    assert.equal(ok.model, "stream-model");
-    assert.equal(ok.stopReason, "tool_use");
-    assert.deepEqual(ok.usage, { inputTokens: 3, outputTokens: 6 });
-    assert.deepEqual(texts, ["Hi"]);
-    assert.equal(tools, 3);
-    assert.equal(ok.content[0]?.citations && Array.isArray(ok.content[0].citations), true);
-    assert.equal(ok.content[3]?.thinking, "hmm");
-    assert.equal(ok.content[3]?.signature, "sig");
-    assert.deepEqual(
-      ok.toolUses.map((t) => ({ name: t.name, input: t.input, invalid: t.invalid })),
-      [
-        { name: "search", input: { q: "x" }, invalid: false },
-        { name: "search", input: {}, invalid: true },
-      ],
-    );
-  }
+  const round = requireOk(ok);
+  assert.equal(round.text, "Hi");
+  assert.equal(round.model, "stream-model");
+  assert.equal(round.stopReason, "tool_use");
+  assert.deepEqual(round.usage, { inputTokens: 3, outputTokens: 6 });
+  assert.deepEqual(texts, ["Hi"]);
+  assert.equal(tools, 3);
+  assert.equal(Array.isArray(round.content[0]?.citations), true);
+  assert.equal(round.content[3]?.thinking, "hmm");
+  assert.equal(round.content[3]?.signature, "sig");
+  assert.deepEqual(
+    round.toolUses.map((t) => ({ name: t.name, input: t.input, invalid: t.invalid })),
+    [
+      { name: "search", input: { q: "x" }, invalid: false },
+      { name: "search", input: {}, invalid: true },
+    ],
+  );
 
   const early = await streamRound({
     apiKey: "not-a-real-key",

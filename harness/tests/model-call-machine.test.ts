@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { callModel } from "../../recovered-source/worker/src/ai/anthropic.ts";
 import { commit } from "../../src/state/illegal.ts";
+import { requireFail, requireOk, requireTag } from "./require-ok.ts";
 import {
   commitModelCall,
   modelAttemptsRemain,
@@ -76,76 +77,53 @@ test("model call: every legal transition", () => {
   const step = (id: StateId, event: EventId) =>
     transitionModelCall(states[id], events[event]);
 
-  const again = step("canRetry", "http429");
-  assert.equal(again.ok, true);
-  if (again.ok) {
-    assert.equal(again.state.tag, "calling");
-    if (again.state.tag === "calling") {
-      assert.equal(again.state.attempt, 1);
-      assert.equal(again.state.last, "upstream_error");
-    }
-    assert.deepEqual(again.effects, [{ type: "backoff", delayMs: 250 }]);
-  }
+  const again = requireOk(step("canRetry", "http429"));
+  const againState = requireTag(again.state, "calling");
+  assert.equal(againState.attempt, 1);
+  assert.equal(againState.last, "upstream_error");
+  assert.deepEqual(again.effects, [{ type: "backoff", delayMs: 250 }]);
 
-  const fatal = step("canRetry", "http400");
-  assert.equal(fatal.ok, true);
-  if (fatal.ok && fatal.state.tag === "done") {
-    assert.deepEqual(fatal.state.reply, { ok: false, code: "upstream_error" });
-    assert.deepEqual(fatal.effects, [{ type: "finish" }]);
-  }
+  const fatal = requireOk(step("canRetry", "http400"));
+  assert.deepEqual(requireTag(fatal.state, "done").reply, { ok: false, code: "upstream_error" });
+  assert.deepEqual(fatal.effects, [{ type: "finish" }]);
 
-  const timed = step("canRetry", "timeout");
-  assert.equal(timed.ok, true);
-  if (timed.ok && timed.state.tag === "calling") assert.equal(timed.state.last, "timeout");
-
-  const thrown = step("canRetry", "transport");
-  assert.equal(thrown.ok, true);
-  if (thrown.ok && thrown.state.tag === "calling") assert.equal(thrown.state.last, "upstream_error");
+  assert.equal(requireTag(requireOk(step("canRetry", "timeout")).state, "calling").last, "timeout");
+  assert.equal(
+    requireTag(requireOk(step("canRetry", "transport")).state, "calling").last,
+    "upstream_error",
+  );
 
   for (const event of ["refused", "truncated", "empty"] as const) {
-    const next = step("canRetry", event);
-    assert.equal(next.ok, true);
-    if (next.ok && next.state.tag === "done" && next.state.reply.ok === false) {
-      assert.equal(next.state.reply.code, event);
-    }
+    assert.deepEqual(requireTag(requireOk(step("canRetry", event)).state, "done").reply, {
+      ok: false,
+      code: event,
+    });
   }
 
-  const ok = step("canRetry", "success");
-  assert.equal(ok.ok, true);
-  if (ok.ok && ok.state.tag === "done") {
-    assert.deepEqual(ok.state.reply, { ok: true, text: "yes", model: "claude", usage });
-  }
+  assert.deepEqual(requireTag(requireOk(step("canRetry", "success")).state, "done").reply, {
+    ok: true,
+    text: "yes",
+    model: "claude",
+    usage,
+  });
+  assert.deepEqual(requireTag(requireOk(step("lastTry", "http429")).state, "done").reply, {
+    ok: false,
+    code: "upstream_error",
+  });
+  assert.deepEqual(requireTag(requireOk(step("lastTry", "timeout")).state, "done").reply, {
+    ok: false,
+    code: "timeout",
+  });
+  assert.deepEqual(requireTag(requireOk(step("lastTry", "transport")).state, "done").reply, {
+    ok: false,
+    code: "upstream_error",
+  });
 
-  const spent = step("lastTry", "http429");
-  assert.equal(spent.ok, true);
-  if (spent.ok && spent.state.tag === "done" && spent.state.reply.ok === false) {
-    assert.equal(spent.state.reply.code, "upstream_error");
-  }
-  const spentTimeout = step("lastTry", "timeout");
-  assert.equal(spentTimeout.ok, true);
-  if (spentTimeout.ok && spentTimeout.state.tag === "done" && spentTimeout.state.reply.ok === false) {
-    assert.equal(spentTimeout.state.reply.code, "timeout");
-  }
-  const spentTransport = step("lastTry", "transport");
-  assert.equal(spentTransport.ok, true);
-  if (
-    spentTransport.ok &&
-    spentTransport.state.tag === "done" &&
-    spentTransport.state.reply.ok === false
-  ) {
-    assert.equal(spentTransport.state.reply.code, "upstream_error");
-  }
-
-  const fraction = transitionModelCall(calling(0, 1.5), events.http429);
-  assert.equal(fraction.ok, true);
-  if (fraction.ok && fraction.state.tag === "calling") assert.equal(fraction.state.attempt, 1);
-  const fractionStop = transitionModelCall(calling(1, 1.5), events.http429);
-  assert.equal(fractionStop.ok, true);
-  if (fractionStop.ok) assert.equal(fractionStop.state.tag, "done");
-
-  const secondDelay = transitionModelCall(calling(1, 3), events.timeout);
-  assert.equal(secondDelay.ok, true);
-  if (secondDelay.ok) assert.deepEqual(secondDelay.effects, [{ type: "backoff", delayMs: 500 }]);
+  assert.equal(requireTag(requireOk(transitionModelCall(calling(0, 1.5), events.http429)).state, "calling").attempt, 1);
+  assert.equal(requireTag(requireOk(transitionModelCall(calling(1, 1.5), events.http429)).state, "done").tag, "done");
+  assert.deepEqual(requireOk(transitionModelCall(calling(1, 3), events.timeout)).effects, [
+    { type: "backoff", delayMs: 500 },
+  ]);
 });
 
 test("model call: illegal pairs are the complement of the legal table", () => {
@@ -156,11 +134,8 @@ test("model call: illegal pairs are the complement of the legal table", () => {
     for (const eventId of eventIds) {
       const id = `${stateId}:${eventId}`;
       const result = transitionModelCall(states[stateId], events[eventId]);
-      if (legal.has(id)) assert.equal(result.ok, true, id);
-      else {
-        assert.equal(result.ok, false, id);
-        if (!result.ok) assert.equal(result.machine, "model_call");
-      }
+      if (legal.has(id)) requireOk(result);
+      else assert.equal(requireFail(result).machine, "model_call", id);
     }
   }
 });
@@ -172,10 +147,8 @@ test("model call: guards allow and deny", () => {
   assert.equal(modelAttemptsRemain(calling(1, 1.5)), false);
   assert.equal(startModelCall(-1).tag, "done");
   assert.equal(startModelCall(Number.NaN).tag, "done");
-  const retryable = transitionModelCall(calling(0, 1), { type: "http", status: 503 });
-  const fatal = transitionModelCall(calling(0, 1), { type: "http", status: 422 });
-  assert.equal(retryable.ok && retryable.state.tag === "calling", true);
-  assert.equal(fatal.ok && fatal.state.tag === "done", true);
+  assert.equal(requireTag(requireOk(transitionModelCall(calling(0, 1), { type: "http", status: 503 })).state, "calling").tag, "calling");
+  assert.equal(requireTag(requireOk(transitionModelCall(calling(0, 1), { type: "http", status: 422 })).state, "done").tag, "done");
 });
 
 test("model call: an unknown event is logged by type and not by payload", () => {
