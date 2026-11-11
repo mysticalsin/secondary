@@ -182,6 +182,26 @@ test("sse assembly: a missing index shares slot 0, and token sums keep the old r
   }
 });
 
+test("sse assembly: an unknown event is logged by type and not by payload", () => {
+  const secret = "HIDDEN-TOOL-INPUT";
+  const event = { type: "mystery", block: { input: secret } } as unknown as SseEvent;
+  const lines: string[] = [];
+  const original = console.warn;
+  console.warn = (line?: unknown) => {
+    lines.push(String(line));
+  };
+  try {
+    const result = commitSse(fresh, event);
+    assert.equal(result.ok, false);
+    assert.equal("event" in result && result.event, "mystery");
+    assert.equal("reason" in result && result.reason, "unhandled event");
+    assert.equal(lines.length, 1);
+    assert.equal((lines[0] ?? "").includes(secret), false);
+  } finally {
+    console.warn = original;
+  }
+});
+
 test("sse assembly: a local stream rebuilds blocks, and a bad frame fails the round", async () => {
   const frames = [
     { type: "message_start", message: { model: "stream-model", usage: { input_tokens: 3, output_tokens: 1 } } },

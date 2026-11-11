@@ -216,7 +216,13 @@ export function transitionSse(state: SseState, event: SseEvent): SseStep {
       return stay(state);
     default: {
       const unreachable: never = event;
-      return reject("sse_assembly", "assembling", "unknown", `unhandled ${JSON.stringify(unreachable)}`);
+      const kind = (unreachable as { type?: unknown }).type;
+      return reject(
+        "sse_assembly",
+        "assembling",
+        typeof kind === "string" ? kind : "unknown",
+        "unhandled event",
+      );
     }
   }
 }

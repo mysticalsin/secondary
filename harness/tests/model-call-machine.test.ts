@@ -9,6 +9,7 @@ import { commit } from "../../src/state/illegal.ts";
 import {
   commitModelCall,
   modelAttemptsRemain,
+  type ModelCallEvent,
   type ModelCallState,
   startModelCall,
   transitionModelCall,
@@ -175,6 +176,26 @@ test("model call: guards allow and deny", () => {
   const fatal = transitionModelCall(calling(0, 1), { type: "http", status: 422 });
   assert.equal(retryable.ok && retryable.state.tag === "calling", true);
   assert.equal(fatal.ok && fatal.state.tag === "done", true);
+});
+
+test("model call: an unknown event is logged by type and not by payload", () => {
+  const secret = "HIDDEN-REPLY";
+  const event = { type: "mystery", text: secret } as unknown as ModelCallEvent;
+  const lines: string[] = [];
+  const original = console.warn;
+  console.warn = (line?: unknown) => {
+    lines.push(String(line));
+  };
+  try {
+    const result = commitModelCall(calling(0, 1), event);
+    assert.equal(result.ok, false);
+    assert.equal("event" in result && result.event, "mystery");
+    assert.equal("reason" in result && result.reason, "unhandled event");
+    assert.equal(lines.length, 1);
+    assert.equal((lines[0] ?? "").includes(secret), false);
+  } finally {
+    console.warn = original;
+  }
 });
 
 test("model call: commit logs a rejected transition and does not change state", () => {

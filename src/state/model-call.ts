@@ -115,7 +115,13 @@ export function transitionModelCall(state: ModelCallState, event: ModelCallEvent
       });
     default: {
       const unreachable: never = event;
-      return reject("model_call", "calling", "unknown", `unhandled event ${JSON.stringify(unreachable)}`);
+      const kind = (unreachable as { type?: unknown }).type;
+      return reject(
+        "model_call",
+        "calling",
+        typeof kind === "string" ? kind : "unknown",
+        "unhandled event",
+      );
     }
   }
 }
