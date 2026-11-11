@@ -5,7 +5,7 @@
 // only addresses workspaces the caller's admitted view reaches. It does enforce the invariants
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
-import { commitItem } from "../../../src/state/item-release.ts";
+import { claimRelease, commitItem } from "../../../src/state/item-release.ts";
 import { commitQuorum } from "../../../src/state/quorum.ts";
 import { BrainBase } from "./brains/store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
@@ -112,6 +112,7 @@ export type Fail = {
     | "self_approval"
     | "not_author"
     | "not_pending"
+    | "replay"
     | "already_done"
     | "invalid_status"
     | "revision_required"
@@ -901,19 +902,31 @@ export class Workspace extends BrainBase {
     if (!inserted.length)
       return { ok: false, code: "already_done", message: "You already approved this revision" };
     const approvals = prior.length + 1;
-    const released = decided.state.status === "approved";
-    if (released) {
-      this.ctx.storage.transactionSync(() => {
-        this.sql.exec(
-          "UPDATE items SET status = 'approved', reviewed_by_2 = ?, updated_at = ? WHERE id = ?",
+    const claim = decided.effects.find((effect) => effect.type === "claim_release");
+    if (!claim) {
+      return { ok: true, released: false, approvals, required: rec.required, revision: rec.revision };
+    }
+    let taken = false;
+    this.ctx.storage.transactionSync(() => {
+      const matched = this.sql
+        .exec(
+          "UPDATE items SET status = ?, reviewed_by_2 = ?, updated_at = ? WHERE id = ? AND status = ? RETURNING id",
+          claim.to,
           approvals >= 2 ? 1 : 0,
           now,
           id,
-        );
-        this.outbox("item.released", { id, revision: rec.revision, approvals }, now);
-      });
+          claim.from,
+        )
+        .toArray().length;
+      if (claimRelease(matched).tag !== "released") return;
+      taken = true;
+      this.outbox("item.released", { id, revision: rec.revision, approvals }, now);
+    });
+    if (!taken) {
+      console.warn(JSON.stringify({ at: "item_release", reason: "replay" }));
+      return { ok: false, code: "replay", message: "The release was already taken" };
     }
-    return { ok: true, released, approvals, required: rec.required, revision: rec.revision };
+    return { ok: true, released: true, approvals, required: rec.required, revision: rec.revision };
   }
 
   // ---- operations: snapshots, rights, retention ----

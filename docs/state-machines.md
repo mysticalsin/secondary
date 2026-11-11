@@ -24,7 +24,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore. #7 and #8 do not call it yet. |
 | 5 | Kill switch | `tenant-policy.ts:834`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
-| 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result. |
+| 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
 | 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Right-size to a status predicate plus an unarchive event. `savePage` currently republishes an archived page. |
 | 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
@@ -457,10 +457,11 @@ Review: shares the quorum check with #4. #8 does not use this reducer yet.
 | approved | edit | revision matches | candidate | new revision |
 | draft or candidate | edit | revision matches | same status | new revision |
 | candidate | review | not an author | candidate | upsert a review row. Status unchanged |
-| candidate | approve | not an author, this human has not approved this revision, approvals reach `required` | approved | outbox `item.released` |
+| candidate | approve | not an author, this human has not approved this revision, approvals reach `required`, and the candidate row is still candidate | approved | one conditional update. Outbox `item.released` only when that update matches |
+| candidate | approve | the release update matches nothing | candidate | approval row stays. Result `replay`. No `item.released` |
 | candidate | approve | approvals still short | candidate | approval row only |
 
-`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1. A scope release is a recorded quorum ask. A global release waits for `confirmed`. `STATUSES` still has no approval word, so the record route cannot send one. The record words it does send are in the allow-list.
+`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1. A scope release is a recorded quorum ask. A global release waits for `confirmed`. The approval row is stored first. `claimRelease` then accepts the status write only when it matches one candidate row. `STATUSES` still has no approval word, so the record route cannot send one. The record words it does send are in the allow-list.
 
 ```mermaid
 stateDiagram-v2

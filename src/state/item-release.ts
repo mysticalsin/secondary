@@ -29,7 +29,17 @@ export type ItemEvent =
   | { type: "edit" }
   | { type: "approve"; quorum: QuorumResult; required: number; approvals: number };
 
-export type ItemEffect = { type: "set_status"; status: string };
+export type ItemEffect =
+  | { type: "set_status"; status: string }
+  | { type: "claim_release"; from: "candidate"; to: "approved" };
+
+/** The release write matched the candidate row, or another caller already took it. */
+export type ReleaseClaim = { tag: "released" } | { tag: "replay" };
+
+/** One matching candidate row releases. Any other count is a replay and must not emit item.released. */
+export function claimRelease(matchedRows: number): ReleaseClaim {
+  return matchedRows === 1 ? { tag: "released" } : { tag: "replay" };
+}
 
 export type ItemStep =
   | { ok: true; state: ItemState; effects: ItemEffect[] }
@@ -72,7 +82,7 @@ export function transitionItem(state: ItemState, event: ItemEvent): ItemStep {
   return {
     ok: true,
     state: { status: "approved" },
-    effects: [{ type: "set_status", status: "approved" }],
+    effects: [{ type: "claim_release", from: "candidate", to: "approved" }],
   };
 }
 
