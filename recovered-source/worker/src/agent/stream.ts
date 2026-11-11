@@ -3,8 +3,9 @@
 // whole content (text, thinking with its signature, redacted thinking, tool calls, server blocks) can be
 // sent back unchanged in the next round. Nothing here decides what is shown: the caller checks the text.
 //
-// Bounds: one timeout for the round, a cap on bytes read, and one retry only while no byte has been
-// read (a 429 or 5xx status). After the first byte there is never a retry: a broken stream is a failure.
+// Bounds: each attempt has its own abort timeout, cleared before the retry sleep, a cap on bytes
+// read, and one retry only while no byte has been read (a 429 or 5xx status). After the first byte
+// there is never a retry: a broken stream is a failure.
 // No temperature, top_p, top_k, prefill, forced tool_choice or budget_tokens: the default model takes
 // none of them. The key is sent as a header and never logged.
 
@@ -94,13 +95,23 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
   const doFetch: FetchFn = r.fetch ?? ((i, init) => fetch(i, init));
   const sleep = r.sleep ?? ((ms: number) => new Promise<void>((ok) => setTimeout(ok, ms)));
   const body = roundBody(r);
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), r.timeoutMs);
   const known: { usage: Usage | null } = { usage: null };
   let open: StreamOpenState = { tag: "opening", attempt: 0 };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (): AbortSignal => {
+    if (timer !== undefined) clearTimeout(timer);
+    const attempt = new AbortController();
+    timer = setTimeout(() => attempt.abort(), r.timeoutMs);
+    return attempt.signal;
+  };
+  const disarm = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
   try {
     let res: Response | undefined;
     while (open.tag === "opening") {
+      const signal = arm();
       res = await doFetch(ANTHROPIC_URL, {
         method: "POST",
         headers: {
@@ -109,7 +120,7 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
           "anthropic-version": ANTHROPIC_VERSION,
         },
         body,
-        signal: ctl.signal,
+        signal,
       });
       const next = commitStreamOpen(open, {
         type: "http",
@@ -117,11 +128,13 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
         hasBody: res.body != null,
       });
       if (!next.ok) {
+        disarm();
         await res.body?.cancel().catch(() => {});
         return { ok: false, code: "upstream_error", usage: known.usage };
       }
       open = next.state;
       if (open.tag === "opening") {
+        disarm();
         await res.body?.cancel().catch(() => {});
         for (const effect of next.effects) {
           if (effect.type === "retry") await sleep(effect.delayMs);
@@ -222,6 +235,6 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
       usage: known.usage,
     };
   } finally {
-    clearTimeout(timer);
+    disarm();
   }
 }

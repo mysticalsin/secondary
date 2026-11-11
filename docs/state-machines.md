@@ -805,7 +805,7 @@ None. `retries` and `timeoutMs` come from the request.
 - Purpose: One streaming round may retry a retryable HTTP status once, and only before any event byte is parsed.
 - Code: `src/state/stream-open.ts` (`transitionStreamOpen`). Tests: `harness/tests/stream-open-machine.test.ts`. `streamRound` fetches, cancels, and sleeps from the effect list.
 - Persisted: no. There is no codec. The open attempt lives only for this request.
-- What changed: the open/retry decision moved into the reducer. A retryable status still retries once, with the same 250ms delay, and only from the first attempt. A timeout or a throw still fails the round with no second try, including after the body is being read. An HTTP event after the body was accepted is rejected and logged.
+- What changed: the open/retry decision moved into the reducer. A retryable status still retries once, with the same 250ms delay, and only from the first attempt. Each attempt arms its own abort timer, and that timer is cleared before the retry sleep, so the wait does not consume the next attempt's timeout. A timeout or a throw still fails the round with no second try, including after the body is being read. An HTTP event after the body was accepted is rejected and logged.
 
 ### States
 
@@ -834,7 +834,7 @@ None. `retries` and `timeoutMs` come from the request.
 | opening or streaming | timeout | — | failed `timeout` | no second try |
 | opening or streaming | other throw | — | failed `upstream_error` | no second try |
 
-The comment at lines 6–7 matches the code: the retry decision happens before `getReader`. A 200 that later breaks is not retried. Timeout does not use the attempt loop. That difference from machine 14 is implicit.
+The file comment matches the code: the retry decision happens before `getReader`, and the abort timer is per attempt. A 200 that later breaks is not retried. Timeout does not use the attempt loop. That difference from machine 14 is implicit.
 
 ```mermaid
 stateDiagram-v2

@@ -128,6 +128,36 @@ test("stream open: illegal pairs are the complement of the legal table", () => {
   }
 });
 
+test("stream open: each attempt has its own timeout, and the timer stops during the retry sleep", async () => {
+  const signals: AbortSignal[] = [];
+  let n = 0;
+  const result = await streamRound({
+    apiKey: "not-a-real-key",
+    model: "claude-test",
+    system: "s",
+    tools: [],
+    messages: [{ role: "user", content: "hi" }],
+    maxTokens: 20,
+    timeoutMs: 30,
+    fetch: async (_url, init) => {
+      const signal = init?.signal;
+      assert.ok(signal);
+      assert.equal(signal.aborted, false);
+      signals.push(signal);
+      n += 1;
+      return n === 1 ? sse(429, "") : sse(200, okSse);
+    },
+    sleep: async () => {
+      await new Promise((ok) => setTimeout(ok, 80));
+      assert.equal(signals[0]?.aborted, false);
+    },
+  });
+  assert.equal(n, 2);
+  assert.equal(signals.length, 2);
+  assert.notEqual(signals[0], signals[1]);
+  assert.equal(requireOk(result).stopReason, "end_turn");
+});
+
 test("stream open: guards allow and deny", () => {
   assert.equal(streamMayRetry(opening(0)), true);
   assert.equal(streamMayRetry(opening(1)), false);
