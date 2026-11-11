@@ -14,6 +14,7 @@ import {
   signInternalRequest,
   verifyInternalRequest,
 } from "./internal-auth.ts";
+import { unixSeconds } from "../../../packages/contracts/src/signed-call.ts";
 import { connectorKeys, replayStore } from "./replay.ts";
 import { workspaceStub } from "./stubs.ts";
 import { wikiNotify } from "./wiki/hooks.ts";
@@ -66,7 +67,7 @@ export function connectorRoutes(): Hono<{ Bindings: Env }> {
     if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
     const at = Date.now();
     const v = await verifyInternalRequest(c.req.raw, connectorKeys(c.env), {
-      now: Math.floor(at / 1000),
+      now: unixSeconds(at),
       replay: replayStore(c.env, at),
       channel: "connector-in",
     });

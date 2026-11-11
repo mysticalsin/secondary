@@ -9,6 +9,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
+import { unixSeconds } from "../../../packages/contracts/src/signed-call.ts";
 import { appendReceipt, newReceiptId } from "./audit.ts";
 import { reapplyErasures } from "./ops-rights.ts";
 import { getOrg } from "./org.ts";
@@ -69,7 +70,7 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
     const at = deps.now?.() ?? Date.now();
     const ok = await verifyOpsRequest(c.req.raw, opsKeys(c.env), {
-      now: Math.floor(at / 1000),
+      now: unixSeconds(at),
       replay: replayStore(c.env, at),
       channel: "ops",
     });
@@ -227,7 +228,7 @@ export function mcpInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
     const at = deps.now?.() ?? Date.now();
     const ok = await verifyOpsRequest(c.req.raw, internalKeys(c.env), {
-      now: Math.floor(at / 1000),
+      now: unixSeconds(at),
       replay: replayStore(c.env, at),
       channel: "mcp-switches",
     });

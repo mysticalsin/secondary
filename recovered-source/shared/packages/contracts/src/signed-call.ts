@@ -37,6 +37,11 @@ export function nonceExpiresAt(tokenExpMs: number, maxSkewMs: number): number {
   return tokenExpMs + maxSkewMs + CLOCK_GRANULARITY_MS;
 }
 
+/** Unix seconds from a millisecond clock, floored by CLOCK_GRANULARITY_MS. */
+export function unixSeconds(nowMs: number = Date.now()): number {
+  return Math.floor(nowMs / CLOCK_GRANULARITY_MS);
+}
+
 export type KeyRing = Readonly<Record<string, string>>;
 
 /** Token exp and the verifier's max clock skew, both in milliseconds. */

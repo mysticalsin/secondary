@@ -27,6 +27,7 @@ import {
   type ReplayStore,
   ringOf,
   signingKid,
+  unixSeconds,
 } from "../../../packages/contracts/src/signed-call.ts";
 
 export { MAX_SKEW_SECONDS };
@@ -161,7 +162,7 @@ export interface SignInput {
 /** Returns the three headers to add to a service-binding request. Throws if the secret is too short. */
 export async function signInternalRequest(input: SignInput): Promise<Record<string, string>> {
   if (input.secret.length < MIN_SECRET_LENGTH) throw new Error("INTERNAL_HMAC_KEY too short");
-  const timestamp = String(Math.floor(input.now ?? Date.now() / 1000));
+  const timestamp = String(input.now === undefined ? unixSeconds() : Math.floor(input.now));
   const principalHeader = base64urlEncode(enc.encode(JSON.stringify(input.principal)));
   const body = utf8(input.body ?? "");
   const kid = signingKid(input.kid);

@@ -141,6 +141,7 @@ async function callback(
   app: App,
   query: Record<string, string>,
   cookieState?: string,
+  bindings: unknown = env,
 ): Promise<{ status: number; location: string | null; logs: string[]; setCookie: string }> {
   const lines: string[] = [];
   const warn = console.warn;
@@ -151,7 +152,7 @@ async function callback(
     const params = new URLSearchParams(query);
     const headers = new Headers();
     if (cookieState) headers.set("cookie", `${LOGIN_COOKIE}=${cookieState}`);
-    const res = await app.request(`https://api.invalid/callback?${params}`, { headers }, env);
+    const res = await app.request(`https://api.invalid/callback?${params}`, { headers }, bindings);
     return {
       status: res.status,
       location: res.headers.get("location"),
@@ -320,6 +321,32 @@ serial("oidc callback: success opens a session, and a replay of that state is re
     assert.equal(rowNonce(file, hash), undefined);
     assert.equal(again.setCookie.includes(SESSION_COOKIE), false);
     noSecrets(again.logs, [state, code, nonce, verifier, idToken]);
+  } finally {
+    remove();
+  }
+});
+
+serial("oidc callback: a disabled IdP consumes the cookie login row", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const cookieState = "secret-state-disabled";
+    const queryState = "secret-state-other";
+    const cookieHash = await sha256Hex(cookieState);
+    const queryHash = await sha256Hex(queryState);
+    policy.loginStatePut(cookieHash, "nonce-disabled", "verifier-disabled", "/", NOW, "ip");
+    policy.loginStatePut(queryHash, "nonce-other", "verifier-other", "/", NOW, "ip");
+    const { authRoutes } = await loadRoutes();
+    const app = authRoutes({ now: () => NOW });
+    const res = await callback(app, { state: queryState, code: "secret-code-disabled" }, cookieState, {
+      ...env,
+      AUTH_MODE: "access",
+    });
+    assert.equal(res.status, 404);
+    assert.equal(rowNonce(file, cookieHash), undefined);
+    assert.equal(rowNonce(file, queryHash), "nonce-other");
+    assert.deepEqual(res.logs, [JSON.stringify({ at: "entra_login", reason: "entra_disabled" })]);
+    noSecrets(res.logs, [cookieState, queryState, "secret-code-disabled", "verifier-disabled"]);
   } finally {
     remove();
   }

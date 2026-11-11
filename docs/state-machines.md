@@ -1,6 +1,6 @@
 # State machines in secondary-api-recovery (Second Brain API)
 
-Last reviewed: 2026-11-11 at `6953731472c66c8720202339d99d8b22d54a44d3`
+Last reviewed: 2026-11-11 at `bcf538e91aab4b6921abd6201cba5535c84a5229`
 
 Standard: Implicit state machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. No XState or other state-machine dependency. A plain reducer is the intended fix shape.
 
@@ -50,6 +50,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 30 | Erasure / rights | `ops-admin.ts:174`–`:189`; tombstones `tenant-policy.ts:979`–`:1008`; re-apply `ops-internal.ts:188` | LATER | High | LATER | Privacy. `erase_incomplete` is a 502 with no stored status. Tombstones outlive the person. A restore applies them again. |
 | 31 | Outbox dispatched flag | `workspace.ts:181`, `:617`, `:671` | NOT A MACHINE | — | NOT A MACHINE | `dispatched` defaults to 0. `outboxPending` reads `dispatched = 0`. This archive never sets the flag. |
 | 32 | Worker typecheck | `tsconfig.worker.json` | LATER | — | LATER | QA note: 119 pre-existing `typecheck:worker` errors. Not part of this machine work. |
+| 33 | Login query state | `auth/routes.ts` callback mismatch | LATER | Low | LATER | A leaked query state can cancel another user's pending login. Denial of service only: no session is issued. Later, take the row by the cookie's state, and on a mismatch consume the cookie's row, never the row named only by the query. |
 
 ## Review notes
 
@@ -753,7 +754,7 @@ stateDiagram-v2
 
 ### Platform / flag differences
 
-None. TTL is an argument (`ttlMs`).
+With a bound, the stored expiry is `nonceExpiresAt` (the token time plus the shared clock window). The `ttlMs` argument does not set it. Without a bound, `ttlMs` is still the stored lifetime.
 
 ## 14. Model-call retry
 

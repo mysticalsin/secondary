@@ -103,10 +103,18 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/callback", async (c) => {
     const cfg = entraConfig(c.env);
     const dir = directoryTenant(c.env);
-    if (!entraEnabled(c.env) || !cfg || !dir) return c.json({ error: "entra_disabled" }, 404);
     const now = nowOf();
     const cookieState = getCookie(c, LOGIN_COOKIE);
     clearLoginCookie(c);
+    // Entra is off. Consume the cookie's login row when the directory tenant is known, so it does
+    // not sit until its TTL. Without that tenant there is no store to take from, and the row stays
+    // until the TTL. The query string is not used as a key here.
+    if (!entraEnabled(c.env) || !cfg || !dir) {
+      if (dir && cookieState)
+        await tenantStub(c.env, dir).loginStateTake(await sha256Hex(cookieState), now);
+      log("entra_disabled");
+      return c.json({ error: "entra_disabled" }, 404);
+    }
     const state = c.req.query("state");
     const code = c.req.query("code");
     // Every terminal callback consumes the login row. A second use is refused.

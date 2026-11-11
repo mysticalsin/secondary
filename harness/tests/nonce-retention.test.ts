@@ -9,6 +9,10 @@ import { register } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  CLOCK_GRANULARITY_MS,
+  MAX_SKEW_SECONDS,
+} from "../../recovered-source/shared/packages/contracts/src/signed-call.ts";
 import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
@@ -28,7 +32,7 @@ const opsSpecifier = "../../recovered-source/shared/packages/contracts/src/ops-a
 
 const SECRET = "synthetic-test-secret-not-a-key!!";
 const ENDPOINT = "https://api.invalid/v1/internal/ping";
-const SKEW_MS = 60_000;
+const SKEW_MS = MAX_SKEW_SECONDS * CLOCK_GRANULARITY_MS;
 const T = 1_700_000_000;
 
 const principal = {
@@ -148,7 +152,7 @@ test("nonce retention: a key inside its window is not pruned, and a pruned repla
       now: T,
     });
     const request = () => new Request(ENDPOINT, { method: "POST", headers, body });
-    const receiptMs = T * 1000;
+    const receiptMs = T * CLOCK_GRANULARITY_MS;
     let guardCalls = 0;
     const replay = {
       async first(key: string, ttlMs: number, bound?: Bound) {
@@ -169,7 +173,7 @@ test("nonce retention: a key inside its window is not pruned, and a pruned repla
     assert.equal(rows.length, 1);
     const row = rows[0];
     assert.ok(row);
-    assert.ok(row.expires_at >= T * 1000 + SKEW_MS);
+    assert.ok(row.expires_at >= T * CLOCK_GRANULARITY_MS + SKEW_MS);
 
     assert.equal(policy.pruneNonces(receiptMs + SKEW_MS), 0);
     assert.equal(expiresAt(file, row.key), row.expires_at);
@@ -243,9 +247,9 @@ test("nonce retention: an early accept stays refused at the far second after a m
         },
       ): Promise<boolean>;
     };
-    const earlyMs = (T - 60) * 1000;
-    const pruneMs = (T + 60) * 1000 + 500;
-    const farMs = (T + 60) * 1000;
+    const earlyMs = (T - MAX_SKEW_SECONDS) * CLOCK_GRANULARITY_MS;
+    const pruneMs = (T + MAX_SKEW_SECONDS) * CLOCK_GRANULARITY_MS + 500;
+    const farMs = (T + MAX_SKEW_SECONDS) * CLOCK_GRANULARITY_MS;
     const body = "{}";
     const headers = await auth.signInternalRequest({
       secret: SECRET,
@@ -260,7 +264,7 @@ test("nonce retention: an early accept stays refused at the far second after a m
     const calls = { n: 0 };
     const replay = replayAt(policy, at, calls);
     const first = await auth.verifyInternalRequest(request(), SECRET, {
-      now: Math.floor(earlyMs / 1000),
+      now: Math.floor(earlyMs / CLOCK_GRANULARITY_MS),
       replay,
     });
     assert.equal(first.ok, true);
@@ -273,7 +277,10 @@ test("nonce retention: an early accept stays refused at the far second after a m
     assert.ok(row);
     const pruned = policy.pruneNonces(pruneMs);
     at.value = farMs;
-    const again = await auth.verifyInternalRequest(request(), SECRET, { now: T + 60, replay });
+    const again = await auth.verifyInternalRequest(request(), SECRET, {
+      now: T + MAX_SKEW_SECONDS,
+      replay,
+    });
     assert.equal(again.ok, false);
     assert.equal(pruned, 0);
     assert.equal(expiresAt(file, row.key), row.expires_at);
@@ -292,7 +299,7 @@ test("nonce retention: an early accept stays refused at the far second after a m
     const opsCalls = { n: 0 };
     const opsReplay = replayAt(policy, opsAt, opsCalls);
     const opsFirst = await ops.verifyOpsRequest(opsRequest(), SECRET, {
-      now: Math.floor(earlyMs / 1000),
+      now: Math.floor(earlyMs / CLOCK_GRANULARITY_MS),
       replay: opsReplay,
     });
     assert.equal(opsFirst, true);
@@ -305,7 +312,7 @@ test("nonce retention: an early accept stays refused at the far second after a m
     const opsPruned = policy.pruneNonces(pruneMs);
     opsAt.value = farMs;
     const opsAgain = await ops.verifyOpsRequest(opsRequest(), SECRET, {
-      now: T + 60,
+      now: T + MAX_SKEW_SECONDS,
       replay: opsReplay,
     });
     assert.equal(opsAgain, false);
@@ -350,11 +357,11 @@ test("nonce retention: the row survives every accepted instant, and one millisec
       now: T,
     });
     const request = () => new Request(ENDPOINT, { method: "POST", headers, body });
-    const at = { value: (T - 60) * 1000 };
+    const at = { value: (T - MAX_SKEW_SECONDS) * CLOCK_GRANULARITY_MS };
     const calls = { n: 0 };
     const replay = replayAt(policy, at, calls);
     const first = await auth.verifyInternalRequest(request(), SECRET, {
-      now: Math.floor(at.value / 1000),
+      now: Math.floor(at.value / CLOCK_GRANULARITY_MS),
       replay,
     });
     assert.equal(first.ok, true);
@@ -364,22 +371,26 @@ test("nonce retention: the row survives every accepted instant, and one millisec
     assert.equal(stored.length, 1);
     const expires = stored[0]?.expires_at;
     assert.equal(typeof expires, "number");
-    for (let second = T - 60; second <= T + 60; second += 1) {
-      assert.equal(policy.pruneNonces(second * 1000), 0, String(second));
-      assert.equal(policy.pruneNonces(second * 1000 + 999), 0, String(second));
+    for (let second = T - MAX_SKEW_SECONDS; second <= T + MAX_SKEW_SECONDS; second += 1) {
+      assert.equal(policy.pruneNonces(second * CLOCK_GRANULARITY_MS), 0, String(second));
+      assert.equal(
+        policy.pruneNonces(second * CLOCK_GRANULARITY_MS + (CLOCK_GRANULARITY_MS - 1)),
+        0,
+        String(second),
+      );
     }
     const left = openSqlite(file).prepare("SELECT COUNT(*) AS n FROM nonces").get() as { n: number };
     assert.equal(left.n, 1);
     const before = calls.n;
-    const lateMs = (T + 60) * 1000 + 999 + 1;
+    const lateMs = (T + MAX_SKEW_SECONDS) * CLOCK_GRANULARITY_MS + CLOCK_GRANULARITY_MS;
     at.value = lateMs;
     const late = await auth.verifyInternalRequest(request(), SECRET, {
-      now: Math.floor(lateMs / 1000),
+      now: Math.floor(lateMs / CLOCK_GRANULARITY_MS),
       replay,
     });
     assert.deepEqual(late, { ok: false, reason: "stale_timestamp" });
     assert.equal(calls.n, before);
-    assert.equal(expires, (T + 60 + 1) * 1000);
+    assert.equal(expires, (T + MAX_SKEW_SECONDS + 1) * CLOCK_GRANULARITY_MS);
   } finally {
     remove();
   }

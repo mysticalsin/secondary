@@ -27,6 +27,7 @@ import {
   type ReplayStore,
   ringOf,
   signingKid,
+  unixSeconds,
 } from "./signed-call.ts";
 
 export const OPS_MAX_SKEW_SECONDS = MAX_SKEW_SECONDS;
@@ -75,7 +76,7 @@ export interface OpsSignInput {
 /** Headers to add to a service-binding request. Throws when the secret is too short. */
 export async function signOpsRequest(i: OpsSignInput): Promise<Record<string, string>> {
   if (i.secret.length < OPS_MIN_SECRET_LENGTH) throw new Error("ops secret too short");
-  const ts = String(Math.floor(i.now ?? Date.now() / 1000));
+  const ts = String(i.now === undefined ? unixSeconds() : Math.floor(i.now));
   const kid = signingKid(i.kid);
   const nonce = newNonce();
   const data = await signingString(kid, nonce, ts, i.method, i.url, utf8(i.body ?? ""));
