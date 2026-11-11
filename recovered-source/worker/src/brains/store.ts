@@ -223,8 +223,8 @@ export abstract class BrainBase extends WikiBase {
 
   /**
    * Read, decode, and claim the row before any other effect. The claim bumps `at` or inserts a
-   * pending placeholder. It does not log. `brainMemberFinish` writes the destination. `brainMemberRelease`
-   * gives the row back when a later step fails.
+   * claimed placeholder. It does not log. `brainMemberFinish` writes an unscoped destination.
+   * `brainMemberRelease` gives the row back when a later step fails.
    */
   brainMemberClaim(
     principalId: string,
@@ -270,6 +270,95 @@ export abstract class BrainBase extends WikiBase {
       return { ok: false, code: "replay" };
     }
     return { ok: true, at: now, inserted: false, previousAt };
+  }
+
+  brainMemberRead(principalId: string): {
+    role: BrainRole;
+    state: string;
+    changeId: string | null;
+    addedBy: string;
+  } | null {
+    const row = this.sql
+      .exec(
+        "SELECT role, state, change_id, added_by FROM brain_members WHERE principal_id = ?",
+        principalId,
+      )
+      .toArray()[0];
+    if (!row) return null;
+    return {
+      role: row.role as BrainRole,
+      state: String(row.state),
+      changeId: row.change_id === null || row.change_id === undefined ? null : String(row.change_id),
+      addedBy: String(row.added_by),
+    };
+  }
+
+  brainMemberDropClaim(principalId: string): void {
+    this.sql.exec(
+      "DELETE FROM brain_members WHERE principal_id = ? AND state IN ('claimed', 'pending')",
+      principalId,
+    );
+  }
+
+  /**
+   * Write the finished role for one proposal. `at` keeps the in-flight finish on the claim that
+   * was just noted. A later read passes null and matches the proposal id alone. Already finished
+   * is a success and does not log again.
+   */
+  brainMemberFinishProposal(
+    principalId: string,
+    role: BrainRole,
+    state: "active" | "pending",
+    actor: string,
+    now: number,
+    changeId: string,
+    at: number | null,
+  ): { ok: true; state: "active" | "pending" } | { ok: false; code: "mismatch"; changeId: string } {
+    const row = this.brainMemberRead(principalId);
+    if (row && row.changeId === changeId && row.role === role && row.state === state) {
+      return { ok: true, state };
+    }
+    const matched =
+      at === null
+        ? this.sql
+            .exec(
+              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?
+               WHERE principal_id = ? AND change_id = ? RETURNING principal_id`,
+              role,
+              state,
+              actor,
+              now,
+              principalId,
+              changeId,
+            )
+            .toArray().length
+        : this.sql
+            .exec(
+              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?
+               WHERE principal_id = ? AND change_id = ? AND at = ? RETURNING principal_id`,
+              role,
+              state,
+              actor,
+              now,
+              principalId,
+              changeId,
+              at,
+            )
+            .toArray().length;
+    if (matched !== 1) {
+      console.warn(
+        JSON.stringify({
+          at: "brain_member",
+          reason: "mismatch",
+          principalId,
+          changeId,
+          from: row?.state ?? "absent",
+        }),
+      );
+      return { ok: false, code: "mismatch", changeId };
+    }
+    this.wikiLogAppend(actor, "brain.member", { principalId, role, state }, now);
+    return { ok: true, state };
   }
 
   brainMemberFinish(
@@ -863,7 +952,7 @@ type HttpStatus = 400 | 403 | 404 | 409 | 422;
 
 export type PlaceMember =
   | { ok: true; status: "applied" | "pending"; changeId: string }
-  | { ok: false; status: HttpStatus; code: string; message?: string };
+  | { ok: false; status: HttpStatus; code: string; message?: string; changeId?: string };
 
 /**
  * Claim the brain member, then propose, then finish the role.
@@ -875,41 +964,105 @@ type Proposed =
   | { ok: true; change: { id: string }; applied: boolean }
   | { ok: false; status: HttpStatus; code: string; message?: string };
 
-type MemberWrite = { ok: true; state: "active" | "pending" } | { ok: false; code: string };
+type MemberGov = {
+  propose(a: MemberProposal, now: number): Proposed | Promise<Proposed>;
+  change(id: string, now: number): { status: string } | null | Promise<{ status: string } | null>;
+};
+
+type MemberBrain = {
+  brainMemberRead(principalId: string): {
+    role: BrainRole;
+    state: string;
+    changeId: string | null;
+    addedBy: string;
+  } | null | Promise<{
+    role: BrainRole;
+    state: string;
+    changeId: string | null;
+    addedBy: string;
+  } | null>;
+  brainMemberDropClaim(principalId: string): void | Promise<void>;
+  brainMemberClaim(
+    principalId: string,
+    role: BrainRole,
+    actor: string,
+    now: number,
+  ): MemberHold | Promise<MemberHold>;
+  brainMemberFinishProposal(
+    principalId: string,
+    role: BrainRole,
+    state: "active" | "pending",
+    actor: string,
+    now: number,
+    changeId: string,
+    at: number | null,
+  ):
+    | { ok: true; state: "active" | "pending" }
+    | { ok: false; code: "mismatch"; changeId: string }
+    | Promise<
+        | { ok: true; state: "active" | "pending" }
+        | { ok: false; code: "mismatch"; changeId: string }
+      >;
+  brainMemberNote(
+    principalId: string,
+    changeId: string,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
+  brainMemberRelease(
+    principalId: string,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
+};
+
+/** Look up the proposal and make the claim match it. A claim without an id is a crash and is dropped. */
+export async function reconcileBrainMember(
+  gov: { change(id: string, now: number): { status: string } | null | Promise<{ status: string } | null> },
+  brain: MemberBrain,
+  principalId: string,
+  now: number,
+): Promise<void> {
+  const row = await Promise.resolve(brain.brainMemberRead(principalId));
+  if (!row) return;
+  if (row.state !== "claimed" && !(row.state === "pending" && row.changeId)) return;
+  if (!row.changeId) {
+    if (row.state === "claimed") await Promise.resolve(brain.brainMemberDropClaim(principalId));
+    return;
+  }
+  const change = await Promise.resolve(gov.change(row.changeId, now));
+  const status = change?.status;
+  if (
+    !change ||
+    status === "rejected" ||
+    status === "expired" ||
+    status === "withdrawn" ||
+    status === "unknown"
+  ) {
+    await Promise.resolve(brain.brainMemberDropClaim(principalId));
+    return;
+  }
+  if (status === "applied") {
+    await Promise.resolve(
+      brain.brainMemberFinishProposal(principalId, row.role, "active", row.addedBy, now, row.changeId, null),
+    );
+    return;
+  }
+  if (status === "pending" && row.state !== "pending") {
+    await Promise.resolve(
+      brain.brainMemberFinishProposal(principalId, row.role, "pending", row.addedBy, now, row.changeId, null),
+    );
+  }
+}
 
 export async function placeScopedMember(
-  gov: { propose(a: MemberProposal, now: number): Proposed | Promise<Proposed> },
-  brain: {
-    brainMemberClaim(
-      principalId: string,
-      role: BrainRole,
-      actor: string,
-      now: number,
-    ): MemberHold | Promise<MemberHold>;
-    brainMemberFinish(
-      principalId: string,
-      role: BrainRole,
-      state: "active" | "pending",
-      actor: string,
-      now: number,
-      hold: Extract<MemberHold, { ok: true }>,
-    ): MemberWrite | Promise<MemberWrite>;
-    brainMemberNote(
-      principalId: string,
-      changeId: string,
-      hold: Extract<MemberHold, { ok: true }>,
-    ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
-    brainMemberRelease(
-      principalId: string,
-      hold: Extract<MemberHold, { ok: true }>,
-    ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
-  },
+  gov: MemberGov,
+  brain: MemberBrain,
   proposal: MemberProposal,
   principalId: string,
   role: BrainRole,
   actor: string,
   now: number,
 ): Promise<PlaceMember> {
+  await reconcileBrainMember(gov, brain, principalId, now);
   const hold = await Promise.resolve(brain.brainMemberClaim(principalId, role, actor, now));
   if (!hold.ok) return { ok: false, status: 409, code: hold.code };
   let made: Proposed | undefined;
@@ -926,8 +1079,10 @@ export async function placeScopedMember(
   const noted = await Promise.resolve(brain.brainMemberNote(principalId, made.change.id, hold));
   if (!noted.ok) return { ok: false, status: 409, code: noted.code };
   const state = made.applied ? "active" : "pending";
-  const set = await Promise.resolve(brain.brainMemberFinish(principalId, role, state, actor, now, hold));
-  if (!set.ok) return { ok: false, status: 409, code: set.code };
+  const set = await Promise.resolve(
+    brain.brainMemberFinishProposal(principalId, role, state, actor, now, made.change.id, hold.at),
+  );
+  if (!set.ok) return { ok: false, status: 409, code: "mismatch", changeId: made.change.id };
   return { ok: true, status: made.applied ? "applied" : "pending", changeId: made.change.id };
 }
 
