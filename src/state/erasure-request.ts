@@ -138,6 +138,15 @@ function allDone(order: readonly string[], mark: Record<string, StepMark>): bool
   return order.length > 0 && order.every((id) => mark[id] === "done");
 }
 
+function sameErasure(left: StoredErasure, right: StoredErasure): boolean {
+  if (left.status.tag !== right.status.tag || left.order.length !== right.order.length) return false;
+  for (let i = 0; i < left.order.length; i++) {
+    const id = left.order[i];
+    if (id !== right.order[i] || left.mark[id] !== right.mark[id]) return false;
+  }
+  return true;
+}
+
 function incomplete(state: StoredErasure): string | null {
   for (const id of state.order) if (state.mark[id] !== "done") return id;
   return null;
@@ -202,7 +211,11 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
       state.order.length === 0
     )
       return allow(requestedFrom(event.steps), []);
-    if (state.status.tag === "completed") return allow(state, []);
+    if (state.status.tag === "completed") {
+      const next = addSteps(state, event.steps);
+      if (next.order.length === state.order.length) return allow(state, []);
+      return proceed(next);
+    }
     return allow(addSteps(state, event.steps), []);
   }
   if (event.type === "resume") {
@@ -243,12 +256,13 @@ export async function runErasure(
   let step = commitErasure(state, event);
   if (!step.ok) return state;
   let current = step.state;
-  await persist(current);
+  if (!sameErasure(state, current)) await persist(current);
   if (!step.effects.some((effect) => effect.type === "run") && current.status.tag !== "completed") {
+    const prior = current;
     step = commitErasure(current, { type: "resume", now: event.now });
     if (!step.ok) return current;
     current = step.state;
-    await persist(current);
+    if (!sameErasure(prior, current)) await persist(current);
   }
   while (true) {
     const run = step.effects.find((effect) => effect.type === "run");
@@ -259,6 +273,7 @@ export async function runErasure(
     } catch {
       ok = false;
     }
+    const prior = current;
     step = commitErasure(current, {
       type: ok ? "step_done" : "step_failed",
       now: event.now,
@@ -266,6 +281,6 @@ export async function runErasure(
     });
     if (!step.ok) return current;
     current = step.state;
-    await persist(current);
+    if (!sameErasure(prior, current)) await persist(current);
   }
 }

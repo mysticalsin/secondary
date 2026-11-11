@@ -185,7 +185,7 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     const resumable =
       (tag === "requested" || tag === "running" || tag === "partial_failed") &&
       existing.order.length > 0;
-    if (!resumable && tag !== "completed") {
+    if (!resumable) {
       const step = await tenant.requestSecond(
         `erase:${principalId}`,
         s.principal.id,
