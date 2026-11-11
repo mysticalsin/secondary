@@ -8,8 +8,6 @@ import { callModel } from "../../recovered-source/worker/src/ai/anthropic.ts";
 import { commit } from "../../src/state/illegal.ts";
 import {
   commitModelCall,
-  decodeModelCall,
-  encodeModelCall,
   modelAttemptsRemain,
   type ModelCallState,
   startModelCall,
@@ -171,27 +169,12 @@ test("model call: guards allow and deny", () => {
   assert.equal(modelAttemptsRemain(calling(2, 2)), false);
   assert.equal(modelAttemptsRemain(calling(0, 0)), false);
   assert.equal(modelAttemptsRemain(calling(1, 1.5)), false);
+  assert.equal(startModelCall(-1).tag, "done");
+  assert.equal(startModelCall(Number.NaN).tag, "done");
   const retryable = transitionModelCall(calling(0, 1), { type: "http", status: 503 });
   const fatal = transitionModelCall(calling(0, 1), { type: "http", status: 422 });
   assert.equal(retryable.ok && retryable.state.tag === "calling", true);
   assert.equal(fatal.ok && fatal.state.tag === "done", true);
-});
-
-test("model call: unknown stored value fails closed and a known value round-trips", () => {
-  assert.deepEqual(decodeModelCall(null), {
-    tag: "done",
-    reply: { ok: false, code: "upstream_error" },
-  });
-  assert.deepEqual(decodeModelCall({ v: 0, state: calling(0) }), {
-    tag: "done",
-    reply: { ok: false, code: "upstream_error" },
-  });
-  assert.equal(decodeModelCall({ v: 1, state: { tag: "calling" } }).tag, "done");
-  const stored = encodeModelCall(calling(1, 2));
-  assert.deepEqual(decodeModelCall(stored), calling(1, 2));
-  assert.deepEqual(decodeModelCall(JSON.parse(JSON.stringify(stored))), stored.state);
-  assert.equal(startModelCall(-1).tag, "done");
-  assert.equal(startModelCall(Number.NaN).tag, "done");
 });
 
 test("model call: commit logs a rejected transition and does not change state", () => {

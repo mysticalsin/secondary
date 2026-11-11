@@ -71,24 +71,3 @@ export function transitionStreamOpen(
 export const commitStreamOpen = (state: StreamOpenState, event: StreamOpenEvent): StreamOpenStep =>
   commit(transitionStreamOpen(state, event));
 
-export type StoredStreamOpen = { v: 1; state: StreamOpenState };
-
-const SAFE_STREAM_OPEN: StreamOpenState = { tag: "failed", code: "upstream_error" };
-
-const isState = (v: unknown): v is StreamOpenState => {
-  if (!v || typeof v !== "object") return false;
-  const s = v as StreamOpenState;
-  if (s.tag === "opening") return s.attempt === 0 || s.attempt === 1;
-  if (s.tag === "streaming") return true;
-  return s.tag === "failed" && (s.code === "upstream_error" || s.code === "timeout");
-};
-
-export const encodeStreamOpen = (state: StreamOpenState): StoredStreamOpen => ({ v: 1, state });
-
-/** Unknown JSON loads as a failure so a reload cannot retry a half-open stream. */
-export function decodeStreamOpen(raw: unknown): StreamOpenState {
-  if (!raw || typeof raw !== "object") return SAFE_STREAM_OPEN;
-  const rec = raw as { v?: unknown; state?: unknown };
-  if (rec.v !== 1 || !isState(rec.state)) return SAFE_STREAM_OPEN;
-  return rec.state;
-}

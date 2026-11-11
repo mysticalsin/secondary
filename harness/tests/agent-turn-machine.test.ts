@@ -6,8 +6,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   commitAgentTurn,
-  decodeAgentTurn,
-  encodeAgentTurn,
   hasToolUses,
   isLastRound,
   startAgentTurn,
@@ -123,12 +121,6 @@ test("agent turn: guards allow and deny", () => {
   assert.equal(isLastRound(round(3)), false);
   assert.equal(hasToolUses(2), true);
   assert.equal(hasToolUses(0), false);
-});
-
-test("agent turn: unknown stored value fails and a known value round-trips", () => {
-  assert.deepEqual(decodeAgentTurn({ v: 2 }), failed);
-  const stored = encodeAgentTurn(tools);
-  assert.deepEqual(decodeAgentTurn(JSON.parse(JSON.stringify(stored))), tools);
 });
 
 test("agent turn: tools on the last round fail, and finishing tools counts every use", () => {

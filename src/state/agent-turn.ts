@@ -100,34 +100,3 @@ export function transitionAgentTurn(state: AgentTurnState, event: AgentTurnEvent
 
 export const commitAgentTurn = (state: AgentTurnState, event: AgentTurnEvent): AgentTurnStep =>
   commit(transitionAgentTurn(state, event));
-
-export type StoredAgentTurn = { v: 1; state: AgentTurnState };
-
-const SAFE_TURN: AgentTurnState = { tag: "failed", code: "ai_unavailable" };
-
-const isState = (v: unknown): v is AgentTurnState => {
-  if (!v || typeof v !== "object") return false;
-  const s = v as AgentTurnState;
-  if (s.tag === "failed") return s.code === "ai_budget_exhausted" || s.code === "ai_unavailable";
-  if (s.tag === "answered") return typeof s.truncated === "boolean";
-  if (s.tag === "round") {
-    return Number.isInteger(s.round) && Number.isInteger(s.calls) && Number.isInteger(s.maxRounds);
-  }
-  return (
-    s.tag === "tools" &&
-    Number.isInteger(s.round) &&
-    Number.isInteger(s.calls) &&
-    Number.isInteger(s.maxRounds) &&
-    Number.isInteger(s.toolUses)
-  );
-};
-
-export const encodeAgentTurn = (state: AgentTurnState): StoredAgentTurn => ({ v: 1, state });
-
-/** Unknown JSON loads as a failed turn so a reload cannot run tools. */
-export function decodeAgentTurn(raw: unknown): AgentTurnState {
-  if (!raw || typeof raw !== "object") return SAFE_TURN;
-  const rec = raw as { v?: unknown; state?: unknown };
-  if (rec.v !== 1 || !isState(rec.state)) return SAFE_TURN;
-  return rec.state;
-}

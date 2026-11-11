@@ -6,8 +6,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   commitBudgetHold,
-  decodeBudgetHold,
-  encodeBudgetHold,
   finiteHoldNumber,
   openHold,
   type BudgetHoldEvent,
@@ -88,13 +86,6 @@ test("budget hold: guards allow and deny", () => {
   const badActual = transitionBudgetHold(held, { type: "settle", actual: Number.POSITIVE_INFINITY });
   assert.equal(badEstimate.ok, false);
   assert.equal(badActual.ok, false);
-});
-
-test("budget hold: unknown stored value is idle and a known value round-trips", () => {
-  assert.deepEqual(decodeBudgetHold({ v: 2, state: settled }), idle);
-  assert.deepEqual(decodeBudgetHold(null), idle);
-  const stored = encodeBudgetHold(held);
-  assert.deepEqual(decodeBudgetHold(JSON.parse(JSON.stringify(stored))), held);
 });
 
 test("budget hold: a second settle does not adjust the counter again", async () => {

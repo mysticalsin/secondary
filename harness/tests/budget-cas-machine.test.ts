@@ -8,8 +8,6 @@ import {
   CAS_ATTEMPTS,
   casAttemptsRemain,
   commitBudgetCas,
-  decodeBudgetCas,
-  encodeBudgetCas,
   type BudgetCasEvent,
   type BudgetCasState,
   transitionBudgetCas,
@@ -87,13 +85,6 @@ test("budget cas: guards allow and deny", () => {
   assert.equal(casAttemptsRemain(4), true);
   assert.equal(casAttemptsRemain(5), false);
   assert.equal(CAS_ATTEMPTS, 6);
-});
-
-test("budget cas: unknown stored value refuses and a known value round-trips", () => {
-  assert.deepEqual(decodeBudgetCas({ v: 0 }), refused);
-  assert.deepEqual(decodeBudgetCas({ v: 1, state: { tag: "trying", attempt: 9 } }), refused);
-  const stored = encodeBudgetCas(trying(3));
-  assert.deepEqual(decodeBudgetCas(JSON.parse(JSON.stringify(stored))), trying(3));
 });
 
 test("budget cas: six conflicts refuse, and a cap miss does not use the rest", () => {

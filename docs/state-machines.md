@@ -703,7 +703,7 @@ None. TTL is an argument (`ttlMs`).
 
 - Purpose: One non-streaming Messages call retries bounded HTTP failures and stops on a terminal body.
 - Code: `src/state/model-call.ts` (`transitionModelCall`). Tests: `harness/tests/model-call-machine.test.ts`. `callModel` fetches and sleeps from the effect list.
-- Persisted: no. `encodeModelCall` / `decodeModelCall` version 1 exists so a stored in-flight call has a defined load. Unknown JSON loads as a finished `upstream_error`, which does not retry. `callModel` does not write it.
+- Persisted: no. There is no codec. A reply's text stays in the call result and is not written.
 - What changed: the retry decision moved into the reducer. `callModel` still returns the same reply for the same responses. A 2xx status sent as an HTTP failure is rejected and logged. The caller classifies a 2xx body instead, which is what the old loop did. Sleep stays `250 * 2 ** (attempt - 1)` before the next fetch.
 
 ### States
@@ -752,7 +752,7 @@ None. `retries` and `timeoutMs` come from the request.
 
 - Purpose: One streaming round may retry a retryable HTTP status once, and only before any event byte is parsed.
 - Code: `src/state/stream-open.ts` (`transitionStreamOpen`). Tests: `harness/tests/stream-open-machine.test.ts`. `streamRound` fetches, cancels, and sleeps from the effect list.
-- Persisted: no. Version 1 codec loads unknown JSON as `failed` / `upstream_error`, so a reload cannot retry. `streamRound` does not write it.
+- Persisted: no. There is no codec. The open attempt lives only for this request.
 - What changed: the open/retry decision moved into the reducer. A retryable status still retries once, with the same 250ms delay, and only from the first attempt. A timeout or a throw still fails the round with no second try, including after the body is being read. An HTTP event after the body was accepted is rejected and logged.
 
 ### States
@@ -801,7 +801,7 @@ None.
 
 - Purpose: Reserve an estimate before a model call and settle to the real token count after it.
 - Code: `src/state/budget-hold.ts` (`transitionBudgetHold`). Tests: `harness/tests/budget-hold-machine.test.ts`. `reserve` applies the `adjust` effect.
-- Persisted: the day counter is a workspace row (`ai:usage`). The hold is request-local. Version 1 codec loads unknown JSON as `idle`, so a reload cannot settle a reservation it does not trust. `reserve` does not write the hold.
+- Persisted: the day counter is a workspace row (`ai:usage`). The hold is request-local and has no codec. `reserve` does not write it.
 - What changed: `settle` is once only. A second call is logged and does not add the diff again. A non-finite estimate is rejected before `store.add`. Previously a second `settle` added the diff again, and a non-finite estimate was passed to the counter. `withUserCap`'s refund, when the user add succeeds and the tenant add then fails, is unchanged. If that refund add also returns null, the user counter stays high. That gap is still open.
 
 ### States
@@ -846,7 +846,7 @@ None. The cap is an argument.
 
 - Purpose: Add tokens to the day row using the row revision as a compare-and-set, and retry when another request wrote first.
 - Code: `src/state/budget-cas.ts` (`transitionBudgetCas`). Tests: `harness/tests/budget-cas-machine.test.ts`. `doBudget` reads and writes the row, then applies the step.
-- Persisted: the counter body is the total. `decodeUsageBody` reads it: empty is 0, a canonical non-negative integer is that total, and anything else (corrupt, negative, NaN) is the cap already reached. The log names the row key and not the cell. The attempt is request-local. Version 1 codec loads unknown JSON as `refused`. `doBudget` does not write the attempt.
+- Persisted: the counter body is the total. `decodeUsageBody` reads it: empty is 0, a canonical non-negative integer is that total, and anything else (corrupt, negative, NaN) is the cap already reached. The log names the row key and not the cell. The attempt is request-local and has no codec. `doBudget` does not write the attempt.
 - What changed: continue versus stop moved into the reducer. Six attempts and an immediate cap refusal are unchanged. A `wrote` or `over_cap` event after the attempt has finished is rejected and logged.
 
 ### States
@@ -948,7 +948,7 @@ stateDiagram-v2
 
 - Purpose: One assistant turn runs at most `AGENT_LIMITS.maxRounds` model rounds, spends a reservation per round, and either answers, fails, or runs tools and continues.
 - Code: `src/state/agent-turn.ts` (`transitionAgentTurn`). Tests: `harness/tests/agent-turn-machine.test.ts`. `runLoop` calls the model and the tools, then applies the step.
-- Persisted: no. Version 1 codec loads unknown JSON as `ai_unavailable`, so a reload cannot run tools. `runLoop` does not write it.
+- Persisted: no. There is no codec. `runLoop` does not write the turn.
 - What changed: the stop-reason chain is the reducer. End, max tokens, an empty tool list, an unknown stop, and tools on the last round take the same branches as before. Tool results still count toward the turn cap, including calls that return an error. A stop event after the turn has answered is rejected and logged. The answer text stays on the round result. The reducer carries only the truncated flag.
 
 ### States
@@ -1004,7 +1004,7 @@ None. Limits come from `AGENT_LIMITS` in `ai/config.ts:77`.
 
 - Purpose: Rebuild one assistant message from Anthropic server-sent events so the next round can send it back unchanged.
 - Code: `src/state/sse-assembly.ts` (`transitionSse`). Tests: `harness/tests/sse-assembly-machine.test.ts`. `streamRound` reads the socket and runs `text` and `tool` effects.
-- Persisted: no. Version 1 codec loads unknown JSON as an empty assembly, not as a broken round. `streamRound` does not write it.
+- Persisted: no. There is no codec, so block text and tool input are not serialized. `streamRound` keeps the assembly for this request only.
 - What changed: the frame switch is the reducer. Block text, tool JSON, thinking, signatures, citations, token sums, and the callbacks follow the old rules. A frame that used to return false is the `broken` state, and the round still fails with `upstream_error`. A frame after that is rejected and logged.
 
 ### States

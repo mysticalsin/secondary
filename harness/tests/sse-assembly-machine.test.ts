@@ -8,8 +8,6 @@ import { streamRound } from "../../recovered-source/worker/src/agent/stream.ts";
 import {
   canApplyDelta,
   commitSse,
-  decodeSse,
-  encodeSse,
   freshSse,
   hasBlockType,
   sseEvent,
@@ -133,17 +131,6 @@ test("sse assembly: guards allow and deny", () => {
   assert.equal(withText.tag === "assembling" && canApplyDelta(withText, 0, null), false);
 });
 
-test("sse assembly: unknown stored value is empty and a holed buffer round-trips", () => {
-  assert.deepEqual(decodeSse({ v: 2 }), freshSse());
-  const holed = apply(fresh, {
-    type: "content_block_start",
-    index: 2,
-    block: { type: "text", text: "z" },
-  });
-  assert.deepEqual(decodeSse(JSON.parse(JSON.stringify(encodeSse(holed)))), holed);
-  assert.deepEqual(decodeSse(encodeSse(broken)), broken);
-});
-
 test("sse assembly: a missing index shares slot 0, and token sums keep the old rules", () => {
   const missing = sseEvent({ type: "content_block_start", content_block: { type: "text", text: "a" } });
   const zero = sseEvent({ type: "content_block_start", index: 0, content_block: { type: "text", text: "a" } });
@@ -177,9 +164,9 @@ test("sse assembly: a missing index shares slot 0, and token sums keep the old r
     assert.equal(state.stopReason, "end_turn");
   }
 
-  const before = encodeSse(fresh);
+  const before = structuredClone(fresh);
   assert.equal(apply(fresh, events.delta_missing).tag, "broken");
-  assert.deepEqual(encodeSse(fresh), before);
+  assert.deepEqual(fresh, before);
 
   const lines: string[] = [];
   const original = console.warn;

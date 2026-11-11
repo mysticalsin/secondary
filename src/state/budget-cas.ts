@@ -52,24 +52,3 @@ export function transitionBudgetCas(state: BudgetCasState, event: BudgetCasEvent
 export const commitBudgetCas = (state: BudgetCasState, event: BudgetCasEvent): BudgetCasStep =>
   commit(transitionBudgetCas(state, event));
 
-export type StoredBudgetCas = { v: 1; state: BudgetCasState };
-
-const SAFE_CAS: BudgetCasState = { tag: "refused" };
-
-const isState = (v: unknown): v is BudgetCasState => {
-  if (!v || typeof v !== "object") return false;
-  const s = v as BudgetCasState;
-  if (s.tag === "trying") return Number.isInteger(s.attempt) && s.attempt >= 0 && s.attempt < CAS_ATTEMPTS;
-  if (s.tag === "committed") return typeof s.total === "number" && Number.isFinite(s.total);
-  return s.tag === "refused";
-};
-
-export const encodeBudgetCas = (state: BudgetCasState): StoredBudgetCas => ({ v: 1, state });
-
-/** Unknown JSON loads as refused so a reload cannot spend another attempt. */
-export function decodeBudgetCas(raw: unknown): BudgetCasState {
-  if (!raw || typeof raw !== "object") return SAFE_CAS;
-  const rec = raw as { v?: unknown; state?: unknown };
-  if (rec.v !== 1 || !isState(rec.state)) return SAFE_CAS;
-  return rec.state;
-}

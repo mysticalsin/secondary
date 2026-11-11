@@ -7,8 +7,6 @@ import test from "node:test";
 import { streamRound } from "../../recovered-source/worker/src/agent/stream.ts";
 import {
   commitStreamOpen,
-  decodeStreamOpen,
-  encodeStreamOpen,
   streamMayRetry,
   type StreamOpenEvent,
   type StreamOpenState,
@@ -163,13 +161,6 @@ test("stream open: guards allow and deny", () => {
   assert.equal(without.ok && without.state.tag === "failed", true);
   const retryable = transitionStreamOpen(opening(0), { type: "http", status: 503, hasBody: false });
   assert.equal(retryable.ok && retryable.state.tag === "opening", true);
-});
-
-test("stream open: unknown stored value fails closed and a known value round-trips", () => {
-  assert.deepEqual(decodeStreamOpen({ v: 9 }), { tag: "failed", code: "upstream_error" });
-  assert.deepEqual(decodeStreamOpen("legacy"), { tag: "failed", code: "upstream_error" });
-  const stored = encodeStreamOpen(opening(1));
-  assert.deepEqual(decodeStreamOpen(JSON.parse(JSON.stringify(stored))), opening(1));
 });
 
 test("stream open: a retryable status retries once and a broken stream does not", async () => {

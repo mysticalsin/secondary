@@ -102,24 +102,3 @@ export async function openHold(
   };
 }
 
-export type StoredBudgetHold = { v: 1; state: BudgetHoldState };
-
-const SAFE_HOLD: BudgetHoldState = { tag: "idle" };
-
-const isState = (v: unknown): v is BudgetHoldState => {
-  if (!v || typeof v !== "object") return false;
-  const s = v as BudgetHoldState;
-  if (s.tag === "idle" || s.tag === "denied") return true;
-  if (s.tag === "held") return finiteHoldNumber(s.estimate);
-  return s.tag === "settled" && finiteHoldNumber(s.actual);
-};
-
-export const encodeBudgetHold = (state: BudgetHoldState): StoredBudgetHold => ({ v: 1, state });
-
-/** Unknown JSON loads as idle so a reload cannot settle a reservation it does not trust. */
-export function decodeBudgetHold(raw: unknown): BudgetHoldState {
-  if (!raw || typeof raw !== "object") return SAFE_HOLD;
-  const rec = raw as { v?: unknown; state?: unknown };
-  if (rec.v !== 1 || !isState(rec.state)) return SAFE_HOLD;
-  return rec.state;
-}
