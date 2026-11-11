@@ -934,11 +934,33 @@ export abstract class BrainBase extends WikiBase {
     const through = this.metaGet("brain_journal_through");
     let day = through ? Date.parse(`${through}T00:00:00Z`) + DAY : now - DAY * MAX_LOOKBACK_DAYS;
     day = Math.max(day, now - DAY * MAX_LOOKBACK_DAYS);
-    while (isoDay(day) <= yesterday) {
-      this.brainJournalRun(isoDay(day), now);
-      day += DAY;
+    let cursor = through;
+    try {
+      while (isoDay(day) <= yesterday) {
+        const date = isoDay(day);
+        const ran = this.brainJournalRun(date, now);
+        if ("ok" in ran && !ran.ok) {
+          if (ran.code !== "archived") break;
+          this.wikiLogAppend(
+            SERVICE,
+            "journal.skipped",
+            {
+              reason: "archived",
+              brainId: this.metaGet("scope_id") ?? "",
+              pageId: `journal-${date}`,
+              day: date,
+            },
+            now,
+          );
+        }
+        cursor = date;
+        day += DAY;
+      }
+    } catch (err) {
+      if (cursor && cursor !== through) this.metaSet("brain_journal_through", cursor);
+      throw err;
     }
-    this.metaSet("brain_journal_through", yesterday);
+    if (cursor) this.metaSet("brain_journal_through", cursor);
     this.brainPurgeFields(now);
   }
 
