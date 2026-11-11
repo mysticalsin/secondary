@@ -8,6 +8,12 @@
 // Nothing here shows anything to the person: the caller checks the text line by line.
 
 import {
+  commitAgentTurn,
+  type AgentTurnEvent,
+  type AgentTurnState,
+  startAgentTurn,
+} from "../../../../src/state/agent-turn.ts";
+import {
   AGENT_TOOLS,
   type AgentToolName,
   agentSystemPrompt,
@@ -69,17 +75,24 @@ export async function runLoop(i: LoopInput): Promise<LoopOutcome> {
   const usage: Usage = { inputTokens: 0, outputTokens: 0 };
   const used: string[] = [];
   let model: string | null = null;
-  let calls = 0;
   const done = (result: LoopResult): LoopOutcome => ({ result, usage, model, tools: used });
 
-  for (let round = 1; round <= AGENT_LIMITS.maxRounds; round++) {
+  let state: AgentTurnState = startAgentTurn(AGENT_LIMITS.maxRounds);
+  while (state.tag === "round") {
+    const calls = state.calls;
     const estimate =
       estimateTokens(system) +
       estimateTokens(JSON.stringify(tools)) +
       estimateTokens(JSON.stringify(messages)) +
       AGENT_LIMITS.maxOutputTokens;
     const hold = await reserve(i.budget, estimate, i.ai.dailyBudget);
-    if (!hold) return done({ ok: false, code: "ai_budget_exhausted" });
+    if (!hold) {
+      const denied = commitAgentTurn(state, { type: "budget_denied" });
+      return done({
+        ok: false,
+        code: denied.ok && denied.state.tag === "failed" ? denied.state.code : "ai_budget_exhausted",
+      });
+    }
     const res = await streamRound({
       apiKey: i.ai.apiKey,
       model: i.ai.model,
@@ -100,17 +113,29 @@ export async function runLoop(i: LoopInput): Promise<LoopOutcome> {
     }
     // Real tokens when the provider said, else the estimate: a failed call is not free.
     await hold.settle(real ? real.inputTokens + real.outputTokens : estimate);
-    if (!res.ok) return done({ ok: false, code: "ai_unavailable" });
-    model = res.model;
-
-    if (res.stopReason === "end_turn" || res.stopReason === "stop_sequence")
-      return done({ ok: true, text: res.text, model: res.model, truncated: false });
-    if (res.stopReason === "max_tokens")
-      return done({ ok: true, text: res.text, model: res.model, truncated: true });
-    // refusal, pause_turn and anything unknown: no answer from this round.
-    if (res.stopReason !== "tool_use" || !res.toolUses.length)
-      return done({ ok: false, code: "ai_unavailable" });
-    if (round === AGENT_LIMITS.maxRounds) return done({ ok: false, code: "ai_unavailable" });
+    if (res.ok) model = res.model;
+    const event: AgentTurnEvent = !res.ok
+      ? { type: "upstream_failed" }
+      : res.stopReason === "end_turn" || res.stopReason === "stop_sequence"
+        ? { type: "stop_end" }
+        : res.stopReason === "max_tokens"
+          ? { type: "stop_max_tokens" }
+          : res.stopReason === "tool_use"
+            ? { type: "stop_tool", count: res.toolUses.length }
+            : { type: "stop_other" };
+    const next = commitAgentTurn(state, event);
+    if (!next.ok) return done({ ok: false, code: "ai_unavailable" });
+    if (next.state.tag === "failed") return done({ ok: false, code: next.state.code });
+    if (next.state.tag === "answered") {
+      return done({
+        ok: true,
+        text: res.ok ? res.text : "",
+        model: res.ok ? res.model : model ?? "",
+        truncated: next.state.truncated,
+      });
+    }
+    if (!res.ok || next.state.tag !== "tools") return done({ ok: false, code: "ai_unavailable" });
+    state = next.state;
 
     const results: Block[] = await Promise.all(
       res.toolUses.map(async (t, n): Promise<Block> => {
@@ -140,9 +165,13 @@ export async function runLoop(i: LoopInput): Promise<LoopOutcome> {
         }
       }),
     );
-    calls += res.toolUses.length;
     messages.push({ role: "assistant", content: res.content });
     messages.push({ role: "user", content: results });
+    const advanced = commitAgentTurn(state, { type: "tools_finished" });
+    if (!advanced.ok || advanced.state.tag !== "round") {
+      return done({ ok: false, code: "ai_unavailable" });
+    }
+    state = advanced.state;
   }
-  return done({ ok: false, code: "ai_unavailable" });
+  return done({ ok: false, code: state.tag === "failed" ? state.code : "ai_unavailable" });
 }

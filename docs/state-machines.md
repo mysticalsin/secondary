@@ -36,7 +36,7 @@ Status in the table is the state of the code at this commit. Nothing is fixed ye
 | 16 | Token-budget hold | `src/state/budget-hold.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | A second settle is rejected and does not adjust the counter. |
 | 17 | Token-counter CAS retry | `src/state/budget-cas.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
 | 18 | Wiki seed claim | `src/state/wiki-seed.ts`, wired from `tenant-policy.ts` and `wiki/seed.ts` | FIXED | Medium | FIX now | Dev only. An unexpired claim now blocks every version. Completing cannot move backwards. |
-| 19 | Agent turn round | `agent/loop.ts:75` | LATER | Medium | FIX now | Stop reason, budget, and the last-round tool ban are separate `if`s. |
+| 19 | Agent turn round | `src/state/agent-turn.ts`, wired from `agent/loop.ts` | FIXED | Medium | FIX now | Stop reason, budget, and the last-round tool ban are one reducer. |
 | 20 | SSE content assembly | `agent/stream.ts:128` | LATER | Medium | FIX now | Frame order is a switch that returns false to fail the round. |
 | 21 | Home screen adaptive UI | not in this repo | NOT A MACHINE | — | NOT A MACHINE | Static UI was not recovered. See below. |
 | 22 | Recorder / LaunchAgent | not in this repo | NOT A MACHINE | — | NOT A MACHINE | No matches. See below. |
@@ -947,9 +947,9 @@ stateDiagram-v2
 ## 19. Agent turn round
 
 - Purpose: One assistant turn runs at most `AGENT_LIMITS.maxRounds` model rounds, spends a reservation per round, and either answers, fails, or runs tools and continues.
-- Code: no reducer yet. `runLoop` in `agent/loop.ts:66–147`.
-- Persisted: no. Usage totals and the tool-name list are outputs, not a status column.
-- What changed: nothing in this commit.
+- Code: `src/state/agent-turn.ts` (`transitionAgentTurn`). Tests: `harness/tests/agent-turn-machine.test.ts`. `runLoop` calls the model and the tools, then applies the step.
+- Persisted: no. Version 1 codec loads unknown JSON as `ai_unavailable`, so a reload cannot run tools. `runLoop` does not write it.
+- What changed: the stop-reason chain is the reducer. End, max tokens, an empty tool list, an unknown stop, and tools on the last round take the same branches as before. Tool results still count toward the turn cap, including calls that return an error. A stop event after the turn has answered is rejected and logged. The answer text stays on the round result. The reducer carries only the truncated flag.
 
 ### States
 
@@ -957,7 +957,7 @@ stateDiagram-v2
 |---|---|---|
 | round | round number, tool calls so far | About to reserve and call the model |
 | tools | tool uses from this round | Need to execute tools and append messages |
-| answered | text, truncated flag | Last round's text is the answer |
+| answered | truncated flag | Last round's text is the answer. The text itself stays on the round result |
 | failed | `ai_budget_exhausted` or `ai_unavailable` | Stop |
 
 ### Events
@@ -982,10 +982,10 @@ stateDiagram-v2
 | round | stop_max_tokens | — | answered, truncated | return |
 | round | stop_other | — | failed unavailable | return |
 | round | stop_tool | round is the last allowed, or tool list is empty | failed unavailable | tools are not run |
-| round | stop_tool | an earlier round, and at least one tool use | tools | per-call limits inside the map (125–126) |
+| round | stop_tool | an earlier round, and at least one tool use | tools | per-call limits stay in the tool map. They do not change the turn status |
 | tools | tools_finished | — | round, round + 1, calls increased by the tool-use count | messages gain the assistant block and the tool results |
 
-The final `return` at line 147 is unreachable when `maxRounds >= 1` because every branch returns. Tool-call admission (`unknown tool`, invalid JSON, too many calls) does not change the turn status. Those calls still count toward `calls` because `calls += res.toolUses.length` runs for the whole list (143).
+`startAgentTurn` with a max below 1 is already failed, so the loop does not run. With `AGENT_LIMITS.maxRounds >= 1` every real turn still leaves through a terminal state. Tool-call admission (`unknown tool`, invalid JSON, too many calls) does not change the turn status. Those calls still count, because `tools_finished` adds the whole tool-use list.
 
 ```mermaid
 stateDiagram-v2
