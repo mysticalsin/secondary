@@ -61,7 +61,7 @@ async function openBrain(file: string): Promise<{ db: DatabaseSync; brain: Brain
   db.exec(`
     CREATE TABLE brain_members (
       principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
-      added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT);
+      added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT, claim_key TEXT);
     CREATE TABLE wiki_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
       kind TEXT NOT NULL, detail TEXT NOT NULL);
@@ -82,7 +82,7 @@ function member(db: DatabaseSync, id: string): { role: string; state: string; ch
     .get(id) as { role: string; state: string; change_id: string | null } | undefined;
 }
 
-test("brain claim: a thrown proposal releases the claim and grants nothing", async () => {
+test("brain claim: a thrown proposal keeps the keyed claim and grants nothing", async () => {
   const { file, remove } = tempFile();
   try {
     const { db, brain, place } = await openBrain(file);
@@ -103,7 +103,9 @@ test("brain claim: a thrown proposal releases the claim and grants nothing", asy
         ),
       /proposal failed/,
     );
-    assert.equal(member(db, "ada"), undefined);
+    const kept = member(db, "ada");
+    assert.equal(kept?.state, "claimed");
+    assert.equal(kept?.change_id, null);
     assert.equal(brain.brainRoleOf(["ada"]), null);
     assert.equal(
       (db.prepare("SELECT COUNT(*) AS n FROM wiki_log").get() as { n: number }).n,
@@ -125,6 +127,8 @@ test("brain claim: release of a missing row is state_unreadable", async () => {
       inserted: true,
       previousAt: null,
       previousState: "claimed",
+      key: "mem_missing",
+      previousKey: null,
     });
     assert.equal(released.ok, false);
     if (!released.ok) assert.equal(released.code, "state_unreadable");

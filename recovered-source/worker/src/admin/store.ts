@@ -210,7 +210,7 @@ export class GovStore {
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL,
         scope_key TEXT NOT NULL, needs_second INTEGER NOT NULL, proposed_by TEXT NOT NULL,
         proposed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_by TEXT,
-        decided_at INTEGER, note TEXT, base_version INTEGER);
+        decided_at INTEGER, note TEXT, base_version INTEGER, claim_key TEXT);
       CREATE TABLE IF NOT EXISTS gov_elevations (
         id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, hours INTEGER NOT NULL, reason TEXT NOT NULL,
         status TEXT NOT NULL, requested_at INTEGER NOT NULL, lapses_at INTEGER NOT NULL,
@@ -239,6 +239,14 @@ export class GovStore {
       ["granted_at", "INTEGER"],
     ] as const)
       if (!cols.has(c)) this.sql.exec(`ALTER TABLE nda_grants ADD COLUMN ${c} ${t}`);
+    const changeCols = new Set(
+      this.sql
+        .exec("PRAGMA table_info(gov_changes)")
+        .toArray()
+        .map((r) => s(r.name)),
+    );
+    if (!changeCols.has("claim_key")) this.sql.exec("ALTER TABLE gov_changes ADD COLUMN claim_key TEXT");
+    this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS gov_changes_claim_key ON gov_changes (claim_key)");
     this.tx(() => this.seedRoles(0));
   }
 
@@ -625,6 +633,8 @@ export class GovStore {
       /** An access request this change fulfils. */
       requestId?: string | null;
       label: string;
+      /** When set, a second propose with this key returns the change already stored. */
+      claimKey?: string | null;
     },
     now: number,
   ): { ok: true; change: Change; applied: boolean } | Fail {
@@ -635,6 +645,10 @@ export class GovStore {
         !(this.hasPrincipal(target) || (a.kind === "member_add" && this.hasRequester(target))))
     )
       return fail(404, "unknown_principal", "That person is not in this tenant's directory");
+    if (a.claimKey) {
+      const same = this.storedByClaimKey(a.claimKey, now);
+      if (same) return same;
+    }
     const dup = this.sql
       .exec(
         "SELECT id FROM gov_changes WHERE status = 'pending' AND expires_at > ? AND kind = ? AND scope_key = ? AND payload = ?",
@@ -647,10 +661,14 @@ export class GovStore {
     if (dup) return fail(409, "duplicate", "The same change is already waiting for approval");
 
     const id = newId("chg");
-    const result = this.tx((): Fail | { applied: boolean } => {
+    const result = this.tx((): Fail | { applied: boolean } | { existing: string } => {
+      if (a.claimKey) {
+        const again = this.sql.exec("SELECT id FROM gov_changes WHERE claim_key = ?", a.claimKey).toArray()[0];
+        if (again) return { existing: s(again.id) };
+      }
       this.sql.exec(
-        `INSERT INTO gov_changes (id, kind, status, payload, scope_key, needs_second, proposed_by, proposed_at, expires_at, base_version)
-         VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO gov_changes (id, kind, status, payload, scope_key, needs_second, proposed_by, proposed_at, expires_at, base_version, claim_key)
+         VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
         a.kind,
         JSON.stringify(a.payload),
@@ -660,6 +678,7 @@ export class GovStore {
         now,
         now + CHANGE_TTL_MS,
         a.baseVersion ?? null,
+        a.claimKey ?? null,
       );
       if (a.requestId)
         this.sql.exec("UPDATE gov_access_requests SET change_id = ? WHERE id = ?", id, a.requestId);
@@ -698,8 +717,21 @@ export class GovStore {
       this.afterDecision(this.getChange(id, now) as Change, true, now);
       return { applied: true };
     });
+    if ("existing" in result) {
+      const change = this.getChange(result.existing, now) as Change;
+      return { ok: true, change, applied: change.status === "applied" };
+    }
     if ("ok" in result) return result;
     return { ok: true, change: this.getChange(id, now) as Change, applied: result.applied };
+  }
+
+  /** The change already stored for this correlation key, if any. A null key matches nothing. */
+  private storedByClaimKey(key: string, now: number): { ok: true; change: Change; applied: boolean } | null {
+    const row = this.sql.exec("SELECT id FROM gov_changes WHERE claim_key = ?", key).toArray()[0];
+    if (!row) return null;
+    const change = this.getChange(s(row.id), now);
+    if (!change) return null;
+    return { ok: true, change, applied: change.status === "applied" };
   }
 
   /** Approve or reject a pending change. The proposer is refused here regardless of the caller. */

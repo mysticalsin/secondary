@@ -51,6 +51,8 @@ export type MemberHold =
       inserted: boolean;
       previousAt: number | null;
       previousState: string;
+      key: string;
+      previousKey: string | null;
     };
 
 export interface MemberRow {
@@ -120,7 +122,7 @@ export abstract class BrainBase extends WikiBase {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS brain_members (
           principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
-          added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT);
+          added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT, claim_key TEXT);
         CREATE TABLE IF NOT EXISTS brain_fields (
           page_id TEXT NOT NULL, field_key TEXT NOT NULL, value TEXT NOT NULL,
           written_by TEXT NOT NULL, written_at INTEGER NOT NULL, PRIMARY KEY (page_id, field_key));
@@ -139,6 +141,8 @@ export abstract class BrainBase extends WikiBase {
       const memberCols = this.sql.exec("PRAGMA table_info(brain_members)").toArray();
       if (!memberCols.some((c) => c.name === "change_id"))
         this.sql.exec("ALTER TABLE brain_members ADD COLUMN change_id TEXT");
+      if (!memberCols.some((c) => c.name === "claim_key"))
+        this.sql.exec("ALTER TABLE brain_members ADD COLUMN claim_key TEXT");
     });
   }
 
@@ -241,31 +245,39 @@ export abstract class BrainBase extends WikiBase {
     const row = this.sql
       .exec("SELECT role, state, at FROM brain_members WHERE principal_id = ?", principalId)
       .toArray()[0];
+    const keyed = row
+      ? this.sql.exec("SELECT claim_key FROM brain_members WHERE principal_id = ?", principalId).toArray()[0]
+      : undefined;
+    const previousKey =
+      keyed?.claim_key === null || keyed?.claim_key === undefined ? null : String(keyed.claim_key);
+    const key = previousKey ?? `mem_${crypto.randomUUID().slice(0, 8)}`;
     const from = row ? decodeMember(row.state) : { tag: "absent" as const };
     const step = commitMember(from, { type: "set", state: "pending", now });
     if (!step.ok) return { ok: false, code: step.reason };
     if (from.tag === "absent") {
       const matched = this.sql
         .exec(
-          `INSERT INTO brain_members (principal_id, role, state, added_by, at) VALUES (?, ?, 'claimed', ?, ?)
+          `INSERT INTO brain_members (principal_id, role, state, added_by, at, claim_key) VALUES (?, ?, 'claimed', ?, ?, ?)
            ON CONFLICT(principal_id) DO NOTHING RETURNING principal_id`,
           principalId,
           role,
           actor,
           now,
+          key,
         )
         .toArray().length;
       if (claimMember(matched).tag !== "applied") {
         console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
         return { ok: false, code: "replay" };
       }
-      return { ok: true, at: now, inserted: true, previousAt: null, previousState: "claimed" };
+      return { ok: true, at: now, inserted: true, previousAt: null, previousState: "claimed", key, previousKey: null };
     }
     const previousAt = Number(row?.at);
     const matched = this.sql
       .exec(
-        `UPDATE brain_members SET at = ? WHERE principal_id = ? AND state = ? AND at = ? RETURNING principal_id`,
+        `UPDATE brain_members SET at = ?, claim_key = ? WHERE principal_id = ? AND state = ? AND at = ? RETURNING principal_id`,
         now,
+        key,
         principalId,
         from.tag,
         previousAt,
@@ -275,7 +287,7 @@ export abstract class BrainBase extends WikiBase {
       console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
       return { ok: false, code: "replay" };
     }
-    return { ok: true, at: now, inserted: false, previousAt, previousState: from.tag };
+    return { ok: true, at: now, inserted: false, previousAt, previousState: from.tag, key, previousKey };
   }
 
   brainMemberRead(principalId: string): {
@@ -432,26 +444,28 @@ export abstract class BrainBase extends WikiBase {
     principalId: string,
     hold: Extract<MemberHold, { ok: true }>,
   ): { ok: true } | { ok: false; code: "state_unreadable" } {
-    const previousState = hold.previousState;
+    if (!hold.key || !hold.previousState) return { ok: false, code: "state_unreadable" };
     const matched = hold.inserted
       ? this.sql
           .exec(
             `DELETE FROM brain_members
-             WHERE principal_id = ? AND at = ? AND state = ? AND change_id IS NULL
+             WHERE principal_id = ? AND claim_key = ? AND state = ?
              RETURNING principal_id`,
             principalId,
-            hold.at,
-            previousState,
+            hold.key,
+            hold.previousState,
           )
           .toArray().length
       : this.sql
           .exec(
-            `UPDATE brain_members SET at = ?
-             WHERE principal_id = ? AND at = ? AND state = ? AND change_id IS NULL RETURNING principal_id`,
+            `UPDATE brain_members SET at = ?, claim_key = ?
+             WHERE principal_id = ? AND claim_key = ? AND state = ? AND at = ? RETURNING principal_id`,
             hold.previousAt,
+            hold.previousKey,
             principalId,
+            hold.key,
+            hold.previousState,
             hold.at,
-            previousState,
           )
           .toArray().length;
     return matched === 1 ? { ok: true } : { ok: false, code: "state_unreadable" };
@@ -971,6 +985,8 @@ export type MemberProposal = {
   needsSecond: boolean;
   proposedBy: string;
   label: string;
+  /** Opaque correlation key minted by the claim. The same key proposes once. */
+  claimKey?: string;
 };
 
 type HttpStatus = 400 | 403 | 404 | 409 | 422;
@@ -1091,18 +1107,7 @@ export async function placeScopedMember(
   await reconcileBrainMember(gov, brain, principalId, now);
   const hold = await Promise.resolve(brain.brainMemberClaim(principalId, role, actor, now));
   if (!hold.ok) return { ok: false, status: 409, code: hold.code };
-  let made: Proposed | undefined;
-  try {
-    made = await Promise.resolve(gov.propose(proposal, now));
-  } catch (error) {
-    const released = await Promise.resolve(brain.brainMemberRelease(principalId, hold));
-    if (!released.ok) {
-      console.warn(
-        JSON.stringify({ at: "brain_member", reason: released.code, principalId }),
-      );
-    }
-    throw error;
-  }
+  const made = await Promise.resolve(gov.propose({ ...proposal, claimKey: hold.key }, now));
   if (!made.ok) {
     const released = await Promise.resolve(brain.brainMemberRelease(principalId, hold));
     if (!released.ok) return { ok: false, status: 409, code: released.code };
