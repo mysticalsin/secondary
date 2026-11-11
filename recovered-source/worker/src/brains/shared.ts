@@ -23,7 +23,7 @@ import {
   TEMPLATES,
   type TemplateId,
 } from "./model.ts";
-import type { Brain } from "./open.ts";
+import { type Brain, reconcileStoredMembers } from "./open.ts";
 import type { BrainConfig } from "./store.ts";
 
 export { lineReadable };
@@ -161,6 +161,12 @@ export const roleOfBrain = (b: Brain): BrainRole =>
 
 export async function cardOf(c: C, x: Seen): Promise<BrainCard> {
   const b = x.brain;
+  const preliminary = await b.stub.brainMembers();
+  await reconcileStoredMembers(
+    c,
+    b.stub,
+    preliminary.map((m) => m.principalId),
+  );
   const stored = await b.stub.brainMembers();
   return {
     id: b.param,

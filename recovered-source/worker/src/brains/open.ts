@@ -34,10 +34,15 @@ type RoleBrain = Parameters<typeof reconcileBrainMember>[1] & {
 
 /** Reconcile any open claim, then return the role only an active membership grants. */
 export async function storedBrainRole(c: C, stub: RoleBrain, ids: string[]): Promise<BrainRole | null> {
+  await reconcileStoredMembers(c, stub, ids);
+  return Promise.resolve(stub.brainRoleOf(ids));
+}
+
+/** Make each stored claim match its governance row before a membership read. */
+export async function reconcileStoredMembers(c: C, stub: RoleBrain, ids: string[]): Promise<void> {
   const s = sess(c);
   const gov = govClient(c.env, s.tenantId);
   for (const id of ids.slice(0, 20)) await reconcileBrainMember(gov, stub, id, s.ctx.now);
-  return Promise.resolve(stub.brainRoleOf(ids));
 }
 
 export type Need = "read" | "contribute" | "edit" | "decide" | "manage";

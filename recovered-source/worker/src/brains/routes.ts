@@ -41,7 +41,7 @@ import {
   type TemplateId,
 } from "./model.ts";
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
-import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag } from "./open.ts";
+import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag, reconcileStoredMembers } from "./open.ts";
 import { placeScopedMember } from "./store.ts";
 import { cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
 
@@ -293,6 +293,12 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     let members: MemberOut[] | null = null;
     if (b.can.manage && isShareable(b.facts)) {
       const tenant = tenantStub(c.env, s.tenantId);
+      const preliminary = await b.stub.brainMembers();
+      await reconcileStoredMembers(
+        c,
+        b.stub,
+        preliminary.map((m) => m.principalId),
+      );
       const stored = await b.stub.brainMembers();
       const byId = new Map(stored.map((m) => [m.principalId, m]));
       const kind = b.vn?.kind;
@@ -310,14 +316,15 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
           state: "active",
         });
       }
-      for (const m of stored)
-        if (!base.some((x) => x.principalId === m.principalId))
-          out.push({
-            principalId: m.principalId,
-            email: (await tenant.emailOfPrincipal(m.principalId)) ?? "",
-            role: m.role,
-            state: m.state,
-          });
+      for (const m of stored) {
+        if (base.some((x) => x.principalId === m.principalId) || !grantsMemberRole(m.state)) continue;
+        out.push({
+          principalId: m.principalId,
+          email: (await tenant.emailOfPrincipal(m.principalId)) ?? "",
+          role: m.role,
+          state: "active",
+        });
+      }
       members = out.sort((a, z) => a.email.localeCompare(z.email));
     }
     c.header("Cache-Control", "no-store");
