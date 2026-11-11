@@ -210,7 +210,7 @@ test("brain reconcile: finish matches zero rows after a pending proposal, and th
   }
 });
 
-test("brain reconcile: a read while propose is in flight changes nothing", async () => {
+test("brain reconcile: a legacy claim with no key stays when the read finds no governance row", async () => {
   const { file, remove } = tempFile();
   try {
     const db = openSqlite(file);
@@ -223,7 +223,7 @@ test("brain reconcile: a read while propose is in flight changes nothing", async
         kind TEXT NOT NULL, detail TEXT NOT NULL);
     `);
     db.prepare(
-      "INSERT INTO brain_members (principal_id, role, state, added_by, at, change_id) VALUES ('ada', 'owner', 'claimed', 'bea', ?, NULL)",
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, change_id, claim_key) VALUES ('ada', 'owner', 'claimed', 'bea', ?, NULL, NULL)",
     ).run(NOW);
     const sql = sqliteStorage(db);
     const mod = (await import(storeSpecifier)) as {
@@ -245,6 +245,54 @@ test("brain reconcile: a read while propose is in flight changes nothing", async
     assert.equal(dropped.ok, false);
     assert.equal(dropped.code, "state_unreadable");
     assert.deepEqual(row(db), before);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("brain reconcile: a keyed read while propose is in flight leaves the claim", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const db = openSqlite(file);
+    db.exec(`
+      CREATE TABLE brain_members (
+        principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
+        added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT, claim_key TEXT);
+      CREATE TABLE wiki_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
+        kind TEXT NOT NULL, detail TEXT NOT NULL);
+    `);
+    db.prepare(
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, change_id, claim_key) VALUES ('ada', 'owner', 'claimed', 'bea', ?, NULL, 'mem_flight')",
+    ).run(NOW);
+    const sql = sqliteStorage(db);
+    const mod = (await import(storeSpecifier)) as {
+      BrainBase: { prototype: Brain };
+      reconcileBrainMember: Function;
+    };
+    const brain = Object.create(mod.BrainBase.prototype) as Brain & { sql: SqlStorage };
+    brain.sql = sql;
+    let lookups = 0;
+    await mod.reconcileBrainMember(
+      {
+        changeByKey(key: string) {
+          lookups += 1;
+          assert.equal(key, "mem_flight");
+          return null;
+        },
+      },
+      brain,
+      "ada",
+      NOW + 1,
+    );
+    assert.equal(lookups, 1);
+    const stored = db
+      .prepare("SELECT role, state, change_id, claim_key FROM brain_members WHERE principal_id = 'ada'")
+      .get() as { role: string; state: string; change_id: string | null; claim_key: string };
+    assert.deepEqual({ ...stored }, { role: "owner", state: "claimed", change_id: null, claim_key: "mem_flight" });
+    assert.equal(brain.brainRoleOf(["ada"]), null);
+    assert.equal(logs(db).length, 0);
     db.close();
   } finally {
     remove();
