@@ -463,7 +463,7 @@ Review: shares the quorum check with #4. #8 does not use this reducer yet.
 | candidate | approve | the release update matches nothing | candidate | approval row stays. Result `replay`. No `item.released` |
 | candidate | approve | approvals still short | candidate | approval row only |
 
-`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1. A scope release is a recorded quorum ask. A global release waits for `confirmed`. The approval row is stored first. `claimRelease` then accepts the status write only when it matches one candidate row. `STATUSES` still has no approval word, so the record route cannot send one. The record words it does send are in the allow-list.
+`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1. A scope release is a recorded quorum ask. A global release waits for `confirmed`. The approval row and `claimRelease` are one transaction. A throw between them rolls the approval back. `claimRelease` accepts the status write only when it matches one candidate row. `STATUSES` still has no approval word, so the record route cannot send one. The record words it does send are in the allow-list.
 
 ```mermaid
 stateDiagram-v2

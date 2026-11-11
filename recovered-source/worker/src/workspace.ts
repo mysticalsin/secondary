@@ -889,25 +889,32 @@ export class Workspace extends BrainBase {
     );
     if (!decided.ok)
       return { ok: false, code: "not_pending", message: "The item is not awaiting release" };
-    const inserted = this.sql
-      .exec(
-        `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
-         RETURNING actor_id`,
-        id,
-        rec.revision,
-        actorId,
-        now,
-      )
-      .toArray();
-    if (!inserted.length)
-      return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const approvals = prior.length + 1;
-    const claim = decided.effects.find((effect) => effect.type === "claim_release");
-    if (!claim) {
-      return { ok: true, released: false, approvals, required: rec.required, revision: rec.revision };
-    }
-    let taken = false;
+    let result: ApproveResult = {
+      ok: false,
+      code: "not_pending",
+      message: "The item is not awaiting release",
+    };
     this.ctx.storage.transactionSync(() => {
+      const inserted = this.sql
+        .exec(
+          `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
+           RETURNING actor_id`,
+          id,
+          rec.revision,
+          actorId,
+          now,
+        )
+        .toArray();
+      if (!inserted.length) {
+        result = { ok: false, code: "already_done", message: "You already approved this revision" };
+        return;
+      }
+      const approvals = prior.length + 1;
+      const claim = decided.effects.find((effect) => effect.type === "claim_release");
+      if (!claim) {
+        result = { ok: true, released: false, approvals, required: rec.required, revision: rec.revision };
+        return;
+      }
       const matched = this.sql
         .exec(
           "UPDATE items SET status = ?, reviewed_by_2 = ?, updated_at = ? WHERE id = ? AND status = ? RETURNING id",
@@ -918,15 +925,17 @@ export class Workspace extends BrainBase {
           claim.from,
         )
         .toArray().length;
-      if (claimRelease(matched).tag !== "released") return;
-      taken = true;
+      if (claimRelease(matched).tag !== "released") {
+        result = { ok: false, code: "replay", message: "The release was already taken" };
+        return;
+      }
       this.outbox("item.released", { id, revision: rec.revision, approvals }, now);
+      result = { ok: true, released: true, approvals, required: rec.required, revision: rec.revision };
     });
-    if (!taken) {
+    if (!result.ok && result.code === "replay") {
       console.warn(JSON.stringify({ at: "item_release", reason: "replay" }));
-      return { ok: false, code: "replay", message: "The release was already taken" };
     }
-    return { ok: true, released: true, approvals, required: rec.required, revision: rec.revision };
+    return result;
   }
 
   // ---- operations: snapshots, rights, retention ----
