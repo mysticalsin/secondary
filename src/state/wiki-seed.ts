@@ -6,7 +6,10 @@
 
 import { commit, type IllegalTransition, reject } from "./illegal.ts";
 
-export type SeedClaim = { version: number; at: number };
+export type SeedClaim = { version: number; at: number; owner: string };
+
+/** `seedVersion` returns this when a stored cell cannot be read. It is not a version number. */
+export const RESEED_NEEDED = "reseed needed";
 
 export type SeedRecord = {
   v: 1;
@@ -16,8 +19,8 @@ export type SeedRecord = {
 };
 
 export type SeedEvent =
-  | { type: "claim"; version: number; now: number; leaseMs: number }
-  | { type: "complete"; version: number }
+  | { type: "claim"; version: number; now: number; leaseMs: number; owner: string }
+  | { type: "complete"; version: number; owner: string }
   | { type: "reset" };
 
 export type SeedEffect = { type: "write" } | { type: "skip" };
@@ -25,7 +28,7 @@ export type SeedEffect = { type: "write" } | { type: "skip" };
 export type SeedStep = { ok: true; state: SeedRecord; effects: SeedEffect[] } | IllegalTransition;
 
 export type WikiSeedResult =
-  | { status: "off" | "current" | "busy" | "unseeded" }
+  | { status: "off" | "current" | "busy" | "unseeded" | typeof RESEED_NEEDED }
   | { status: "seeded"; version: number; workspaces: number; records: number; pages: number };
 
 const fresh = (): SeedRecord => ({ v: 1, completed: 0, claim: null, unreadable: false });
@@ -36,6 +39,15 @@ const integer = (n: number): boolean => typeof n === "number" && Number.isIntege
 
 const finite = (n: number): boolean => typeof n === "number" && Number.isFinite(n);
 
+const ownerOk = (owner: string): boolean => typeof owner === "string" && owner.length > 0;
+
+/** The label a rejection logs. A live claim is `claimed`, even when the event is invalid. */
+export const seedFrom = (state: SeedRecord): string =>
+  state.unreadable ? "unreadable" : state.claim ? "claimed" : "idle";
+
+/** True when the effect list tells the writer to store the record. */
+export const seedWrites = (effects: SeedEffect[]): boolean => effects.some((effect) => effect.type === "write");
+
 /** Completed version is still behind the requested one. */
 export const seedVersionPending = (completed: number, version: number): boolean => completed < version;
 
@@ -45,34 +57,47 @@ export const seedLeaseOpen = (claim: SeedClaim, now: number, leaseMs: number): b
 
 export function transitionWikiSeed(state: SeedRecord, event: SeedEvent): SeedStep {
   if (event.type === "reset") return write(fresh());
+  const from = seedFrom(state);
   if (state.unreadable) {
-    return reject("wiki_seed", "unreadable", event.type, "the stored seed record cannot be read");
+    return reject("wiki_seed", from, event.type, "the stored seed record cannot be read");
   }
   if (event.type === "claim") {
-    if (!integer(event.version) || !finite(event.now) || !finite(event.leaseMs) || event.leaseMs <= 0) {
-      return reject("wiki_seed", "idle", "claim", "version, time, or lease is not usable");
+    if (
+      !integer(event.version) ||
+      !finite(event.now) ||
+      !finite(event.leaseMs) ||
+      event.leaseMs <= 0 ||
+      !ownerOk(event.owner)
+    ) {
+      return reject("wiki_seed", from, "claim", "version, time, lease, or owner is not usable");
     }
     if (!seedVersionPending(state.completed, event.version)) {
-      return reject("wiki_seed", "idle", "claim", "this version is already complete");
+      return reject("wiki_seed", from, "claim", "this version is already complete");
     }
     if (state.claim && seedLeaseOpen(state.claim, event.now, event.leaseMs)) {
-      return reject("wiki_seed", "claimed", "claim", "an unexpired claim is already held");
+      return reject("wiki_seed", from, "claim", "an unexpired claim is already held");
     }
     return write({
       v: 1,
       completed: state.completed,
-      claim: { version: event.version, at: event.now },
+      claim: { version: event.version, at: event.now, owner: event.owner },
       unreadable: false,
     });
   }
-  if (!integer(event.version)) {
-    return reject("wiki_seed", "idle", "complete", "version is not a whole number");
+  if (!integer(event.version) || !ownerOk(event.owner)) {
+    return reject("wiki_seed", from, "complete", "version or owner is not usable");
+  }
+  if (!state.claim) {
+    return reject("wiki_seed", from, "complete", "there is no claim to complete");
+  }
+  if (state.claim.owner !== event.owner) {
+    return reject("wiki_seed", from, "complete", "the completion token does not match the claim");
+  }
+  if (state.claim.version !== event.version) {
+    return reject("wiki_seed", from, "complete", "the claim is for a different version");
   }
   if (state.completed > event.version) {
-    return reject("wiki_seed", "idle", "complete", "refusing to move the completed version backwards");
-  }
-  if (state.claim && state.claim.version !== event.version) {
-    return reject("wiki_seed", "claimed", "complete", "the claim is for a different version");
+    return reject("wiki_seed", from, "complete", "refusing to move the completed version backwards");
   }
   return write({ v: 1, completed: event.version, claim: null, unreadable: false });
 }
@@ -84,8 +109,10 @@ const parseClaim = (raw: string): SeedClaim | "bad" => {
   try {
     const value = JSON.parse(raw) as { version?: unknown; at?: unknown };
     if (!value || typeof value !== "object") return "bad";
-    if (!integer(value.version as number) || !finite(value.at as number)) return "bad";
-    return { version: value.version as number, at: value.at as number };
+    const owner = (value as { owner?: unknown }).owner;
+    if (!integer(value.version as number) || !finite(value.at as number) || typeof owner !== "string" || !owner)
+      return "bad";
+    return { version: value.version as number, at: value.at as number, owner };
   } catch {
     return "bad";
   }
@@ -113,7 +140,9 @@ export function storeSeed(state: SeedRecord): { version: string | null; claim: s
   if (state.unreadable) return { version: null, claim: null };
   return {
     version: state.completed === 0 ? null : String(state.completed),
-    claim: state.claim ? JSON.stringify({ version: state.claim.version, at: state.claim.at }) : null,
+    claim: state.claim
+      ? JSON.stringify({ version: state.claim.version, at: state.claim.at, owner: state.claim.owner })
+      : null,
   };
 }
 
@@ -132,7 +161,8 @@ export function decodeSeed(raw: unknown): SeedRecord {
   if (state.unreadable) return { v: 1, completed: 0, claim: null, unreadable: true };
   if (!integer(state.completed)) return SAFE_SEED;
   if (state.claim !== null) {
-    if (!state.claim || !integer(state.claim.version) || !finite(state.claim.at)) return SAFE_SEED;
+    if (!state.claim || !integer(state.claim.version) || !finite(state.claim.at) || !ownerOk(state.claim.owner))
+      return SAFE_SEED;
   }
   return {
     v: 1,
@@ -142,10 +172,28 @@ export function decodeSeed(raw: unknown): SeedRecord {
   };
 }
 
-/** The status `ensureWikiSeed` returns. Same branches as the previous ifs. */
+/**
+ * Read the two cells the way `seedVersion` does. A bad cell is `reseed needed`.
+ * `keys` names the bad cells and never includes their text.
+ */
+export function readSeedVersion(
+  versionCell: string | null,
+  claimCell: string | null,
+): { completed: number | typeof RESEED_NEEDED; keys: string[] } {
+  const versionBad = loadSeed(versionCell, null).unreadable;
+  const claimBad = loadSeed(null, claimCell).unreadable;
+  if (!versionBad && !claimBad) return { completed: loadSeed(versionCell, claimCell).completed, keys: [] };
+  const keys: string[] = [];
+  if (versionBad) keys.push("seed_version");
+  if (claimBad) keys.push("seed_claim");
+  return { completed: RESEED_NEEDED, keys };
+}
+
+/** The status `ensureWikiSeed` returns. Same branches as the previous ifs, plus a corrupt cell. */
 export function seedRunStatus(input: {
   enabled: boolean;
   hasConfig?: boolean;
+  reseed?: boolean;
   claimed?: boolean;
   completed?: number;
   version?: number;
@@ -156,6 +204,7 @@ export function seedRunStatus(input: {
 }): WikiSeedResult {
   if (!input.enabled) return { status: "off" };
   if (!input.hasConfig) return { status: "unseeded" };
+  if (input.reseed) return { status: RESEED_NEEDED };
   if (!input.claimed) {
     return {
       status: (input.completed ?? 0) >= (input.version ?? 0) ? "current" : "busy",

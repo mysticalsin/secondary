@@ -4,7 +4,7 @@
 // removes anything people wrote.
 
 import { ROLE_ORDER } from "@secondary/policy";
-import { seedRunStatus, type WikiSeedResult } from "../../../../src/state/wiki-seed.ts";
+import { RESEED_NEEDED, seedRunStatus, type WikiSeedResult } from "../../../../src/state/wiki-seed.ts";
 import { getOrg } from "../org.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
 import { planWikiSeed, SEED_TYPES, WIKI_SEED_VERSION } from "./seed-content.ts";
@@ -26,12 +26,17 @@ export async function ensureWikiSeed(
   const tenant = tenantStub(env, tenantId);
   const config = await tenant.getConfig();
   if (!config) return seedRunStatus({ enabled: true, hasConfig: false });
-  if (!(await tenant.seedClaim(WIKI_SEED_VERSION, now))) {
+  const owner = await tenant.seedClaim(WIKI_SEED_VERSION, now);
+  if (!owner) {
+    const completed = await tenant.seedVersion();
+    if (completed === RESEED_NEEDED) {
+      return seedRunStatus({ enabled: true, hasConfig: true, reseed: true });
+    }
     return seedRunStatus({
       enabled: true,
       hasConfig: true,
       claimed: false,
-      completed: await tenant.seedVersion(),
+      completed,
       version: WIKI_SEED_VERSION,
     });
   }
@@ -65,7 +70,15 @@ export async function ensureWikiSeed(
         pages += r.pages;
       });
     }
-    await tenant.seedDone(WIKI_SEED_VERSION);
+    if (!(await tenant.seedDone(WIKI_SEED_VERSION, owner))) {
+      return seedRunStatus({
+        enabled: true,
+        hasConfig: true,
+        claimed: true,
+        failed: true,
+        version: WIKI_SEED_VERSION,
+      });
+    }
     return seedRunStatus({
       enabled: true,
       hasConfig: true,

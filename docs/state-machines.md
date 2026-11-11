@@ -895,8 +895,8 @@ None.
 
 - Purpose: In dev, one request runs the synthetic wiki seed for a version. Others see current, busy, off, or unseeded.
 - Code: `src/state/wiki-seed.ts` (`transitionWikiSeed`, `seedRunStatus`). Tests: `harness/tests/wiki-seed-machine.test.ts`. `seedClaim`, `seedDone`, and directory `seed` write only the cells the reducer returns. `ensureWikiSeed` returns `seedRunStatus`.
-- Persisted: yes, `config.seed_version` and `config.seed_claim`. Logical record is version 1. A missing version is completed 0. A non-numeric version or a claim that is not `{ version, at }` loads as unreadable. Unreadable rejects claim and complete. `reset` clears it. Unknown blob version loads as unreadable, not as a fresh tenant.
-- What changed: three bug fixes, dev only. An unexpired claim for any version blocks a new claim. Previously a higher version overwrote an in-flight lower one. `seedDone` no longer stores a lower version and no longer deletes a claim for a different version. A corrupt claim used to throw from `JSON.parse`. It now refuses the claim. `seedVersion` on a non-numeric cell returns `Number.MAX_SAFE_INTEGER`, so the run reports `current` instead of treating the cell as 0 and seeding again. The success path (claim, do the work, complete that version) is unchanged. `wiki/seed-content.ts` was not edited.
+- Persisted: yes, `config.seed_version` and `config.seed_claim`. Logical record is version 1. A missing version is completed 0. A non-numeric version, or a claim that is not `{ version, at, owner }`, loads as unreadable. Unreadable rejects claim and complete. `reset` clears it. Unknown blob version loads as unreadable, not as a fresh tenant.
+- What changed: a claim carries an owner token, and `complete` must present that same token. After the lease, a new claim replaces the old one, and the previous owner's completion cannot clear it. `complete` with no claim is rejected. `seedVersion` on a corrupt cell returns `reseed needed` and logs the key, not the cell. `applySeed` writes only when the effect list says `write`. Rejection `from` is `idle`, `claimed`, or `unreadable` for the record in hand. `wiki/seed-content.ts` was not edited.
 
 ### States
 
@@ -922,8 +922,9 @@ None.
 | idle or claimed | claim | `completed >= version` | unchanged | rejected and logged. Run result `current` |
 | claimed | claim | any unexpired claim (`now - at < lease`) | unchanged | rejected and logged. Run result `busy` |
 | idle or expired claim | claim | `completed < version` | claimed | write the claim |
-| idle or matching claim | complete | version is a whole number and not below `completed`, and the claim is empty or for that version | idle at that version | write the version, delete the claim |
-| claimed | complete | claim version differs, or the new version is lower | unchanged | rejected and logged. The other claim stays |
+| claimed | complete | owner matches, claim version matches, and the version is not below `completed` | idle at that version | write the version, delete the claim |
+| idle | complete | no claim | unchanged | rejected and logged |
+| claimed | complete | owner differs, claim version differs, or the new version is lower | unchanged | rejected and logged. The live claim stays |
 | any | reset | dev directory seed | idle, completed 0 | delete both keys |
 | claimed | fail | exception in `ensureWikiSeed` | claimed | return `busy`. The claim stays until the lease |
 

@@ -10,9 +10,12 @@ import {
   decodeSeed,
   encodeSeed,
   loadSeed,
+  readSeedVersion,
+  RESEED_NEEDED,
   seedLeaseOpen,
   seedRunStatus,
   seedVersionPending,
+  seedWrites,
   storeSeed,
   type SeedEvent,
   type SeedRecord,
@@ -26,23 +29,23 @@ const current: SeedRecord = { v: 1, completed: 2, claim: null, unreadable: false
 const held: SeedRecord = {
   v: 1,
   completed: 0,
-  claim: { version: 2, at: 1000 },
+  claim: { version: 2, at: 1000, owner: "a" },
   unreadable: false,
 };
 const heldOlder: SeedRecord = {
   v: 1,
   completed: 0,
-  claim: { version: 1, at: 1000 },
+  claim: { version: 1, at: 1000, owner: "b" },
   unreadable: false,
 };
 const corrupt: SeedRecord = { v: 1, completed: 0, claim: null, unreadable: true };
 
 const events = {
-  claim2: { type: "claim", version: 2, now: 1000, leaseMs: LEASE },
-  claim2late: { type: "claim", version: 2, now: 1000 + LEASE, leaseMs: LEASE },
-  claim3: { type: "claim", version: 3, now: 1000, leaseMs: LEASE },
-  complete2: { type: "complete", version: 2 },
-  complete1: { type: "complete", version: 1 },
+  claim2: { type: "claim", version: 2, now: 1000, leaseMs: LEASE, owner: "a" },
+  claim2late: { type: "claim", version: 2, now: 1000 + LEASE, leaseMs: LEASE, owner: "a" },
+  claim3: { type: "claim", version: 3, now: 1000, leaseMs: LEASE, owner: "a" },
+  complete2: { type: "complete", version: 2, owner: "a" },
+  complete1: { type: "complete", version: 1, owner: "b" },
   reset: { type: "reset" },
 } as const;
 
@@ -54,11 +57,8 @@ const legal = new Set<string>([
   "fresh:claim2",
   "fresh:claim2late",
   "fresh:claim3",
-  "fresh:complete2",
-  "fresh:complete1",
   "fresh:reset",
   "current:claim3",
-  "current:complete2",
   "current:reset",
   "held:claim2late",
   "held:complete2",
@@ -71,12 +71,13 @@ const legal = new Set<string>([
 
 test("wiki seed: every legal transition", () => {
   const claimed = requireOk(transitionWikiSeed(fresh(), events.claim2));
-  assert.deepEqual(claimed.state.claim, { version: 2, at: 1000 });
+  assert.deepEqual(claimed.state.claim, { version: 2, at: 1000, owner: "a" });
   assert.equal(claimed.state.completed, 0);
   assert.deepEqual(claimed.effects, [{ type: "write" }]);
   assert.deepEqual(requireOk(transitionWikiSeed(held, events.claim2late)).state.claim, {
     version: 2,
     at: 1000 + LEASE,
+    owner: "a",
   });
   assert.deepEqual(requireOk(transitionWikiSeed(held, events.complete2)).state, {
     v: 1,
@@ -84,7 +85,6 @@ test("wiki seed: every legal transition", () => {
     claim: null,
     unreadable: false,
   });
-  assert.equal(requireOk(transitionWikiSeed(current, events.complete2)).state.completed, 2);
   const higher = requireOk(transitionWikiSeed(current, events.claim3));
   assert.equal(higher.state.completed, 2);
   assert.equal(higher.state.claim?.version, 3);
@@ -109,19 +109,23 @@ test("wiki seed: illegal pairs are the complement of the legal table", () => {
 test("wiki seed: guards allow and deny", () => {
   assert.equal(seedVersionPending(0, 2), true);
   assert.equal(seedVersionPending(2, 2), false);
-  assert.equal(seedLeaseOpen({ version: 2, at: 1000 }, 1000, LEASE), true);
-  assert.equal(seedLeaseOpen({ version: 2, at: 1000 }, 1000 + LEASE, LEASE), false);
-  const badLease = transitionWikiSeed(fresh(), { type: "claim", version: 2, now: 1, leaseMs: 0 });
-  assert.equal(badLease.ok, false);
+  assert.equal(seedLeaseOpen({ version: 2, at: 1000, owner: "a" }, 1000, LEASE), true);
+  assert.equal(seedLeaseOpen({ version: 2, at: 1000, owner: "a" }, 1000 + LEASE, LEASE), false);
+  assert.equal(requireFail(transitionWikiSeed(fresh(), { type: "claim", version: 2, now: 1, leaseMs: 0, owner: "a" })).from, "idle");
+  assert.equal(
+    requireFail(transitionWikiSeed(held, { type: "claim", version: 2, now: 1, leaseMs: 0, owner: "a" })).from,
+    "claimed",
+  );
 });
 
 test("wiki seed: legacy cells round-trip and unknown input does not look fresh", () => {
-  const legacy = loadSeed("2", JSON.stringify({ version: 2, at: 50 }));
+  const legacy = loadSeed("2", JSON.stringify({ version: 2, at: 50, owner: "a" }));
   assert.equal(legacy.unreadable, false);
   assert.deepEqual(storeSeed(legacy), {
     version: "2",
-    claim: JSON.stringify({ version: 2, at: 50 }),
+    claim: JSON.stringify({ version: 2, at: 50, owner: "a" }),
   });
+  assert.equal(loadSeed("2", JSON.stringify({ version: 2, at: 50 })).unreadable, true);
   assert.deepEqual(loadSeed(null, null), fresh());
   assert.equal(loadSeed("nope", null).unreadable, true);
   assert.equal(loadSeed(null, "{").unreadable, true);
@@ -134,7 +138,15 @@ test("wiki seed: legacy cells round-trip and unknown input does not look fresh",
 
 test("wiki seed: an unexpired older claim is not overwritten, and a run status stays the old mapping", () => {
   assert.match(requireFail(transitionWikiSeed(heldOlder, events.claim2)).reason, /unexpired/);
-  assert.match(requireFail(transitionWikiSeed(current, events.complete1)).reason, /backwards/);
+  assert.match(
+    requireFail(
+      transitionWikiSeed(
+        { v: 1, completed: 3, claim: { version: 2, at: 1, owner: "a" }, unreadable: false },
+        events.complete2,
+      ),
+    ).reason,
+    /backwards/,
+  );
 
   assert.deepEqual(seedRunStatus({ enabled: false }), { status: "off" });
   assert.deepEqual(seedRunStatus({ enabled: true, hasConfig: false }), { status: "unseeded" });
@@ -172,4 +184,37 @@ test("wiki seed: an unexpired older claim is not overwritten, and a run status s
   } finally {
     console.warn = original;
   }
+});
+
+test("wiki seed: completion matches the owner, and a missing claim cannot complete", () => {
+  const expired = requireOk(
+    transitionWikiSeed(held, { type: "claim", version: 2, now: 1000 + LEASE, leaseMs: LEASE, owner: "b" }),
+  );
+  assert.equal(expired.state.claim?.owner, "b");
+  const stolen = requireFail(transitionWikiSeed(expired.state, { type: "complete", version: 2, owner: "a" }));
+  assert.equal(stolen.from, "claimed");
+  assert.match(stolen.reason, /token/);
+  assert.equal(requireFail(transitionWikiSeed(fresh(), events.complete2)).from, "idle");
+  assert.match(requireFail(transitionWikiSeed(fresh(), events.complete2)).reason, /no claim/);
+  assert.equal(seedWrites([{ type: "write" }]), true);
+  assert.equal(seedWrites([{ type: "skip" }]), false);
+});
+
+test("wiki seed: a corrupt cell is reseed needed and the log omits the cell", () => {
+  const secret = "not-a-version-SECRET";
+  const bad = readSeedVersion(secret, null);
+  assert.equal(bad.completed, RESEED_NEEDED);
+  assert.deepEqual(bad.keys, ["seed_version"]);
+  assert.equal(JSON.stringify(bad).includes(secret), false);
+  const claimSecret = '{"owner":"SECRET-CLAIM"}';
+  const badClaim = readSeedVersion("1", claimSecret);
+  assert.equal(badClaim.completed, RESEED_NEEDED);
+  assert.deepEqual(badClaim.keys, ["seed_claim"]);
+  assert.equal(JSON.stringify(badClaim).includes("SECRET-CLAIM"), false);
+  assert.deepEqual(readSeedVersion(null, null), { completed: 0, keys: [] });
+  assert.deepEqual(readSeedVersion("", ""), { completed: 0, keys: [] });
+  assert.deepEqual(readSeedVersion("4", null), { completed: 4, keys: [] });
+  assert.equal(readSeedVersion("-1", null).completed, RESEED_NEEDED);
+  assert.equal(readSeedVersion("NaN", null).completed, RESEED_NEEDED);
+  assert.deepEqual(seedRunStatus({ enabled: true, hasConfig: true, reseed: true }), { status: RESEED_NEEDED });
 });

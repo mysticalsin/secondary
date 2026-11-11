@@ -7,7 +7,10 @@ import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
 import {
   commitWikiSeed,
   loadSeed,
+  readSeedVersion,
+  RESEED_NEEDED,
   type SeedEvent,
+  seedWrites,
   storeSeed,
 } from "../../../src/state/wiki-seed.ts";
 import { GOV_METHODS, GovStore } from "./admin/store.ts";
@@ -274,25 +277,29 @@ export class TenantPolicy extends DurableObject<Env> {
     return done ? null : this.seed(config, principals, now);
   }
 
-  /** The version of the dev wiki seed this tenant has completed (0 when none). */
-  seedVersion(): number {
-    const loaded = loadSeed(this.seedCell("seed_version"), null);
-    return loaded.unreadable ? Number.MAX_SAFE_INTEGER : loaded.completed;
+  /**
+   * The version of the dev wiki seed this tenant has completed (0 when none).
+   * A corrupt cell is `reseed needed`. The log names the key and not the cell.
+   */
+  seedVersion(): number | typeof RESEED_NEEDED {
+    const read = readSeedVersion(this.seedCell("seed_version"), this.seedCell("seed_claim"));
+    if (read.keys.length) console.warn(JSON.stringify({ at: "wiki_seed_unreadable", keys: read.keys }));
+    return read.completed;
   }
 
   /**
-   * Dev wiki seed: take the right to run version `version`. False when that version (or a newer one)
-   * is done, or another request holds an unexpired claim, so concurrent requests seed once. A claim
-   * that never completes expires after `leaseMs` and the next request tries again.
-   * An unexpired claim blocks a different version too. A corrupt cell refuses the claim.
+   * Dev wiki seed: take the right to run version `version`. Returns the owner token the
+   * completer must present, or null when the claim is refused. An unexpired claim blocks
+   * every version. A corrupt cell refuses the claim.
    */
-  seedClaim(version: number, now: number, leaseMs = 120_000): boolean {
-    return this.applySeed({ type: "claim", version, now, leaseMs }) !== null;
+  seedClaim(version: number, now: number, leaseMs = 120_000): string | null {
+    const owner = crypto.randomUUID();
+    return this.applySeed({ type: "claim", version, now, leaseMs, owner }) ? owner : null;
   }
 
-  /** The claimed version finished: later requests skip it. A backwards or mismatched write is refused. */
-  seedDone(version: number): void {
-    this.applySeed({ type: "complete", version });
+  /** The same owner finishes the claim. A different owner, or no claim, is refused. */
+  seedDone(version: number, owner: string): boolean {
+    return this.applySeed({ type: "complete", version, owner }) !== null;
   }
 
   private seedCell(key: string): string | null {
@@ -306,6 +313,7 @@ export class TenantPolicy extends DurableObject<Env> {
       event,
     );
     if (!next.ok) return null;
+    if (!seedWrites(next.effects)) return next.state;
     const cells = storeSeed(next.state);
     for (const [key, value] of [
       ["seed_version", cells.version],
