@@ -1520,9 +1520,29 @@ export abstract class WikiBase extends DurableObject<Env> {
         ...ids,
       )
       .toArray();
-    const mine = already.length
-      ? []
-      : this.sql
+    if (already.length)
+      return { ok: false, code: "already_done", message: "You already approved this revision" };
+    const approvals = item.approvals + 1;
+    if (approvals < required) {
+      const noted = this.sql
+        .exec(
+          `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
+           RETURNING actor_id`,
+          id,
+          item.revision,
+          actorId,
+          now,
+        )
+        .toArray();
+      if (!noted.length)
+        return { ok: false, code: "already_done", message: "You already approved this revision" };
+      this.wikiLogAppend(actorId, `${p.kind}.approval`, { id, approvals, required }, now);
+      return { ok: true, status: "pending", applied: null, approvals, required };
+    }
+    let applied: ApplyResult | null = null;
+    try {
+      this.ctx.storage.transactionSync(() => {
+        const mine = this.sql
           .exec(
             `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
              RETURNING actor_id`,
@@ -1532,20 +1552,28 @@ export abstract class WikiBase extends DurableObject<Env> {
             now,
           )
           .toArray();
-    if (!mine.length)
-      return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const approvals = item.approvals + 1;
-    if (approvals < required) {
-      this.wikiLogAppend(actorId, `${p.kind}.approval`, { id, approvals, required }, now);
-      return { ok: true, status: "pending", applied: null, approvals, required };
-    }
-    let applied: ApplyResult | null = null;
-    try {
-      this.ctx.storage.transactionSync(() => {
+        if (!mine.length)
+          throw new PageRefusal({
+            ok: false,
+            code: "already_done",
+            message: "You already approved this revision",
+          });
         const out = this.applyProposal(p, actorId, actorId, now, id);
         if (!("pages" in out)) throw new PageRefusal(out);
+        const changed = this.sql
+          .exec(
+            "UPDATE items SET status = 'approved', updated_at = ? WHERE id = ? AND status = 'candidate' RETURNING id",
+            now,
+            id,
+          )
+          .toArray();
+        if (changed.length !== 1)
+          throw new PageRefusal({
+            ok: false,
+            code: "replay",
+            message: "The proposal was already decided",
+          });
         applied = out;
-        this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
         if (p.findingKey)
           this.sql.exec("UPDATE wiki_findings SET status = 'resolved' WHERE key = ?", p.findingKey);
       });

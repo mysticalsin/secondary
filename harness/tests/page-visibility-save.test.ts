@@ -104,6 +104,29 @@ function revisions(db: DatabaseSync, id: string): number {
   return { ...row }.n;
 }
 
+function approvalCount(db: DatabaseSync): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM approvals").get() as { n: number };
+  return { ...row }.n;
+}
+
+function rolling(db: DatabaseSync): Wiki["ctx"] {
+  return {
+    storage: {
+      transactionSync<T>(fn: () => T): T {
+        db.exec("BEGIN IMMEDIATE");
+        try {
+          const result = fn();
+          db.exec("COMMIT");
+          return result;
+        } catch (err) {
+          db.exec("ROLLBACK");
+          throw err;
+        }
+      },
+    },
+  };
+}
+
 test("page save: a missing page is inserted as published", async () => {
   const { file, remove } = tempFile();
   try {
@@ -319,6 +342,76 @@ test("page save: approving a proposal that saves an archived page is not success
       const body = (await http.json()) as { error: string };
       assert.equal(body.error, "archived");
     }
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("page save: a refused approval records no row, and the same person can apply after unarchive", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { db, wiki } = await openWiki(file);
+    wiki.ctx = rolling(db);
+    db.prepare(
+      "INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, origin, created_at, updated_at) VALUES ('home', 'topic', 'Home', 'Hello', '', 1, 'archived', 'human', ?, ?)",
+    ).run(NOW, NOW);
+    db.prepare("INSERT INTO items (id, status, updated_at) VALUES ('prop_1', 'candidate', ?)").run(NOW);
+    const proposal = {
+      v: 1,
+      kind: "wiki_ingest",
+      title: "Home",
+      rationale: "",
+      origin: "human",
+      pages: [{ pageId: "home", type: "topic", title: "Home", baseRevision: 1, markdown: "Hello again" }],
+      facts: [],
+      invalidate: [],
+      confirm: [],
+      archive: [],
+      reingest: [],
+      sources: [],
+      findingKey: null,
+    };
+    const item = {
+      id: "prop_1",
+      label: "Home",
+      kind: "wiki_ingest",
+      plane: "internal",
+      origin: "human",
+      status: "candidate",
+      revision: 1,
+      authorId: "bea",
+      tags: [],
+      body: JSON.stringify(proposal),
+      targetNode: null,
+      releaseTarget: null,
+      userValidated: null,
+      sensitivityFlags: [],
+      reviewedBy2: false,
+      approvals: 0,
+      required: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    wiki.get = (id: string) => (id === item.id ? item : null);
+    wiki.wikiMeta = () => ({ scopeId: "personal:ada", tenantId: "ten" });
+    const hash = await wiki.proposalHash(item);
+    const refused = await wiki.wikiDecide(item.id, "approve", "ada", NOW + 1, { revisionHash: hash });
+    assert.equal(refused.ok, false);
+    if (!refused.ok) assert.equal(refused.code, "archived");
+    assert.equal(statusOf(db, "home"), "archived");
+    assert.equal(approvalCount(db), 0);
+    const opened = wiki.unarchivePage("home", NOW + 2);
+    assert.equal(opened.ok, true);
+    const applied = await wiki.wikiDecide(item.id, "approve", "ada", NOW + 3, { revisionHash: hash });
+    assert.equal(applied.ok, true);
+    if (applied.ok) assert.equal(applied.status, "approved");
+    assert.equal(statusOf(db, "home"), "published");
+    const page = db.prepare("SELECT markdown FROM wiki_pages WHERE id = 'home'").get() as { markdown: string };
+    assert.equal({ ...page }.markdown, "Hello again");
+    assert.equal(approvalCount(db), 1);
+    const stored = db.prepare("SELECT status FROM items WHERE id = 'prop_1'").get() as { status: string };
+    assert.equal({ ...stored }.status, "approved");
     db.close();
   } finally {
     remove();
