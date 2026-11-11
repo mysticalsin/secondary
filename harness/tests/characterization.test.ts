@@ -152,23 +152,12 @@ test("CHARACTERIZATION: dry-run import state and the real auto-accept are differ
   assert.equal(real(false, true, false, false), "draft");
 });
 
-test("CHARACTERIZATION: a replay nonce is accepted once until it expires", () => {
+test("replay nonce source does not delete a seen key when it expires", () => {
   const src = read("recovered-source/worker/src/tenant-policy.ts");
   const body = between(src, "nonceFirst(", "hit(");
-  assert.match(body, /DELETE FROM nonces WHERE expires_at <= \?/);
+  assert.doesNotMatch(body, /DELETE FROM nonces/);
   assert.match(body, /INSERT OR IGNORE INTO nonces \(key, expires_at\)/);
   assert.match(body, /RETURNING key/);
-
-  const seen = new Map<string, number>();
-  const first = (key: string, now: number, ttlMs: number): boolean => {
-    for (const [k, exp] of [...seen]) if (exp <= now) seen.delete(k);
-    if (seen.has(key)) return false;
-    seen.set(key, now + ttlMs);
-    return true;
-  };
-  assert.equal(first("n", 1_000, 100), true);
-  assert.equal(first("n", 1_050, 100), false);
-  assert.equal(first("n", 1_100, 100), true);
 });
 
 test("CHARACTERIZATION: an OIDC callback can fail after clearing the cookie and leave the login record", () => {

@@ -622,11 +622,11 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   /**
-   * Replay cache for the signed service calls. True the first time a key is seen inside its TTL,
-   * false for a replay. Expired keys are dropped on every call, so the table holds about two minutes.
+   * Replay guard for the signed service calls. True only the first time a key is stored.
+   * A stored key stays refused after expires_at: deleting the row would accept it again.
+   * The row's expires_at is the caller's replay window, kept so the refusal lasts at least that long.
    */
   nonceFirst(key: string, now: number, ttlMs: number): boolean {
-    this.sql.exec("DELETE FROM nonces WHERE expires_at <= ?", now);
     return (
       this.sql
         .exec(
