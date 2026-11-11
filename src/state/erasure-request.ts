@@ -1,14 +1,16 @@
 /**
  * One erasure request per subject. The ledger remembers each step.
  * Callers perform the effects and pass the clock in. This module does not read one.
- * A stored word other than the four states is partial_failed, so a resume continues
- * and a completed report requires a ledger whose steps are all done.
+ * A stored word other than the known states is partial_failed, so a resume continues.
+ * Corrupt JSON, and a completed row whose marks are not all done, are unreadable.
+ * Loading does not rewrite that row. A fresh plan replaces it only after a new request.
  */
 
 import { commit, type IllegalTransition, reject } from "./illegal.ts";
 
 export type ErasureStatus =
   | { tag: "absent" }
+  | { tag: "unreadable" }
   | { tag: "requested" }
   | { tag: "running" }
   | { tag: "completed" }
@@ -40,6 +42,7 @@ const MACHINE = "erasure_request";
 /** A known stored word. Anything else, including null and legacy, is partial_failed. */
 export function decodeErasureStatus(status: unknown): Exclude<ErasureStatus, { tag: "absent" }> {
   if (
+    status === "unreadable" ||
     status === "requested" ||
     status === "running" ||
     status === "completed" ||
@@ -59,35 +62,41 @@ export function absentErasure(): StoredErasure {
   return { status: { tag: "absent" }, order: [], mark: {} };
 }
 
-/** No row is absent. A row whose ledger cannot prove completion is partial_failed. */
+/** A row the caller must not resume. Decoding it does not write. */
+export function unreadableErasure(): StoredErasure {
+  return { status: { tag: "unreadable" }, order: [], mark: {} };
+}
+
+/** No row is absent. A completed row that cannot prove every step is unreadable. */
 export function decodeErasure(row: { status: unknown; order: unknown; mark: unknown } | null): StoredErasure {
   if (!row) return absentErasure();
+  if (row.status === "unreadable") return unreadableErasure();
   const order = Array.isArray(row.order)
     ? row.order.filter((id): id is string => typeof id === "string" && id !== "")
     : [];
   const raw =
-    row.mark !== null && typeof row.mark === "object"
+    row.mark !== null && typeof row.mark === "object" && !Array.isArray(row.mark)
       ? (row.mark as Record<string, unknown>)
       : {};
   const mark: Record<string, StepMark> = {};
   for (const id of order) mark[id] = decodeStepMark(raw[id]);
   const decoded = decodeErasureStatus(row.status);
-  const status = decoded.tag === "completed" && !allDone(order, mark) ? { tag: "partial_failed" as const } : decoded;
-  return { status, order, mark };
+  if (decoded.tag === "completed" && !allDone(order, mark)) return unreadableErasure();
+  return { status: decoded, order, mark };
 }
 
 export function decodeErasureLedger(row: { status: unknown; ledger: unknown } | null): StoredErasure {
   if (!row) return absentErasure();
-  let parsed: { order?: unknown; mark?: unknown } = {};
-  if (typeof row.ledger === "string") {
-    try {
-      const value = JSON.parse(row.ledger) as { order?: unknown; mark?: unknown };
-      if (value && typeof value === "object") parsed = value;
-    } catch {
-      parsed = {};
-    }
+  if (typeof row.ledger !== "string") return unreadableErasure();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.ledger) as unknown;
+  } catch {
+    return unreadableErasure();
   }
-  return decodeErasure({ status: row.status, order: parsed.order, mark: parsed.mark });
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return unreadableErasure();
+  const body = parsed as { order?: unknown; mark?: unknown };
+  return decodeErasure({ status: row.status, order: body.order, mark: body.mark });
 }
 
 export function encodeErasure(state: StoredErasure): { status: string; ledger: string } {
@@ -187,18 +196,24 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
   const badClock = clock(state, event);
   if (badClock) return badClock;
   if (event.type === "request") {
-    if (state.status.tag === "absent" || state.order.length === 0)
+    if (
+      state.status.tag === "absent" ||
+      state.status.tag === "unreadable" ||
+      state.order.length === 0
+    )
       return allow(requestedFrom(event.steps), []);
     if (state.status.tag === "completed") return allow(state, []);
     return allow(addSteps(state, event.steps), []);
   }
   if (event.type === "resume") {
-    if (state.status.tag === "absent") return reject(MACHINE, state.status.tag, event.type, "not_started");
+    if (state.status.tag === "absent" || state.status.tag === "unreadable")
+      return reject(MACHINE, state.status.tag, event.type, "not_started");
     if (state.status.tag === "completed") return allow(state, []);
     return proceed(state);
   }
   if (event.type === "restore") {
-    const base = state.status.tag === "absent" ? requestedFrom([]) : state;
+    const base =
+      state.status.tag === "absent" || state.status.tag === "unreadable" ? requestedFrom([]) : state;
     return proceed(reopen(base, event.steps));
   }
   if (state.status.tag !== "running") return reject(MACHINE, state.status.tag, event.type, "not_running");

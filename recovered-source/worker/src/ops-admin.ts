@@ -181,7 +181,11 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
 
     const tenant = tenantStub(c.env, s.tenantId);
     const existing = decodeErasureLedger(await tenant.erasureLoad(principalId));
-    if (existing.status.tag === "absent") {
+    const tag = existing.status.tag;
+    const resumable =
+      (tag === "requested" || tag === "running" || tag === "partial_failed") &&
+      existing.order.length > 0;
+    if (!resumable && tag !== "completed") {
       const step = await tenant.requestSecond(
         `erase:${principalId}`,
         s.principal.id,
