@@ -87,6 +87,14 @@ const fail = (code: Fail["code"]): Fail => ({ ok: false, code });
 const s = (v: unknown): string => v as string;
 const n = (v: unknown): number => v as number;
 
+/** Thrown inside a storage transaction so the insert rolls back. */
+class AmbiguousPrincipal extends Error {
+  constructor() {
+    super("ambiguous_principal");
+    this.name = "AmbiguousPrincipal";
+  }
+}
+
 export class IdentityStore {
   private readonly sql: SqlStorage;
   private readonly storage: DurableObjectStorage;
@@ -150,31 +158,49 @@ export class IdentityStore {
 
   // ---- principals ----
 
+  /** Principal rows whose stored email folds to `email`. Blank matches nothing. The column is not rewritten. */
+  private emailRows(email: string): { id: string; subject: string | null }[] {
+    const normalized = normalEmail(email);
+    if (!normalized) return [];
+    return this.sql
+      .exec(
+        `SELECT id, subject FROM principals WHERE ${normalizedEmailSql("email")} = ? ORDER BY id`,
+        normalized,
+      )
+      .toArray()
+      .map((r) => ({ id: s(r.id), subject: (r.subject as string | null) ?? null }));
+  }
+
+  private warnAmbiguous(ids: string[]): void {
+    console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids }));
+  }
+
   private async ensurePrincipal(email: string): Promise<string | Fail> {
     const normalized = normalEmail(email);
     if (!normalized) return fail("invalid");
-    const find = (): string[] =>
-      this.sql
-        .exec(
-          `SELECT id FROM principals WHERE ${normalizedEmailSql("email")} = ? ORDER BY id`,
-          normalized,
-        )
-        .toArray()
-        .map((r) => r.id as string);
-    const have = find();
+    const ids = (): string[] => this.emailRows(normalized).map((row) => row.id);
+    const have = ids();
     if (have.length > 1) {
-      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: have }));
+      this.warnAmbiguous(have);
       return fail("ambiguous");
     }
     if (have.length === 1) return have[0] as string;
     const id = await principalIdFor(normalized);
-    this.sql.exec("INSERT OR IGNORE INTO principals (id, email) VALUES (?, ?)", id, normalized);
-    const again = find();
-    if (again.length > 1) {
-      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: again }));
-      return fail("ambiguous");
+    try {
+      return this.storage.transactionSync(() => {
+        this.sql.exec("INSERT OR IGNORE INTO principals (id, email) VALUES (?, ?)", id, normalized);
+        const again = ids();
+        const others = again.filter((found) => found !== id);
+        if (others.length > 0) {
+          this.warnAmbiguous(others);
+          throw new AmbiguousPrincipal();
+        }
+        return again[0] ?? id;
+      });
+    } catch (err) {
+      if (err instanceof AmbiguousPrincipal) return fail("ambiguous");
+      throw err;
     }
-    return again[0] ?? id;
   }
 
   isActive(principalId: string): boolean {
@@ -194,14 +220,22 @@ export class IdentityStore {
    * only while no directory manages the tenant: under SCIM an unknown principal is not active (H-02).
    */
   isEmailActive(email: string, managed: boolean): boolean {
-    const r = this.sql.exec("SELECT id FROM principals WHERE email = ?", email).toArray()[0];
-    return r === undefined ? !managed : this.isActive(s(r.id));
+    const rows = this.emailRows(email);
+    if (rows.length > 1) {
+      this.warnAmbiguous(rows.map((row) => row.id));
+      return false;
+    }
+    return rows.length === 0 ? !managed : this.isActive(rows[0].id);
   }
 
   /** The Entra subject (`tid:oid`) a principal is bound to, or null for an email-keyed principal. */
   subjectOfEmail(email: string): string | null {
-    const r = this.sql.exec("SELECT subject FROM principals WHERE email = ?", email).toArray()[0];
-    return r ? ((r.subject as string | null) ?? null) : null;
+    const rows = this.emailRows(email);
+    if (rows.length > 1) {
+      this.warnAmbiguous(rows.map((row) => row.id));
+      return null;
+    }
+    return rows[0]?.subject ?? null;
   }
 
   private setStatus(principalId: string, active: boolean, now: number): void {
@@ -361,11 +395,12 @@ export class IdentityStore {
     if (bound) {
       const id = s(bound.id);
       // The email is an attribute: follow a UPN change when the new one is free.
-      if (s(bound.email) !== w.email && w.emailIsUpn && !w.guest) {
-        const taken = this.sql
-          .exec("SELECT 1 FROM principals WHERE email = ? AND id <> ?", w.email, id)
-          .toArray().length;
-        if (!taken) this.sql.exec("UPDATE principals SET email = ? WHERE id = ?", w.email, id);
+      // Case and padding are the same address, so they do not rewrite the stored text.
+      const next = normalEmail(w.email);
+      if (normalEmail(s(bound.email)) !== next && w.emailIsUpn && !w.guest && next) {
+        const taken = this.emailRows(next).filter((row) => row.id !== id);
+        if (taken.length > 1) this.warnAmbiguous(taken.map((row) => row.id));
+        if (taken.length === 0) this.sql.exec("UPDATE principals SET email = ? WHERE id = ?", w.email, id);
       }
       return id;
     }
@@ -390,10 +425,14 @@ export class IdentityStore {
       this.sql.exec("UPDATE principals SET subject = ? WHERE id = ?", subject, id);
       return id;
     }
-    const byEmail = this.sql
-      .exec("SELECT id, subject FROM principals WHERE email = ?", w.email)
-      .toArray()[0];
+    const matches = this.emailRows(w.email);
+    if (matches.length > 1) {
+      this.warnAmbiguous(matches.map((row) => row.id));
+      return "identity_conflict";
+    }
+    const byEmail = matches[0];
     if (!byEmail) {
+      if (!normalEmail(w.email)) return "identity_conflict";
       const id = await principalIdFor(subject);
       this.sql.exec(
         "INSERT INTO principals (id, email, subject) VALUES (?, ?, ?)",
@@ -404,8 +443,8 @@ export class IdentityStore {
       return id;
     }
     if (byEmail.subject !== null || w.guest || !w.emailIsUpn) return "identity_conflict";
-    this.sql.exec("UPDATE principals SET subject = ? WHERE id = ?", subject, s(byEmail.id));
-    return s(byEmail.id);
+    this.sql.exec("UPDATE principals SET subject = ? WHERE id = ?", subject, byEmail.id);
+    return byEmail.id;
   }
 
   async sessionCreate(
@@ -615,12 +654,11 @@ export class IdentityStore {
       const userName = c.userName.trim().toLowerCase();
       if (!userName.includes("@") || userName.length > 254) return fail("invalid");
       if (userName !== row.user_name) {
+        const twins = this.emailRows(userName).filter((row) => row.id !== principalId);
+        if (twins.length > 1) this.warnAmbiguous(twins.map((row) => row.id));
         const taken =
-          this.sql.exec("SELECT 1 FROM scim_users WHERE user_name = ?", userName).toArray().length >
-            0 ||
-          this.sql
-            .exec("SELECT 1 FROM principals WHERE email = ? AND id <> ?", userName, principalId)
-            .toArray().length > 0;
+          this.sql.exec("SELECT 1 FROM scim_users WHERE user_name = ?", userName).toArray().length > 0 ||
+          twins.length > 0;
         if (taken) return fail("uniqueness");
         this.storage.transactionSync(() => {
           this.sql.exec(

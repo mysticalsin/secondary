@@ -345,9 +345,10 @@ export class TenantPolicy extends DurableObject<Env> {
     return next.state;
   }
 
-  /** Ids whose stored email normalises to `email`. Stored text is not rewritten. */
+  /** Ids whose stored email normalises to `email`. Blank is not an identity. Stored text is not rewritten. */
   private principalIdsForEmail(email: string): string[] {
-    const normalized = normalEmail(email) ?? "";
+    const normalized = normalEmail(email);
+    if (!normalized) return [];
     return this.sql
       .exec(
         `SELECT id FROM principals WHERE ${normalizedEmailSql("email")} = ? ORDER BY id`,

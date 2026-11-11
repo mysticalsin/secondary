@@ -24,22 +24,33 @@ const EMAIL_PAD = [
   0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
 ] as const;
 
-const PAD = new RegExp(`[${EMAIL_PAD.map((code) => `\\u${code.toString(16).padStart(4, "0")}`).join("")}]`, "g");
+/**
+ * One fold list for `normalEmail` and `normalizedEmailSql`. ASCII whitespace is
+ * here because String.trim strips it and SQLite trim() keeps it. A blank result
+ * is null on both sides. Stored text is not rewritten.
+ */
+const EMAIL_FOLD = [0x0009, 0x000a, 0x000b, 0x000c, 0x000d, ...EMAIL_PAD] as const;
+
+const charClass = (codes: readonly number[]): RegExp =>
+  new RegExp(`[${codes.map((code) => `\\u${code.toString(16).padStart(4, "0")}`).join("")}]`, "g");
+
+const PAD = charClass(EMAIL_PAD);
+const FOLD = charClass(EMAIL_FOLD);
 
 /**
  * SQL for `normalEmail` over a stored text column. The column is not rewritten.
- * `column` is a fixed name, never caller input.
+ * `column` is a fixed name, never caller input. Blank is null, matching `normalEmail`.
  */
 export function normalizedEmailSql(column: string): string {
   let expr = column;
-  for (const code of EMAIL_PAD) expr = `replace(${expr}, char(${code}), ' ')`;
-  return `lower(trim(${expr}))`;
+  for (const code of EMAIL_FOLD) expr = `replace(${expr}, char(${code}), ' ')`;
+  return `nullif(lower(trim(${expr})), '')`;
 }
 
-/** Trim, drop NBSP and other padding, and lowercase. Empty becomes null. */
+/** Fold `EMAIL_FOLD` to spaces, trim, and lowercase. Empty becomes null. */
 export function normalEmail(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.replace(PAD, " ").trim().toLowerCase();
+  const trimmed = value.replace(FOLD, " ").trim().toLowerCase();
   return trimmed === "" ? null : trimmed;
 }
 
