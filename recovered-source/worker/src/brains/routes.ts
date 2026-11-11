@@ -704,14 +704,16 @@ async function setMember(
   }
   if (role === null) {
     if (status === "applied") await b.stub.brainMemberRemove(pid, s.principal.id, s.ctx.now);
-  } else
-    await b.stub.brainMemberSet(
+  } else {
+    const set = await b.stub.brainMemberSet(
       pid,
       role,
       status === "applied" ? "active" : "pending",
       s.principal.id,
       s.ctx.now,
     );
+    if (!set.ok) return c.json({ error: set.code }, 409);
+  }
   return c.json({
     ok: true,
     status,

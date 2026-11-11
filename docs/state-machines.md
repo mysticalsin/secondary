@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, #2, whose start writes only a pending row, and #3, whose reopen and decision write only the status the table allows. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, #2, whose start writes only a pending row, and #3, whose reopen and decision write only the status the table allows, and #12, whose member write names the state it read. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -29,7 +29,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Right-size to a status predicate plus an unarchive event. `savePage` currently republishes an archived page. |
 | 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
 | 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | Jarvis: a personal auto-accept stays a draft. One `publishMode()` defaults to draft, and publishing is an explicit action. Current formulas still disagree. |
-| 12 | Brain member | `brains/store.ts:211`, set from `brains/routes.ts:704` | LATER | High | LATER | Caller passes `active` or `pending`. No transition check. |
+| 12 | Brain member | `src/state/brain-member.ts`, `brainMemberSet` in `brains/store.ts:216`, absent insert `:234`, from-predicate `:245`, route `brains/routes.ts:708` | FIXED | High | FIX now | A set writes only from the state it read, and only when `at` is still that row. An unknown stored word is refused. A lost race is `replay`, writes nothing, and does not log. |
 | 13 | Replay nonce | `tenant-policy.ts:632` | FIXED | High | FIX now | Named guard, not a reducer. Expiry does not reopen a key. `expires_at` is strictly after the last accepted millisecond. Prune is outside the guard, and only for `expires_at < now`. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
 | 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
@@ -77,7 +77,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 5. #5 Kill switch (fixed: a value other than 0 or 1 stays off, and an unknown name is refused)
 6. #2 Elevation window (fixed: a start from any status but pending is refused, and two starts cannot both succeed)
 7. #3 Access request (fixed: reopen only from approved, and two decisions cannot both succeed)
-8. #12 Brain member
+8. #12 Brain member (fixed: a set names the state it read, and two sets cannot both succeed)
 9. #1 Governance change
 10. #9 Wiki page visibility
 11. #11 Brain import outcome
@@ -90,6 +90,7 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#5.** Fixed. `decodeSwitchEnabled` reads 1 as on and 0 as off. Any other stored value reads as off, and turning it on is refused. Turning it off writes canonical 0. An unknown name, a non-boolean, and an unreadable clock do not write. Prod re-enable is still `requestSecond`.
 - **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1036`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
 - **#3.** Fixed. `transitionAccessRequest` approves or denies only from pending, reopens only from approved, and grants or rejects only a pending or approved request. Each write checks that predicate on `RETURNING`. A lost decision is 409 and does not notify.
+- **#12.** Fixed. `transitionMember` sets `active` or `pending` from absent, pending, or active. An unknown stored word is refused. `brainMemberSet` (`brains/store.ts:216`) inserts only when no row exists (`:234`) and updates only `WHERE state = ? AND at = ?` (`:245`). A lost race does not write the wiki log. The member route (`brains/routes.ts:708`) returns 409 for that refusal.
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
@@ -699,9 +700,9 @@ The `imports` flag is checked before the handler body (`needFlag`). Personal ver
 ## 12. Brain member
 
 - Purpose: A person has a stored brain role that is either already in force or waiting on a directory change.
-- Code: no reducer yet. `brainMemberSet` (`brains/store.ts:211`) writes the caller's `state` argument. `brains/routes.ts:675` and `:710` choose `active` when the governance change applied, otherwise `pending`.
+- Code: `src/state/brain-member.ts`. `brainMemberSet` (`brains/store.ts:216`) applies the effect. The route is `brains/routes.ts:708`. It still chooses `active` when the governance change applied, otherwise `pending` (`:711`).
 - Persisted: yes, `brain_members.state` (`active` or `pending`). Unversioned. Remove deletes the row.
-- What changed: nothing in this commit.
+- What changed: the upsert no longer replaces whatever row is there. An insert applies only when the principal is absent. An update applies only when `state` and `at` are still the row that was read. An unknown stored word is refused. The wiki log is written only when one row changes. The route returns 409 when the write does not apply.
 
 ### States
 
@@ -726,7 +727,7 @@ The `imports` flag is checked before the handler body (`needFlag`). Personal ver
 | absent or any | set | caller passes `pending` | pending | upsert, wiki log |
 | active or pending | remove | directory removal already applied | absent | delete |
 
-There is no guard against `pending → active` except the route's `status === "applied"` check, and `brainMemberSet` will also write `active` over `pending` if any caller asks. `ON CONFLICT` replaces role and state unconditionally (219–220).
+`brainMemberSet` inserts with `ON CONFLICT DO NOTHING` (`brains/store.ts:234`) and updates with `WHERE principal_id = ? AND state = ? AND at = ?` (`:245`). One returned row applies the wiki log. Zero rows is `replay` and logs nothing. A stored word other than `pending` or `active` is `state_unreadable` and is not rewritten.
 
 ```mermaid
 stateDiagram-v2

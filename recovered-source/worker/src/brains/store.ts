@@ -6,6 +6,11 @@
 
 import type { BrainRole, Everyone, Publication } from "@secondary/policy";
 import { BRAIN_ROLES } from "@secondary/policy";
+import {
+  claimMember,
+  commitMember,
+  decodeMember,
+} from "../../../../src/state/brain-member.ts";
 import { WikiBase } from "../wiki/store.ts";
 import { citationsOf, lineDiff } from "../wiki/text.ts";
 import { DEFAULT_SCHEMA, type Proposal, type SchemaType, type WikiSchema } from "../wiki/types.ts";
@@ -214,17 +219,45 @@ export abstract class BrainBase extends WikiBase {
     state: "active" | "pending",
     actor: string,
     now: number,
-  ): void {
-    this.sql.exec(
-      `INSERT INTO brain_members (principal_id, role, state, added_by, at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(principal_id) DO UPDATE SET role = excluded.role, state = excluded.state, added_by = excluded.added_by, at = excluded.at`,
-      principalId,
-      role,
-      state,
-      actor,
-      now,
-    );
+  ): { ok: true; state: "active" | "pending" } | { ok: false; code: string } {
+    const row = this.sql
+      .exec("SELECT role, state, at FROM brain_members WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    const from = row ? decodeMember(row.state) : { tag: "absent" as const };
+    const step = commitMember(from, { type: "set", state, now });
+    if (!step.ok) return { ok: false, code: step.reason };
+    const matched =
+      from.tag === "absent"
+        ? this.sql
+            .exec(
+              `INSERT INTO brain_members (principal_id, role, state, added_by, at) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(principal_id) DO NOTHING RETURNING principal_id`,
+              principalId,
+              role,
+              state,
+              actor,
+              now,
+            )
+            .toArray().length
+        : this.sql
+            .exec(
+              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?
+               WHERE principal_id = ? AND state = ? AND at = ? RETURNING principal_id`,
+              role,
+              state,
+              actor,
+              now,
+              principalId,
+              from.tag,
+              row?.at,
+            )
+            .toArray().length;
+    if (claimMember(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
+      return { ok: false, code: "replay" };
+    }
     this.wikiLogAppend(actor, "brain.member", { principalId, role, state }, now);
+    return { ok: true, state };
   }
 
   brainMemberRemove(principalId: string, actor: string, now: number): boolean {
