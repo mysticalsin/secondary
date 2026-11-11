@@ -303,6 +303,7 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     )
       return c.json({ error: "audit_unavailable" }, 503);
     const res = await b.stub.brainJournalRun(date, s.ctx.now);
+    if ("ok" in res) return c.json({ error: res.code, reason: res.message }, 409);
     return c.json({ ok: true, pageId: res.pageId, created: res.created });
   });
 

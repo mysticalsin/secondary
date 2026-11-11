@@ -832,7 +832,10 @@ export abstract class BrainBase extends WikiBase {
    * Writes the journal page of one UTC day. Counts and `[[page]]` links only: no titles, no text, no
    * actor. A day with nothing in the log has no page. Deterministic: the same log gives the same page.
    */
-  brainJournalRun(date: string, now: number): { pageId: string | null; created: boolean } {
+  brainJournalRun(
+    date: string,
+    now: number,
+  ): { pageId: string | null; created: boolean } | BrainFail {
     if (!isCalendarDay(date)) return { pageId: null, created: false };
     const start = Date.parse(`${date}T00:00:00Z`);
     const rows = this.sql
@@ -913,14 +916,15 @@ export abstract class BrainBase extends WikiBase {
     if (linked.length) lines.push("", "## Pages changed", ...linked.map((id) => `- [[${id}]]`));
     const id = `journal-${date}`;
     const existed = this.pageById(id) !== null;
-    this.savePage(
+    const saved = this.savePage(
       { id, type: "journal", title: `Journal ${date}`, markdown: lines.join("\n") },
       SERVICE,
       null,
       now,
     );
-    if (!existed) this.wikiLogAppend(SERVICE, "journal.written", { date }, now);
-    return { pageId: id, created: !existed };
+    if (!saved.ok) return { ok: false, code: saved.code, message: saved.message };
+    if (!existed && saved.wrote) this.wikiLogAppend(SERVICE, "journal.written", { date }, now);
+    return { pageId: id, created: !existed && saved.wrote };
   }
 
   /** The nightly work: yesterday's journal (and any day missed in the last week) and field retention. */
