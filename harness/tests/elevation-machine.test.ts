@@ -14,6 +14,7 @@ import {
   claimElevation,
   commitElevation,
   decodeElevation,
+  effectiveStatus,
   type ElevationEvent,
   type ElevationState,
   transitionElevation,
@@ -70,15 +71,22 @@ test("elevation clock: only effectiveStatus compares a window with now", () => {
   assert.equal(clockComparison.test(body.slice(0, start) + body.slice(end === -1 ? body.length : end)), false);
 });
 
-test("elevation decode: a lapsed pending or active window is expired, and any other word is unknown", () => {
+test("elevation: a null until or an unknown status reads as expired", () => {
+  assert.deepEqual(effectiveStatus({ status: "active", lapsesAt: NOW, until: null }, NOW), { tag: "expired" });
+  assert.deepEqual(effectiveStatus({ status: "legacy", lapsesAt: NOW, until: NOW + 1 }, NOW), { tag: "expired" });
+  assert.deepEqual(effectiveStatus({ status: "active", lapsesAt: NOW, until: NOW + 1 }, NOW), { tag: "active" });
+  assert.deepEqual(effectiveStatus({ status: "pending", lapsesAt: NOW + 1, until: null }, NOW), { tag: "pending" });
+});
+
+test("elevation decode: a lapsed window, a null end, and an unknown word read as expired", () => {
   assert.deepEqual(decodeElevation("pending", NOW, NOW + 1, null), { tag: "pending" });
   assert.deepEqual(decodeElevation("pending", NOW, NOW, null), { tag: "expired" });
   assert.deepEqual(decodeElevation("active", NOW, NOW, NOW + 1), { tag: "active" });
   assert.deepEqual(decodeElevation("active", NOW, NOW, NOW), { tag: "expired" });
-  assert.deepEqual(decodeElevation("active", NOW, NOW, null), { tag: "active" });
+  assert.deepEqual(decodeElevation("active", NOW, NOW, null), { tag: "expired" });
   assert.deepEqual(decodeElevation("denied", NOW, NOW, null), { tag: "denied" });
   assert.deepEqual(decodeElevation("ended", NOW, NOW, NOW), { tag: "ended" });
-  assert.deepEqual(decodeElevation("nope", NOW, NOW, null), { tag: "unknown" });
+  assert.deepEqual(decodeElevation("nope", NOW, NOW, null), { tag: "expired" });
 });
 
 test("elevation: illegal pairs are the complement of the legal table", () => {

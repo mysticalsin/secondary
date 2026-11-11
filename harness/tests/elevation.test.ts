@@ -192,6 +192,84 @@ test("elevation: a pending row past its window is expired for list, active, and 
   }
 });
 
+test("elevation: an active row with a null until grants nothing and is not rewritten", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const db = openSqlite(file);
+    const sql = sqliteStorage(db);
+    let ready: Promise<void> = Promise.resolve();
+    const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+    const mod = (await import(policySpecifier)) as {
+      TenantPolicy: new (ctx: unknown, env: unknown) => {
+        session(input: { email: string; actAs: null; now: number; limit: number }): Promise<{
+          elevatedUntil: number | null;
+        }>;
+        gov(method: string, args: unknown[]): { id: string; status: string } | null;
+      };
+    };
+    const policy = new mod.TenantPolicy(
+      {
+        storage: {
+          sql,
+          transactionSync<T>(fn: () => T): T {
+            return fn();
+          },
+        },
+        blockConcurrencyWhile(fn: () => Promise<void>) {
+          ready = fn();
+          return ready;
+        },
+      },
+      {},
+    );
+    await ready;
+    db.prepare("INSERT INTO principals (id, email) VALUES ('ada', 'ada@example.com')").run();
+    db.prepare(
+      `INSERT INTO gov_elevations
+         (id, principal_id, hours, reason, status, requested_at, lapses_at, until)
+       VALUES ('elv_null', 'ada', 2, 'legacy', 'active', ?, ?, NULL)`,
+    ).run(NOW, NOW + 1);
+    db.exec("DROP TABLE elevations");
+    db.exec(
+      `CREATE TABLE elevations (
+         id INTEGER PRIMARY KEY AUTOINCREMENT, principal_id TEXT NOT NULL,
+         until INTEGER, reason TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+    );
+    db.prepare(
+      "INSERT INTO elevations (principal_id, until, reason, created_at) VALUES ('ada', NULL, 'legacy', ?)",
+    ).run(NOW);
+    const beforeGov = db.prepare("SELECT status, until FROM gov_elevations WHERE id = 'elv_null'").get() as {
+      status: string;
+      until: number | null;
+    };
+    const beforeEngine = db.prepare("SELECT until FROM elevations WHERE principal_id = 'ada'").get() as {
+      until: number | null;
+    };
+    const active = policy.gov("activeElevation", ["ada", NOW]);
+    const session = await policy.session({ email: "ada@example.com", actAs: null, now: NOW, limit: 100 });
+    assert.equal(active, null);
+    assert.equal(session.elevatedUntil, null);
+    const afterGov = db.prepare("SELECT status, until FROM gov_elevations WHERE id = 'elv_null'").get() as {
+      status: string;
+      until: number | null;
+    };
+    const afterEngine = db.prepare("SELECT until FROM elevations WHERE principal_id = 'ada'").get() as {
+      until: number | null;
+    };
+    assert.deepEqual(
+      { status: afterGov.status, until: afterGov.until },
+      { status: beforeGov.status, until: beforeGov.until },
+    );
+    assert.equal(afterGov.status, "active");
+    assert.equal(afterGov.until, null);
+    assert.equal(afterEngine.until, beforeEngine.until);
+    assert.equal(afterEngine.until, null);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
 test("elevation: an active window past its end reads as expired and cannot be ended early", async () => {
   const { file, remove } = tempFile();
   try {

@@ -35,10 +35,14 @@ export type ElevationClock = {
   until: number | null;
 };
 
-/** The only clock comparison for an elevation window. Expired is a read, not a stored status. */
+/**
+ * The only clock comparison for an elevation window. Expired is a read, not a stored status.
+ * An active window with no end, and any status word this table does not know, read as expired:
+ * that is no privilege.
+ */
 export function effectiveStatus(row: ElevationClock, now: number): ElevationState {
   if (row.status === "pending" && row.lapsesAt <= now) return { tag: "expired" };
-  if (row.status === "active" && row.until !== null && row.until <= now) return { tag: "expired" };
+  if (row.status === "active" && (row.until === null || row.until <= now)) return { tag: "expired" };
   if (
     row.status === "pending" ||
     row.status === "active" ||
@@ -48,10 +52,10 @@ export function effectiveStatus(row: ElevationClock, now: number): ElevationStat
   ) {
     return { tag: row.status };
   }
-  return { tag: "unknown" };
+  return { tag: "expired" };
 }
 
-/** Stored status plus the read-time lapse. Anything else is unknown. */
+/** Stored status plus the read-time lapse. An unknown word reads as expired. */
 export function decodeElevation(
   status: unknown,
   now: number,

@@ -19,10 +19,10 @@ Status in the table matches the code on this branch. Devin approved this invento
 | # | Machine | Location | Status | Risk | Decision | Notes |
 |---|---|---|---|---|---|---|
 | 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
-| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1036`, predicate at `:1050`, `decideElevation` at `:1100`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. |
+| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1036`, predicate at `:1050`, `decideElevation` at `:1100`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. An active row with a null `until`, and any unknown status word, read as expired and are not written back. |
 | 3 | Access request | `src/state/access-request.ts`, `markApproved` `admin/store.ts:1306` predicate `:1320`, `denyRequest` `:1268` predicate `:1287`, `reopenRequest` `:1334` predicate `:1342`, `afterDecision` `:899` predicate `:939`, routes `:843` and `:870` | FIXED | High | FIX now | Reopen is legal only from approved. A decision writes only a pending row. A fulfilling change writes only a pending or approved row. A lost race is 409 and does not notify. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
-| 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:873`, journal replay in `security-journal.ts:108`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. |
+| 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:876`, journal replay in `security-journal.ts:108`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
@@ -167,7 +167,7 @@ None inside the reducer. Whether a change needs a second person is decided by th
 - Purpose: A person asks for a time-boxed elevation, an admin approves or denies it, and the window can be ended early.
 - Code: `decodeElevation` and `transitionElevation` in `src/state/elevation.ts`. `startElevation` at `admin/store.ts:1036` applies the effect. `decideElevation` is at `:1100`. The approve route is `admin/routes.ts:721`.
 - Persisted: yes, `gov_elevations.status`. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. `toElevation` (`admin/store.ts:141`), the open-request check, the list, `decideElevation`, and the engine window all call it. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
-- What changed: a start from active, denied, ended, expired, or an unknown status is refused and writes nothing. The status update requires `status = 'pending'` and exactly one changed row (`admin/store.ts:1031`). The loser does not insert an engine row and does not bump the epoch. The approve route returns 409 for that refusal.
+- What changed: a start from active, denied, ended, expired, or an unknown status is refused and writes nothing. The status update requires `status = 'pending'` and exactly one changed row (`admin/store.ts:1050`). The loser does not insert an engine row and does not bump the epoch. The approve route returns 409 for that refusal. An active row whose `until` is null, and a status word the table does not know, read as expired. The stored status and `until` stay as they were.
 
 ### States
 
@@ -177,7 +177,7 @@ None inside the reducer. Whether a change needs a second person is decided by th
 | active | until | Window open |
 | denied | decider, note | Refused |
 | ended | until set to now | Closed early |
-| expired | lapsesAt or until | Read-time only |
+| expired | lapsesAt, a past until, or a null until | Read-time only. No privilege. Not written back |
 
 ### Events
 
@@ -333,7 +333,7 @@ Callers decide whether to invoke this at all. Prod kill-switch re-enable does. T
 ## 5. Kill switch
 
 - Purpose: `mcp`, `connector`, `ai`, and `contribute` are on unless a row says off. Turning one off is immediate. Turning one on in prod waits for a second person.
-- Code: `decodeSwitchEnabled` and `transitionSwitch` in `src/state/kill-switch.ts`. `setSwitch` at `tenant-policy.ts:873` applies the effects. Names in `switches.ts:3`. Prod re-enable is `requestSecond`, the quorum machine in section 4, not a second flag state.
+- Code: `decodeSwitchEnabled` and `transitionSwitch` in `src/state/kill-switch.ts`. `setSwitch` at `tenant-policy.ts:876` applies the effects. Names in `switches.ts:3`. Prod re-enable is `requestSecond`, the quorum machine in section 4, not a second flag state.
 - Persisted: yes, `switches` plus a `pending_ops` row `switch:<name>`, and a journal entry outside the snapshot (`tenant-policy.ts:919`) so a restore cannot turn a switch back on. Replaying an off entry deletes that switch's pending ask (`security-journal.ts:108`). Replaying a journal `1` writes canonical on, including over a corrupt cell.
 - What changed: a stored value other than `0` or `1` reads as off, and a turn-on is refused. Turning that cell off writes canonical `0` and logs `corrupt_value` without the stored value. An unknown name, a non-boolean, and a clock that is not a safe integer do not write. A pending ask whose name is not one of the four switches is omitted from `switchStatus`. Quorum `replay` and `refused` are their own results. An unknown name already stored in `switches` is still skipped at `tenant-policy.ts:829` (`#36`).
 
