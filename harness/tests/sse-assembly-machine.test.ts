@@ -1,0 +1,282 @@
+/**
+ * SSE content assembly. Frames are local strings. No network.
+ */
+
+import assert from "node:assert/strict";
+import test from "node:test";
+import { streamRound } from "../../recovered-source/worker/src/agent/stream.ts";
+import {
+  canApplyDelta,
+  commitSse,
+  decodeSse,
+  encodeSse,
+  freshSse,
+  hasBlockType,
+  sseEvent,
+  type SseEvent,
+  type SseState,
+  transitionSse,
+} from "../../src/state/sse-assembly.ts";
+
+const fresh = freshSse("m");
+const withText: SseState = {
+  tag: "assembling",
+  blocks: [{ type: "text", text: "" }],
+  json: {},
+  invalid: [],
+  model: "m",
+  stopReason: "",
+  stopped: false,
+  inputTokens: 0,
+  outputTokens: 0,
+};
+const broken: SseState = { tag: "broken" };
+
+const events = {
+  message_start: { type: "message_start", message: { model: "m2" } } as const,
+  block_start_ok: {
+    type: "content_block_start",
+    index: 0,
+    block: { type: "text", text: "" },
+  } as const,
+  block_start_bad: { type: "content_block_start", index: 0, block: null } as const,
+  delta_text: {
+    type: "content_block_delta",
+    index: 0,
+    delta: { type: "text_delta", text: "A" },
+  } as const,
+  delta_missing: { type: "content_block_delta", index: 0, delta: null } as const,
+  block_stop: { type: "content_block_stop", index: 0 } as const,
+  message_delta: {
+    type: "message_delta",
+    delta: { stop_reason: "end_turn" },
+    usage: { output_tokens: 2 },
+  } as const,
+  message_stop: { type: "message_stop" } as const,
+  error: { type: "error" } as const,
+  other: { type: "other" } as const,
+};
+
+const states = { fresh, withText, broken };
+type StateId = keyof typeof states;
+type EventId = keyof typeof events;
+
+const legal = new Set<string>([
+  "fresh:message_start",
+  "fresh:block_start_ok",
+  "fresh:block_start_bad",
+  "fresh:delta_text",
+  "fresh:delta_missing",
+  "fresh:block_stop",
+  "fresh:message_delta",
+  "fresh:message_stop",
+  "fresh:error",
+  "fresh:other",
+  "withText:message_start",
+  "withText:block_start_ok",
+  "withText:block_start_bad",
+  "withText:delta_text",
+  "withText:delta_missing",
+  "withText:block_stop",
+  "withText:message_delta",
+  "withText:message_stop",
+  "withText:error",
+  "withText:other",
+]);
+
+const apply = (state: SseState, event: SseEvent): SseState => {
+  const step = transitionSse(state, event);
+  assert.equal(step.ok, true);
+  return step.ok ? step.state : state;
+};
+
+test("sse assembly: every legal transition", () => {
+  const started = apply(fresh, events.message_start);
+  assert.equal(started.tag, "assembling");
+  if (started.tag === "assembling") assert.equal(started.model, "m2");
+  const wrote = apply(withText, events.delta_text);
+  assert.equal(wrote.tag, "assembling");
+  if (wrote.tag === "assembling") assert.equal(wrote.blocks[0]?.text, "A");
+  assert.equal(apply(fresh, events.delta_text).tag, "broken");
+  assert.equal(apply(fresh, events.block_start_bad).tag, "broken");
+  assert.equal(apply(fresh, events.error).tag, "broken");
+  const stopped = apply(fresh, events.message_stop);
+  assert.equal(stopped.tag, "assembling");
+  if (stopped.tag === "assembling") assert.equal(stopped.stopped, true);
+  const ignored = apply(withText, { type: "content_block_delta", index: 0, delta: { type: "unknown" } });
+  assert.deepEqual(ignored, withText);
+});
+
+test("sse assembly: illegal pairs are the complement of the legal table", () => {
+  const stateIds = Object.keys(states) as StateId[];
+  const eventIds = Object.keys(events) as EventId[];
+  assert.equal(stateIds.length * eventIds.length, 30);
+  for (const stateId of stateIds) {
+    for (const eventId of eventIds) {
+      const id = `${stateId}:${eventId}`;
+      const result = transitionSse(states[stateId], events[eventId]);
+      if (legal.has(id)) assert.equal(result.ok, true, id);
+      else assert.equal(result.ok, false, id);
+    }
+  }
+});
+
+test("sse assembly: guards allow and deny", () => {
+  assert.equal(hasBlockType({ type: "text" }), true);
+  assert.equal(hasBlockType(null), false);
+  assert.equal(hasBlockType({}), false);
+  assert.equal(canApplyDelta(fresh, 0, { type: "text_delta", text: "A" }), false);
+  assert.equal(
+    withText.tag === "assembling" && canApplyDelta(withText, 0, { type: "text_delta", text: "A" }),
+    true,
+  );
+  assert.equal(withText.tag === "assembling" && canApplyDelta(withText, 0, null), false);
+});
+
+test("sse assembly: unknown stored value is empty and a holed buffer round-trips", () => {
+  assert.deepEqual(decodeSse({ v: 2 }), freshSse());
+  const holed = apply(fresh, {
+    type: "content_block_start",
+    index: 2,
+    block: { type: "text", text: "z" },
+  });
+  assert.deepEqual(decodeSse(JSON.parse(JSON.stringify(encodeSse(holed)))), holed);
+  assert.deepEqual(decodeSse(encodeSse(broken)), broken);
+});
+
+test("sse assembly: a missing index shares slot 0, and token sums keep the old rules", () => {
+  const missing = sseEvent({ type: "content_block_start", content_block: { type: "text", text: "a" } });
+  const zero = sseEvent({ type: "content_block_start", index: 0, content_block: { type: "text", text: "a" } });
+  assert.deepEqual(apply(fresh, missing), apply(fresh, zero));
+
+  let state = apply(fresh, {
+    type: "message_start",
+    message: {
+      model: "m",
+      usage: { input_tokens: 1, cache_read_input_tokens: 2, output_tokens: 1 },
+    },
+  });
+  state = apply(state, {
+    type: "message_delta",
+    delta: {},
+    usage: { input_tokens: 1, cache_creation_input_tokens: 1, cache_read_input_tokens: 1, output_tokens: 0 },
+  });
+  assert.equal(state.tag, "assembling");
+  if (state.tag === "assembling") {
+    assert.equal(state.inputTokens, 3);
+    assert.equal(state.outputTokens, 1);
+  }
+  state = apply(state, {
+    type: "message_delta",
+    delta: { stop_reason: "end_turn" },
+    usage: { input_tokens: 10, output_tokens: 4 },
+  });
+  if (state.tag === "assembling") {
+    assert.equal(state.inputTokens, 10);
+    assert.equal(state.outputTokens, 4);
+    assert.equal(state.stopReason, "end_turn");
+  }
+
+  const before = encodeSse(fresh);
+  assert.equal(apply(fresh, events.delta_missing).tag, "broken");
+  assert.deepEqual(encodeSse(fresh), before);
+
+  const lines: string[] = [];
+  const original = console.warn;
+  console.warn = (line?: unknown) => {
+    lines.push(String(line));
+  };
+  try {
+    const rejected = commitSse(broken, events.other);
+    assert.equal(rejected.ok, false);
+    assert.match(lines[0] ?? "", /sse_assembly/);
+  } finally {
+    console.warn = original;
+  }
+});
+
+test("sse assembly: a local stream rebuilds blocks, and a bad frame fails the round", async () => {
+  const frames = [
+    { type: "message_start", message: { model: "stream-model", usage: { input_tokens: 3, output_tokens: 1 } } },
+    { type: "ping" },
+    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hi" } },
+    { type: "content_block_delta", index: 0, delta: { type: "citations_delta", citation: { n: 1 } } },
+    { type: "content_block_stop", index: 0 },
+    {
+      type: "content_block_start",
+      index: 1,
+      content_block: { type: "tool_use", id: "t", name: "search" },
+    },
+    { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: '{"q":' } },
+    { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: '"x"}' } },
+    { type: "content_block_stop", index: 1 },
+    { type: "content_block_start", index: 2, content_block: { type: "server_tool_use", id: "s", name: "web" } },
+    { type: "content_block_stop", index: 2 },
+    { type: "content_block_start", index: 3, content_block: { type: "thinking" } },
+    { type: "content_block_delta", index: 3, delta: { type: "thinking_delta", thinking: "hmm" } },
+    { type: "content_block_delta", index: 3, delta: { type: "signature_delta", signature: "sig" } },
+    { type: "content_block_stop", index: 3 },
+    { type: "content_block_start", index: 4, content_block: { type: "tool_use", id: "bad", name: "search" } },
+    { type: "content_block_delta", index: 4, delta: { type: "input_json_delta", partial_json: "not-json" } },
+    { type: "content_block_stop", index: 4 },
+    { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { output_tokens: 6 } },
+    { type: "message_stop" },
+  ];
+  const body = frames.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+  const texts: string[] = [];
+  let tools = 0;
+  const ok = await streamRound({
+    apiKey: "not-a-real-key",
+    model: "claude-test",
+    system: "s",
+    tools: [],
+    messages: [{ role: "user", content: "q" }],
+    maxTokens: 16,
+    timeoutMs: 1000,
+    fetch: async () => new Response(body),
+    onText: (delta) => texts.push(delta),
+    onToolUse: () => {
+      tools += 1;
+    },
+  });
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.text, "Hi");
+    assert.equal(ok.model, "stream-model");
+    assert.equal(ok.stopReason, "tool_use");
+    assert.deepEqual(ok.usage, { inputTokens: 3, outputTokens: 6 });
+    assert.deepEqual(texts, ["Hi"]);
+    assert.equal(tools, 3);
+    assert.equal(ok.content[0]?.citations && Array.isArray(ok.content[0].citations), true);
+    assert.equal(ok.content[3]?.thinking, "hmm");
+    assert.equal(ok.content[3]?.signature, "sig");
+    assert.deepEqual(
+      ok.toolUses.map((t) => ({ name: t.name, input: t.input, invalid: t.invalid })),
+      [
+        { name: "search", input: { q: "x" }, invalid: false },
+        { name: "search", input: {}, invalid: true },
+      ],
+    );
+  }
+
+  const early = await streamRound({
+    apiKey: "not-a-real-key",
+    model: "claude-test",
+    system: "s",
+    tools: [],
+    messages: [{ role: "user", content: "q" }],
+    maxTokens: 16,
+    timeoutMs: 1000,
+    fetch: async () =>
+      new Response(
+        [
+          'data: {"type":"message_start","message":{"usage":{"input_tokens":7,"output_tokens":1}}}\n\n',
+          'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"nope"}}\n\n',
+        ].join(""),
+      ),
+    onText: () => texts.push("late"),
+  });
+  assert.deepEqual(early, { ok: false, code: "upstream_error", usage: { inputTokens: 7, outputTokens: 1 } });
+  assert.deepEqual(texts, ["Hi"]);
+});

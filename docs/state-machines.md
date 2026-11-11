@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table is the state of the code at this commit. Nothing is fixed yet.
+Status in the table matches the code on this branch. High-risk rows stay LATER until this inventory is reviewed.
 
 ## Inventory
 
@@ -37,7 +37,7 @@ Status in the table is the state of the code at this commit. Nothing is fixed ye
 | 17 | Token-counter CAS retry | `src/state/budget-cas.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
 | 18 | Wiki seed claim | `src/state/wiki-seed.ts`, wired from `tenant-policy.ts` and `wiki/seed.ts` | FIXED | Medium | FIX now | Dev only. An unexpired claim now blocks every version. Completing cannot move backwards. |
 | 19 | Agent turn round | `src/state/agent-turn.ts`, wired from `agent/loop.ts` | FIXED | Medium | FIX now | Stop reason, budget, and the last-round tool ban are one reducer. |
-| 20 | SSE content assembly | `agent/stream.ts:128` | LATER | Medium | FIX now | Frame order is a switch that returns false to fail the round. |
+| 20 | SSE content assembly | `src/state/sse-assembly.ts`, wired from `agent/stream.ts` | FIXED | Medium | FIX now | Frame order is one reducer. A bad frame still fails the round. |
 | 21 | Home screen adaptive UI | not in this repo | NOT A MACHINE | — | NOT A MACHINE | Static UI was not recovered. See below. |
 | 22 | Recorder / LaunchAgent | not in this repo | NOT A MACHINE | — | NOT A MACHINE | No matches. See below. |
 | 23 | Calendar refresh | not in this repo | NOT A MACHINE | — | NOT A MACHINE | No refresh lifecycle. See below. |
@@ -1003,9 +1003,9 @@ None. Limits come from `AGENT_LIMITS` in `ai/config.ts:77`.
 ## 20. SSE content assembly
 
 - Purpose: Rebuild one assistant message from Anthropic server-sent events so the next round can send it back unchanged.
-- Code: no reducer yet. `onEvent` in `agent/stream.ts:128–210`. A false return sets `broken` and the round becomes `upstream_error` (251).
-- Persisted: no.
-- What changed: nothing in this commit.
+- Code: `src/state/sse-assembly.ts` (`transitionSse`). Tests: `harness/tests/sse-assembly-machine.test.ts`. `streamRound` reads the socket and runs `text` and `tool` effects.
+- Persisted: no. Version 1 codec loads unknown JSON as an empty assembly, not as a broken round. `streamRound` does not write it.
+- What changed: the frame switch is the reducer. Block text, tool JSON, thinking, signatures, citations, token sums, and the callbacks follow the old rules. A frame that used to return false is the `broken` state, and the round still fails with `upstream_error`. A frame after that is rejected and logged.
 
 ### States
 
@@ -1014,7 +1014,7 @@ None. Limits come from `AGENT_LIMITS` in `ai/config.ts:77`.
 | assembling | blocks, partial JSON, invalid indexes, model, stop reason, token counts, stopped flag | Accepting events |
 | broken | — | This event cannot be applied. The round fails |
 
-`broken` is not stored. It is the boolean `onEvent` returns.
+`onEvent` returns false for `broken` and for an illegal event. The read loop then fails the round.
 
 ### Events
 
@@ -1029,9 +1029,9 @@ None. Limits come from `AGENT_LIMITS` in `ai/config.ts:77`.
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
 | assembling | message_start | — | assembling | set model and input-token sum, including cache tokens |
-| assembling | content_block_start | `content_block.type` is a string | assembling | copy the block. `onToolUse` when the type is `tool_use` or `server_tool_use` |
+| assembling | content_block_start | `hasBlockType` | assembling | copy the block. `tool` effect when the type is `tool_use` or `server_tool_use` |
 | assembling | content_block_start | type missing | broken | round fails |
-| assembling | content_block_delta | block exists and delta exists | assembling | append text, JSON, thinking, signature, or citation. `onText` for text. Other delta types are ignored and still return true |
+| assembling | content_block_delta | `canApplyDelta` | assembling | append text, JSON, thinking, signature, or citation. `text` effect for text. Other delta types are ignored |
 | assembling | content_block_delta | block or delta missing | broken | round fails |
 | assembling | content_block_stop | — | assembling | parse partial JSON if this index has a buffer. Invalid JSON marks the index. A stop for a missing block still returns true |
 | assembling | message_delta | — | assembling | stop reason and usage |
@@ -1039,7 +1039,7 @@ None. Limits come from `AGENT_LIMITS` in `ai/config.ts:77`.
 | assembling | error | — | broken | round fails |
 | assembling | other | — | assembling | ignored |
 
-A delta for an index that never started fails the whole round. There is no "skip this block" transition. `num` (65) treats non-positive indexes as 0, so a missing index and index 0 share a slot.
+A delta for an index that never started fails the whole round. There is no "skip this block" transition. `sseIndex` treats non-positive indexes as 0, so a missing index and index 0 share a slot. `hasBlockType` and `canApplyDelta` are the guards.
 
 ```mermaid
 stateDiagram-v2
