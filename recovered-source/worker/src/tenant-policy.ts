@@ -194,6 +194,11 @@ export class TenantPolicy extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS erasure_tombstones (
           principal_id TEXT PRIMARY KEY, pseudonym TEXT NOT NULL, aliases TEXT NOT NULL,
           erased_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+        -- One erasure request per subject. Not in SNAPSHOT_TABLES: a restore must not roll
+        -- the ledger back. Re-apply reopens the steps that snapshot brought back.
+        CREATE TABLE IF NOT EXISTS erasure_requests (
+          principal_id TEXT PRIMARY KEY, status TEXT NOT NULL, ledger TEXT NOT NULL,
+          updated_at INTEGER NOT NULL);
       `);
       this.journal.init();
       this.identity.init();
@@ -249,6 +254,7 @@ export class TenantPolicy extends DurableObject<Env> {
         "elevations",
         "rate",
         "erasure_tombstones",
+        "erasure_requests",
         "open_brains",
       ])
         this.sql.exec(`DELETE FROM ${t}`);
@@ -1111,6 +1117,28 @@ export class TenantPolicy extends DurableObject<Env> {
    * Remember an erasure so a restore can be undone by applying it again. `aliases` are the person's
    * addresses as typed into text. The row lives until the last backup that could hold the person has expired.
    */
+  /** The stored erasure request, or null when this subject has none. */
+  erasureLoad(principalId: string): { status: string; ledger: string } | null {
+    const row = this.sql
+      .exec("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    if (!row) return null;
+    return { status: row.status as string, ledger: row.ledger as string };
+  }
+
+  /** Replace the erasure request for one subject. The caller supplies the clock. */
+  erasureSave(principalId: string, status: string, ledger: string, updatedAt: number): void {
+    this.sql.exec(
+      `INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(principal_id) DO UPDATE SET status = excluded.status, ledger = excluded.ledger,
+         updated_at = excluded.updated_at`,
+      principalId,
+      status,
+      ledger,
+      updatedAt,
+    );
+  }
+
   tombstoneAdd(
     principalId: string,
     pseudonym: string,

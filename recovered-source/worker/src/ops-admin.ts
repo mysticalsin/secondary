@@ -5,6 +5,7 @@
 //   POST /v1/admin/rights/erase        { principal }; always needs a second person
 
 import { Hono, type MiddlewareHandler } from "hono";
+import { decodeErasureLedger } from "../../../src/state/erasure-request.ts";
 import { quorumConfirmed } from "../../../src/state/quorum.ts";
 import { HTTPException } from "hono/http-exception";
 import { appendReceipt, newReceiptId } from "./audit.ts";
@@ -178,20 +179,25 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     if ((await humanIdsOf(c.env, s)).includes(principalId))
       return c.json({ error: "cannot_erase_self" }, 409);
 
-    const step = await tenantStub(c.env, s.tenantId).requestSecond(
-      `erase:${principalId}`,
-      s.principal.id,
-      now(),
-      s.principal.email,
-    );
-    if (!quorumConfirmed(step)) {
-      await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);
-      return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
+    const tenant = tenantStub(c.env, s.tenantId);
+    const existing = decodeErasureLedger(await tenant.erasureLoad(principalId));
+    if (existing.status.tag === "absent") {
+      const step = await tenant.requestSecond(
+        `erase:${principalId}`,
+        s.principal.id,
+        now(),
+        s.principal.email,
+      );
+      if (!quorumConfirmed(step)) {
+        await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);
+        return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
+      }
     }
-    const done = await eraseSubject(c.env, s.tenantId, org, principalId, pseudonym);
-    if (!done) return c.json({ error: "erase_incomplete", reason: "audit_unavailable" }, 502);
+    const outcome = await eraseSubject(c.env, s.tenantId, org, principalId, pseudonym, now());
+    if (outcome.status !== "completed")
+      return c.json({ error: "erase_incomplete", status: outcome.status, step: outcome.step }, 502);
     await audit(c, s, "rights_erase", `erased ${pseudonym}`);
-    return c.json({ ok: true, status: "erased", ...done });
+    return c.json({ ok: true, ...outcome, status: "erased" });
   });
 
   return r;

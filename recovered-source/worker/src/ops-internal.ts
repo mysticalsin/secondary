@@ -187,7 +187,14 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
             ? await tenantStub(c.env, t.tenant).importAll(tables)
             : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
         // Anyone erased since the snapshot was taken is erased again (M-03).
-        const erasuresReapplied = await reapplyErasures(c.env, t.tenant, t.kind, t.scope);
+        const restoredAt = deps.now?.() ?? Date.now();
+        const erasuresReapplied = await reapplyErasures(
+          c.env,
+          t.tenant,
+          t.kind,
+          t.scope,
+          restoredAt,
+        );
         await receipt(
           "ops_restore_done",
           `restored ${rows} rows, ${erasuresReapplied} erasures applied again`,

@@ -7,6 +7,16 @@
 // (references stay consistent) and nobody without the key can map it back.
 
 import type { Org } from "@secondary/policy";
+import {
+  decodeErasureLedger,
+  encodeErasure,
+  erasureOutcome,
+  erasurePlan,
+  runErasure as applyLedger,
+  stepsForRestore,
+  type ErasureEvent,
+  type StoredErasure,
+} from "../../../src/state/erasure-request.ts";
 import { fetchReceipts, pseudonymiseReceipts } from "./audit.ts";
 import { forgetSourceAccess } from "./connector.ts";
 import { scopeOfNode } from "./scope.ts";
@@ -113,54 +123,96 @@ export type EraseSummary = {
   connectorCacheForgotten: boolean;
 };
 
-/** Returns null when the audit worker could not complete (nothing after that step has run). */
+export type ErasureRun = EraseSummary & { status: string; step: string | null };
+
+async function runErasure(
+  env: Parameters<typeof exportSubject>[0],
+  tenantId: string,
+  principalId: string,
+  pseudonym: string,
+  aliases: string[],
+  email: string | null,
+  event: ErasureEvent,
+): Promise<ErasureRun> {
+  const tenant = tenantStub(env, tenantId);
+  const summary: EraseSummary = {
+    pseudonym,
+    personalItemsDeleted: 0,
+    authored: { items: 0, comments: 0, approvals: 0, edits: 0 },
+    receiptsPseudonymised: 0,
+    connectorCacheForgotten: false,
+  };
+  const state = await applyLedger(
+    decodeErasureLedger(await tenant.erasureLoad(principalId)),
+    event,
+    async (step) => {
+      if (step === "receipts") {
+        const rewritten = await pseudonymiseReceipts(env, tenantId, principalId, pseudonym);
+        if (rewritten === null) return false;
+        summary.receiptsPseudonymised = rewritten;
+        return true;
+      }
+      if (step === "tombstone") {
+        await tenant.tombstoneAdd(
+          principalId,
+          pseudonym,
+          [...new Set(aliases)],
+          event.now,
+          event.now + TOMBSTONE_DAYS * 86_400_000,
+        );
+        return true;
+      }
+      if (step === "personal") {
+        summary.personalItemsDeleted = await workspaceStub(env, tenantId, `personal:${principalId}`).wipe();
+        return true;
+      }
+      if (step === "connector") {
+        if (!email) return true;
+        summary.connectorCacheForgotten = await forgetSourceAccess(env, tenantId, { id: principalId, email });
+        return summary.connectorCacheForgotten;
+      }
+      if (step === "directory") {
+        await tenant.erasePrincipal(principalId);
+        return true;
+      }
+      if (step.startsWith("scope:")) {
+        const r = await workspaceStub(env, tenantId, step.slice("scope:".length)).pseudonymise(
+          principalId,
+          pseudonym,
+          aliases,
+        );
+        summary.authored.items += r.items;
+        summary.authored.comments += r.comments;
+        summary.authored.approvals += r.approvals;
+        summary.authored.edits += r.edits;
+        return true;
+      }
+      return false;
+    },
+    async (next: StoredErasure) => {
+      const stored = encodeErasure(next);
+      await tenant.erasureSave(principalId, stored.status, stored.ledger, event.now);
+    },
+  );
+  return { ...summary, ...erasureOutcome(state) };
+}
+
+/** One erasure record per subject. A later call resumes the ledger. The clock is `now`. */
 export async function eraseSubject(
   env: Env,
   tenantId: string,
   org: Org,
   principalId: string,
   pseudonym: string,
-): Promise<EraseSummary | null> {
-  // The audit pass goes first (M-03): if it cannot finish, nothing else has changed and the whole erase
-  // can be asked for again. Every later step is idempotent.
-  const receiptsPseudonymised = await pseudonymiseReceipts(env, tenantId, principalId, pseudonym);
-  if (receiptsPseudonymised === null) return null;
-  const authored = { items: 0, comments: 0, approvals: 0, edits: 0 };
-  // The address can be typed into wiki text (an owner, a note): it is replaced with the id.
+  now: number,
+): Promise<ErasureRun> {
   const email = await tenantStub(env, tenantId).emailOfPrincipal(principalId);
   const aliases = email ? [email, email.toLowerCase()] : [];
-  // Remembered before anything is deleted, so a restore of an older snapshot can apply it again (M-03).
-  const at = Date.now();
-  await tenantStub(env, tenantId).tombstoneAdd(
-    principalId,
-    pseudonym,
-    [...new Set(aliases)],
-    at,
-    at + TOMBSTONE_DAYS * 86_400_000,
-  );
-  for (const scope of companyScopes(org)) {
-    const r = await workspaceStub(env, tenantId, scope).pseudonymise(
-      principalId,
-      pseudonym,
-      aliases,
-    );
-    authored.items += r.items;
-    authored.comments += r.comments;
-    authored.approvals += r.approvals;
-    authored.edits += r.edits;
-  }
-  const personalItemsDeleted = await workspaceStub(env, tenantId, `personal:${principalId}`).wipe();
-  const connectorCacheForgotten = email
-    ? await forgetSourceAccess(env, tenantId, { id: principalId, email })
-    : false;
-  await tenantStub(env, tenantId).erasePrincipal(principalId);
-  return {
-    pseudonym,
-    personalItemsDeleted,
-    authored,
-    receiptsPseudonymised,
-    connectorCacheForgotten,
-  };
+  return runErasure(env, tenantId, principalId, pseudonym, aliases, email, {
+    type: "request",
+    now,
+    steps: erasurePlan(companyScopes(org)),
+  });
 }
 
 /**
@@ -173,18 +225,19 @@ export async function reapplyErasures(
   tenantId: string,
   kind: "tenant" | "workspace",
   scope: string,
+  now: number,
 ): Promise<number> {
   const t = tenantStub(env, tenantId);
-  const stones = await t.tombstoneList(Date.now());
+  const stones = await t.tombstoneList(now);
   for (const s of stones) {
-    if (kind === "tenant") {
-      await t.erasePrincipal(s.principalId);
-      continue;
-    }
-    const w = workspaceStub(env, tenantId, scope);
-    if (scope === `personal:${s.principalId}`) await w.wipe();
-    else if (!scope.startsWith("personal:"))
-      await w.pseudonymise(s.principalId, s.pseudonym, s.aliases);
+    const steps = stepsForRestore(kind, scope, s.principalId);
+    if (steps.length === 0) continue;
+    const email = await t.emailOfPrincipal(s.principalId);
+    await runErasure(env, tenantId, s.principalId, s.pseudonym, s.aliases, email, {
+      type: "restore",
+      now,
+      steps,
+    });
   }
   return stones.length;
 }
