@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, and #6, whose login record is now one-shot. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -23,7 +23,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
 | 4 | Second-person confirmation | `tenant-policy.ts:795` | LATER | High | LATER | Shared by kill switches, field exposure, brain roles, erasure. One quorum check with #7 and #8. |
 | 5 | Kill switch | `tenant-policy.ts:754`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
-| 6 | OIDC login | `auth/routes.ts:57` and `:99` | LATER | High | LATER | Login record is single-use only when `loginStateTake` runs. |
+| 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` (`workspace.ts:539`) stores the caller status. No current route can pass `approved`. Shares the quorum check with #4 and #8. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
 | 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Right-size to a status predicate plus an unarchive event. `savePage` currently republishes an archived page. |
@@ -53,7 +53,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 
 ## Review notes
 
-Devin approved the inventory at `b527a8de` with these changes. No High-risk reducer is written yet.
+Devin approved the inventory at `b527a8de` with these changes. #6 is the login-record reducer. The other High-risk reducers are not written yet.
 
 Right-sizing:
 
@@ -66,7 +66,7 @@ Right-sizing:
 Approved High order. Step 0 found that no API route can set `approved` through `Workspace.update`, so #7 stays fourth.
 
 1. #13 Replay nonce (fixed: a seen key stays refused)
-2. #6 OIDC login
+2. #6 OIDC login (fixed: every terminal callback consumes the login row)
 3. #4 Second-person confirmation
 4. #7 Workspace item release
 5. #5 Kill switch
@@ -86,7 +86,7 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
 - **#13.** `nonceFirst` (`tenant-policy.ts:630`) is `INSERT OR IGNORE ... RETURNING key`. True when one row comes back. The old `DELETE` of expired rows is gone, so a key is not accepted again after `expires_at`.
-- **#6.** The callback clears the login cookie (`auth/routes.ts:105`) before `loginStateTake` (`:116`). `error` (`:108`) and a missing or mismatched state (`:113`) return without taking the record, so the login row stays until its TTL. `loginStateTake` (`identity-store.ts:312`) deletes the row and then returns null when it is already expired, so that path does consume the row.
+- **#6.** Fixed. `commitLoginRecord` (`src/state/login-record.ts`) consumes an issued login on `idp_error`, `missing_state`, `state_mismatch`, `exchange_failed`, and `accepted`. A consumed record accepts nothing. The callback takes the cookie hash and, when it differs, the query hash, before it returns. Logs are reason codes. `loginStateTake` (`identity-store.ts:312`) still deletes the row and then returns null when it is already expired.
 
 ## Named areas that are not in this repo
 
@@ -359,44 +359,50 @@ stateDiagram-v2
 ## 6. OIDC login
 
 - Purpose: A browser starts Entra login, the callback is accepted once, and a session cookie replaces any session that browser already held.
-- Code: no reducer yet. `auth/routes.ts` `GET /login` (57) and `GET /callback` (99), plus `POST /logout` (174).
-- Persisted: yes, a login record (`loginStatePut` / `loginStateTake`) and a session row (`sessionCreate` / `sessionDelete`). Unversioned.
-- What changed: nothing in this commit.
+- Code: `transitionLoginRecord` in `src/state/login-record.ts`. The route is `auth/routes.ts` `GET /callback`. `GET /login` and `POST /logout` stay as they were.
+- Persisted: yes, a login record (`loginStatePut` / `loginStateTake`) and a session row (`sessionCreate` / `sessionDelete`). Unversioned. The row is the issued record. Taking it is the consume effect.
+- What changed: an IdP error, a missing state, a mismatched state, a failed code exchange, and a successful callback all consume the login row. A consumed row cannot be used again. The log line is `{ at: "entra_login", reason }` and the reason is a fixed code.
 
 ### States
 
 | State | Data carried | Meaning |
 |---|---|---|
 | anonymous | — | No session |
-| login_started | state hash, nonce, verifier, returnTo | Cookie plus stored record |
+| issued | state hash, nonce, verifier, returnTo | Cookie plus stored record |
+| consumed | — | The row has been taken. A replay is refused |
 | session_open | session hash, tenant | Signed in |
-| failed | error code | Response only. Not stored |
 
 ### Events
 
 | Event | Source |
 |---|---|
 | start | `GET /login` |
-| callback | `GET /callback` |
+| idp_error | `GET /callback` with an IdP `error` |
+| missing_state | `GET /callback` missing the cookie, the state, or the code |
+| state_mismatch | `GET /callback` whose state does not match the cookie |
+| exchange_failed | code exchange or token verification failed |
+| accepted | `GET /callback` whose cookie, state, and code match |
 | logout | `POST /logout` |
 
 ### Transitions
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| anonymous | start | Entra configured, under IP limit, discovery works | login_started | store record, set cookie, redirect |
-| login_started | callback | cookie matches `state`, `loginStateTake` returns the record, token verifies, guest and tenant checks pass | session_open | create session, delete previous session cookie's row (166–169) |
-| login_started | callback | `error` query, cookie mismatch, take misses, token failure, guest refused, tenant mismatch | failed | cookie already cleared at line 105 |
+| anonymous | start | Entra configured, under IP limit, discovery works | issued | store record, set cookie, redirect |
+| issued | idp_error, missing_state, state_mismatch, exchange_failed, or accepted | the record has not been taken | consumed | `loginStateTake` on the cookie hash and, when it differs, the query hash |
+| consumed | any of those events | already taken | consumed | refuse. No second take |
+| consumed | accepted, and the token, guest, and tenant checks pass | row was taken for this callback | session_open | create session, delete the previous session cookie's row |
 | session_open | logout | same origin | anonymous | delete session, clear cookie |
 
-Unguarded ordering: the login cookie is cleared before `loginStateTake` (105–116). A callback that fails the cookie check leaves the stored login record in place until its own TTL, and the browser can no longer present the cookie. A second callback cannot consume it without the cookie. That is fail-closed, but the record is not deleted on the failure path.
+The cookie is cleared before the take. The take still runs, because the handler already read the cookie value. A replay presents that value again and finds no row.
 
 ```mermaid
 stateDiagram-v2
   [*] --> Anonymous
-  Anonymous --> LoginStarted: start
-  LoginStarted --> SessionOpen: callback accepted
-  LoginStarted --> Failed: callback rejected
+  Anonymous --> Issued: start
+  Issued --> Consumed: terminal callback
+  Consumed --> SessionOpen: token accepted
+  Consumed --> Consumed: replay
   SessionOpen --> Anonymous: logout
 ```
 

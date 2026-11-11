@@ -160,20 +160,19 @@ test("replay nonce source does not delete a seen key when it expires", () => {
   assert.match(body, /RETURNING key/);
 });
 
-test("CHARACTERIZATION: an OIDC callback can fail after clearing the cookie and leave the login record", () => {
+test("OIDC callback consumes the login row before it reports failure", () => {
   const src = read("recovered-source/worker/src/auth/routes.ts");
   const callback = between(src, 'app.get("/callback"', 'app.post("/logout"');
-  const clearAt = callback.indexOf("clearLoginCookie(c)");
-  const errorAt = callback.indexOf('c.req.query("error")');
-  const stateAt = callback.indexOf("invalid_state");
   const takeAt = callback.indexOf("loginStateTake(");
-  assert.ok(clearAt >= 0 && errorAt > clearAt && stateAt > errorAt && takeAt > stateAt);
-  // CHARACTERIZATION: current behaviour, flagged. Both returns above happen
-  // before loginStateTake, so the stored login record stays until its TTL.
-  const beforeTake = callback.slice(0, takeAt);
-  assert.match(beforeTake, /sign_in_failed/);
-  assert.match(beforeTake, /invalid_state/);
-  assert.doesNotMatch(beforeTake, /loginStateTake/);
+  const failedAt = callback.indexOf("sign_in_failed");
+  const invalidAt = callback.indexOf("invalid_state");
+  assert.ok(takeAt >= 0 && failedAt > takeAt && invalidAt > takeAt);
+  assert.match(callback, /commitLoginRecord/);
+  assert.match(callback, /idp_error/);
+  assert.match(callback, /missing_state/);
+  assert.match(callback, /state_mismatch/);
+  assert.match(callback, /exchange_failed/);
+  assert.doesNotMatch(callback, /idp_\$\{/);
 
   const take = between(read("recovered-source/worker/src/auth/identity-store.ts"), "loginStateTake(", "private async resolveEntra");
   assert.match(take, /DELETE FROM login_state WHERE state_hash = \?/);
