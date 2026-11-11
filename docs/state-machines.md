@@ -1,6 +1,6 @@
 # State machines in secondary-api-recovery (Second Brain API)
 
-Last reviewed: 2026-11-11 at `94a2b004409c360165beae07898ce1223989486e`
+Last reviewed: 2026-11-11 at `d85bc8a7e54f7da762de22f281105983f864f18d`
 
 Standard: Implicit state machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. No XState or other state-machine dependency. A plain reducer is the intended fix shape.
 
@@ -22,7 +22,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 2 | Elevation window | `admin/store.ts:38`, writers at 970, 995, 1039, 1062 | LATER | High | LATER | Pending and active expire only in `toElevation` (128–132). |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore. #7 and #8 do not call it yet. |
-| 5 | Kill switch | `tenant-policy.ts:754`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
+| 5 | Kill switch | `tenant-policy.ts:834`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` (`workspace.ts:539`) stores the caller status. No current route can pass `approved`. Shares the quorum check with #4 and #8. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
@@ -301,7 +301,7 @@ An ask older than the TTL is an empty ask. The stored row is replaced.
 
 `recorded`, `same_actor`, `replay`, and `refused` do not apply. Only `confirmed` does. The same actor does not refresh `requestedAt`. After a confirm, the next ask is a new `recorded`, not another confirm.
 
-Same actor means the same id. When both directory subjects are set, they are the same actor only when those subjects are equal, so two different subjects stay two people even when an address matches. When one or both subjects are missing, they are the same actor if any normalised address matches. An address is the sign-in address or the directory email on either side, trimmed and lowercased. The directory lookup uses that same normalisation.
+Same actor is `sameActor` in `src/state/actor.ts`. Quorum and `humanIds` both call it. There is no second identity key. The same id is the same actor. When both directory subjects are set, they are the same actor only when those subjects are equal after padding is removed, so two different subjects stay two people even when an address matches. When one or both subjects are missing, they are the same actor if any normalised address matches. An address is the sign-in address or the directory email on either side: NBSP and other padding are removed, then the value is trimmed and lowercased. An email lookup is `lower(trim(replace(email, char(160), ' ')))`. Stored emails and subjects are not rewritten.
 
 Logs are `{ at: "illegal_transition", machine: "quorum", reason }` or `{ at: "quorum", reason: "replay" }`. The reason is a code. The line does not carry an id, a subject, or an address.
 
@@ -320,7 +320,7 @@ Callers decide whether to invoke this at all. Prod kill-switch re-enable does. T
 ## 5. Kill switch
 
 - Purpose: `mcp`, `connector`, `ai`, and `contribute` are on unless a row says off. Turning one off is immediate. Turning one on can wait for a second person.
-- Code: no reducer yet. `setSwitch` at `tenant-policy.ts:824`. Defaults in `switches.ts:10` (`allOn`).
+- Code: no reducer yet. `setSwitch` at `tenant-policy.ts:834`. Defaults in `switches.ts:10` (`allOn`).
 - Persisted: yes, `switches` plus a `pending_ops` row `switch:<name>`, and a journal entry outside the snapshot (772–773) so a restore cannot turn a switch back on.
 - What changed: nothing in this commit.
 

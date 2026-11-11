@@ -6,24 +6,12 @@
  * A display name is not an identity.
  */
 
+import { actorFromDirectory, normalEmail, normalSubject, sameActor, type ActorIdentity } from "./actor.ts";
 import { commit, type IllegalTransition, reject } from "./illegal.ts";
 
+export { actorFromDirectory, normalEmail, normalSubject, sameActor, type ActorIdentity };
+
 export const SECOND_PERSON_TTL_MS = 24 * 3_600_000;
-
-export type ActorIdentity = {
-  id: string;
-  subject: string | null;
-  /** Sign-in address. Null when this id has not signed in. */
-  email: string | null;
-  /** Directory email. Null when this id has no principal row. */
-  directoryEmail: string | null;
-};
-
-/** Trim and lowercase. Empty becomes null. */
-export function normalEmail(value: string | null | undefined): string | null {
-  const trimmed = value?.trim().toLowerCase() ?? "";
-  return trimmed === "" ? null : trimmed;
-}
 
 export type QuorumState =
   | { tag: "empty" }
@@ -54,29 +42,6 @@ export type QuorumResult =
   | { tag: "replay" }
   | { tag: "refused" };
 
-const blank = (value: string | null): string | null => {
-  const trimmed = value?.trim() ?? "";
-  return trimmed === "" ? null : trimmed;
-};
-
-function addresses(actor: ActorIdentity): string[] {
-  const out: string[] = [];
-  for (const value of [actor.email, actor.directoryEmail]) {
-    const email = normalEmail(value);
-    if (email !== null && !out.includes(email)) out.push(email);
-  }
-  return out;
-}
-
-export function sameActor(a: ActorIdentity, b: ActorIdentity): boolean {
-  if (a.id !== "" && a.id === b.id) return true;
-  const leftSubject = blank(a.subject);
-  const rightSubject = blank(b.subject);
-  if (leftSubject && rightSubject) return leftSubject === rightSubject;
-  const right = addresses(b);
-  return addresses(a).some((email) => right.includes(email));
-}
-
 export function transitionQuorum(state: QuorumState, event: QuorumEvent): QuorumStep {
   if (!Number.isSafeInteger(event.now)) {
     return reject("quorum", state.tag, event.type, "clock_unreadable");
@@ -86,7 +51,7 @@ export function transitionQuorum(state: QuorumState, event: QuorumEvent): Quorum
   }
   const actor: ActorIdentity = {
     id: event.actor.id,
-    subject: blank(event.actor.subject),
+    subject: normalSubject(event.actor.subject),
     email: normalEmail(event.actor.email),
     directoryEmail: normalEmail(event.actor.directoryEmail),
   };

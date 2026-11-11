@@ -5,13 +5,18 @@
 import { DurableObject } from "cloudflare:workers";
 import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
 import {
+  actorFromDirectory,
   type ActorIdentity,
+  type DirectoryPrincipal,
+  normalEmail,
+  sameActor,
+} from "../../../src/state/actor.ts";
+import {
   commitQuorum,
   type QuorumResult,
   type QuorumState,
   quorumConfirmed,
   SECOND_PERSON_TTL_MS,
-  normalEmail,
 } from "../../../src/state/quorum.ts";
 import {
   commitWikiSeed,
@@ -344,8 +349,13 @@ export class TenantPolicy extends DurableObject<Env> {
    * `actAs` (dev personas only, decided by the API) replaces stored roles and memberships.
    */
   async session(input: SessionInput): Promise<Session> {
-    const email = input.email.trim().toLowerCase();
-    const row = this.sql.exec("SELECT id FROM principals WHERE email = ?", email).toArray()[0];
+    const email = normalEmail(input.email) ?? "";
+    const row = this.sql
+      .exec(
+        "SELECT id FROM principals WHERE lower(trim(replace(email, char(160), ' '))) = ?",
+        email,
+      )
+      .toArray()[0];
     const identityId = (row?.id as string | undefined) ?? (await principalIdFor(email));
 
     const window = Math.floor(input.now / WINDOW_MS);
@@ -913,38 +923,28 @@ export class TenantPolicy extends DurableObject<Env> {
       : null;
   }
 
-  /**
-   * Identity for the quorum check. Both subjects set: they match only when equal.
-   * Otherwise the sign-in address and the directory email both count, trimmed and
-   * lowercased. The subject lookup uses that same normalisation.
-   */
-  private actorIdentity(principalId: string): ActorIdentity {
-    const p = this.sql
-      .exec("SELECT subject, email FROM principals WHERE id = ?", principalId)
-      .toArray()[0];
-    const signIn = normalEmail(
-      this.sql.exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId).toArray()[0]
-        ?.email as string | undefined,
+  /** Directory rows for `actorFromDirectory`. Stored text is not rewritten. */
+  private directoryRows(): DirectoryPrincipal[] {
+    return this.sql
+      .exec("SELECT id, subject, email FROM principals")
+      .toArray()
+      .map((r) => ({
+        id: r.id as string,
+        subject: (r.subject as string | null | undefined) ?? null,
+        email: (r.email as string | null | undefined) ?? null,
+      }));
+  }
+
+  private signInOf(principalId: string): string | null {
+    return (
+      (this.sql.exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId).toArray()[0]
+        ?.email as string | undefined) ?? null
     );
-    const directory = normalEmail(p?.email as string | undefined);
-    let subject = (p?.subject as string | null | undefined)?.trim() || null;
-    if (!subject) {
-      for (const email of [directory, signIn]) {
-        if (!email) continue;
-        const found = this.sql
-          .exec(
-            "SELECT subject FROM principals WHERE lower(trim(email)) = ? AND subject IS NOT NULL",
-            email,
-          )
-          .toArray()[0]?.subject as string | null | undefined;
-        const trimmed = found?.trim() ?? "";
-        if (trimmed !== "") {
-          subject = trimmed;
-          break;
-        }
-      }
-    }
-    return { id: principalId, subject, email: signIn, directoryEmail: directory };
+  }
+
+  /** Identity for quorum and humanIds. The rule is `actorFromDirectory` / `sameActor`. */
+  private actorIdentity(principalId: string): ActorIdentity {
+    return actorFromDirectory(principalId, this.signInOf(principalId), this.directoryRows());
   }
 
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */
@@ -958,51 +958,29 @@ export class TenantPolicy extends DurableObject<Env> {
     );
   }
 
-  /**
-   * The stable identity behind a principal id: the Entra subject (tenant + oid) when the directory
-   * has one, else the normalised address it signed in with, else the id itself.
-   */
-  private humanKey(principalId: string): string {
-    const p = this.sql
-      .exec("SELECT subject, email FROM principals WHERE id = ?", principalId)
-      .toArray()[0];
-    const e = (
-      (p?.email as string | undefined) ??
-      (this.sql
-        .exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId)
-        .toArray()[0]?.email as string | undefined)
-    )?.toLowerCase();
-    const subject =
-      (p?.subject as string | null | undefined) ??
-      (e
-        ? (this.sql.exec("SELECT subject FROM principals WHERE email = ?", e).toArray()[0]
-            ?.subject as string | null | undefined)
-        : null);
-    if (subject) return `sub:${subject}`;
-    return e ? `mail:${e}` : `id:${principalId}`;
-  }
-
-  private sameHuman(a: string, b: string): boolean {
-    return a === b || this.humanKey(a) === this.humanKey(b);
-  }
-
   /** Every principal id of the same human as `principalId`, itself included (N-01). */
   humanIds(principalId: string, email = ""): string[] {
     this.rememberAddress(principalId, email);
-    const key = this.humanKey(principalId);
+    const rows = this.directoryRows();
+    const self = actorFromDirectory(principalId, this.signInOf(principalId), rows);
     const ids = new Set([principalId]);
-    for (const r of [
-      ...this.sql.exec("SELECT id FROM principals").toArray(),
-      ...this.sql.exec("SELECT principal_id AS id FROM gov_identity").toArray(),
-    ])
-      if (this.humanKey(r.id as string) === key) ids.add(r.id as string);
+    const seen = new Set(rows.map((r) => r.id));
+    for (const r of this.sql.exec("SELECT principal_id AS id FROM gov_identity").toArray())
+      seen.add(r.id as string);
+    for (const id of seen)
+      if (sameActor(self, actorFromDirectory(id, this.signInOf(id), rows))) ids.add(id);
     return [...ids];
   }
 
   /** Id of the principal behind an email, or the stable anonymous id when the email is not in the directory. */
   async resolvePrincipalId(email: string): Promise<string> {
-    const e = email.trim().toLowerCase();
-    const row = this.sql.exec("SELECT id FROM principals WHERE email = ?", e).toArray()[0];
+    const e = normalEmail(email) ?? "";
+    const row = this.sql
+      .exec(
+        "SELECT id FROM principals WHERE lower(trim(replace(email, char(160), ' '))) = ?",
+        e,
+      )
+      .toArray()[0];
     return (row?.id as string | undefined) ?? (await principalIdFor(e));
   }
 
