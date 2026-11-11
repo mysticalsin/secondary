@@ -243,13 +243,13 @@ export abstract class BrainBase extends WikiBase {
     now: number,
   ): MemberHold {
     const row = this.sql
-      .exec("SELECT role, state, at FROM brain_members WHERE principal_id = ?", principalId)
+      .exec(
+        "SELECT role, state, at, claim_key FROM brain_members WHERE principal_id = ?",
+        principalId,
+      )
       .toArray()[0];
-    const keyed = row
-      ? this.sql.exec("SELECT claim_key FROM brain_members WHERE principal_id = ?", principalId).toArray()[0]
-      : undefined;
     const previousKey =
-      keyed?.claim_key === null || keyed?.claim_key === undefined ? null : String(keyed.claim_key);
+      row?.claim_key === null || row?.claim_key === undefined ? null : String(row.claim_key);
     if (row && (String(row.state) === "claimed" || String(row.state) === "pending") && previousKey) {
       return {
         ok: true,

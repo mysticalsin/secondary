@@ -39,7 +39,7 @@ let armed = true;
 const gated = {
   exec(query: string, ...bindings: Parameters<SqlStorage["exec"]> extends [string, ...infer B] ? B : never) {
     const result = sql.exec(query, ...bindings);
-    if (armed && query.includes("SELECT role, state, at FROM brain_members WHERE principal_id")) {
+    if (armed && query.includes("SELECT role, state, at, claim_key FROM brain_members WHERE principal_id")) {
       armed = false;
       const arrived = Atomics.add(data.barrier, 0, 1);
       if (arrived === 0) {
