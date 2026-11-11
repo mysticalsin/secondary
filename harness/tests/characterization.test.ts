@@ -87,20 +87,29 @@ test("CHARACTERIZATION: no API route can pass approved into workspace update", (
   }
 });
 
-test("CHARACTERIZATION: savePage republishes an archived page", () => {
+test("CHARACTERIZATION: savePage does not republish an archived page", () => {
   const src = read("recovered-source/worker/src/wiki/store.ts");
-  const body = between(src, "protected savePage(", "wikiFacts(");
-  // CHARACTERIZATION: current behaviour, flagged. The skip requires published.
-  // The UPDATE forces published and has no status predicate.
-  assert.match(body, /cur\.status === "published" && cur\.markdown === md && cur\.title === p\.title/);
-  assert.match(body, /SET type = \?, title = \?, markdown = \?, summary = \?, revision = \?, status = 'published'/);
-  assert.doesNotMatch(body, /AND status = 'archived'/);
+  const body = between(src, "protected savePage(", "private validFactsSql(");
+  assert.match(body, /decodePageStatus\(cur\.status\)/);
+  assert.match(body, /commitPage\(from, \{ type: "save", now \}\)/);
+  assert.match(
+    body,
+    /SET type = \?, title = \?, markdown = \?, summary = \?, revision = \?, status = 'published', origin = \?, updated_at = \? WHERE id = \? AND status = 'published'/,
+  );
+  assert.match(body, /AND status = 'archived'/);
 
-  const outcome = (status: "published" | "archived" | null, same: boolean): "unchanged" | "published" =>
-    status === "published" && same ? "unchanged" : "published";
+  const outcome = (
+    status: "published" | "archived" | "unknown" | null,
+    same: boolean,
+  ): "unchanged" | "published" | "refused" => {
+    if (status === "archived" || status === "unknown") return "refused";
+    if (status === "published" && same) return "unchanged";
+    return "published";
+  };
   assert.equal(outcome("published", true), "unchanged");
-  assert.equal(outcome("archived", true), "published");
-  assert.equal(outcome("archived", false), "published");
+  assert.equal(outcome("archived", true), "refused");
+  assert.equal(outcome("archived", false), "refused");
+  assert.equal(outcome("unknown", false), "refused");
   assert.equal(outcome(null, false), "published");
 });
 

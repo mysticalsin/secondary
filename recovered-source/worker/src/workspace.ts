@@ -117,7 +117,12 @@ export type Fail = {
     | "invalid_status"
     | "revision_required"
     | "generated_page"
-    | "exists";
+    | "exists"
+    | "archived"
+    | "state_unreadable"
+    | "clock_unreadable"
+    | "not_archived"
+    | "absent";
   message: string;
   currentRevision?: number;
 };

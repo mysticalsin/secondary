@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, #2, whose start writes only a pending row, and #3, whose reopen and decision write only the status the table allows, and #12, whose member write names the state it read. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, #2, whose start writes only a pending row, and #3, whose reopen and decision write only the status the table allows, and #12, whose member write names the state it read, and #9, whose save of an archived page is refused. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -26,7 +26,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
-| 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Right-size to a status predicate plus an unarchive event. `savePage` currently republishes an archived page. |
+| 9 | Wiki page visibility | `src/state/page-visibility.ts`, `savePage` `wiki/store.ts:853` predicate `:888`, `unarchivePage` `:922` predicate `:931`, archive loop `:1325` predicate `:1330`, refusal `wikiDecide` `:1546` | FIXED | High | FIX now | A save publishes a missing page and rewrites a published page. An archived page is not saved. Unarchive is its own event. An unknown status writes nothing. A lost race is `replay` and does not write a revision. The decide route returns that refusal, which is 409. |
 | 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
 | 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | Jarvis: a personal auto-accept stays a draft. One `publishMode()` defaults to draft, and publishing is an explicit action. Current formulas still disagree. |
 | 12 | Brain member | `src/state/brain-member.ts`, `grantsMemberRole` `:35`, `brainRoleOf` `brains/store.ts:229`, claim key `brains/store.ts:264`, `brainMemberDropClaim` `:331`, `brainMemberFinishProposal` `:355`, `brainMemberRelease` `:466`, `reconcileBrainMember` `:1092`, `placeScopedMember` `:1124`, `propose` `admin/store.ts:632`, `claim_key` column `:248`, unique index `:249`, `changeByKey` `:590`, `reconcileStoredMembers` `brains/open.ts:42`, route 409 `brains/routes.ts:721` | FIXED | High | FIX now | A claim mints an opaque key before `gov.propose`. The same key returns the existing change. Only an active row grants a role. A read during propose changes nothing. Applied finishes the claim. Pending or a missing governance row leaves it. Rejected, expired, or withdrawn releases it by key and previous state. |
@@ -79,7 +79,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 7. #3 Access request (fixed: reopen only from approved, and two decisions cannot both succeed)
 8. #12 Brain member (fixed: a set names the state it read, and two sets cannot both succeed)
 9. #1 Governance change (fixed: a decision writes only a pending row, and an unknown word has no effect)
-10. #9 Wiki page visibility
+10. #9 Wiki page visibility (fixed: a save of an archived page is refused, and unarchive is its own event)
 11. #11 Brain import outcome
 12. #8 Wiki proposal review, with #10 folded in
 13. Erasure / rights (#30)
@@ -93,7 +93,7 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#3.** Fixed. `transitionAccessRequest` approves or denies only from pending, reopens only from approved, and grants or rejects only a pending or approved request. Each write checks that predicate on `RETURNING`. A lost decision is 409 and does not notify.
 - **#12.** Fixed. `transitionMember` sets `active` or `pending` from absent, pending, or active. An unknown stored word is refused. `brainMemberClaim` (`brains/store.ts:239`) stores an opaque key (`:264`) before `gov.propose`. `placeScopedMember` (`:1124`) passes that key. `propose` (`admin/store.ts:632`) returns the change already stored for the key. `gov_changes.claim_key` is added at `:248` and indexed at `:249`. Legacy rows stay null. `brainMemberRelease` (`brains/store.ts:466`) and `brainMemberDropClaim` (`:331`) match the key and the previous state. Zero rows is `state_unreadable`. `brainMemberFinishProposal` (`:355`) matches the key and the previous state, so one overlapping finish logs. `reconcileBrainMember` (`:1092`) looks the key up with `changeByKey` (`admin/store.ts:590`). The route returns a refusal at `brains/routes.ts:721`. Membership reads go through `reconcileStoredMembers` (`brains/open.ts:42`).
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
-- **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
+- **#9.** Fixed. `transitionPage` (`src/state/page-visibility.ts:42`) saves from absent or published, archives from published, and unarchives only from archived. An unknown word is refused. `savePage` (`wiki/store.ts:853`) updates `WHERE id = ? AND status = 'published'` (`:888`). `unarchivePage` (`:922`) updates `WHERE status = 'archived'` (`:931`). The archive loop (`:1325`) keeps `WHERE status = 'published'` (`:1330`). `wikiDecide` (`:1546`) returns the refusal, and the route (`wiki/routes.ts:855`) sends it through `failResponse` (`ux/util.ts:88`), which is 409.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
 - **#13.** `nonceFirst` (`tenant-policy.ts:632`) is `INSERT OR IGNORE ... RETURNING key`. True when one row comes back. The old `DELETE` of expired rows is gone, so a key is not accepted again after `expires_at`. The stored expiry is `(T + skew + 1)` seconds, strictly after the last millisecond the verifiers accept timestamp `T`.
 - **#6.** Fixed. `commitLoginRecord` (`src/state/login-record.ts`) consumes an issued login on `idp_error`, `missing_state`, `state_mismatch`, `exchange_failed`, and `accepted`. A consumed record accepts nothing. The callback takes the cookie hash and, when it differs, the query hash, before it returns. Logs are reason codes. `loginStateTake` (`identity-store.ts:312`) still deletes the row and then returns null when it is already expired.
@@ -552,46 +552,53 @@ stateDiagram-v2
 
 ## 9. Wiki page visibility
 
-Review: the fix is a status predicate plus an unarchive event, not a larger lifecycle. Step 0 pinned that `savePage` republishes an archived page. Still LATER.
+Review: the fix is a status predicate plus an unarchive event, not a larger lifecycle. Fixed.
 
-- Purpose: A page is readable while `published`. Archiving hides it. Saving a page publishes it.
-- Code: no reducer yet. `savePage` (819) and the archive loop (1229).
-- Persisted: yes, `wiki_pages.status`. The type says `"published" | "archived"` (`wiki/types.ts:88`). The column is unversioned text.
-- What changed: nothing in this commit.
+- Purpose: A page is readable while `published`. Archiving hides it. Saving does not unarchive.
+- Code: `src/state/page-visibility.ts`. `decodePageStatus` (`:35`) reads `published` and `archived`. Any other word is unknown. `savePage` (`wiki/store.ts:853`) commits a save (`:862`) and updates `WHERE status = 'published'` (`:888`). `unarchivePage` (`:922`) commits an unarchive (`:925`) and updates `WHERE status = 'archived'` (`:931`). The archive loop (`:1325`) commits an archive and updates `WHERE status = 'published'` (`:1330`). `wikiDecide` (`:1546`) returns the refusal instead of approving. Callers of `savePage`: proposal pages (`:1311`), generated pages (`:1352`), the overview (`:1364`), and a promotion (`:1851`).
+- Persisted: yes, `wiki_pages.status`. The type says `"published" | "archived"` (`wiki/types.ts:88`). The column is unversioned text. A stored word outside those two is unknown and is not written.
+- What changed: an archived save no longer sets `published`. The revision and the search row are written only when the compare-and-set changes one row. A refused save is not a successful decision.
 
 ### States
 
 | State | Data carried | Meaning |
 |---|---|---|
+| absent | — | No row |
 | published | revision, markdown | In search and default lists |
 | archived | revision | Hidden from search. Still loadable when archive is included |
+| unknown | the stored word | Not readable. No effect |
 
 ### Events
 
 | Event | Source |
 |---|---|
-| save | `applyProposal` and other writers of `savePage` |
+| save | `savePage`, from `applyProposal`, generated pages, and promotion |
 | archive | Proposal `archive` ids |
+| unarchive | `unarchivePage`. No route calls it yet |
 
 ### Transitions
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| (none) | save | — | published | insert revision 1 |
-| published | save | title or markdown changed | published | revision + 1 |
-| published | save | title and markdown unchanged | published | no write (828) |
-| archived | save | any content change, and also an unchanged check that only skips when status is already published | published | `UPDATE` sets `status = 'published'` with no status predicate (834) |
+| absent | save | — | published | insert revision 1 |
+| published | save | title or markdown changed, `WHERE status = 'published'` | published | revision + 1 |
+| published | save | title and markdown unchanged | published | no write |
+| archived | save | — | archived | refused, reason `archived` |
+| unknown | save, archive, or unarchive | — | unknown | refused, reason `state_unreadable` |
 | published | archive | `WHERE status = 'published'` | archived | drop the search row |
-| archived | archive | the `WHERE` misses | archived | no write |
+| archived or absent | archive | — | same | no write |
+| archived | unarchive | `WHERE status = 'archived'` | published | restore the search row |
+| published | unarchive | — | published | refused, reason `not_archived` |
+| absent | unarchive | — | absent | refused, reason `absent` |
 
-The archive statement is guarded. The save statement is not: an archived page becomes published as soon as a proposal saves it. There is no explicit unarchive event. That is the unguarded transition.
+Zero changed rows is `replay`. The page is left as the winner wrote it, and no revision is added. An archive that lands after the save has read the page, and before the save writes, keeps the page archived.
 
 ```mermaid
 stateDiagram-v2
   [*] --> Published: save
   Published --> Published: save
   Published --> Archived: archive
-  Archived --> Published: save
+  Archived --> Published: unarchive
 ```
 
 ### Platform / flag differences

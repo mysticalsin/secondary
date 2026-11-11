@@ -5,6 +5,7 @@
 // Nothing here knows who the caller is: the API checks policy first and passes the actor.
 
 import { DurableObject } from "cloudflare:workers";
+import { claimPage, commitPage, decodePageStatus } from "../../../../src/state/page-visibility.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import {
@@ -131,6 +132,39 @@ export type DecideResult =
       required: number;
     }
   | Fail;
+
+class PageRefusal extends Error {
+  readonly fail: Fail;
+  constructor(fail: Fail) {
+    super(fail.code);
+    this.fail = fail;
+  }
+}
+
+function pageFail(reason: string): Fail {
+  const code =
+    reason === "archived" ||
+    reason === "state_unreadable" ||
+    reason === "clock_unreadable" ||
+    reason === "replay" ||
+    reason === "not_archived" ||
+    reason === "absent"
+      ? reason
+      : "state_unreadable";
+  const message =
+    code === "archived"
+      ? "An archived page is not saved. Unarchive it first"
+      : code === "state_unreadable"
+        ? "The page status cannot be read"
+        : code === "clock_unreadable"
+          ? "The clock cannot be read"
+          : code === "replay"
+            ? "The page changed since it was read"
+            : code === "not_archived"
+              ? "The page is not archived"
+              : "There is no page to unarchive";
+  return { ok: false, code, message };
+}
 
 const rowFact = (r: Record<string, SqlStorageValue>): Fact => ({
   id: r.id as number,
@@ -822,37 +856,47 @@ export abstract class WikiBase extends DurableObject<Env> {
     proposalId: string | null,
     now: number,
     origin: PageOrigin = "human",
-  ): boolean {
+  ): { ok: true; wrote: boolean } | Fail {
     const cur = this.pageById(p.id);
+    const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
+    const step = commitPage(from, { type: "save", now });
+    if (!step.ok) return pageFail(step.reason);
+    const effect = step.effects[0];
+    if (!effect) return { ok: true, wrote: false };
     const md = capLines(p.markdown.slice(0, MAX_PAGE_CHARS));
-    if (cur && cur.status === "published" && cur.markdown === md && cur.title === p.title)
-      return false;
-    const revision = cur ? cur.revision + 1 : 1;
+    if (effect.type === "update" && cur && cur.markdown === md && cur.title === p.title)
+      return { ok: true, wrote: false };
     const summary = summaryOf(md);
-    if (cur)
-      this.sql.exec(
-        "UPDATE wiki_pages SET type = ?, title = ?, markdown = ?, summary = ?, revision = ?, status = 'published', origin = ?, updated_at = ? WHERE id = ?",
-        p.type,
-        p.title,
-        md,
-        summary,
-        revision,
-        origin,
-        now,
-        p.id,
-      );
-    else
-      this.sql.exec(
-        "INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 'published', ?, ?, ?)",
-        p.id,
-        p.type,
-        p.title,
-        md,
-        summary,
-        origin,
-        now,
-        now,
-      );
+    const revision = effect.type === "insert" ? 1 : (cur?.revision ?? 0) + 1;
+    const wrote =
+      effect.type === "insert"
+        ? this.sql
+            .exec(
+              "INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 'published', ?, ?, ?) RETURNING id",
+              p.id,
+              p.type,
+              p.title,
+              md,
+              summary,
+              origin,
+              now,
+              now,
+            )
+            .toArray()
+        : this.sql
+            .exec(
+              "UPDATE wiki_pages SET type = ?, title = ?, markdown = ?, summary = ?, revision = ?, status = 'published', origin = ?, updated_at = ? WHERE id = ? AND status = 'published' RETURNING id",
+              p.type,
+              p.title,
+              md,
+              summary,
+              revision,
+              origin,
+              now,
+              p.id,
+            )
+            .toArray();
+    if (claimPage(wrote.length).tag !== "applied") return pageFail("replay");
     this.sql.exec(
       "INSERT OR REPLACE INTO wiki_page_revisions (page_id, revision, title, markdown, actor, at, proposal_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
       p.id,
@@ -871,7 +915,34 @@ export abstract class WikiBase extends DurableObject<Env> {
       md.replace(/\{src:[^}]*\}/g, ""),
       p.id,
     );
-    return true;
+    return { ok: true, wrote: true };
+  }
+
+  /** Publish an archived page. A save does not do this. */
+  protected unarchivePage(id: string, now: number): { ok: true; wrote: boolean } | Fail {
+    const cur = this.pageById(id);
+    const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
+    const step = commitPage(from, { type: "unarchive", now });
+    if (!step.ok) return pageFail(step.reason);
+    if (!cur || !step.effects.some((effect) => effect.type === "unarchive"))
+      return { ok: true, wrote: false };
+    const wrote = this.sql
+      .exec(
+        "UPDATE wiki_pages SET status = 'published', updated_at = ? WHERE id = ? AND status = 'archived' RETURNING id",
+        now,
+        id,
+      )
+      .toArray();
+    if (claimPage(wrote.length).tag !== "applied") return pageFail("replay");
+    this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", id);
+    this.sql.exec(
+      "INSERT INTO wiki_fts (title, summary, body, id) VALUES (?, ?, ?, ?)",
+      cur.title,
+      cur.summary,
+      cur.markdown.replace(/\{src:[^}]*\}/g, ""),
+      id,
+    );
+    return { ok: true, wrote: true };
   }
 
   // ---- facts ----
@@ -1109,18 +1180,34 @@ export abstract class WikiBase extends DurableObject<Env> {
     );
     // Dev seed: synthetic data accepted at once and marked as such. Never outside the dev environment.
     if (opts.seed && p.origin === "seed" && this.env.ENVIRONMENT === "dev") {
-      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
-      this.applyProposal(p, authorId, SEED_VERIFIER, now, id);
-      this.wikiLogAppend(authorId, "seed.accepted", { id }, now);
+      try {
+        this.ctx.storage.transactionSync(() => {
+          this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
+          const applied = this.applyProposal(p, authorId, SEED_VERIFIER, now, id);
+          if (!("pages" in applied)) throw new PageRefusal(applied);
+          this.wikiLogAppend(authorId, "seed.accepted", { id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
       return { ok: true, created: true, id, autoAccepted: true };
     }
     if (
       p.kind === "wiki_ingest" &&
       ((opts.autoAccept && m.autoAccept && isPersonalScope(m.scopeId)) || opts.publishDirect)
     ) {
-      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
-      this.applyProposal(p, authorId, null, now, id);
-      this.wikiLogAppend(authorId, "auto_accepted", { id }, now);
+      try {
+        this.ctx.storage.transactionSync(() => {
+          this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
+          const applied = this.applyProposal(p, authorId, null, now, id);
+          if (!("pages" in applied)) throw new PageRefusal(applied);
+          this.wikiLogAppend(authorId, "auto_accepted", { id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
       return { ok: true, created: true, id, autoAccepted: true };
     }
     return { ok: true, created: true, id, autoAccepted: false };
@@ -1162,11 +1249,16 @@ export abstract class WikiBase extends DurableObject<Env> {
     verifier: string | null,
     now: number,
     proposalId: string,
-  ): ApplyResult {
+  ): ApplyResult | Fail {
     const at = new Date(now).toISOString();
     const touched: string[] = [];
     let invalidated = 0;
     let archived = 0;
+    const kept = (saved: { ok: true; wrote: boolean } | Fail, pageId: string): Fail | null => {
+      if (!saved.ok) return saved;
+      if (saved.wrote) touched.push(pageId);
+      return null;
+    };
     const result = (): ApplyResult => ({
       pages: touched,
       facts: p.facts.length,
@@ -1215,18 +1307,24 @@ export abstract class WikiBase extends DurableObject<Env> {
     const origin: PageOrigin = p.origin === "seed" ? "seed" : "human";
     for (const d of p.pages) {
       if (GENERATED[d.type]) continue;
-      if (
+      const refused = kept(
         this.savePage(
           { id: d.pageId, type: d.type, title: d.title, markdown: d.markdown },
           actor,
           proposalId,
           now,
           origin,
-        )
-      )
-        touched.push(d.pageId);
+        ),
+        d.pageId,
+      );
+      if (refused) return refused;
     }
     for (const id of p.archive) {
+      const cur = this.pageById(id);
+      const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
+      const step = commitPage(from, { type: "archive", now });
+      if (!step.ok) return pageFail(step.reason);
+      if (!step.effects.some((effect) => effect.type === "archive")) continue;
       const r = this.sql
         .exec(
           "UPDATE wiki_pages SET status = 'archived', updated_at = ? WHERE id = ? AND status = 'published' RETURNING id",
@@ -1234,11 +1332,10 @@ export abstract class WikiBase extends DurableObject<Env> {
           id,
         )
         .toArray();
-      if (r.length) {
-        this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", id);
-        archived++;
-        touched.push(id);
-      }
+      if (claimPage(r.length).tag !== "applied") continue;
+      this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", id);
+      archived++;
+      touched.push(id);
     }
     // Generated pages follow the facts that hold now.
     const valid = this.validFactsSql();
@@ -1250,38 +1347,36 @@ export abstract class WikiBase extends DurableObject<Env> {
         edited.get(g.id)?.markdown ??
         renderGenerated(type, valid, []) ??
         (cur ? emptyGenerated(type) : null);
-      if (
-        md !== null &&
-        this.savePage(
-          { id: g.id, type, title: g.title, markdown: md },
-          actor,
-          proposalId,
-          now,
-          origin,
-        )
-      )
-        touched.push(g.id);
+      if (md !== null) {
+        const refused = kept(
+          this.savePage({ id: g.id, type, title: g.title, markdown: md }, actor, proposalId, now, origin),
+          g.id,
+        );
+        if (refused) return refused;
+      }
     }
     const others = this.wikiPages()
       .map((x) => x.id)
       .filter((x) => x !== "overview");
     const ov = renderGenerated("overview", valid, others);
-    if (
-      ov !== null &&
-      this.savePage(
-        {
-          id: "overview",
-          type: "overview",
-          title: "Overview",
-          markdown: edited.get("overview")?.markdown ?? ov,
-        },
-        actor,
-        proposalId,
-        now,
-        origin,
-      )
-    )
-      touched.push("overview");
+    if (ov !== null) {
+      const refused = kept(
+        this.savePage(
+          {
+            id: "overview",
+            type: "overview",
+            title: "Overview",
+            markdown: edited.get("overview")?.markdown ?? ov,
+          },
+          actor,
+          proposalId,
+          now,
+          origin,
+        ),
+        "overview",
+      );
+      if (refused) return refused;
+    }
     for (const s of p.sources)
       this.wikiSourceSeen(s.id, s.hash, s.title, this.sourceGate(s.id), true, now);
     this.wikiLogAppend(
@@ -1445,12 +1540,19 @@ export abstract class WikiBase extends DurableObject<Env> {
       return { ok: true, status: "pending", applied: null, approvals, required };
     }
     let applied: ApplyResult | null = null;
-    this.ctx.storage.transactionSync(() => {
-      applied = this.applyProposal(p, actorId, actorId, now, id);
-      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
-      if (p.findingKey)
-        this.sql.exec("UPDATE wiki_findings SET status = 'resolved' WHERE key = ?", p.findingKey);
-    });
+    try {
+      this.ctx.storage.transactionSync(() => {
+        const out = this.applyProposal(p, actorId, actorId, now, id);
+        if (!("pages" in out)) throw new PageRefusal(out);
+        applied = out;
+        this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
+        if (p.findingKey)
+          this.sql.exec("UPDATE wiki_findings SET status = 'resolved' WHERE key = ?", p.findingKey);
+      });
+    } catch (e) {
+      if (e instanceof PageRefusal) return e.fail;
+      throw e;
+    }
     for (const src of p.reingest)
       await this.wikiEnqueue("ingest", { sourceId: src, force: true }, now);
     return { ok: true, status: "approved", applied, approvals, required };
@@ -1743,17 +1845,23 @@ export abstract class WikiBase extends DurableObject<Env> {
         .map((l) => (/^\s*[-*]\s+\S/.test(l) ? `${l} {src:${cid}}` : l))
         .join("\n");
       const md = /^#\s/m.test(body) ? body : `# ${it.label}\n\n${body}`;
-      this.ctx.storage.transactionSync(() => {
-        // The revision names the service, not the promoter: a Global reader must not learn the account team (L-06).
-        this.savePage(
-          { id, type: "topic", title: it.label, markdown: md },
-          serviceId("global"),
-          cid,
-          now,
-        );
-        this.sql.exec("UPDATE wiki_promotions SET page_id = ? WHERE candidate_id = ?", id, cid);
-        this.wikiLogAppend("system", "promotion.published", { pageId: id }, now);
-      });
+      try {
+        this.ctx.storage.transactionSync(() => {
+          // The revision names the service, not the promoter: a Global reader must not learn the account team (L-06).
+          const saved = this.savePage(
+            { id, type: "topic", title: it.label, markdown: md },
+            serviceId("global"),
+            cid,
+            now,
+          );
+          if (!saved.ok || !saved.wrote) throw new PageRefusal(saved.ok ? pageFail("replay") : saved);
+          this.sql.exec("UPDATE wiki_promotions SET page_id = ? WHERE candidate_id = ?", id, cid);
+          this.wikiLogAppend("system", "promotion.published", { pageId: id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) continue;
+        throw e;
+      }
     }
   }
 
