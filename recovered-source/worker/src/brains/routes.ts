@@ -21,6 +21,7 @@ import {
   publicationBound,
 } from "@secondary/policy";
 import { Hono } from "hono";
+import { quorumConfirmed } from "../../../../src/state/quorum.ts";
 import { govClient } from "../admin/client.ts";
 import { manageAuthority, noticeLabel, scopeDescOf, scopeKey } from "../admin/validate.ts";
 import { requireOrg, viewOf } from "../auth.ts";
@@ -383,12 +384,12 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
         s.ctx.now,
         s.principal.email,
       );
-      if (step === "same")
+      if (step.tag === "same_actor")
         return c.json(
           { error: "same_person", reason: "A different person must confirm opening this brain" },
           409,
         );
-      if (step === "first") {
+      if (!quorumConfirmed(step)) {
         await audit(c, {
           action: "brain.open_request",
           nodeId: b.nodeId,
@@ -645,12 +646,12 @@ async function setMember(
   if (needsSecond) {
     const key = `brainrole:${b.scope}:${pid}:${role}`;
     const step = await tenant.requestSecond(key, s.principal.id, s.ctx.now, s.principal.email);
-    if (step === "same")
+    if (step.tag === "same_actor")
       return c.json(
         { error: "same_person", reason: "A different person must confirm this change" },
         409,
       );
-    if (step === "first") {
+    if (!quorumConfirmed(step)) {
       await audit(c, {
         action: "brain.role_request",
         nodeId: b.nodeId,

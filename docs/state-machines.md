@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, and #6, whose login record is now one-shot. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, and #4, whose second-person check is now one typed result. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -21,7 +21,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
 | 2 | Elevation window | `admin/store.ts:38`, writers at 970, 995, 1039, 1062 | LATER | High | LATER | Pending and active expire only in `toElevation` (128–132). |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
-| 4 | Second-person confirmation | `tenant-policy.ts:795` | LATER | High | LATER | Shared by kill switches, field exposure, brain roles, erasure. One quorum check with #7 and #8. |
+| 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore. #7 and #8 do not call it yet. |
 | 5 | Kill switch | `tenant-policy.ts:754`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` (`workspace.ts:539`) stores the caller status. No current route can pass `approved`. Shares the quorum check with #4 and #8. |
@@ -54,7 +54,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 
 ## Review notes
 
-Devin approved the inventory at `b527a8de` with these changes. #6 is the login-record reducer. The other High-risk reducers are not written yet.
+Devin approved the inventory at `b527a8de` with these changes. #6 is the login-record reducer. #4 is the quorum reducer. #7 and #8 do not call it yet. The other High-risk reducers are not written yet.
 
 Right-sizing:
 
@@ -68,7 +68,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 
 1. #13 Replay nonce (fixed: a seen key stays refused)
 2. #6 OIDC login (fixed: every terminal callback consumes the login row)
-3. #4 Second-person confirmation
+3. #4 Second-person confirmation (fixed: one typed check, and the requester cannot confirm)
 4. #7 Workspace item release
 5. #5 Kill switch
 6. #2 Elevation window
@@ -266,48 +266,56 @@ Restricted scopes need a second person on the membership change. That is machine
 
 ## 4. Second-person confirmation
 
-Review: one quorum check, shared with #7 and #8. Still LATER.
+Review: one quorum check. #7 and #8 will reuse it and do not call it yet.
 
 - Purpose: The first actor records an intent. A different human confirms it within 24 hours. The same human confirming does nothing.
-- Code: no reducer yet. `TenantPolicy.requestSecond` at `tenant-policy.ts:795`.
-- Persisted: yes, `pending_ops` (`key`, `requested_by`, `requested_at`). Unversioned. TTL is `SECOND_PERSON_TTL_MS`.
-- What changed: nothing in this commit.
+- Code: `transitionQuorum` in `src/state/quorum.ts`. `TenantPolicy.requestSecond` performs the effects. Callers use `quorumConfirmed`.
+- Persisted: yes, `pending_ops` (`key`, `requested_by`, `requested_at`). Unversioned. TTL is `SECOND_PERSON_TTL_MS` (24 hours).
+- What changed: one typed result. The requester cannot confirm, compared by directory subject, then sign-in address, then id. A display name is not an identity. A confirm deletes only the row it read. If that delete matches nothing, the result is `replay` and the caller does not apply.
 
 ### States
 
 | State | Data carried | Meaning |
 |---|---|---|
-| empty | key | Nothing waiting, or the row is older than 24 hours |
-| waiting | actor, requestedAt | First person has asked |
+| empty | key | Nothing waiting |
+| waiting | requester identity, requestedAt | First person has asked and the row is inside the TTL |
+
+An ask older than the TTL is an empty ask. The stored row is replaced.
 
 ### Events
 
 | Event | Source |
 |---|---|
-| ask | Switch on, field exposure, brain role, erasure, and other callers |
+| ask | Kill-switch re-enable, field exposure, brain open, brain role, rights export, erasure, ops restore |
 
 ### Transitions
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| empty | ask | no live row | waiting | insert or replace the row. Return `first` |
-| waiting | ask | `sameHuman(requested_by, actor)` | waiting | no write. Return `same` |
-| waiting | ask | different human, within TTL | empty | delete row. Return `second` |
-| waiting | ask | `requested_at <= now - TTL` | waiting | replace row. Return `first` |
+| empty | ask | no row | waiting | upsert. Result `recorded` |
+| waiting | ask | same actor | waiting | no write. Result `same_actor` |
+| waiting | ask | different actor, `requestedAt > now - TTL`, delete matches | empty | delete that row. Result `confirmed` |
+| waiting | ask | different actor, but the delete matches nothing | empty | no write. Result `replay`. Do not apply |
+| waiting | ask | `requestedAt <= now - TTL` | waiting | replace the row. Result `recorded` |
+| any | ask | clock is not a safe integer, or the actor id is blank | unchanged | no write. Result `refused`. Log reason code only |
 
-Return values are the event results. Callers treat `first` and `same` as "do not apply" and `second` as "apply". There is no typed result union shared with those callers. Each caller repeats `if (step === "same")` / `if (step === "first")`.
+`recorded`, `same_actor`, `replay`, and `refused` do not apply. Only `confirmed` does. The same actor does not refresh `requestedAt`. After a confirm, the next ask is a new `recorded`, not another confirm.
+
+Same actor means the same id, or the same directory subject, or, when neither side has a subject, the same sign-in address. Two directory subjects are two people even when the address matches. The sign-in address is `gov_identity`, so two directory emails for one human do not count as two people.
+
+Logs are `{ at: "illegal_transition", machine: "quorum", reason }` or `{ at: "quorum", reason: "replay" }`. The reason is a code. The line does not carry an id, a subject, or an address.
 
 ```mermaid
 stateDiagram-v2
   [*] --> Empty
   Empty --> Waiting: ask
-  Waiting --> Waiting: same human or expired ask
-  Waiting --> Empty: different human confirms
+  Waiting --> Waiting: same actor or expired ask
+  Waiting --> Empty: different actor confirms
 ```
 
 ### Platform / flag differences
 
-Callers decide whether to invoke this at all. Prod kill-switch re-enable does. Turning a switch off does not.
+Callers decide whether to invoke this at all. Prod kill-switch re-enable does. Turning a switch off does not. A dev restore does not ask. #7 and #8 still pass their own id lists and do not use this result yet.
 
 ## 5. Kill switch
 
@@ -340,8 +348,8 @@ The pending flag lives in `pending_ops`, not in `switches.enabled`, so `enabled:
 | on or off | turn_off | none | off | write `enabled = 0`, delete pending, journal |
 | on | turn_on | already on (`switchState`) | on | no write. Return `applied` |
 | off | turn_on | `twoPerson` is false | on | write, journal |
-| off | turn_on | `twoPerson`, `requestSecond` is `first` or `same` | enable_pending | return `pending` |
-| off | turn_on | `twoPerson`, `requestSecond` is `second` | on | write, journal |
+| off | turn_on | `twoPerson`, quorum result is not `confirmed` | enable_pending | return `pending` |
+| off | turn_on | `twoPerson`, quorum result is `confirmed` | on | write, journal |
 
 ```mermaid
 stateDiagram-v2

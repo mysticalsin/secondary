@@ -5,6 +5,14 @@
 import { DurableObject } from "cloudflare:workers";
 import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
 import {
+  type ActorIdentity,
+  commitQuorum,
+  type QuorumResult,
+  type QuorumState,
+  quorumConfirmed,
+  SECOND_PERSON_TTL_MS,
+} from "../../../src/state/quorum.ts";
+import {
   commitWikiSeed,
   loadSeed,
   readSeedVersion,
@@ -67,8 +75,6 @@ export type Session = {
 
 const WINDOW_MS = 60_000;
 const MAX_ELEVATION_HOURS = 24;
-/** A first approval waits this long for the second person. */
-const SECOND_PERSON_TTL_MS = 24 * 3_600_000;
 /** Tables that make up a TenantPolicy snapshot. The request counter is not part of it. */
 const SNAPSHOT_TABLES = [
   "config",
@@ -843,36 +849,57 @@ export class TenantPolicy extends DurableObject<Env> {
     if (this.switchState()[name]) return { status: "applied" };
     if (twoPerson) {
       const r = this.requestSecond(`switch:${name}`, actor, now, email);
-      if (r !== "second") return { status: "pending", sameActor: r === "same" };
+      if (!quorumConfirmed(r)) return { status: "pending", sameActor: r.tag === "same_actor" };
     }
     apply();
     return { status: "applied" };
   }
 
   /**
-   * Two-person rule. "first": recorded. "same": the same person asked again, nothing changes.
-   * "second": a different person confirmed within 24 hours, so the caller may proceed.
-   * "Same" is decided on the stable identity (N-01): one human under two principal ids is one person.
-   * `email` is the address the actor is signed in with; pass it so the identity can be matched.
+   * Two-person rule. The decision is `transitionQuorum`. `recorded` stores the ask.
+   * `same_actor` changes nothing. `confirmed` deletes that ask. `replay` means the
+   * delete matched no row, so the caller must not apply. `email` is the sign-in
+   * address, so one human under two directory rows is one person (N-01).
    */
-  requestSecond(key: string, actor: string, now: number, email = ""): "first" | "same" | "second" {
+  requestSecond(key: string, actor: string, now: number, email = ""): QuorumResult {
     this.rememberAddress(actor, email);
     const row = this.sql
       .exec("SELECT requested_by, requested_at FROM pending_ops WHERE key = ?", key)
       .toArray()[0];
-    if (!row || (row.requested_at as number) <= now - SECOND_PERSON_TTL_MS) {
-      this.sql.exec(
-        `INSERT INTO pending_ops (key, requested_by, requested_at) VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET requested_by = excluded.requested_by, requested_at = excluded.requested_at`,
-        key,
-        actor,
-        now,
-      );
-      return "first";
+    const state: QuorumState = row
+      ? {
+          tag: "waiting",
+          requester: this.actorIdentity(row.requested_by as string),
+          requestedAt: row.requested_at as number,
+        }
+      : { tag: "empty" };
+    const step = commitQuorum(state, { type: "ask", actor: this.actorIdentity(actor), now });
+    if (!step.ok) return { tag: "refused" };
+    for (const effect of step.effects) {
+      if (effect.type === "upsert") {
+        this.sql.exec(
+          `INSERT INTO pending_ops (key, requested_by, requested_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET requested_by = excluded.requested_by, requested_at = excluded.requested_at`,
+          key,
+          effect.requesterId,
+          effect.requestedAt,
+        );
+      } else if (effect.type === "delete") {
+        const gone = this.sql
+          .exec(
+            "DELETE FROM pending_ops WHERE key = ? AND requested_by = ? AND requested_at = ? RETURNING key",
+            key,
+            effect.requesterId,
+            effect.requestedAt,
+          )
+          .toArray();
+        if (gone.length === 0) {
+          console.warn(JSON.stringify({ at: "quorum", reason: "replay" }));
+          return { tag: "replay" };
+        }
+      }
     }
-    if (this.sameHuman(row.requested_by as string, actor)) return "same";
-    this.sql.exec("DELETE FROM pending_ops WHERE key = ?", key);
-    return "second";
+    return { tag: step.decision };
   }
 
   /** Who asked first for a pending two-person step, or null when none is waiting. */
@@ -883,6 +910,29 @@ export class TenantPolicy extends DurableObject<Env> {
     return row && (row.requested_at as number) > now - SECOND_PERSON_TTL_MS
       ? (row.requested_by as string)
       : null;
+  }
+
+  /**
+   * Identity for the quorum check. The directory subject wins. Otherwise the
+   * sign-in address in `gov_identity` wins over the directory email, so two
+   * directory rows for one human cannot confirm each other.
+   */
+  private actorIdentity(principalId: string): ActorIdentity {
+    const p = this.sql
+      .exec("SELECT subject, email FROM principals WHERE id = ?", principalId)
+      .toArray()[0];
+    const signIn = this.sql
+      .exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId)
+      .toArray()[0]?.email as string | undefined;
+    const directory = (p?.email as string | undefined)?.toLowerCase() ?? null;
+    const email = (signIn ?? directory)?.toLowerCase() ?? null;
+    let subject = (p?.subject as string | null | undefined) ?? null;
+    if (!subject && email) {
+      subject =
+        (this.sql.exec("SELECT subject FROM principals WHERE email = ?", email).toArray()[0]
+          ?.subject as string | null | undefined) ?? null;
+    }
+    return { id: principalId, subject, email };
   }
 
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */

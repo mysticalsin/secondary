@@ -5,6 +5,7 @@
 //   POST /v1/admin/rights/erase        { principal }; always needs a second person
 
 import { Hono, type MiddlewareHandler } from "hono";
+import { quorumConfirmed } from "../../../src/state/quorum.ts";
 import { HTTPException } from "hono/http-exception";
 import { appendReceipt, newReceiptId } from "./audit.ts";
 import { requireOrg, viewOf } from "./auth.ts";
@@ -151,7 +152,7 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       now(),
       s.principal.email,
     );
-    if (step !== "second") {
+    if (!quorumConfirmed(step)) {
       if (!(await audit(c, s, "rights_export_request", `export requested for ${pseudonym}`)))
         return c.json({ error: "audit_unavailable" }, 503);
       return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
@@ -181,7 +182,7 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       now(),
       s.principal.email,
     );
-    if (step !== "second") {
+    if (!quorumConfirmed(step)) {
       await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);
       return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
     }

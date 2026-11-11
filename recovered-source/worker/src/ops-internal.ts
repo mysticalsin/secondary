@@ -7,6 +7,7 @@
 // signed with INTERNAL_HMAC_KEY. That key cannot reach anything under /v1/internal/ops.
 
 import { Hono } from "hono";
+import { quorumConfirmed } from "../../../src/state/quorum.ts";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
 import { unixSeconds } from "../../../packages/contracts/src/signed-call.ts";
@@ -160,8 +161,8 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
         const at = deps.now?.() ?? Date.now();
         const requester = await tenant.pendingRequester(key, at);
         const step = await tenant.requestSecond(key, `ops:${handle}`, at);
-        if (step === "same") return c.json({ error: "same_person" }, 409);
-        if (step === "first") {
+        if (step.tag === "same_actor") return c.json({ error: "same_person" }, 409);
+        if (!quorumConfirmed(step)) {
           if (
             !(await receipt(
               "ops_restore_request",

@@ -2,6 +2,7 @@
 
 import { roleAllows } from "@secondary/policy";
 import { Hono } from "hono";
+import { quorumConfirmed } from "../../../../src/state/quorum.ts";
 import { IMPORT_BODY_BYTES } from "../security.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
@@ -84,12 +85,12 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
       const tenant = tenantStub(c.env, s.tenantId);
       const key = `brainfields:${b.scope}:${await sha256Hex(JSON.stringify(parsed.fields))}`;
       const step = await tenant.requestSecond(key, s.principal.id, s.ctx.now, s.principal.email);
-      if (step === "same")
+      if (step.tag === "same_actor")
         return c.json(
           { error: "same_person", reason: "A different person must confirm this change" },
           409,
         );
-      if (step === "first") {
+      if (!quorumConfirmed(step)) {
         await audit(c, {
           action: "brain.fields_request",
           nodeId: b.nodeId,
