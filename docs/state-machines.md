@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. High-risk rows stay LATER until this inventory is reviewed.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER. The order and the right-sizing notes are in the review section below. Step 0 pinned the current High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -21,16 +21,16 @@ Status in the table matches the code on this branch. High-risk rows stay LATER u
 | 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
 | 2 | Elevation window | `admin/store.ts:38`, writers at 970, 995, 1039, 1062 | LATER | High | LATER | Pending and active expire only in `toElevation` (128–132). |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
-| 4 | Second-person confirmation | `tenant-policy.ts:795` | LATER | High | LATER | Shared by kill switches, field exposure, brain roles, erasure. |
+| 4 | Second-person confirmation | `tenant-policy.ts:795` | LATER | High | LATER | Shared by kill switches, field exposure, brain roles, erasure. One quorum check with #7 and #8. |
 | 5 | Kill switch | `tenant-policy.ts:754`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
 | 6 | OIDC login | `auth/routes.ts:57` and `:99` | LATER | High | LATER | Login record is single-use only when `loginStateTake` runs. |
-| 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` writes any status string. |
-| 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. |
-| 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Archive is guarded. Save forces `published`, including from `archived`. |
-| 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | LATER | High | LATER | `open` / `dismissed` / `resolved` follow proposal decisions. No shared table. |
-| 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | Chooses a direct publish versus a draft proposal. |
+| 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` (`workspace.ts:536`) stores the caller status. No current route can pass `approved`. Shares the quorum check with #4 and #8. |
+| 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
+| 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Right-size to a status predicate plus an unarchive event. `savePage` currently republishes an archived page. |
+| 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
+| 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | One shared `publishMode()`. Dry run and real import use different formulas today. |
 | 12 | Brain member | `brains/store.ts:211`, set from `brains/routes.ts:704` | LATER | High | LATER | Caller passes `active` or `pending`. No transition check. |
-| 13 | Replay nonce | `tenant-policy.ts:599` | LATER | High | LATER | Accept once until TTL, then the row is deleted. |
+| 13 | Replay nonce | `tenant-policy.ts:628` | LATER | High | LATER | Named guard with tests, not a reducer. Accept once until TTL, then the row is deleted. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
 | 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
 | 16 | Token-budget hold | `src/state/budget-hold.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | A second settle is rejected and does not adjust the counter. |
@@ -46,6 +46,46 @@ Status in the table matches the code on this branch. High-risk rows stay LATER u
 | 26 | Import classifier | `uxv2/classifier.ts` | NOT A MACHINE | — | NOT A MACHINE | Pure verdict. The import machine is #11. |
 | 27 | Connector upsert | `connector.ts:61` | NOT A MACHINE | — | NOT A MACHINE | Request handlers. No connection lifecycle in this repo. |
 | 28 | Session-report publish flag | `brains/push.ts:212` | NOT A MACHINE | — | NOT A MACHINE | One boolean, one condition, no further states. |
+| 29 | Wiki job queue | `wiki/store.ts:54`, `:618`–`:638` | LATER | Medium | LATER | `pending` / `running` / `failed`, plus `done`. A claim older than five minutes returns to `pending`, or `failed` after 3 attempts. |
+| 30 | Erasure / rights | `ops-admin.ts:174`–`:189`; tombstones `tenant-policy.ts:979`–`:1008`; re-apply `ops-internal.ts:188` | LATER | High | LATER | Privacy. `erase_incomplete` is a 502 with no stored status. Tombstones outlive the person. A restore applies them again. |
+| 31 | Outbox dispatched flag | `workspace.ts:181`, `:617`, `:671` | NOT A MACHINE | — | NOT A MACHINE | `dispatched` defaults to 0. `outboxPending` reads `dispatched = 0`. This archive never sets the flag. |
+
+## Review notes
+
+Devin approved the inventory at `b527a8de` with these changes. No High-risk reducer is written yet.
+
+Right-sizing:
+
+- **#13** stays a named guard with tests. It does not become a reducer.
+- **#9** becomes a status predicate plus an unarchive event. It does not need a full page lifecycle.
+- **#11** is a decision: one shared `publishMode()` for the dry run and the real import.
+- **#4, #7, and #8** share one quorum / second-person check.
+- **#10** is folded into #8. Finding `open` / `dismissed` / `resolved` are effects of proposal review.
+
+Approved High order. Step 0 found that no API route can set `approved` through `Workspace.update`, so #7 stays fourth.
+
+1. #13 Replay nonce
+2. #6 OIDC login
+3. #4 Second-person confirmation
+4. #7 Workspace item release
+5. #5 Kill switch
+6. #2 Elevation window
+7. #3 Access request
+8. #12 Brain member
+9. #1 Governance change
+10. #9 Wiki page visibility
+11. #11 Brain import outcome
+12. #8 Wiki proposal review, with #10 folded in
+13. Erasure / rights (#30)
+
+Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and marks the flagged cases. It does not fix them.
+
+- **#7.** `workspace.ts:536` stores `patch.status ?? rec.status` and the `UPDATE` at 542 has no status predicate. The only caller that passes a status is `PUT /ux/accounts/:id/records/:rid` (`ux/records.ts:302`). `readFields` (`records.ts:161`) accepts a status only when it is in `STATUSES` (`records.ts:33`), which has no `approved`. `ux/personal.ts:105` and `:195` and `ux/records.ts:354` omit status. The method would store `approved`. No current route can send it, so this is not an approval bypass today.
+- **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
+- **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
+- **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft.
+- **#13.** `nonceFirst` (`tenant-policy.ts:628`) deletes expired rows, then `INSERT OR IGNORE ... RETURNING key`. True when one row comes back.
+- **#6.** The callback clears the login cookie (`auth/routes.ts:105`) before `loginStateTake` (`:116`). `error` (`:108`) and a missing or mismatched state (`:113`) return without taking the record, so the login row stays until its TTL. `loginStateTake` (`identity-store.ts:312`) deletes the row and then returns null when it is already expired, so that path does consume the row.
 
 ## Named areas that are not in this repo
 
@@ -224,6 +264,8 @@ Restricted scopes need a second person on the membership change. That is machine
 
 ## 4. Second-person confirmation
 
+Review: one quorum check, shared with #7 and #8. Still LATER.
+
 - Purpose: The first actor records an intent. A different human confirms it within 24 hours. The same human confirming does nothing.
 - Code: no reducer yet. `TenantPolicy.requestSecond` at `tenant-policy.ts:795`.
 - Persisted: yes, `pending_ops` (`key`, `requested_by`, `requested_at`). Unversioned. TTL is `SECOND_PERSON_TTL_MS`.
@@ -363,6 +405,8 @@ stateDiagram-v2
 
 ## 7. Workspace item release
 
+Review: shares the quorum check with #4 and #8. Step 0 pinned `update` at `workspace.ts:536`. No current route can pass `approved`, so this stays fourth in the High order. Still LATER.
+
 - Purpose: A contributed item waits as a candidate until enough distinct people approve it. An edit of an approved item sends it back to review.
 - Code: no reducer yet. `Workspace.update` (520), the contribute edit (730), `review` (775), `approve` (810).
 - Persisted: yes, `items.status` as unconstrained text. There is no version tag on the status value.
@@ -415,6 +459,8 @@ stateDiagram-v2
 Global versus scope changes `required`. It is data on the item (`releaseTarget`, `plane`), not a hidden branch in a second status field.
 
 ## 8. Wiki proposal review
+
+Review: includes machine 10. Shares the quorum check with #4 and #7. Still LATER. Step 0 pinned the pending-versus-candidate split.
 
 - Purpose: A wiki proposal is a workspace item of kind `wiki_ingest`, `wiki_lint`, or `wiki_dream`. Deciding it applies or discards a diff.
 - Code: no reducer yet. `wikiPropose` (around 1086–1126), `wikiDecide` (1338), `wikiEditProposal` (1465), and the erase scrub (1927).
@@ -469,6 +515,8 @@ stateDiagram-v2
 
 ## 9. Wiki page visibility
 
+Review: the fix is a status predicate plus an unarchive event, not a larger lifecycle. Step 0 pinned that `savePage` republishes an archived page. Still LATER.
+
 - Purpose: A page is readable while `published`. Archiving hides it. Saving a page publishes it.
 - Code: no reducer yet. `savePage` (819) and the archive loop (1229).
 - Persisted: yes, `wiki_pages.status`. The type says `"published" | "archived"` (`wiki/types.ts:88`). The column is unversioned text.
@@ -515,6 +563,8 @@ None.
 
 ## 10. Wiki finding
 
+Folded into #8. These states are effects of proposal review. Do not write a separate reducer. The transitions below stay as the record of the current writes.
+
 - Purpose: A lint or ingest finding tracks whether the proposal that would fix it is still open.
 - Code: no reducer yet. Insert at 1097, dismiss at 1386, resolve at 1452.
 - Persisted: yes, `wiki_findings.status`. Unversioned. No check that `dismissed` is not later marked `resolved` on the same key by a different proposal.
@@ -559,6 +609,8 @@ stateDiagram-v2
 None.
 
 ## 11. Brain import outcome
+
+Review: one shared `publishMode()` for the dry run and the real import. Step 0 pinned that the two formulas disagree. Still LATER.
 
 - Purpose: Each file in an OKF, Obsidian, or Outline import is skipped, shown as a dry-run page, or written as a draft proposal or a direct publish.
 - Code: no reducer yet. `runImport` in `brains/data.ts:332`. Parsers in `brains/importers.ts` only build documents. They do not publish.
@@ -659,7 +711,7 @@ Restricted brains and heavy roles on a global brain set `needsSecond` before thi
 ## 13. Replay nonce
 
 - Purpose: A signed internal call's nonce is accepted once inside its TTL.
-- Code: no reducer yet. `nonceFirst` at `tenant-policy.ts:599`. The in-memory double in `harness/tests/contracts-security.test.ts:26` copies the accept-once rule for tests.
+- Code: a named guard, `nonceFirst` at `tenant-policy.ts:628`. Review: keep the guard and its tests. Do not turn this into a reducer. The in-memory double in `harness/tests/contracts-security.test.ts:26` copies the accept-once rule for tests. Step 0 pins the same rule in `harness/tests/characterization.test.ts`.
 - Persisted: yes, `nonces` (`key`, `expires_at`). Unversioned. Expired rows are deleted at the start of the next call, which is the transition back to unseen.
 - What changed: nothing in this commit.
 
@@ -685,7 +737,7 @@ Restricted brains and heavy roles on a global brain set `needsSecond` before thi
 | seen | present | insert ignored | seen | caller rejects |
 | seen | expire | `expires_at <= now` | unseen | delete |
 
-Two states, with an ordering rule, so this is a machine. It is High because it is the replay gate for connector, MCP, and ops calls.
+Two states, with an ordering rule, so this is a machine. It is High because it is the replay gate for connector, MCP, and ops calls. The approved fix is tests around the existing guard, not a new reducer.
 
 ```mermaid
 stateDiagram-v2
@@ -1052,6 +1104,26 @@ stateDiagram-v2
 ### Platform / flag differences
 
 None.
+
+## 29. Wiki job queue
+
+- Purpose: A wiki job waits, runs, finishes, or is given up.
+- Code: no reducer yet. `MAX_ATTEMPTS` is 3 (`wiki/store.ts:54`). `wikiJobsDue` (`:618`) reclaims a `running` row whose claim is older than five minutes.
+- Persisted: yes, `wiki_jobs.state`.
+- What changed: nothing. Documented after review. Medium, and still LATER. Not part of the approved High order.
+
+States are `pending`, `running`, `done`, and `failed`. A due `pending` row becomes `running` and `attempts` increases. A `running` row older than five minutes returns to `pending`, or becomes `failed` when `attempts` is already 3. `done` and `failed` rows are deleted after 14 days.
+
+## 30. Erasure / rights
+
+- Purpose: A configure-role erasure removes a person, remembers that removal, and applies it again after a restore.
+- Code: no reducer yet. `POST /rights/erase` (`ops-admin.ts:166`). The second person is machine 4 (`requestSecond` at 178). `eraseSubject` either finishes or the route returns 502 `erase_incomplete` (`:189`) with no stored status for that failure. Tombstones are `tombstoneAdd` (`tenant-policy.ts:979`). A restore calls `reapplyErasures` (`ops-internal.ts:188`).
+- Persisted: the tombstone row. The 502 path stores nothing.
+- What changed: nothing. High, and privacy. Last in the approved High order.
+
+## 31. Outbox dispatched flag
+
+Not a machine. `outbox.dispatched` is created as `INTEGER NOT NULL DEFAULT 0` (`workspace.ts:181`). `outbox` (`:617`) inserts a row and does not set the flag. `outboxPending` (`:671`) reads `WHERE dispatched = 0`. No statement in this archive sets `dispatched` to 1, so the flag has a column and no transition.
 
 ## 21–28. Not machines
 
