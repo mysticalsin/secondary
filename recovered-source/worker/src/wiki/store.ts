@@ -1558,19 +1558,30 @@ export abstract class WikiBase extends DurableObject<Env> {
       return { ok: false, code: "already_done", message: "You already approved this revision" };
     const approvals = item.approvals + 1;
     if (approvals < required) {
-      const noted = this.sql
-        .exec(
-          `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
-           RETURNING actor_id`,
-          id,
-          item.revision,
-          actorId,
-          now,
-        )
-        .toArray();
-      if (!noted.length)
-        return { ok: false, code: "already_done", message: "You already approved this revision" };
-      this.wikiLogAppend(actorId, `${p.kind}.approval`, { id, approvals, required }, now);
+      try {
+        this.ctx.storage.transactionSync(() => {
+          const noted = this.sql
+            .exec(
+              `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
+               RETURNING actor_id`,
+              id,
+              item.revision,
+              actorId,
+              now,
+            )
+            .toArray();
+          if (!noted.length)
+            throw new PageRefusal({
+              ok: false,
+              code: "already_done",
+              message: "You already approved this revision",
+            });
+          this.wikiLogAppend(actorId, `${p.kind}.approval`, { id, approvals, required }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
       return { ok: true, status: "pending", applied: null, approvals, required };
     }
     let applied: ApplyResult | null = null;
