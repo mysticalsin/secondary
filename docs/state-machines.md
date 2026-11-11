@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, and #7, whose release status is now a guarded transition. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, and #5, whose stored flag accepts only 0 and 1. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -22,7 +22,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 2 | Elevation window | `admin/store.ts:38`, writers at 970, 995, 1039, 1062 | LATER | High | LATER | Pending and active expire only in `toElevation` (128–132). |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
-| 5 | Kill switch | `tenant-policy.ts:834`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
+| 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:873`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate. On in prod waits for a second person. A stored value other than 0 or 1 stays off. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
@@ -59,6 +59,7 @@ Devin approved the inventory at `b527a8de` with these changes. #6 is the login-r
 Right-sizing:
 
 - **#13** stays a named guard, not a reducer. Expiry does not reopen a seen key. Fixed in `nonceFirst`.
+- **#5** is a flag. `decodeSwitchEnabled` accepts 0 and 1. The pending re-enable stays the quorum machine. Fixed in `transitionSwitch`.
 - **#9** becomes a status predicate plus an unarchive event. It does not need a full page lifecycle.
 - **#11** Jarvis: a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import share one `publishMode()` that defaults to draft. Publishing takes an explicit action. Not implemented yet.
 - **#4, #7, and #8** share one quorum / second-person check.
@@ -70,7 +71,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 2. #6 OIDC login (fixed: every terminal callback consumes the login row)
 3. #4 Second-person confirmation (fixed: one typed check, and the requester cannot confirm)
 4. #7 Workspace item release (fixed: update cannot set `approved`; release uses the shared quorum result)
-5. #5 Kill switch
+5. #5 Kill switch (fixed: a value other than 0 or 1 stays off, and an unknown name is refused)
 6. #2 Elevation window
 7. #3 Access request
 8. #12 Brain member
@@ -83,6 +84,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and marks the flagged cases. It does not fix them.
 
 - **#7.** Fixed. `commitItem` rejects an update whose status is outside the allow-list, including `approved`. The record route still sends only `STATUSES`, which has no approval word, and those words are in the allow-list. Release calls `commitQuorum`.
+- **#5.** Fixed. `decodeSwitchEnabled` reads 1 as on and 0 as off. Any other stored value reads as off, and turning it on is refused. Turning it off writes canonical 0. An unknown name, a non-boolean, and an unreadable clock do not write. Prod re-enable is still `requestSecond`.
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
@@ -323,51 +325,53 @@ Callers decide whether to invoke this at all. Prod kill-switch re-enable does. T
 
 ## 5. Kill switch
 
-- Purpose: `mcp`, `connector`, `ai`, and `contribute` are on unless a row says off. Turning one off is immediate. Turning one on can wait for a second person.
-- Code: no reducer yet. `setSwitch` at `tenant-policy.ts:834`. Defaults in `switches.ts:10` (`allOn`).
-- Persisted: yes, `switches` plus a `pending_ops` row `switch:<name>`, and a journal entry outside the snapshot (772–773) so a restore cannot turn a switch back on.
-- What changed: nothing in this commit.
+- Purpose: `mcp`, `connector`, `ai`, and `contribute` are on unless a row says off. Turning one off is immediate. Turning one on in prod waits for a second person.
+- Code: `decodeSwitchEnabled` and `transitionSwitch` in `src/state/kill-switch.ts`. `setSwitch` at `tenant-policy.ts:873` applies the effects. Names in `switches.ts:3`. Prod re-enable is `requestSecond`, the quorum machine in section 4, not a second flag state.
+- Persisted: yes, `switches` plus a `pending_ops` row `switch:<name>`, and a journal entry outside the snapshot (`tenant-policy.ts:918`) so a restore cannot turn a switch back on.
+- What changed: a stored value other than `0` or `1` reads as off, and a turn-on is refused. Turning that cell off writes canonical `0` and logs `corrupt_value` without the stored value. An unknown name, a non-boolean, and a clock that is not a safe integer do not write. A pending ask whose name is not one of the four switches is omitted from `switchStatus`.
 
 ### States
 
 | State | Data carried | Meaning |
 |---|---|---|
-| on | changedAt or absent row | Enabled. Absence means on |
-| off | changedBy, changedAt | Disabled |
-| enable_pending | first actor, requestedAt | Prod re-enable waiting |
+| on | absent row, or `enabled` 1 | Enabled. Absence means on |
+| off | `enabled` 0 | Disabled |
+| corrupt | any other `enabled` value | Unreadable. Reads as off. Turn-on is refused |
 
-The pending flag lives in `pending_ops`, not in `switches.enabled`, so `enabled: false` plus a pending row is a pair of fields rather than one state.
+The pending ask is a quorum row in `pending_ops`. It is not a flag state.
 
 ### Events
 
 | Event | Source |
 |---|---|
 | turn_off | Ops route, any one person |
-| turn_on | Ops route |
+| turn_on | Ops route. `twoPerson` false, or a quorum result |
 
 ### Transitions
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| on or off | turn_off | none | off | write `enabled = 0`, delete pending, journal |
-| on | turn_on | already on (`switchState`) | on | no write. Return `applied` |
-| off | turn_on | `twoPerson` is false | on | write, journal |
-| off | turn_on | `twoPerson`, quorum result is not `confirmed` | enable_pending | return `pending` |
-| off | turn_on | `twoPerson`, quorum result is `confirmed` | on | write, journal |
+| on, off, or corrupt | turn_off | clock is a safe integer | off | write `enabled` 0, delete pending, journal. A corrupt cell also logs `corrupt_value` |
+| on | turn_on | already on, including when `twoPerson` is set | on | no write, and no new ask. Return `applied` |
+| off | turn_on | `twoPerson` is false | on | write `enabled` 1, journal. A stale pending row stays |
+| off | turn_on | `twoPerson`, quorum result is not `confirmed` | off | no write. Return `pending`. `sameActor` when the quorum tag is `same_actor` |
+| off | turn_on | `twoPerson`, quorum result is `confirmed` | on | write `enabled` 1, journal. Quorum already deleted the ask |
+| corrupt | turn_on | — | corrupt | no write. Return `refused`. Log `corrupt_value` |
+| any | turn_off or turn_on | clock is not a safe integer | unchanged | no write. Return `refused`. Log `clock_unreadable` |
+| — | unknown name, or a non-boolean | boundary, before the transition | unchanged | no write. Return `refused`. Log `unknown_name` or `enabled_unreadable`. The line has no name and no value |
 
 ```mermaid
 stateDiagram-v2
   [*] --> On: no row
   On --> Off: turn off
-  Off --> On: turn on without two-person
-  Off --> EnablePending: first request to turn on
-  EnablePending --> On: second person
-  EnablePending --> Off: turn off clears pending
+  Off --> On: direct turn on, or a confirmed second person
+  Corrupt --> Off: turn off writes canonical 0
+  Corrupt --> Corrupt: turn on is refused
 ```
 
 ### Platform / flag differences
 
-`twoPerson` is an argument. The ops route sets it for prod. That flag is an input to the guard, but the guard is inlined in `setSwitch` rather than named.
+`twoPerson` is an argument. The ops route sets it from prod. The route returns 409 `switch_refused` when `setSwitch` returns `refused`.
 
 ## 6. OIDC login
 

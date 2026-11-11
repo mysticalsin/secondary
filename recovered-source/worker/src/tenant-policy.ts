@@ -16,7 +16,6 @@ import {
   commitQuorum,
   type QuorumResult,
   type QuorumState,
-  quorumConfirmed,
   SECOND_PERSON_TTL_MS,
 } from "../../../src/state/quorum.ts";
 import {
@@ -28,6 +27,12 @@ import {
   seedWrites,
   storeSeed,
 } from "../../../src/state/wiki-seed.ts";
+import { commit, reject } from "../../../src/state/illegal.ts";
+import {
+  commitSwitch,
+  decodeSwitchEnabled,
+  type SwitchEvent,
+} from "../../../src/state/kill-switch.ts";
 import { lastAcceptedMs, nonceExpiresAt } from "../../../packages/contracts/src/signed-call.ts";
 import { GOV_METHODS, GovStore } from "./admin/store.ts";
 import {
@@ -820,8 +825,16 @@ export class TenantPolicy extends DurableObject<Env> {
 
   private switchState(): SwitchState {
     const out = allOn();
-    for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray())
-      if (isSwitchName(r.name)) out[r.name] = r.enabled === 1;
+    for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray()) {
+      if (!isSwitchName(r.name)) continue;
+      const flag = decodeSwitchEnabled(r.enabled);
+      if (flag.tag === "corrupt") {
+        commit(reject("kill_switch", "corrupt", "read", "corrupt_value"));
+        out[r.name] = false;
+        continue;
+      }
+      out[r.name] = flag.tag === "on";
+    }
     return out;
   }
 
@@ -846,10 +859,10 @@ export class TenantPolicy extends DurableObject<Env> {
         now - SECOND_PERSON_TTL_MS,
       )
       .toArray()
-      .map((r) => ({
-        switch: (r.key as string).slice(7) as SwitchName,
-        requestedAt: r.requested_at as number,
-      }));
+      .flatMap((r) => {
+        const name = (r.key as string).slice("switch:".length);
+        return isSwitchName(name) ? [{ switch: name, requestedAt: r.requested_at as number }] : [];
+      });
     return { switches, pending };
   }
 
@@ -858,37 +871,57 @@ export class TenantPolicy extends DurableObject<Env> {
    * when `twoPerson` is set (prod): the first request is recorded and expires after 24 hours.
    */
   setSwitch(
-    name: SwitchName,
+    name: string,
     enabled: boolean,
     actor: string,
     now: number,
     twoPerson: boolean,
     email = "",
-  ): { status: "applied" | "pending"; sameActor?: boolean } {
-    const apply = () => {
-      this.sql.exec(
-        `INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, changed_by = excluded.changed_by,
-           changed_at = excluded.changed_at`,
-        name,
-        enabled ? 1 : 0,
-        actor,
+  ): { status: "applied" | "pending" | "refused"; sameActor?: boolean } {
+    const turn = enabled === true ? "turn_on" : "turn_off";
+    if (!isSwitchName(name)) {
+      commit(reject("kill_switch", "unreadable", turn, "unknown_name"));
+      return { status: "refused" };
+    }
+    if (typeof enabled !== "boolean") {
+      commit(reject("kill_switch", "unreadable", "turn", "enabled_unreadable"));
+      return { status: "refused" };
+    }
+    const stored = this.sql.exec("SELECT enabled FROM switches WHERE name = ?", name).toArray()[0];
+    const flag = stored === undefined ? { tag: "on" as const } : decodeSwitchEnabled(stored.enabled);
+    let event: SwitchEvent;
+    if (!enabled) event = { type: "turn_off", now };
+    else if (twoPerson && flag.tag === "off" && Number.isSafeInteger(now)) {
+      event = {
+        type: "turn_on",
         now,
-      );
-      // Kept outside the snapshot, so a restore cannot turn a kill switch back on (N-02).
-      this.journal.switchSet(name, enabled, now);
-    };
-    if (!enabled) {
-      apply();
-      this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${name}`);
-      return { status: "applied" };
+        twoPerson: true,
+        quorum: this.requestSecond(`switch:${name}`, actor, now, email),
+      };
+    } else event = { type: "turn_on", now, twoPerson: false };
+    const step = commitSwitch(flag, event);
+    if (flag.tag === "corrupt" && step.ok) {
+      commit(reject("kill_switch", "corrupt", event.type, "corrupt_value"));
     }
-    if (this.switchState()[name]) return { status: "applied" };
-    if (twoPerson) {
-      const r = this.requestSecond(`switch:${name}`, actor, now, email);
-      if (!quorumConfirmed(r)) return { status: "pending", sameActor: r.tag === "same_actor" };
+    if (!step.ok) return { status: "refused" };
+    for (const effect of step.effects) {
+      if (effect.type === "write") {
+        this.sql.exec(
+          `INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, changed_by = excluded.changed_by,
+             changed_at = excluded.changed_at`,
+          name,
+          effect.enabled ? 1 : 0,
+          actor,
+          now,
+        );
+        // Kept outside the snapshot, so a restore cannot turn a kill switch back on (N-02).
+        this.journal.switchSet(name, effect.enabled, now);
+      } else {
+        this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${name}`);
+      }
     }
-    apply();
+    if (step.status === "pending") return { status: "pending", sameActor: step.sameActor === true };
     return { status: "applied" };
   }
 

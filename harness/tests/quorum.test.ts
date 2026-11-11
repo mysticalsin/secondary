@@ -277,6 +277,13 @@ test("quorum: the second-person callers share one result and do not keep string 
     "recovered-source/worker/src/ops-admin.ts",
     "recovered-source/worker/src/ops-internal.ts",
   ];
+  const decisions = [
+    "src/state/kill-switch.ts",
+    "recovered-source/worker/src/brains/data.ts",
+    "recovered-source/worker/src/brains/routes.ts",
+    "recovered-source/worker/src/ops-admin.ts",
+    "recovered-source/worker/src/ops-internal.ts",
+  ];
   const keys = [
     "switch:",
     "brainfields:",
@@ -288,9 +295,12 @@ test("quorum: the second-person callers share one result and do not keep string 
   ];
   const combined = callers.map((rel) => readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8")).join("\n");
   for (const key of keys) assert.equal(combined.includes(key), true, key);
-  for (const rel of callers) {
+  for (const rel of decisions) {
     const text = readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");
     assert.equal(text.includes("quorumConfirmed"), true, rel);
+  }
+  for (const rel of callers) {
+    const text = readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");
     assert.equal(text.includes('=== "first"'), false, rel);
     assert.equal(text.includes('=== "same"'), false, rel);
     assert.equal(text.includes('=== "second"'), false, rel);
