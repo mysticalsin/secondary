@@ -34,7 +34,7 @@ Status in the table is the state of the code at this commit. Nothing is fixed ye
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
 | 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
 | 16 | Token-budget hold | `src/state/budget-hold.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | A second settle is rejected and does not adjust the counter. |
-| 17 | Token-counter CAS retry | `ai/budget.ts:22` | LATER | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
+| 17 | Token-counter CAS retry | `src/state/budget-cas.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
 | 18 | Wiki seed claim | `src/state/wiki-seed.ts`, wired from `tenant-policy.ts` and `wiki/seed.ts` | FIXED | Medium | FIX now | Dev only. An unexpired claim now blocks every version. Completing cannot move backwards. |
 | 19 | Agent turn round | `agent/loop.ts:75` | LATER | Medium | FIX now | Stop reason, budget, and the last-round tool ban are separate `if`s. |
 | 20 | SSE content assembly | `agent/stream.ts:128` | LATER | Medium | FIX now | Frame order is a switch that returns false to fail the round. |
@@ -845,9 +845,9 @@ None. The cap is an argument.
 ## 17. Token-counter CAS retry
 
 - Purpose: Add tokens to the day row using the row revision as a compare-and-set, and retry when another request wrote first.
-- Code: no reducer yet. `doBudget` `add` in `ai/budget.ts:21–49`.
-- Persisted: the counter body is the total. The attempt number is local.
-- What changed: nothing in this commit.
+- Code: `src/state/budget-cas.ts` (`transitionBudgetCas`). Tests: `harness/tests/budget-cas-machine.test.ts`. `doBudget` reads and writes the row, then applies the step.
+- Persisted: the counter body is the total. The attempt is request-local. Version 1 codec loads unknown JSON as `refused`. `doBudget` does not write the attempt.
+- What changed: continue versus stop moved into the reducer. Six attempts and an immediate cap refusal are unchanged. A `wrote` or `over_cap` event after the attempt has finished is rejected and logged.
 
 ### States
 

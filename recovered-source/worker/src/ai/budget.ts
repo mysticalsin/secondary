@@ -2,6 +2,7 @@
 // that no admitted view can reach (`ai:usage`), as one row per day. Updates use the row revision as a
 // compare-and-set, so concurrent requests cannot both spend the last tokens.
 
+import { commitBudgetCas, type BudgetCasEvent, type BudgetCasState } from "../../../../src/state/budget-cas.ts";
 import { openHold } from "../../../../src/state/budget-hold.ts";
 import { workspaceStub } from "../stubs.ts";
 
@@ -20,7 +21,8 @@ export function doBudget(env: Env, tenantId: string, now: number, bucket = "usag
   const ws = workspaceStub(env, tenantId, SCOPE);
   return {
     async add(tokens, cap) {
-      for (let attempt = 0; attempt < 6; attempt++) {
+      let state: BudgetCasState = { tag: "trying", attempt: 0 };
+      while (state.tag === "trying") {
         let row = await ws.get(id);
         if (!row) {
           const made = await ws.create(
@@ -37,14 +39,26 @@ export function doBudget(env: Env, tenantId: string, now: number, bucket = "usag
             now,
           );
           row = "ok" in made ? await ws.get(id) : made;
-          if (!row) continue;
+          if (!row) {
+            const missed = commitBudgetCas(state, { type: "retry" });
+            if (!missed.ok || missed.state.tag !== "trying") return null;
+            state = missed.state;
+            continue;
+          }
         }
         const used = Number(row.body ?? "0") || 0;
-        if (tokens > 0 && used + tokens > cap) return null;
-        const next = Math.max(0, used + tokens);
-        const r = await ws.edit(id, row.revision, { body: String(next) }, now, "system");
-        if ("ok" in r && r.ok) return next;
-        // A conflict means another request wrote first: read again and retry.
+        let event: BudgetCasEvent;
+        if (tokens > 0 && used + tokens > cap) event = { type: "over_cap" };
+        else {
+          const next = Math.max(0, used + tokens);
+          const wrote = await ws.edit(id, row.revision, { body: String(next) }, now, "system");
+          // A conflict means another request wrote first: read again and retry.
+          event = "ok" in wrote && wrote.ok ? { type: "wrote", total: next } : { type: "retry" };
+        }
+        const step = commitBudgetCas(state, event);
+        if (!step.ok || step.state.tag === "refused") return null;
+        if (step.state.tag === "committed") return step.state.total;
+        state = step.state;
       }
       return null;
     },
