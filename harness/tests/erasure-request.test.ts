@@ -1,11 +1,10 @@
 /**
- * The erasure request is one machine. These assertions describe the wiring at the
- * current head: the clock is injected, re-apply uses that machine, and the route
- * returns that machine's outcome.
+ * The erasure request is one machine. Tests drive the reducer, the tenant store,
+ * the erase route, and reapplyErasures. They do not scan source text.
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -33,53 +32,6 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 register(new URL("../runtime/erasure-stub-hook.mjs", import.meta.url).href, {
   parentURL: import.meta.url,
-});
-
-const root = new URL("../../", import.meta.url);
-
-function source(path: string): string {
-  return readFileSync(new URL(path, root), "utf8");
-}
-
-function between(src: string, start: string, end: string): string {
-  const from = src.indexOf(start);
-  const to = src.indexOf(end, from + start.length);
-  assert.notEqual(from, -1, start);
-  assert.notEqual(to, -1, end);
-  return src.slice(from, to);
-}
-
-test("erasure request: eraseSubject does not read the clock", () => {
-  const body = between(
-    source("recovered-source/worker/src/ops-rights.ts"),
-    "export async function eraseSubject",
-    "export async function reapplyErasures",
-  );
-  assert.doesNotMatch(body, /Date\.now\(\)/);
-});
-
-test("erasure request: re-apply runs the same machine", () => {
-  const body = source("recovered-source/worker/src/ops-rights.ts").slice(
-    source("recovered-source/worker/src/ops-rights.ts").indexOf("export async function reapplyErasures"),
-  );
-  assert.match(body, /runErasure\(/);
-});
-
-test("erasure request: re-apply has no second direct path", () => {
-  const body = source("recovered-source/worker/src/ops-rights.ts").slice(
-    source("recovered-source/worker/src/ops-rights.ts").indexOf("export async function reapplyErasures"),
-  );
-  assert.doesNotMatch(body, /kind === "tenant"/);
-});
-
-test("erasure request: the route returns the machine outcome", () => {
-  const body = between(source("recovered-source/worker/src/ops-admin.ts"), 'r.post("/rights/erase"', "return r;");
-  assert.match(body, /outcome\.status/);
-  assert.doesNotMatch(body, /if \(!done\)/);
-});
-
-test("erasure request: the reducer is a state module", () => {
-  assert.equal(existsSync(new URL("src/state/erasure-request.ts", root)), true);
 });
 
 const NOW = 1_700_000_000_000;
@@ -141,8 +93,13 @@ test("erasure request: a failed step stops the attempt and a resume continues it
   assert.equal(stopped.status.tag, "partial_failed");
   assert.equal(stopped.mark.receipts, "failed");
   assert.equal(stopped.mark.tombstone, "pending");
+  const persisted = saved.filter((state) => state.status.tag === "partial_failed").at(-1);
+  const reloaded = decodeErasureLedger(
+    persisted ? { status: encodeErasure(persisted).status, ledger: encodeErasure(persisted).ledger } : null,
+  );
+  assert.equal(reloaded.mark.receipts, "failed");
   const continued = await runErasure(
-    stopped,
+    reloaded,
     { type: "resume", now: NOW + 1 },
     async (step) => {
       seen.push(step);
@@ -195,10 +152,9 @@ test("erasure request: a restore reopens the restored step and leaves finished s
   assert.deepEqual(stepsForRestore("workspace", "acme", "p1"), ["scope:acme"]);
 });
 
-test("erasure request: an unreadable clock does not start, and the module does not read one", () => {
+test("erasure request: an unreadable clock does not start", () => {
   const refused = requireFail(commitErasure(absentErasure(), { type: "request", now: Number.NaN, steps: ["receipts"] }));
   assert.equal(refused.reason, "clock_unreadable");
-  assert.doesNotMatch(source("src/state/erasure-request.ts"), /Date\.now\(\)/);
 });
 
 const TENANT = "tenant-a";
@@ -325,10 +281,14 @@ function pendingErase(file: string): string | undefined {
   return row?.requested_by;
 }
 
-async function eraseApp(org: Org): Promise<{
+async function eraseApp(
+  org: Org,
+  options?: { receipts?: boolean },
+): Promise<{
   post: (who: Principal, at: number) => Promise<Response>;
   audits: string[];
 }> {
+  const receiptsOk = options?.receipts !== false;
   const audits: string[] = [];
   const mod = (await import(workerModule("ops-admin.ts"))) as {
     opsAdminRoutes: (deps: { now?: () => number }) => Hono;
@@ -359,8 +319,10 @@ async function eraseApp(org: Org): Promise<{
           AUDIT: {
             fetch: async (url: string) => {
               audits.push(String(url));
-              if (String(url).includes("pseudonymise"))
+              if (String(url).includes("pseudonymise")) {
+                if (!receiptsOk) return new Response("no", { status: 503 });
                 return new Response(JSON.stringify({ rewritten: 1 }), { status: 200 });
+              }
               return new Response(null, { status: 202 });
             },
           },
@@ -509,6 +471,96 @@ test("erasure request: a proven partial failure resumes without a second person"
     const loaded = decodeErasureLedger(readLedger(file) ?? null);
     assert.equal(loaded.status.tag, "completed");
     assert.equal(loaded.mark.receipts, "done");
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request: a failed step is stored, and the next call resumes that row to completed", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const org = buildOrg(["acme"]);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+    };
+    const order = erasurePlan(rights.companyScopes(org));
+    const mark: Record<string, "failed" | "pending"> = {};
+    for (const id of order) mark[id] = id === "receipts" ? "failed" : "pending";
+    const stored = encodeErasure({ status: { tag: "partial_failed" }, order, mark });
+    putLedger(file, stored.status, stored.ledger);
+    const failing = await eraseApp(org, { receipts: false });
+    const stopped = await failing.post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(stopped.status, 502);
+    const body = (await stopped.json()) as { error?: string; status?: string; step?: string };
+    assert.equal(body.error, "erase_incomplete");
+    assert.equal(body.status, "partial_failed");
+    assert.equal(body.step, "receipts");
+    const reloaded = decodeErasureLedger(readLedger(file) ?? null);
+    assert.equal(reloaded.status.tag, "partial_failed");
+    assert.equal(reloaded.mark.receipts, "failed");
+    const again = await eraseApp(org);
+    const resumed = await again.post(admin("ada", "ada@example.invalid"), NOW + 1_000);
+    assert.equal(resumed.status, 200);
+    const doneBody = (await resumed.json()) as { status?: string };
+    assert.equal(doneBody.status, "erased");
+    const done = decodeErasureLedger(readLedger(file) ?? null);
+    assert.equal(done.status.tag, "completed");
+    assert.equal(done.mark.receipts, "done");
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request: a tenant restore reopens directory through reapplyErasures", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const org = buildOrg(["acme"]);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+      reapplyErasures: (
+        env: { AUDIT: { fetch: (url: string) => Promise<Response> } },
+        tenantId: string,
+        kind: "tenant",
+        scope: string,
+        now: number,
+      ) => Promise<number>;
+    };
+    const finished = completedLedger(erasurePlan(rights.companyScopes(org)));
+    putLedger(file, finished.status, finished.ledger);
+    const db = openSqlite(file);
+    db.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, "subject@example.invalid");
+    db.prepare(
+      "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(SUBJECT, "pz_subject", "[]", NOW - 1_000, NOW + 86_400_000);
+    db.close();
+    const audits: string[] = [];
+    const applied = await rights.reapplyErasures(
+      {
+        AUDIT: {
+          fetch: async (url: string) => {
+            audits.push(String(url));
+            return new Response(JSON.stringify({ rewritten: 1 }), { status: 200 });
+          },
+        },
+      },
+      TENANT,
+      "tenant",
+      "tenant",
+      NOW,
+    );
+    assert.equal(applied, 1);
+    const left = openSqlite(file);
+    const person = left.prepare("SELECT id FROM principals WHERE id = ?").get(SUBJECT);
+    left.close();
+    assert.equal(person, undefined);
+    assert.deepEqual(erasureCalls(), []);
+    assert.equal(audits.some((url) => url.includes("pseudonymise")), false);
+    const stored = decodeErasureLedger(readLedger(file) ?? null);
+    assert.equal(stored.status.tag, "completed");
+    assert.equal(stored.mark.receipts, "done");
+    assert.equal(stored.mark.directory, "done");
   } finally {
     remove();
   }
