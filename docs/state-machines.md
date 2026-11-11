@@ -31,7 +31,7 @@ Status in the table is the state of the code at this commit. Nothing is fixed ye
 | 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | Chooses a direct publish versus a draft proposal. |
 | 12 | Brain member | `brains/store.ts:211`, set from `brains/routes.ts:704` | LATER | High | LATER | Caller passes `active` or `pending`. No transition check. |
 | 13 | Replay nonce | `tenant-policy.ts:599` | LATER | High | LATER | Accept once until TTL, then the row is deleted. |
-| 14 | Model-call retry | `ai/anthropic.ts:39` | LATER | Low | FIX now | Bounded retry. No persisted status. |
+| 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
 | 15 | Stream-open retry | `agent/stream.ts:84` | LATER | Low | FIX now | One retry, and only before the body is read. |
 | 16 | Token-budget hold | `ai/budget.ts:69` | LATER | Medium | FIX now | `settle` can run twice and adjust the counter twice. |
 | 17 | Token-counter CAS retry | `ai/budget.ts:22` | LATER | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
@@ -702,9 +702,9 @@ None. TTL is an argument (`ttlMs`).
 ## 14. Model-call retry
 
 - Purpose: One non-streaming Messages call retries bounded HTTP failures and stops on a terminal body.
-- Code: no reducer yet. The loop is `callModel` in `ai/anthropic.ts:39–100`. `RETRYABLE` is line 29.
-- Persisted: no.
-- What changed: nothing in this commit. Scheduled as the first Low fix.
+- Code: `src/state/model-call.ts` (`transitionModelCall`). Tests: `harness/tests/model-call-machine.test.ts`. `callModel` fetches and sleeps from the effect list.
+- Persisted: no. `encodeModelCall` / `decodeModelCall` version 1 exists so a stored in-flight call has a defined load. Unknown JSON loads as a finished `upstream_error`, which does not retry. `callModel` does not write it.
+- What changed: the retry decision moved into the reducer. `callModel` still returns the same reply for the same responses. A 2xx status sent as an HTTP failure is rejected and logged. The caller classifies a 2xx body instead, which is what the old loop did. Sleep stays `250 * 2 ** (attempt - 1)` before the next fetch.
 
 ### States
 

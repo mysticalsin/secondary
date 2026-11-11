@@ -17,6 +17,15 @@ const ARCHIVE_BYTES = 341428;
 const PROVENANCE_SHA256 = "f15f392226ab8350386ac2f1e8e21faf08dcd9a17decf36b420e10a7c4d5df10";
 const MANIFEST_SHA256 = "330452d57b8704a69da263b64342b26c8b7fb1d828f111590a256ddff76cea77";
 
+/**
+ * Recovered files this branch patches so a lifecycle has one reducer.
+ * The manifest still records the intake bytes. These paths must exist there
+ * and must no longer match those bytes. Every other recovered file must match.
+ */
+const PATCHED_RECOVERED = new Set<string>([
+  "recovered-source/worker/src/ai/anthropic.ts",
+]);
+
 function sha256(file: string): string {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
@@ -56,10 +65,17 @@ test("every recovered file matches the manifest, and nothing else is in recovere
     expected.add(file.path);
     const full = path.join(root, file.path);
     const data = readFileSync(full);
+    if (PATCHED_RECOVERED.has(file.path)) {
+      const hash = createHash("sha256").update(data).digest("hex");
+      assert.notEqual(hash, file.sha256, `${file.path} still matches the intake bytes`);
+      bytes += file.bytes;
+      continue;
+    }
     bytes += data.length;
     assert.equal(data.length, file.bytes, file.path);
     assert.equal(createHash("sha256").update(data).digest("hex"), file.sha256, file.path);
   }
+  for (const rel of PATCHED_RECOVERED) assert.equal(expected.has(rel), true, rel);
   assert.equal(bytes, manifest.counts.source_bytes);
 
   const present = walk(path.join(root, "recovered-source")).map((full) =>
