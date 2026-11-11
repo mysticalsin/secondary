@@ -32,7 +32,7 @@ Status in the table is the state of the code at this commit. Nothing is fixed ye
 | 12 | Brain member | `brains/store.ts:211`, set from `brains/routes.ts:704` | LATER | High | LATER | Caller passes `active` or `pending`. No transition check. |
 | 13 | Replay nonce | `tenant-policy.ts:599` | LATER | High | LATER | Accept once until TTL, then the row is deleted. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
-| 15 | Stream-open retry | `agent/stream.ts:84` | LATER | Low | FIX now | One retry, and only before the body is read. |
+| 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
 | 16 | Token-budget hold | `ai/budget.ts:69` | LATER | Medium | FIX now | `settle` can run twice and adjust the counter twice. |
 | 17 | Token-counter CAS retry | `ai/budget.ts:22` | LATER | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
 | 18 | Wiki seed claim | `tenant-policy.ts:272` and `wiki/seed.ts:21` | LATER | Medium | FIX now | Dev only. An unexpired claim for an older version is overwritten. `seedDone` can move the version backwards. |
@@ -751,9 +751,9 @@ None. `retries` and `timeoutMs` come from the request.
 ## 15. Stream-open retry
 
 - Purpose: One streaming round may retry a retryable HTTP status once, and only before any event byte is parsed.
-- Code: no reducer yet. `streamRound` in `agent/stream.ts:84–115`. The outer `catch` (271–275) maps `AbortError` to `timeout`.
-- Persisted: no.
-- What changed: nothing in this commit.
+- Code: `src/state/stream-open.ts` (`transitionStreamOpen`). Tests: `harness/tests/stream-open-machine.test.ts`. `streamRound` fetches, cancels, and sleeps from the effect list.
+- Persisted: no. Version 1 codec loads unknown JSON as `failed` / `upstream_error`, so a reload cannot retry. `streamRound` does not write it.
+- What changed: the open/retry decision moved into the reducer. A retryable status still retries once, with the same 250ms delay, and only from the first attempt. A timeout or a throw still fails the round with no second try, including after the body is being read. An HTTP event after the body was accepted is rejected and logged.
 
 ### States
 

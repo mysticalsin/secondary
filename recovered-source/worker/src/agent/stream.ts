@@ -8,10 +8,14 @@
 // No temperature, top_p, top_k, prefill, forced tool_choice or budget_tokens: the default model takes
 // none of them. The key is sent as a header and never logged.
 
+import {
+  commitStreamOpen,
+  type StreamOpenEvent,
+  type StreamOpenState,
+} from "../../../../src/state/stream-open.ts";
 import { ANTHROPIC_URL, type FetchFn } from "../ai/anthropic.ts";
 
 const ANTHROPIC_VERSION = "2023-06-01";
-const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 /** Bytes of event stream one round may deliver. Far above a program of 8 KB plus thinking. */
 const MAX_STREAM_BYTES = 1_000_000;
 
@@ -88,9 +92,10 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), r.timeoutMs);
   const known: { usage: Usage | null } = { usage: null };
+  let open: StreamOpenState = { tag: "opening", attempt: 0 };
   try {
     let res: Response | undefined;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    while (open.tag === "opening") {
       res = await doFetch(ANTHROPIC_URL, {
         method: "POST",
         headers: {
@@ -101,17 +106,32 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
         body,
         signal: ctl.signal,
       });
-      // Before the first byte of a stream a retry is safe; afterwards it never is.
-      if (RETRYABLE.has(res.status) && attempt === 0) {
+      const next = commitStreamOpen(open, {
+        type: "http",
+        status: res.status,
+        hasBody: res.body != null,
+      });
+      if (!next.ok) {
         await res.body?.cancel().catch(() => {});
-        await sleep(250);
+        return { ok: false, code: "upstream_error", usage: known.usage };
+      }
+      open = next.state;
+      if (open.tag === "opening") {
+        await res.body?.cancel().catch(() => {});
+        for (const effect of next.effects) {
+          if (effect.type === "retry") await sleep(effect.delayMs);
+        }
         continue;
       }
       break;
     }
-    if (!res?.ok || !res.body) {
+    if (open.tag !== "streaming" || !res?.ok || !res.body) {
       await res?.body?.cancel().catch(() => {});
-      return { ok: false, code: "upstream_error", usage: known.usage };
+      return {
+        ok: false,
+        code: open.tag === "failed" ? open.code : "upstream_error",
+        usage: known.usage,
+      };
     }
 
     const blocks: (Block | undefined)[] = [];
@@ -269,9 +289,12 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
       usage: { inputTokens: u.in, outputTokens: u.out },
     };
   } catch (e) {
+    const event: StreamOpenEvent =
+      e instanceof Error && e.name === "AbortError" ? { type: "timeout" } : { type: "transport" };
+    const next = commitStreamOpen(open, event);
     return {
       ok: false,
-      code: e instanceof Error && e.name === "AbortError" ? "timeout" : "upstream_error",
+      code: next.ok && next.state.tag === "failed" ? next.state.code : "upstream_error",
       usage: known.usage,
     };
   } finally {
