@@ -29,25 +29,36 @@ export function claimElevation(matchedRows: number): { tag: "applied" } | { tag:
   return matchedRows === 1 ? { tag: "applied" } : { tag: "replay" };
 }
 
-/** Stored status, with the same read-time lapse as `toElevation`. Anything else is unknown. */
+export type ElevationClock = {
+  status: unknown;
+  lapsesAt: number;
+  until: number | null;
+};
+
+/** The only clock comparison for an elevation window. Expired is a read, not a stored status. */
+export function effectiveStatus(row: ElevationClock, now: number): ElevationState {
+  if (row.status === "pending" && row.lapsesAt <= now) return { tag: "expired" };
+  if (row.status === "active" && row.until !== null && row.until <= now) return { tag: "expired" };
+  if (
+    row.status === "pending" ||
+    row.status === "active" ||
+    row.status === "denied" ||
+    row.status === "ended" ||
+    row.status === "expired"
+  ) {
+    return { tag: row.status };
+  }
+  return { tag: "unknown" };
+}
+
+/** Stored status plus the read-time lapse. Anything else is unknown. */
 export function decodeElevation(
   status: unknown,
   now: number,
   lapsesAt: number,
   until: number | null,
 ): ElevationState {
-  if (status === "pending" && lapsesAt <= now) return { tag: "expired" };
-  if (status === "active" && until !== null && until <= now) return { tag: "expired" };
-  if (
-    status === "pending" ||
-    status === "active" ||
-    status === "denied" ||
-    status === "ended" ||
-    status === "expired"
-  ) {
-    return { tag: status };
-  }
-  return { tag: "unknown" };
+  return effectiveStatus({ status, lapsesAt, until }, now);
 }
 
 export function transitionElevation(state: ElevationState, event: ElevationEvent): ElevationStep {

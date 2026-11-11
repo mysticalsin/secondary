@@ -27,6 +27,7 @@ import {
   seedWrites,
   storeSeed,
 } from "../../../src/state/wiki-seed.ts";
+import { effectiveStatus } from "../../../src/state/elevation.ts";
 import { commit, reject } from "../../../src/state/illegal.ts";
 import {
   commitSwitch,
@@ -446,15 +447,17 @@ export class TenantPolicy extends DurableObject<Env> {
           .toArray()
           .map((r) => r.account_id as string)
       : [];
-    const until = known
-      ? (this.sql
-          .exec(
-            "SELECT MAX(until) AS u FROM elevations WHERE principal_id = ? AND until > ?",
-            id,
-            input.now,
+    const openUntil = known
+      ? this.sql
+          .exec("SELECT until FROM elevations WHERE principal_id = ?", id)
+          .toArray()
+          .map((r) => r.until as number)
+          .filter(
+            (until) =>
+              effectiveStatus({ status: "active", lapsesAt: 0, until }, input.now).tag === "active",
           )
-          .one().u as number | null)
-      : null;
+      : [];
+    const until = openUntil.length ? Math.max(...openUntil) : null;
     // H-01: an Entra-bound principal is not reachable through another identity source by email alone.
     const hijack =
       !input.actAs &&

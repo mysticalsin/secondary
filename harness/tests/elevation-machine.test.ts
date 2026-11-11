@@ -5,6 +5,9 @@
  */
 
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { requireOk } from "./require-ok.ts";
 import {
@@ -37,6 +40,35 @@ type StateId = keyof typeof states;
 type EventId = keyof typeof events;
 
 const legal = new Set<string>(["pending:start", "pending:deny", "active:end"]);
+
+const clockComparison = /lapses_at\s*[<>=]|lapsesAt\s*[<>=]|until\s*[<>]/;
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, name.name);
+    if (name.isDirectory()) out.push(...sourceFiles(full));
+    else if (name.isFile() && name.name.endsWith(".ts")) out.push(full);
+  }
+  return out;
+}
+
+test("elevation clock: only effectiveStatus compares a window with now", () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+  const allowed = path.join(root, "src/state/elevation.ts");
+  const hits: string[] = [];
+  for (const file of [...sourceFiles(path.join(root, "src")), ...sourceFiles(path.join(root, "recovered-source"))]) {
+    if (file === allowed) continue;
+    if (clockComparison.test(readFileSync(file, "utf8"))) hits.push(path.relative(root, file));
+  }
+  assert.deepEqual(hits, []);
+  const body = readFileSync(allowed, "utf8");
+  const start = body.indexOf("export function effectiveStatus");
+  const end = body.indexOf("export function", start + 1);
+  const only = body.slice(start, end === -1 ? undefined : end);
+  assert.equal(clockComparison.test(only), true);
+  assert.equal(clockComparison.test(body.slice(0, start) + body.slice(end === -1 ? body.length : end)), false);
+});
 
 test("elevation decode: a lapsed pending or active window is expired, and any other word is unknown", () => {
   assert.deepEqual(decodeElevation("pending", NOW, NOW + 1, null), { tag: "pending" });

@@ -19,7 +19,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | # | Machine | Location | Status | Risk | Decision | Notes |
 |---|---|---|---|---|---|---|
 | 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
-| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1017`, predicate at `:1031`, `decideElevation` at `:1081`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only in `toElevation` (`admin/store.ts:135`). |
+| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1017`, predicate at `:1031`, `decideElevation` at `:1081`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
 | 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:873`, journal replay in `security-journal.ts:108`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. |
@@ -165,7 +165,7 @@ None inside the reducer. Whether a change needs a second person is decided by th
 
 - Purpose: A person asks for a time-boxed elevation, an admin approves or denies it, and the window can be ended early.
 - Code: `decodeElevation` and `transitionElevation` in `src/state/elevation.ts`. `startElevation` at `admin/store.ts:1017` applies the effect. `decideElevation` is at `:1081`. The approve route is `admin/routes.ts:721`.
-- Persisted: yes, `gov_elevations.status`. `toElevation` (`admin/store.ts:135`) rewrites `pending` and `active` to `expired` in memory when the clock has passed. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
+- Persisted: yes, `gov_elevations.status`. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. `toElevation` (`admin/store.ts:136`), the open-request check, the list, `decideElevation`, and the engine window all call it. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
 - What changed: a start from active, denied, ended, expired, or an unknown status is refused and writes nothing. The status update requires `status = 'pending'` and exactly one changed row (`admin/store.ts:1031`). The loser does not insert an engine row and does not bump the epoch. The approve route returns 409 for that refusal.
 
 ### States

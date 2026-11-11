@@ -11,6 +11,7 @@ import {
   claimElevation,
   commitElevation,
   decodeElevation,
+  effectiveStatus,
   type ElevationState,
 } from "../../../../src/state/elevation.ts";
 import type { SecurityJournal } from "../security-journal.ts";
@@ -133,10 +134,9 @@ const toChange = (r: Row, now: number): Change => {
 };
 
 const toElevation = (r: Row, now: number): ElevationRequest => {
-  let status = s(r.status) as ElevationStatus;
   const until = nn(r.until);
-  if (status === "pending" && n(r.lapses_at) <= now) status = "expired";
-  if (status === "active" && until !== null && until <= now) status = "expired";
+  const read = effectiveStatus({ status: s(r.status), lapsesAt: n(r.lapses_at), until }, now);
+  const status = (read.tag === "unknown" ? s(r.status) : read.tag) as ElevationStatus;
   return {
     id: s(r.id),
     principalId: s(r.principal_id),
@@ -966,13 +966,15 @@ export class GovStore {
         `Your role allows at most ${a.maxHours} hours at a time`,
       );
     const open = this.sql
-      .exec(
-        "SELECT id FROM gov_elevations WHERE principal_id = ? AND ((status = 'pending' AND lapses_at > ?) OR (status = 'active' AND until > ?))",
-        a.principalId,
-        now,
-        now,
-      )
-      .toArray()[0];
+      .exec("SELECT status, lapses_at, until FROM gov_elevations WHERE principal_id = ?", a.principalId)
+      .toArray()
+      .some((r) => {
+        const tag = effectiveStatus(
+          { status: s(r.status), lapsesAt: n(r.lapses_at), until: nn(r.until) },
+          now,
+        ).tag;
+        return tag === "pending" || tag === "active";
+      });
     if (open)
       return fail(
         409,
@@ -1142,12 +1144,13 @@ export class GovStore {
         refused = true;
         return;
       }
-      this.sql.exec(
-        "UPDATE elevations SET until = ? WHERE principal_id = ? AND until > ?",
-        now,
-        e.principalId,
-        now,
-      );
+      for (const row of this.sql
+        .exec("SELECT id, until FROM elevations WHERE principal_id = ?", e.principalId)
+        .toArray()) {
+        const open =
+          effectiveStatus({ status: "active", lapsesAt: 0, until: n(row.until) }, now).tag === "active";
+        if (open) this.sql.exec("UPDATE elevations SET until = ? WHERE id = ?", now, row.id);
+      }
       this.bump();
     });
     if (refused) return fail(409, "not_active", "This elevation is not active");
@@ -1172,7 +1175,7 @@ export class GovStore {
   activeElevation(principalId: string, now: number): ElevationRequest | null {
     return (
       this.listElevations(now, principalId).find(
-        (e) => e.status === "active" && (e.until ?? 0) > now,
+        (e) => e.status === "active",
       ) ?? null
     );
   }

@@ -43,6 +43,11 @@ type Store = {
     now: number,
   ): ElevationResult;
   endElevation(id: string, now: number): ElevationResult;
+  listElevations(
+    now: number,
+    principalId: string | null,
+  ): { id: string; status: string; until: number | null }[];
+  activeElevation(principalId: string, now: number): { id: string; status: string } | null;
 };
 
 function tempFile(): { file: string; remove: () => void } {
@@ -154,6 +159,60 @@ test("elevation: two approvers cannot both start one pending window", async () =
     };
     assert.equal(status.status, "active");
     check.close();
+  } finally {
+    remove();
+  }
+});
+
+test("elevation: a pending row past its window is expired for list, active, and decide, and cannot start", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { store, db } = await openStore(file);
+    const pending = store.requestElevation(
+      { principalId: "ada", hours: 2, reason: "incident", maxHours: 4, needsApproval: true },
+      NOW,
+    );
+    assert.equal(pending.ok, true);
+    if (!pending.ok) return;
+    db.prepare("UPDATE gov_elevations SET lapses_at = ? WHERE id = ?").run(NOW, pending.elevation.id);
+    assert.equal(store.listElevations(NOW, "ada")[0]?.status, "expired");
+    assert.equal(store.activeElevation("ada", NOW), null);
+    const decided = store.decideElevation(pending.elevation.id, true, "bea", null, NOW);
+    assert.equal(decided.ok, false);
+    if (!decided.ok) assert.equal(decided.code, "expired");
+    assert.equal(engineRows(db), 0);
+    const again = store.requestElevation(
+      { principalId: "ada", hours: 2, reason: "follow up", maxHours: 4, needsApproval: true },
+      NOW,
+    );
+    assert.equal(again.ok, true);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("elevation: an active window past its end reads as expired and cannot be ended early", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { store, db } = await openStore(file);
+    const started = store.requestElevation(
+      { principalId: "ada", hours: 2, reason: "incident", maxHours: 4, needsApproval: false },
+      NOW,
+    );
+    assert.equal(started.ok, true);
+    if (!started.ok) return;
+    db.prepare("UPDATE gov_elevations SET until = ? WHERE id = ?").run(NOW, started.elevation.id);
+    assert.equal(store.listElevations(NOW, null)[0]?.status, "expired");
+    assert.equal(store.activeElevation("ada", NOW), null);
+    const ended = store.endElevation(started.elevation.id, NOW);
+    assert.equal(ended.ok, false);
+    if (!ended.ok) assert.equal(ended.code, "not_active");
+    const stored = db.prepare("SELECT status FROM gov_elevations WHERE id = ?").get(started.elevation.id) as {
+      status: string;
+    };
+    assert.equal(stored.status, "active");
+    db.close();
   } finally {
     remove();
   }
