@@ -63,7 +63,7 @@ function prepare(db: DatabaseSync): void {
       PRIMARY KEY (principal_id, scope_type, scope_id));
     CREATE TABLE brain_members (
       principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
-      added_by TEXT NOT NULL, at INTEGER NOT NULL);
+      added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT);
     CREATE TABLE wiki_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
       kind TEXT NOT NULL, detail TEXT NOT NULL);
