@@ -8,6 +8,11 @@
 import type { Role } from "@secondary/policy";
 import { actorFromDirectory, type DirectoryPrincipal, sameActor } from "../../../../src/state/actor.ts";
 import {
+  claimAccessRequest,
+  commitAccessRequest,
+  decodeAccessRequest,
+} from "../../../../src/state/access-request.ts";
+import {
   claimElevation,
   commitElevation,
   decodeElevation,
@@ -921,21 +926,33 @@ export class GovStore {
         now,
       );
     const req = this.sql
-      .exec("SELECT id, principal_id FROM gov_access_requests WHERE change_id = ?", c.id)
+      .exec("SELECT id, principal_id, status FROM gov_access_requests WHERE change_id = ?", c.id)
       .toArray()[0];
     if (req) {
-      this.sql.exec(
-        "UPDATE gov_access_requests SET status = ? WHERE id = ?",
-        applied ? "granted" : "denied",
-        s(req.id),
-      );
-      this.notify(
-        s(req.principal_id),
-        applied ? "request_granted" : "request_denied",
-        applied ? "Your access request was granted" : "Your access request was not granted",
-        s(req.id),
+      const step = commitAccessRequest(decodeAccessRequest(s(req.status)), {
+        type: applied ? "grant" : "reject",
         now,
-      );
+      });
+      if (step.ok) {
+        const matched = this.sql
+          .exec(
+            `UPDATE gov_access_requests SET status = ? WHERE id = ? AND status IN ('pending', 'approved') RETURNING id`,
+            applied ? "granted" : "denied",
+            s(req.id),
+          )
+          .toArray().length;
+        if (claimAccessRequest(matched).tag !== "applied") {
+          console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+        } else {
+          this.notify(
+            s(req.principal_id),
+            applied ? "request_granted" : "request_denied",
+            applied ? "Your access request was granted" : "Your access request was not granted",
+            s(req.id),
+            now,
+          );
+        }
+      }
     }
   }
 
@@ -1256,22 +1273,32 @@ export class GovStore {
   ): { ok: true; request: AccessRequest } | Fail {
     const r = this.request(id);
     if (!r) return fail(404, "not_found", "No such request");
-    if (r.status !== "pending")
-      return fail(409, "not_pending", `This request is already ${r.status}`);
+    const step = commitAccessRequest(decodeAccessRequest(r.status), { type: "deny", now });
+    if (!step.ok) return fail(409, step.reason, `This request is already ${r.status}`);
     if (this.sameHuman(r.principalId, deciderId))
       return fail(403, "self_approval", "You cannot decide your own request");
     if (!note.trim())
       return fail(422, "reason_required", "Give the requester a reason for the denial");
+    let refused = false;
     this.tx(() => {
-      this.sql.exec(
-        "UPDATE gov_access_requests SET status = 'denied', decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
-        deciderId,
-        now,
-        note.trim().slice(0, 300),
-        id,
-      );
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_access_requests SET status = 'denied', decided_by = ?, decided_at = ?, note = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          deciderId,
+          now,
+          note.trim().slice(0, 300),
+          id,
+        )
+        .toArray().length;
+      if (claimAccessRequest(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+        refused = true;
+        return;
+      }
       this.notify(r.principalId, "request_denied", "Your access request was denied", id, now);
     });
+    if (refused) return fail(409, "not_pending", "This request is no longer pending");
     return { ok: true, request: this.request(id) as AccessRequest };
   }
 
@@ -1283,25 +1310,44 @@ export class GovStore {
   ): { ok: true; request: AccessRequest } | Fail {
     const r = this.request(id);
     if (!r) return fail(404, "not_found", "No such request");
-    if (r.status !== "pending")
-      return fail(409, "not_pending", `This request is already ${r.status}`);
+    const step = commitAccessRequest(decodeAccessRequest(r.status), { type: "approve", now });
+    if (!step.ok) return fail(409, step.reason, `This request is already ${r.status}`);
     if (this.sameHuman(r.principalId, deciderId))
       return fail(403, "self_approval", "You cannot decide your own request");
-    this.sql.exec(
-      "UPDATE gov_access_requests SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?",
-      deciderId,
-      now,
-      id,
-    );
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_access_requests SET status = 'approved', decided_by = ?, decided_at = ?
+         WHERE id = ? AND status = 'pending' RETURNING id`,
+        deciderId,
+        now,
+        id,
+      )
+      .toArray().length;
+    if (claimAccessRequest(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+      return fail(409, "not_pending", "This request is no longer pending");
+    }
     return { ok: true, request: this.request(id) as AccessRequest };
   }
 
-  /** A change that fulfils a request failed to apply: the request goes back to the queue. */
-  reopenRequest(id: string): void {
-    this.sql.exec(
-      "UPDATE gov_access_requests SET status = 'pending', decided_by = NULL, decided_at = NULL, change_id = NULL WHERE id = ?",
-      id,
-    );
+  /** A change that fulfils a request failed to apply: an approved request goes back to the queue. */
+  reopenRequest(id: string): { ok: true } | Fail {
+    const r = this.request(id);
+    if (!r) return fail(404, "not_found", "No such request");
+    const step = commitAccessRequest(decodeAccessRequest(r.status), { type: "reopen" });
+    if (!step.ok) return fail(409, step.reason, "This request cannot be reopened");
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_access_requests SET status = 'pending', decided_by = NULL, decided_at = NULL, change_id = NULL
+         WHERE id = ? AND status = 'approved' RETURNING id`,
+        id,
+      )
+      .toArray().length;
+    if (claimAccessRequest(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+      return fail(409, "not_approved", "This request cannot be reopened");
+    }
+    return { ok: true };
   }
 }
 

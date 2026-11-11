@@ -840,7 +840,8 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
         const marked = await w.gov.markApproved(id, w.s.principal.id, w.now);
         if (!marked.ok) return marked;
         if ((await w.gov.members(d.type, d.id)).some((m) => m.principalId === req.principalId)) {
-          await w.gov.reopenRequest(id);
+          const reopened = await w.gov.reopenRequest(id);
+          if (!reopened.ok) return reopened;
           return {
             ok: false as const,
             status: 409 as const,
@@ -865,7 +866,10 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
           },
           w.now,
         );
-        if (!out.ok) await w.gov.reopenRequest(id);
+        if (!out.ok) {
+          const reopened = await w.gov.reopenRequest(id);
+          if (!reopened.ok) return reopened;
+        }
         return out.ok
           ? {
               ok: true as const,

@@ -12,15 +12,15 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, and #2, whose start writes only a pending row. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, #2, whose start writes only a pending row, and #3, whose reopen and decision write only the status the table allows. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
 | # | Machine | Location | Status | Risk | Decision | Notes |
 |---|---|---|---|---|---|---|
 | 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
-| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1017`, predicate at `:1031`, `decideElevation` at `:1081`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. |
-| 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
+| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1036`, predicate at `:1050`, `decideElevation` at `:1100`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. |
+| 3 | Access request | `src/state/access-request.ts`, `markApproved` `admin/store.ts:1306` predicate `:1320`, `denyRequest` `:1268` predicate `:1287`, `reopenRequest` `:1334` predicate `:1342`, `afterDecision` `:899` predicate `:939`, routes `:843` and `:870` | FIXED | High | FIX now | Reopen is legal only from approved. A decision writes only a pending row. A fulfilling change writes only a pending or approved row. A lost race is 409 and does not notify. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
 | 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:873`, journal replay in `security-journal.ts:108`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
@@ -76,7 +76,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 4. #7 Workspace item release (fixed: update cannot set `approved`; release uses the shared quorum result)
 5. #5 Kill switch (fixed: a value other than 0 or 1 stays off, and an unknown name is refused)
 6. #2 Elevation window (fixed: a start from any status but pending is refused, and two starts cannot both succeed)
-7. #3 Access request
+7. #3 Access request (fixed: reopen only from approved, and two decisions cannot both succeed)
 8. #12 Brain member
 9. #1 Governance change
 10. #9 Wiki page visibility
@@ -88,7 +88,8 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 
 - **#7.** Fixed. `commitItem` rejects an update whose status is outside the allow-list, including `approved`. The record route still sends only `STATUSES`, which has no approval word, and those words are in the allow-list. Release calls `commitQuorum`.
 - **#5.** Fixed. `decodeSwitchEnabled` reads 1 as on and 0 as off. Any other stored value reads as off, and turning it on is refused. Turning it off writes canonical 0. An unknown name, a non-boolean, and an unreadable clock do not write. Prod re-enable is still `requestSecond`.
-- **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1017`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
+- **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1036`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
+- **#3.** Fixed. `transitionAccessRequest` approves or denies only from pending, reopens only from approved, and grants or rejects only a pending or approved request. Each write checks that predicate on `RETURNING`. A lost decision is 409 and does not notify.
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
@@ -164,8 +165,8 @@ None inside the reducer. Whether a change needs a second person is decided by th
 ## 2. Elevation window
 
 - Purpose: A person asks for a time-boxed elevation, an admin approves or denies it, and the window can be ended early.
-- Code: `decodeElevation` and `transitionElevation` in `src/state/elevation.ts`. `startElevation` at `admin/store.ts:1017` applies the effect. `decideElevation` is at `:1081`. The approve route is `admin/routes.ts:721`.
-- Persisted: yes, `gov_elevations.status`. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. `toElevation` (`admin/store.ts:136`), the open-request check, the list, `decideElevation`, and the engine window all call it. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
+- Code: `decodeElevation` and `transitionElevation` in `src/state/elevation.ts`. `startElevation` at `admin/store.ts:1036` applies the effect. `decideElevation` is at `:1100`. The approve route is `admin/routes.ts:721`.
+- Persisted: yes, `gov_elevations.status`. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. `toElevation` (`admin/store.ts:141`), the open-request check, the list, `decideElevation`, and the engine window all call it. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
 - What changed: a start from active, denied, ended, expired, or an unknown status is refused and writes nothing. The status update requires `status = 'pending'` and exactly one changed row (`admin/store.ts:1031`). The loser does not insert an engine row and does not bump the epoch. The approve route returns 409 for that refusal.
 
 ### States
@@ -220,9 +221,9 @@ stateDiagram-v2
 ## 3. Access request
 
 - Purpose: A person asks to join a scope. A steward approves, a change fulfils it, or it is denied.
-- Code: no reducer yet. `createRequest`, `denyRequest`, `markApproved`, `afterDecision`, `reopenRequest`.
+- Code: `src/state/access-request.ts`. Writers: `denyRequest` (`admin/store.ts:1268`), `markApproved` (`:1306`), `reopenRequest` (`:1334`), `afterDecision` (`:899`).
 - Persisted: yes, `gov_access_requests.status` (unversioned text).
-- What changed: nothing in this commit.
+- What changed: each write names the status it may leave. `reopenRequest` requires `approved`. A decision requires `pending`. `afterDecision` requires `pending` or `approved`, and notifies only when that row changes. A lost race is 409.
 
 ### States
 
@@ -240,8 +241,8 @@ stateDiagram-v2
 | create | Admin route |
 | deny | Steward |
 | mark_approved | Steward, before `propose` |
-| change_applied / change_rejected | `afterDecision` (907–922) |
-| reopen | `admin/routes.ts:843` and `:868` when the follow-up change cannot be made |
+| change_applied / change_rejected | `afterDecision` (`admin/store.ts:899`) |
+| reopen | `admin/routes.ts:843` and `:870` when the follow-up change cannot be made |
 
 ### Transitions
 
@@ -254,7 +255,7 @@ stateDiagram-v2
 | pending or approved | change_applied | row linked by `change_id` | granted | notify |
 | pending or approved | change_rejected | row linked by `change_id` | denied | notify |
 
-Unguarded today: `reopenRequest` (1214–1218) sets `pending` with no `WHERE status = ...`. `afterDecision` (911–914) sets `granted` or `denied` with no status check. A granted request would reopen if `reopenRequest` were called on it. The current callers run only after `markApproved` succeeded, so the row should be `approved`, but the method itself does not enforce that.
+`reopenRequest` (`admin/store.ts:1342`) updates only `status = 'approved'`. `markApproved` (`:1320`) and `denyRequest` (`:1287`) update only `status = 'pending'`. `afterDecision` (`:939`) updates only `status IN ('pending', 'approved')` and skips the request notice when no row changes. A granted, denied, or still-pending request cannot be reopened. Two approvers of one pending request produce one approval.
 
 ```mermaid
 stateDiagram-v2
