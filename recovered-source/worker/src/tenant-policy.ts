@@ -11,6 +11,7 @@ import {
   type QuorumState,
   quorumConfirmed,
   SECOND_PERSON_TTL_MS,
+  normalEmail,
 } from "../../../src/state/quorum.ts";
 import {
   commitWikiSeed,
@@ -859,7 +860,7 @@ export class TenantPolicy extends DurableObject<Env> {
    * Two-person rule. The decision is `transitionQuorum`. `recorded` stores the ask.
    * `same_actor` changes nothing. `confirmed` deletes that ask. `replay` means the
    * delete matched no row, so the caller must not apply. `email` is the sign-in
-   * address, so one human under two directory rows is one person (N-01).
+   * address. One human under two ids is one person when a normalised address matches (N-01).
    */
   requestSecond(key: string, actor: string, now: number, email = ""): QuorumResult {
     this.rememberAddress(actor, email);
@@ -913,26 +914,37 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   /**
-   * Identity for the quorum check. The directory subject wins. Otherwise the
-   * sign-in address in `gov_identity` wins over the directory email, so two
-   * directory rows for one human cannot confirm each other.
+   * Identity for the quorum check. Both subjects set: they match only when equal.
+   * Otherwise the sign-in address and the directory email both count, trimmed and
+   * lowercased. The subject lookup uses that same normalisation.
    */
   private actorIdentity(principalId: string): ActorIdentity {
     const p = this.sql
       .exec("SELECT subject, email FROM principals WHERE id = ?", principalId)
       .toArray()[0];
-    const signIn = this.sql
-      .exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId)
-      .toArray()[0]?.email as string | undefined;
-    const directory = (p?.email as string | undefined)?.toLowerCase() ?? null;
-    const email = (signIn ?? directory)?.toLowerCase() ?? null;
-    let subject = (p?.subject as string | null | undefined) ?? null;
-    if (!subject && email) {
-      subject =
-        (this.sql.exec("SELECT subject FROM principals WHERE email = ?", email).toArray()[0]
-          ?.subject as string | null | undefined) ?? null;
+    const signIn = normalEmail(
+      this.sql.exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId).toArray()[0]
+        ?.email as string | undefined,
+    );
+    const directory = normalEmail(p?.email as string | undefined);
+    let subject = (p?.subject as string | null | undefined)?.trim() || null;
+    if (!subject) {
+      for (const email of [directory, signIn]) {
+        if (!email) continue;
+        const found = this.sql
+          .exec(
+            "SELECT subject FROM principals WHERE lower(trim(email)) = ? AND subject IS NOT NULL",
+            email,
+          )
+          .toArray()[0]?.subject as string | null | undefined;
+        const trimmed = found?.trim() ?? "";
+        if (trimmed !== "") {
+          subject = trimmed;
+          break;
+        }
+      }
     }
-    return { id: principalId, subject, email };
+    return { id: principalId, subject, email: signIn, directoryEmail: directory };
   }
 
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */

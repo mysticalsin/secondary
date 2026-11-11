@@ -1,7 +1,8 @@
 /**
  * Second-person confirmation. The first actor records an ask. A different
  * person confirms it. The requester can never be the confirmer.
- * Identity is the directory subject, then the sign-in address, then the id.
+ * Two directory subjects are the same only when they are equal. Otherwise any
+ * normalised address matches: the sign-in address or the directory email.
  * A display name is not an identity.
  */
 
@@ -12,8 +13,17 @@ export const SECOND_PERSON_TTL_MS = 24 * 3_600_000;
 export type ActorIdentity = {
   id: string;
   subject: string | null;
+  /** Sign-in address. Null when this id has not signed in. */
   email: string | null;
+  /** Directory email. Null when this id has no principal row. */
+  directoryEmail: string | null;
 };
+
+/** Trim and lowercase. Empty becomes null. */
+export function normalEmail(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toLowerCase() ?? "";
+  return trimmed === "" ? null : trimmed;
+}
 
 export type QuorumState =
   | { tag: "empty" }
@@ -49,15 +59,22 @@ const blank = (value: string | null): string | null => {
   return trimmed === "" ? null : trimmed;
 };
 
+function addresses(actor: ActorIdentity): string[] {
+  const out: string[] = [];
+  for (const value of [actor.email, actor.directoryEmail]) {
+    const email = normalEmail(value);
+    if (email !== null && !out.includes(email)) out.push(email);
+  }
+  return out;
+}
+
 export function sameActor(a: ActorIdentity, b: ActorIdentity): boolean {
   if (a.id !== "" && a.id === b.id) return true;
   const leftSubject = blank(a.subject);
   const rightSubject = blank(b.subject);
   if (leftSubject && rightSubject) return leftSubject === rightSubject;
-  if (leftSubject || rightSubject) return false;
-  const leftEmail = blank(a.email)?.toLowerCase() ?? null;
-  const rightEmail = blank(b.email)?.toLowerCase() ?? null;
-  return leftEmail !== null && leftEmail === rightEmail;
+  const right = addresses(b);
+  return addresses(a).some((email) => right.includes(email));
 }
 
 export function transitionQuorum(state: QuorumState, event: QuorumEvent): QuorumStep {
@@ -70,7 +87,8 @@ export function transitionQuorum(state: QuorumState, event: QuorumEvent): Quorum
   const actor: ActorIdentity = {
     id: event.actor.id,
     subject: blank(event.actor.subject),
-    email: blank(event.actor.email)?.toLowerCase() ?? null,
+    email: normalEmail(event.actor.email),
+    directoryEmail: normalEmail(event.actor.directoryEmail),
   };
   const expired =
     state.tag === "waiting" && state.requestedAt <= event.now - SECOND_PERSON_TTL_MS;

@@ -1,6 +1,6 @@
 # State machines in secondary-api-recovery (Second Brain API)
 
-Last reviewed: 2026-11-11 at `bcf538e91aab4b6921abd6201cba5535c84a5229`
+Last reviewed: 2026-11-11 at `94a2b004409c360165beae07898ce1223989486e`
 
 Standard: Implicit state machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. No XState or other state-machine dependency. A plain reducer is the intended fix shape.
 
@@ -271,7 +271,7 @@ Review: one quorum check. #7 and #8 will reuse it and do not call it yet.
 - Purpose: The first actor records an intent. A different human confirms it within 24 hours. The same human confirming does nothing.
 - Code: `transitionQuorum` in `src/state/quorum.ts`. `TenantPolicy.requestSecond` performs the effects. Callers use `quorumConfirmed`.
 - Persisted: yes, `pending_ops` (`key`, `requested_by`, `requested_at`). Unversioned. TTL is `SECOND_PERSON_TTL_MS` (24 hours).
-- What changed: one typed result. The requester cannot confirm, compared by directory subject, then sign-in address, then id. A display name is not an identity. A confirm deletes only the row it read. If that delete matches nothing, the result is `replay` and the caller does not apply.
+- What changed: one typed result. The requester cannot confirm. A display name is not an identity. A confirm deletes only the row it read. If that delete matches nothing, the result is `replay` and the caller does not apply.
 
 ### States
 
@@ -301,7 +301,7 @@ An ask older than the TTL is an empty ask. The stored row is replaced.
 
 `recorded`, `same_actor`, `replay`, and `refused` do not apply. Only `confirmed` does. The same actor does not refresh `requestedAt`. After a confirm, the next ask is a new `recorded`, not another confirm.
 
-Same actor means the same id, or the same directory subject, or, when neither side has a subject, the same sign-in address. Two directory subjects are two people even when the address matches. The sign-in address is `gov_identity`, so two directory emails for one human do not count as two people.
+Same actor means the same id. When both directory subjects are set, they are the same actor only when those subjects are equal, so two different subjects stay two people even when an address matches. When one or both subjects are missing, they are the same actor if any normalised address matches. An address is the sign-in address or the directory email on either side, trimmed and lowercased. The directory lookup uses that same normalisation.
 
 Logs are `{ at: "illegal_transition", machine: "quorum", reason }` or `{ at: "quorum", reason: "replay" }`. The reason is a code. The line does not carry an id, a subject, or an address.
 
@@ -320,7 +320,7 @@ Callers decide whether to invoke this at all. Prod kill-switch re-enable does. T
 ## 5. Kill switch
 
 - Purpose: `mcp`, `connector`, `ai`, and `contribute` are on unless a row says off. Turning one off is immediate. Turning one on can wait for a second person.
-- Code: no reducer yet. `setSwitch` at `tenant-policy.ts:754`. Defaults in `switches.ts:10` (`allOn`).
+- Code: no reducer yet. `setSwitch` at `tenant-policy.ts:824`. Defaults in `switches.ts:10` (`allOn`).
 - Persisted: yes, `switches` plus a `pending_ops` row `switch:<name>`, and a journal entry outside the snapshot (772–773) so a restore cannot turn a switch back on.
 - What changed: nothing in this commit.
 

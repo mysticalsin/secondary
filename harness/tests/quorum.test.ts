@@ -152,6 +152,55 @@ test("quorum: an expired ask is a new request, and the last millisecond of the w
   }
 });
 
+test("quorum: one directory subject cannot be confirmed by an id that is not in the directory", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    addPrincipal(file, "p1", "ada@a.example", "tid:ada");
+    assert.equal(decision(policy.requestSecond("subj:absent", "p1", NOW, "one@human.example")), "recorded");
+    assert.equal(
+      decision(policy.requestSecond("subj:absent", "p2", NOW + 1, "one@human.example")),
+      "same_actor",
+    );
+    assert.equal(pending(file, "subj:absent")?.requested_by, "p1");
+  } finally {
+    remove();
+  }
+});
+
+test("quorum: one directory subject cannot be confirmed by a row with a null subject", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    addPrincipal(file, "p1", "ada@a.example", "tid:ada");
+    addPrincipal(file, "p2", "ada@b.example", null);
+    assert.equal(decision(policy.requestSecond("subj:null", "p1", NOW, "one@human.example")), "recorded");
+    assert.equal(
+      decision(policy.requestSecond("subj:null", "p2", NOW + 1, "one@human.example")),
+      "same_actor",
+    );
+    assert.equal(pending(file, "subj:null")?.requested_by, "p1");
+  } finally {
+    remove();
+  }
+});
+
+test("quorum: a mixed-case directory email is the same person", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    addPrincipal(file, "p1", " Ada@A.example ", "tid:ada");
+    assert.equal(decision(policy.requestSecond("subj:case", "p1", NOW, "one@human.example")), "recorded");
+    assert.equal(
+      decision(policy.requestSecond("subj:case", "p2", NOW + 1, "ada@a.example")),
+      "same_actor",
+    );
+    assert.equal(pending(file, "subj:case")?.requested_by, "p1");
+  } finally {
+    remove();
+  }
+});
+
 test("quorum: two directory subjects are two people even when the sign-in address matches", async () => {
   const { file, remove } = tempFile();
   try {
