@@ -705,6 +705,15 @@ The `imports` flag is checked before the handler body (`needFlag`). Personal ver
 - Persisted: yes, `brain_members.state` (`claimed`, `active`, or `pending`), `claim_key`, and `change_id`. `gov_changes.claim_key` is nullable. Unversioned. Remove deletes the row. A legacy governance row keeps a null key.
 - What changed: the claim stores an opaque key before propose, and `propose` (`admin/store.ts:632`) returns the existing change for that key. The column is added at `admin/store.ts:248` with a unique index at `:249`. Existing rows are not rewritten. The two stores still do not share a transaction, and governance does not write `brain_members`. A thrown proposal leaves the keyed claim. The next attempt reuses the key. A refused claim does not propose, and a refused proposal releases that key. Zero rows is `state_unreadable`. A drop never deletes by person. A finish that loses the compare-and-set is `mismatch` and logs the principal id, the change id, and the stored state. Overlapping finishes log once. The next read looks the key up. Applied finishes the claim. Pending, or no governance row yet, leaves it and writes no log. Rejected, expired, or withdrawn releases it. `grantsMemberRole` (`src/state/brain-member.ts:35`) is the only grant check. `brainRoleOf` (`brains/store.ts:229`), the access-list role (`brains/routes.ts:315`), the extra stored rows (`:320`), the member check (`:654`), and the reader count (`brains/shared.ts:142`) call it. The access list reconciles at `brains/routes.ts:297`. The reader count reconciles at `brains/shared.ts:165`. A claimed or pending row grants nothing.
 
+### Accepted limits
+
+| | Limit | Where | Decision |
+|---|---|---|---|
+| i | List reconcile is bounded to 20 ids. A later claim grants nothing and converges on a direct per-person read. | `reconcileStoredMembers` (`brains/open.ts:42`), `ids.slice(0, 20)` at `:45` | Accepted |
+| ii | Reconcile ignores a zero-row drop or finish. The row stays and the next read retries. | `reconcileBrainMember` (`brains/store.ts:1092`) | Accepted, fail-safe |
+| iii | An unknown governance status stays claimed and grants nothing. | `reconcileBrainMember` (`brains/store.ts:1092`), after `changeByKey` | Accepted |
+| iv | `brainMemberRemove` still deletes by person. It is only called after an applied removal. Make it a compare-and-set on the active state once the removal machine is done. | delete at `brains/store.ts:511`, method `:509`, caller `brains/routes.ts:745` | LATER |
+
 ### States
 
 | State | Data carried | Meaning |
