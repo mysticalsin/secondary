@@ -35,7 +35,7 @@ Status in the table is the state of the code at this commit. Nothing is fixed ye
 | 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
 | 16 | Token-budget hold | `src/state/budget-hold.ts`, wired from `ai/budget.ts` | FIXED | Medium | FIX now | A second settle is rejected and does not adjust the counter. |
 | 17 | Token-counter CAS retry | `ai/budget.ts:22` | LATER | Medium | FIX now | Six attempts, then give up. Cap failure does not retry. |
-| 18 | Wiki seed claim | `tenant-policy.ts:272` and `wiki/seed.ts:21` | LATER | Medium | FIX now | Dev only. An unexpired claim for an older version is overwritten. `seedDone` can move the version backwards. |
+| 18 | Wiki seed claim | `src/state/wiki-seed.ts`, wired from `tenant-policy.ts` and `wiki/seed.ts` | FIXED | Medium | FIX now | Dev only. An unexpired claim now blocks every version. Completing cannot move backwards. |
 | 19 | Agent turn round | `agent/loop.ts:75` | LATER | Medium | FIX now | Stop reason, budget, and the last-round tool ban are separate `if`s. |
 | 20 | SSE content assembly | `agent/stream.ts:128` | LATER | Medium | FIX now | Frame order is a switch that returns false to fail the round. |
 | 21 | Home screen adaptive UI | not in this repo | NOT A MACHINE | — | NOT A MACHINE | Static UI was not recovered. See below. |
@@ -894,9 +894,9 @@ None.
 ## 18. Wiki seed claim
 
 - Purpose: In dev, one request runs the synthetic wiki seed for a version. Others see current, busy, off, or unseeded.
-- Code: no reducer yet. Persisted record in `TenantPolicy.seedVersion` / `seedClaim` / `seedDone` (`tenant-policy.ts:272–303`). Run result in `ensureWikiSeed` (`wiki/seed.ts:21–74`). A third writer is `seed` (229), which deletes both keys when the dev directory is reseeded.
-- Persisted: yes, `config.seed_version` (decimal string) and `config.seed_claim` (JSON `{ version, at }`). No schema version. `JSON.parse` of a corrupt claim throws out of `seedClaim`.
-- What changed: nothing in this commit.
+- Code: `src/state/wiki-seed.ts` (`transitionWikiSeed`, `seedRunStatus`). Tests: `harness/tests/wiki-seed-machine.test.ts`. `seedClaim`, `seedDone`, and directory `seed` write only the cells the reducer returns. `ensureWikiSeed` returns `seedRunStatus`.
+- Persisted: yes, `config.seed_version` and `config.seed_claim`. Logical record is version 1. A missing version is completed 0. A non-numeric version or a claim that is not `{ version, at }` loads as unreadable. Unreadable rejects claim and complete. `reset` clears it. Unknown blob version loads as unreadable, not as a fresh tenant.
+- What changed: three bug fixes, dev only. An unexpired claim for any version blocks a new claim. Previously a higher version overwrote an in-flight lower one. `seedDone` no longer stores a lower version and no longer deletes a claim for a different version. A corrupt claim used to throw from `JSON.parse`. It now refuses the claim. `seedVersion` on a non-numeric cell returns `Number.MAX_SAFE_INTEGER`, so the run reports `current` instead of treating the cell as 0 and seeding again. The success path (claim, do the work, complete that version) is unchanged. `wiki/seed-content.ts` was not edited.
 
 ### States
 
@@ -919,13 +919,13 @@ None.
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| idle or claimed | claim | `completed >= version` | unchanged | return false. Run result `current` |
-| claimed | claim | `claim.version >= version` and `now - at < lease` | claimed | return false. Run result `busy` |
-| claimed | claim | claim version is lower, even if the lease has not expired | claimed for the new version | overwrite. Two runs can be inside `wikiSeedRun` |
-| idle or expired claim | claim | `completed < version` | claimed | return true |
-| any | complete | none | idle, completed set to the argument | deletes the claim even when the claim version differs. Can store a lower version than the one already completed |
+| idle or claimed | claim | `completed >= version` | unchanged | rejected and logged. Run result `current` |
+| claimed | claim | any unexpired claim (`now - at < lease`) | unchanged | rejected and logged. Run result `busy` |
+| idle or expired claim | claim | `completed < version` | claimed | write the claim |
+| idle or matching claim | complete | version is a whole number and not below `completed`, and the claim is empty or for that version | idle at that version | write the version, delete the claim |
+| claimed | complete | claim version differs, or the new version is lower | unchanged | rejected and logged. The other claim stays |
 | any | reset | dev directory seed | idle, completed 0 | delete both keys |
-| claimed | fail | exception | claimed | return `busy`. Next request waits for the lease |
+| claimed | fail | exception in `ensureWikiSeed` | claimed | return `busy`. The claim stays until the lease |
 
 `seed` (213) is dev-only and wipes the directory. The wiki keys are cleared in that transaction so the next request seeds again. That reset is a real transition and it does not go through `seedClaim`.
 
@@ -935,8 +935,8 @@ Durable Object requests on one tenant are serialized. The lease matters because 
 stateDiagram-v2
   [*] --> Idle
   Idle --> Claimed: claim
-  Claimed --> Claimed: lease expired or older claim overwritten
-  Claimed --> Idle: complete or directory reseed
+  Claimed --> Claimed: lease expired, then claim again
+  Claimed --> Idle: complete the same version, or directory reseed
   Idle --> Idle: claim when this version is already done
 ```
 

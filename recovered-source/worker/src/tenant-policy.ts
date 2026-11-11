@@ -4,6 +4,12 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
+import {
+  commitWikiSeed,
+  loadSeed,
+  type SeedEvent,
+  storeSeed,
+} from "../../../src/state/wiki-seed.ts";
 import { GOV_METHODS, GovStore } from "./admin/store.ts";
 import {
   type EntraSubject,
@@ -226,7 +232,7 @@ export class TenantPolicy extends DurableObject<Env> {
       this.govStore.reset(now);
       this.journal.clear();
       // The workspaces are emptied by a reseed, so the wiki seed starts over too.
-      this.sql.exec("DELETE FROM config WHERE k IN ('seed_version', 'seed_claim')");
+      this.applySeed({ type: "reset" });
       this.sql.exec(
         "INSERT INTO config (k, v) VALUES ('tenant', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
         JSON.stringify(config),
@@ -270,36 +276,51 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** The version of the dev wiki seed this tenant has completed (0 when none). */
   seedVersion(): number {
-    const r = this.sql.exec("SELECT v FROM config WHERE k = 'seed_version'").toArray()[0];
-    return r ? Number(r.v) || 0 : 0;
+    const loaded = loadSeed(this.seedCell("seed_version"), null);
+    return loaded.unreadable ? Number.MAX_SAFE_INTEGER : loaded.completed;
   }
 
   /**
    * Dev wiki seed: take the right to run version `version`. False when that version (or a newer one)
    * is done, or another request holds an unexpired claim, so concurrent requests seed once. A claim
    * that never completes expires after `leaseMs` and the next request tries again.
+   * An unexpired claim blocks a different version too. A corrupt cell refuses the claim.
    */
   seedClaim(version: number, now: number, leaseMs = 120_000): boolean {
-    if (this.seedVersion() >= version) return false;
-    const r = this.sql.exec("SELECT v FROM config WHERE k = 'seed_claim'").toArray()[0];
-    if (r) {
-      const c = JSON.parse(r.v as string) as { version: number; at: number };
-      if (c.version >= version && now - c.at < leaseMs) return false;
-    }
-    this.sql.exec(
-      "INSERT INTO config (k, v) VALUES ('seed_claim', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-      JSON.stringify({ version, at: now }),
-    );
-    return true;
+    return this.applySeed({ type: "claim", version, now, leaseMs }) !== null;
   }
 
-  /** The claimed version finished: later requests skip it. */
+  /** The claimed version finished: later requests skip it. A backwards or mismatched write is refused. */
   seedDone(version: number): void {
-    this.sql.exec(
-      "INSERT INTO config (k, v) VALUES ('seed_version', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-      String(version),
+    this.applySeed({ type: "complete", version });
+  }
+
+  private seedCell(key: string): string | null {
+    const row = this.sql.exec("SELECT v FROM config WHERE k = ?", key).toArray()[0];
+    return row ? String(row.v) : null;
+  }
+
+  private applySeed(event: SeedEvent): ReturnType<typeof loadSeed> | null {
+    const next = commitWikiSeed(
+      loadSeed(this.seedCell("seed_version"), this.seedCell("seed_claim")),
+      event,
     );
-    this.sql.exec("DELETE FROM config WHERE k = 'seed_claim'");
+    if (!next.ok) return null;
+    const cells = storeSeed(next.state);
+    for (const [key, value] of [
+      ["seed_version", cells.version],
+      ["seed_claim", cells.claim],
+    ] as const) {
+      if (value === null) this.sql.exec("DELETE FROM config WHERE k = ?", key);
+      else {
+        this.sql.exec(
+          "INSERT INTO config (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+          key,
+          value,
+        );
+      }
+    }
+    return next.state;
   }
 
   /**
