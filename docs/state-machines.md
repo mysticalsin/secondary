@@ -22,7 +22,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 2 | Elevation window | `admin/store.ts:38`, writers at 970, 995, 1039, 1062 | LATER | High | LATER | Pending and active expire only in `toElevation` (128–132). |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
-| 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:873`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate. On in prod waits for a second person. A stored value other than 0 or 1 stays off. |
+| 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:873`, journal replay in `security-journal.ts:108`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
@@ -53,6 +53,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 33 | Login query state | `auth/routes.ts` callback mismatch | LATER | Low | LATER | A leaked query state can cancel another user's pending login. Denial of service only: no session is issued. Later, take the row by the cookie's state, and on a mismatch consume the cookie's row, never the row named only by the query. |
 | 34 | SCIM user_name | `identity-store.ts:416`, `:574`, `:612`, `:660` | LATER | Low | LATER | Still an exact compare, including the list filter at `:574`. Its own commit, with goldens, moves it onto `normalizedEmailSql` under the one-identity rule. A missed match only, never a second principal. |
 | 35 | Non-ASCII email fold | `normalizedEmailSql` and `normalEmail` | LATER | Low | LATER | Known limit. SQLite `lower()` does not fold non-ASCII letters (İ, Ω), so `Ω@x.com` does not match `ω@x.com`. SQL and JS stay on one expression. A JS-only fold is not the next change. |
+| 36 | Unknown stored switch name | `tenant-policy.ts:829` | LATER | Low | LATER | An unknown name already stored in `switches` is skipped silently. When it is fixed, log it once per load. |
 
 ## Review notes
 
@@ -329,8 +330,8 @@ Callers decide whether to invoke this at all. Prod kill-switch re-enable does. T
 
 - Purpose: `mcp`, `connector`, `ai`, and `contribute` are on unless a row says off. Turning one off is immediate. Turning one on in prod waits for a second person.
 - Code: `decodeSwitchEnabled` and `transitionSwitch` in `src/state/kill-switch.ts`. `setSwitch` at `tenant-policy.ts:873` applies the effects. Names in `switches.ts:3`. Prod re-enable is `requestSecond`, the quorum machine in section 4, not a second flag state.
-- Persisted: yes, `switches` plus a `pending_ops` row `switch:<name>`, and a journal entry outside the snapshot (`tenant-policy.ts:918`) so a restore cannot turn a switch back on.
-- What changed: a stored value other than `0` or `1` reads as off, and a turn-on is refused. Turning that cell off writes canonical `0` and logs `corrupt_value` without the stored value. An unknown name, a non-boolean, and a clock that is not a safe integer do not write. A pending ask whose name is not one of the four switches is omitted from `switchStatus`.
+- Persisted: yes, `switches` plus a `pending_ops` row `switch:<name>`, and a journal entry outside the snapshot (`tenant-policy.ts:919`) so a restore cannot turn a switch back on. Replaying an off entry deletes that switch's pending ask (`security-journal.ts:108`). Replaying a journal `1` writes canonical on, including over a corrupt cell.
+- What changed: a stored value other than `0` or `1` reads as off, and a turn-on is refused. Turning that cell off writes canonical `0` and logs `corrupt_value` without the stored value. An unknown name, a non-boolean, and a clock that is not a safe integer do not write. A pending ask whose name is not one of the four switches is omitted from `switchStatus`. Quorum `replay` and `refused` are their own results. An unknown name already stored in `switches` is still skipped at `tenant-policy.ts:829` (`#36`).
 
 ### States
 
@@ -356,7 +357,9 @@ The pending ask is a quorum row in `pending_ops`. It is not a flag state.
 | on, off, or corrupt | turn_off | clock is a safe integer | off | write `enabled` 0, delete pending, journal. A corrupt cell also logs `corrupt_value` |
 | on | turn_on | already on, including when `twoPerson` is set | on | no write, and no new ask. Return `applied` |
 | off | turn_on | `twoPerson` is false | on | write `enabled` 1, journal. A stale pending row stays |
-| off | turn_on | `twoPerson`, quorum result is not `confirmed` | off | no write. Return `pending`. `sameActor` when the quorum tag is `same_actor` |
+| off | turn_on | `twoPerson`, quorum result is `recorded` or `same_actor` | off | no write. Return `pending`. `sameActor` when the quorum tag is `same_actor` |
+| off | turn_on | `twoPerson`, quorum result is `replay` | off | no write. Return `replay` |
+| off | turn_on | `twoPerson`, quorum result is `refused` | off | no write. Return `refused` |
 | off | turn_on | `twoPerson`, quorum result is `confirmed` | on | write `enabled` 1, journal. Quorum already deleted the ask |
 | corrupt | turn_on | — | corrupt | no write. Return `refused`. Log `corrupt_value` |
 | any | turn_off or turn_on | clock is not a safe integer | unchanged | no write. Return `refused`. Log `clock_unreadable` |
@@ -373,7 +376,7 @@ stateDiagram-v2
 
 ### Platform / flag differences
 
-`twoPerson` is an argument. The ops route sets it from prod. The route returns 409 `switch_refused` when `setSwitch` returns `refused`.
+`twoPerson` is an argument. The ops route sets it from prod. The route returns 409 `switch_refused` for `refused` and for `replay` (`ops-admin.ts:129`). `202` with `needs: second_person` is only for a pending ask (`recorded` or `same_actor`).
 
 ## 6. OIDC login
 

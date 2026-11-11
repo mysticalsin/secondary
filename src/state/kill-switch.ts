@@ -20,7 +20,7 @@ export type SwitchStep =
       ok: true;
       state: { tag: "on" } | { tag: "off" };
       effects: SwitchEffect[];
-      status: "applied" | "pending";
+      status: "applied" | "pending" | "replay" | "refused";
       sameActor?: boolean;
     }
   | IllegalTransition;
@@ -57,6 +57,9 @@ export function transitionSwitch(state: SwitchFlag, event: SwitchEvent): SwitchS
   if (state.tag === "on") return appliedOn([]);
   if (!event.twoPerson || quorumConfirmed(event.quorum)) {
     return appliedOn([{ type: "write", enabled: true }]);
+  }
+  if (event.quorum.tag === "replay" || event.quorum.tag === "refused") {
+    return { ok: true, state, effects: [], status: event.quorum.tag };
   }
   return {
     ok: true,

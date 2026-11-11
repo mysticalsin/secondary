@@ -126,7 +126,8 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     );
     // Turning a switch off must never wait for the audit log (incident response).
     if (!enabled) await audit(c, s, "switch_disable", `${name} off`);
-    if (res.status === "refused") return c.json({ error: "switch_refused" }, 409);
+    if (res.status === "refused" || res.status === "replay")
+      return c.json({ error: "switch_refused" }, 409);
     if (res.status === "pending")
       return c.json({ ok: true, status: "pending", switch: name, needs: "second_person" }, 202);
     return c.json({ ok: true, status: "applied", switch: name, enabled });

@@ -123,13 +123,24 @@ test("kill switch: only a confirmed second person turns an off flag on", () => {
   const confirmed = requireOk(transitionSwitch(off, events.confirmed));
   assert.equal(confirmed.status, "applied");
   assert.deepEqual(confirmed.effects, [{ type: "write", enabled: true }]);
-  for (const event of [events.recorded, events.same_actor, events.replay, events.refused]) {
+  for (const event of [events.recorded, events.same_actor]) {
     const step: Extract<SwitchStep, { ok: true }> = requireOk(transitionSwitch(off, event));
     assert.deepEqual(step.state, { tag: "off" });
     assert.equal(step.status, "pending");
     assert.deepEqual(step.effects, []);
     assert.equal(step.sameActor, event.quorum.tag === "same_actor");
   }
+});
+
+test("kill switch: replay and a quorum refusal are not a pending ask", () => {
+  const replay = requireOk(transitionSwitch(off, events.replay));
+  assert.equal(replay.status, "replay");
+  assert.deepEqual(replay.state, { tag: "off" });
+  assert.deepEqual(replay.effects, []);
+  const refused = requireOk(transitionSwitch(off, events.refused));
+  assert.equal(refused.status, "refused");
+  assert.deepEqual(refused.state, { tag: "off" });
+  assert.deepEqual(refused.effects, []);
 });
 
 test("kill switch: an unreadable clock is refused before any write", () => {

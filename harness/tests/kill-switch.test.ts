@@ -4,13 +4,14 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SECOND_PERSON_TTL_MS } from "../../src/state/quorum.ts";
+import { SecurityJournal } from "../../recovered-source/worker/src/security-journal.ts";
 import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
@@ -20,7 +21,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 const NOW = 1_700_000_000_000;
 const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
 
-type SwitchResult = { status: "applied" | "pending" | "refused"; sameActor?: boolean };
+type SwitchResult = { status: "applied" | "pending" | "replay" | "refused"; sameActor?: boolean };
 type SwitchName = "mcp" | "connector" | "ai" | "contribute";
 
 type Policy = {
@@ -88,6 +89,10 @@ function journal(db: DatabaseSync, name: string): number[] {
     v: number;
   }[];
   return rows.map((entry) => entry.v);
+}
+
+function replay(db: DatabaseSync): void {
+  new SecurityJournal(sqliteStorage(db)).replay();
 }
 
 function captureWarn(): { lines: string[]; restore: () => void } {
@@ -320,4 +325,71 @@ test("kill switch: a pending ask whose name is not a switch is omitted", async (
   } finally {
     remove();
   }
+});
+
+test("kill switch: replaying a journal on over a corrupt cell writes canonical on and leaves the ask", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { db } = await openPolicy(file);
+    db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES ('ai', 2, 'ada', ?)",
+    ).run(NOW);
+    db.prepare("INSERT INTO security_journal (at, kind, a, v) VALUES (?, 'switch', 'ai', 1)").run(NOW);
+    db.prepare(
+      "INSERT INTO pending_ops (key, requested_by, requested_at) VALUES ('switch:ai', 'bea', ?)",
+    ).run(NOW);
+    replay(db);
+    assert.deepEqual(row(db, "ai"), { enabled: 1, changed_by: "journal" });
+    assert.equal(pending(db, "ai")?.requested_by, "bea");
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("kill switch: replaying an off journal entry cancels the pending ask", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    assert.deepEqual(policy.setSwitch("mcp", false, "ada", NOW, false), { status: "applied" });
+    db.prepare("UPDATE switches SET enabled = 1, changed_by = 'snapshot' WHERE name = 'mcp'").run();
+    db.prepare(
+      "INSERT INTO pending_ops (key, requested_by, requested_at) VALUES ('switch:mcp', 'bea', ?)",
+    ).run(NOW);
+    replay(db);
+    assert.deepEqual(row(db, "mcp"), { enabled: 0, changed_by: "journal" });
+    assert.equal(pending(db, "mcp"), undefined);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("kill switch: a quorum refusal is not a pending ask", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    policy.setSwitch("mcp", false, "ada", NOW, false);
+    const again = policy.setSwitch("mcp", true, "", NOW + 1, true);
+    assert.deepEqual(again, { status: "refused" });
+    assert.equal(row(db, "mcp")?.enabled, 0);
+    assert.equal(pending(db, "mcp"), undefined);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("kill switch route: replay and refused are 409, and pending is the only 202", () => {
+  const text = readFileSync(
+    new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url),
+    "utf8",
+  );
+  const start = text.indexOf('r.post("/switches"');
+  const route = text.slice(start, text.indexOf("rights/export", start));
+  assert.equal(route.includes('res.status === "refused" || res.status === "replay"'), true);
+  assert.equal(route.includes('needs: "second_person"'), true);
+  const refusedAt = route.indexOf('res.status === "refused" || res.status === "replay"');
+  const pendingAt = route.indexOf('res.status === "pending"');
+  assert.equal(refusedAt >= 0 && pendingAt > refusedAt, true);
 });

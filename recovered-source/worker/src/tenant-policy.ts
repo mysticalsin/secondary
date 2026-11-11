@@ -877,7 +877,7 @@ export class TenantPolicy extends DurableObject<Env> {
     now: number,
     twoPerson: boolean,
     email = "",
-  ): { status: "applied" | "pending" | "refused"; sameActor?: boolean } {
+  ): { status: "applied" | "pending" | "replay" | "refused"; sameActor?: boolean } {
     const turn = enabled === true ? "turn_on" : "turn_off";
     if (!isSwitchName(name)) {
       commit(reject("kill_switch", "unreadable", turn, "unknown_name"));
@@ -922,6 +922,7 @@ export class TenantPolicy extends DurableObject<Env> {
       }
     }
     if (step.status === "pending") return { status: "pending", sameActor: step.sameActor === true };
+    if (step.status === "replay" || step.status === "refused") return { status: step.status };
     return { status: "applied" };
   }
 

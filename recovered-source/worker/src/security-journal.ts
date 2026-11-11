@@ -114,6 +114,8 @@ export class SecurityJournal {
             on ? 1 : 0,
             r.at as number,
           );
+          // An off entry is a kill. Drop the pending re-enable so a restored ask cannot confirm it back on.
+          if (!on) this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${a}`);
           break;
         case "nda":
           if (!on)
