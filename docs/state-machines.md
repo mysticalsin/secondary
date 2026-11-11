@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, and #4, whose second-person check is now one typed result. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, and #7, whose release status is now a guarded transition. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -24,7 +24,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore. #7 and #8 do not call it yet. |
 | 5 | Kill switch | `tenant-policy.ts:834`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
-| 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` (`workspace.ts:539`) stores the caller status. No current route can pass `approved`. Shares the quorum check with #4 and #8. |
+| 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
 | 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Right-size to a status predicate plus an unarchive event. `savePage` currently republishes an archived page. |
 | 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
@@ -69,7 +69,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 1. #13 Replay nonce (fixed: a seen key stays refused)
 2. #6 OIDC login (fixed: every terminal callback consumes the login row)
 3. #4 Second-person confirmation (fixed: one typed check, and the requester cannot confirm)
-4. #7 Workspace item release
+4. #7 Workspace item release (fixed: update cannot set `approved`; release uses the shared quorum result)
 5. #5 Kill switch
 6. #2 Elevation window
 7. #3 Access request
@@ -82,7 +82,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 
 Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and marks the flagged cases. It does not fix them.
 
-- **#7.** `workspace.ts:539` stores `patch.status ?? rec.status` and the `UPDATE` at 545 has no status predicate. The only caller that passes a status is `PUT /ux/accounts/:id/records/:rid` (`ux/records.ts:302`). `readFields` (`records.ts:161`) accepts a status only when it is in `STATUSES` (`records.ts:33`), which has no `approved`. `ux/personal.ts:105` and `:195` and `ux/records.ts:354` omit status. The method would store `approved`. No current route can send it, so this is not an approval bypass today.
+- **#7.** Fixed. `commitItem` rejects an update whose status is outside the allow-list, including `approved`. The record route still sends only `STATUSES`, which has no approval word, and those words are in the allow-list. Release calls `commitQuorum`.
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
@@ -421,12 +421,12 @@ stateDiagram-v2
 
 ## 7. Workspace item release
 
-Review: shares the quorum check with #4 and #8. Step 0 pinned `update` at `workspace.ts:539`. No current route can pass `approved`, so this stays fourth in the High order. Still LATER.
+Review: shares the quorum check with #4. #8 does not use this reducer yet.
 
 - Purpose: A contributed item waits as a candidate until enough distinct people approve it. An edit of an approved item sends it back to review.
-- Code: no reducer yet. `Workspace.update` (520), the contribute edit (730), `review` (775), `approve` (810).
-- Persisted: yes, `items.status` as unconstrained text. There is no version tag on the status value.
-- What changed: nothing in this commit.
+- Code: `transitionItem` in `src/state/item-release.ts`. `Workspace.update` and `Workspace.approve` perform it. `approve` calls `commitQuorum` and releases only on that result.
+- Persisted: yes, `items.status`. There is no version tag on the status value.
+- What changed: `update` no longer stores an arbitrary status. `approved` is only the release transition. A record status in the allow-list still updates.
 
 ### States
 
@@ -436,7 +436,7 @@ Review: shares the quorum check with #4 and #8. Step 0 pinned `update` at `works
 | candidate | revision, approvals | Waiting |
 | approved | revision | Released |
 | rejected | — | Used by the wiki path (machine 8), not by `Workspace.approve` |
-| other | any string | `update` will store it |
+| other | any string already stored | `update` cannot write it |
 
 ### Events
 
@@ -452,14 +452,15 @@ Review: shares the quorum check with #4 and #8. Step 0 pinned `update` at `works
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
 | (none) | create | id is new | caller status | insert |
-| any | update | expected revision matches | caller status, or the old status if omitted | new revision, clears `reviewed_by_2` |
+| any | update | status omitted, unchanged, or in the allow-list | that status | new revision, clears `reviewed_by_2` |
+| any | update | status outside the allow-list, including `approved` | unchanged | no write. Result `invalid_status`. Log `status_rejected` |
 | approved | edit | revision matches | candidate | new revision |
 | draft or candidate | edit | revision matches | same status | new revision |
 | candidate | review | not an author | candidate | upsert a review row. Status unchanged |
 | candidate | approve | not an author, this human has not approved this revision, approvals reach `required` | approved | outbox `item.released` |
 | candidate | approve | approvals still short | candidate | approval row only |
 
-`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1 (`workspace.ts:138`). `update` at line 539 assigns `patch.status` with no allow-list. That is the unguarded transition: any string becomes the stored status, including from `approved` straight to a made-up value, skipping the candidate rule the edit path uses. The comment on that line records the hole. `STATUSES` still has no approval word, so the record route cannot send one.
+`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1. A scope release is a recorded quorum ask. A global release waits for `confirmed`. `STATUSES` still has no approval word, so the record route cannot send one. The record words it does send are in the allow-list.
 
 ```mermaid
 stateDiagram-v2
@@ -467,7 +468,7 @@ stateDiagram-v2
   Candidate --> Candidate: review or partial approve
   Candidate --> Approved: enough approvers
   Approved --> Candidate: contribute edit
-  Candidate --> Other: update with a free status string
+  Candidate --> Candidate: update with an allowed status
 ```
 
 ### Platform / flag differences

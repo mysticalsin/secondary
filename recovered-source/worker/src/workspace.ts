@@ -5,6 +5,8 @@
 // only addresses workspaces the caller's admitted view reaches. It does enforce the invariants
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
+import { commitItem } from "../../../src/state/item-release.ts";
+import { commitQuorum } from "../../../src/state/quorum.ts";
 import { BrainBase } from "./brains/store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { personalKindOf } from "./personal-kind.ts";
@@ -111,6 +113,7 @@ export type Fail = {
     | "not_author"
     | "not_pending"
     | "already_done"
+    | "invalid_status"
     | "revision_required"
     | "generated_page"
     | "exists";
@@ -533,10 +536,14 @@ export class Workspace extends BrainBase {
     if ("ok" in rec) return rec;
     const label = patch.title ?? rec.label;
     const body = patch.body ?? rec.body;
-    // Latent release hole: any status string is stored, including "approved".
-    // The record route only forwards STATUSES, which has no approval word, so
-    // no current route can bypass two-person release through this assignment.
-    const status = patch.status ?? rec.status;
+    const step = commitItem({ status: rec.status }, { type: "update", status: patch.status ?? null });
+    if (!step.ok)
+      return {
+        ok: false,
+        code: "invalid_status",
+        message: "That status cannot be set from here",
+      };
+    const status = step.state.status;
     const tags = patch.tags ?? rec.tags;
     const revision = rec.revision + 1;
     this.ctx.storage.transactionSync(() => {
@@ -731,7 +738,10 @@ export class Workspace extends BrainBase {
         message: "Only the contributor can edit a candidate. Comment or request changes instead.",
       };
     // An approved item that changes goes back to review. Drafts and candidates keep their status.
-    const status = rec.status === "approved" ? "candidate" : rec.status;
+    const edited = commitItem({ status: rec.status }, { type: "edit" });
+    if (!edited.ok)
+      return { ok: false, code: "not_pending", message: "The item is not awaiting review" };
+    const status = edited.state.status;
     const label = patch.title ?? rec.label;
     const body = patch.body ?? rec.body;
     const revision = rec.revision + 1;
@@ -842,6 +852,42 @@ export class Workspace extends BrainBase {
         .toArray().length
     )
       return { ok: false, code: "already_done", message: "You already approved this revision" };
+    const prior = this.sql
+      .exec(
+        "SELECT actor_id FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'",
+        id,
+        rec.revision,
+      )
+      .toArray()
+      .map((r) => r.actor_id as string);
+    const requester = prior[0];
+    const asked = commitQuorum(
+      requester
+        ? {
+            tag: "waiting",
+            requester: { id: requester, subject: null, email: null, directoryEmail: null },
+            requestedAt: rec.updatedAt,
+          }
+        : { tag: "empty" },
+      {
+        type: "ask",
+        actor: { id: actorId, subject: null, email: null, directoryEmail: null },
+        now,
+      },
+    );
+    if (!asked.ok)
+      return { ok: false, code: "not_pending", message: "The item is not awaiting release" };
+    const decided = commitItem(
+      { status: rec.status },
+      {
+        type: "approve",
+        quorum: { tag: asked.decision },
+        required: rec.required,
+        approvals: prior.length,
+      },
+    );
+    if (!decided.ok)
+      return { ok: false, code: "not_pending", message: "The item is not awaiting release" };
     const inserted = this.sql
       .exec(
         `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
@@ -854,8 +900,8 @@ export class Workspace extends BrainBase {
       .toArray();
     if (!inserted.length)
       return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const approvals = rec.approvals + 1;
-    const released = approvals >= rec.required;
+    const approvals = prior.length + 1;
+    const released = decided.state.status === "approved";
     if (released) {
       this.ctx.storage.transactionSync(() => {
         this.sql.exec(

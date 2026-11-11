@@ -47,10 +47,12 @@ test("STATUSES contains no approval word, so a record update cannot release an i
   }
 });
 
-test("CHARACTERIZATION: workspace update stores whatever status the caller sends", () => {
+test("workspace update rejects a status outside the allow-list", () => {
   const src = read("recovered-source/worker/src/workspace.ts");
   const body = between(src, "update(", "scratch(");
-  assert.match(body, /const status = patch\.status \?\? rec\.status/);
+  assert.match(body, /commitItem/);
+  assert.match(body, /invalid_status/);
+  assert.doesNotMatch(body, /const status = patch\.status \?\? rec\.status/);
   assert.match(body, /SET label = \?, body = \?, status = \?/);
   assert.doesNotMatch(body, /WHERE status/);
 });
