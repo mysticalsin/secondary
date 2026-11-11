@@ -122,7 +122,8 @@ export type Fail = {
     | "state_unreadable"
     | "clock_unreadable"
     | "not_archived"
-    | "absent";
+    | "absent"
+    | "not_draft";
   message: string;
   currentRevision?: number;
 };

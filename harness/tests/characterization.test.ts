@@ -129,38 +129,16 @@ test("CHARACTERIZATION: wikiDecide apply reports pending before the row is appro
   assert.match(reject, /UPDATE wiki_findings SET status = 'dismissed'/);
 });
 
-test("CHARACTERIZATION: dry-run import state and the real auto-accept are different formulas", () => {
+test("dry-run import and a personal auto-accept both stay a draft", () => {
   const data = read("recovered-source/worker/src/brains/data.ts");
   const propose = read("recovered-source/worker/src/wiki/store.ts");
-  assert.match(
-    data,
-    /const publishDirect = b\.personal && verdict\.verdict === "ingest" && !cur/,
-  );
-  assert.match(data, /state: publishDirect \? "published" : "draft"/);
-  assert.match(data, /state: res\.autoAccepted \? "published" : "draft"/);
-  assert.match(
-    propose,
-    /\(\(opts\.autoAccept && m\.autoAccept && isPersonalScope\(m\.scopeId\)\) \|\| opts\.publishDirect\)/,
-  );
-
-  const dry = (personal: boolean, verdict: "ingest" | "ask", hasPage: boolean): "published" | "draft" =>
-    personal && verdict === "ingest" && !hasPage ? "published" : "draft";
-  const real = (
-    personal: boolean,
-    autoAccept: boolean,
-    personalScope: boolean,
-    publishDirect: boolean,
-  ): "published" | "draft" =>
-    (autoAccept && personal && personalScope) || publishDirect ? "published" : "draft";
-
-  // CHARACTERIZATION: current behaviour, flagged. These two publish while the dry run says draft.
-  assert.equal(dry(true, "ask", false), "draft");
-  assert.equal(real(true, true, true, false), "published");
-  assert.equal(dry(true, "ingest", true), "draft");
-  assert.equal(real(true, true, true, false), "published");
-  assert.equal(dry(true, "ingest", false), real(true, true, true, true));
-  assert.equal(dry(false, "ingest", false), "draft");
-  assert.equal(real(false, true, false, false), "draft");
+  assert.match(data, /const reported = publishMode\(false\)/);
+  assert.equal(data.match(/state: reported/g)?.length, 2);
+  assert.doesNotMatch(data, /const publishDirect = b\.personal && verdict\.verdict === "ingest" && !cur/);
+  const body = between(propose, "async wikiPropose(", "wikiSupersede(");
+  assert.doesNotMatch(body, /opts\.autoAccept && m\.autoAccept && isPersonalScope\(m\.scopeId\)\) \|\| opts\.publishDirect/);
+  assert.match(body, /commitImport\(decodeImportStatus\(made\.status\)/);
+  assert.match(body, /AND status = 'candidate' RETURNING id/);
 });
 
 test("replay nonce source does not delete a seen key when it expires", () => {

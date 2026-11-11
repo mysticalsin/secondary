@@ -2,6 +2,7 @@
 
 import { roleAllows } from "@secondary/policy";
 import { Hono } from "hono";
+import { publishMode } from "../../../../src/state/import-outcome.ts";
 import { quorumConfirmed } from "../../../../src/state/quorum.ts";
 import { IMPORT_BODY_BYTES } from "../security.ts";
 import { tenantStub } from "../stubs.ts";
@@ -376,8 +377,8 @@ async function runImport(
       baseRevision: cur?.revision ?? null,
       markdown: verdict.kept,
     };
-    // Direct only in the Personal Brain, for a page the classifier is sure about and that replaces nothing.
-    const publishDirect = b.personal && verdict.verdict === "ingest" && !cur;
+    // Import stays a draft. Publishing is an explicit action, and this path does not take it.
+    const reported = publishMode(false);
     if (dry) {
       pages.push({
         path: d.path,
@@ -388,7 +389,7 @@ async function runImport(
         reason: verdict.reason,
         excluded: verdict.excluded,
         replaces: !!cur,
-        state: publishDirect ? "published" : "draft",
+        state: reported,
       });
       continue;
     }
@@ -409,7 +410,7 @@ async function runImport(
       } satisfies Omit<Proposal, "v" | "pages"> & { pages: PageDraft[] },
       s.principal.id,
       s.ctx.now,
-      { plane: b.plane, readable: [], ...(publishDirect ? { publishDirect: true } : {}) },
+      { plane: b.plane, readable: [] },
     );
     if (!res.ok || !res.created) {
       skipped.push({ path: d.path, reason: res.ok ? res.reason : res.message });
@@ -418,7 +419,7 @@ async function runImport(
     imported.push({
       pageId: d.pageId,
       title: draft.title,
-      state: res.autoAccepted ? "published" : "draft",
+      state: reported,
       proposalId: res.id,
     });
   }

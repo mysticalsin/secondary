@@ -25,10 +25,10 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:876`, `journal.switchSet` at `:922`, pending-ask delete in `security-journal.ts:118`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. An unknown stored name is skipped at `tenant-policy.ts:832`. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
-| 8 | Wiki proposal review | `wikiPropose` `wiki/store.ts:1092`, archive loop `:1322` predicate `:1330`, `wikiDecide` `:1433`, `wikiEditProposal` `:1595` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
-| 9 | Wiki page visibility | `src/state/page-visibility.ts`, `savePage` `wiki/store.ts:853` predicate `:888`, `unarchivePage` `:922` predicate `:931`, archive loop `:1325` predicate `:1330`, refusal `wikiDecide` `:1562` | FIXED | High | FIX now | A save publishes a missing page and rewrites a published page. An archived page is not saved. Unarchive is its own event. An unknown status writes nothing. A lost race is `replay` and does not write a revision. The decide route returns that refusal, which is 409. |
-| 10 | Wiki finding | `wiki/store.ts:1168`, `:1481`, `:1578` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
-| 11 | Brain import outcome | `publishDirect` `brains/data.ts:380`, dry-run state `:391`, real state `:421`, citation loop `wiki/store.ts:1117`, personal auto-accept `:1196` | LATER | High | LATER | Jarvis: a personal auto-accept stays a draft. One `publishMode()` defaults to draft, and publishing is an explicit action. Current formulas still disagree. `brains/data.ts:332` is the end of `ImportOut`. `:377` is the draft markdown. |
+| 8 | Wiki proposal review | `wikiPropose` `wiki/store.ts:1109`, archive loop `:1356` predicate `:1364`, `wikiDecide` `:1467`, `wikiEditProposal` `:1629` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
+| 9 | Wiki page visibility | `src/state/page-visibility.ts`, `savePage` `wiki/store.ts:870` predicate `:905`, `unarchivePage` `:939` predicate `:948`, archive loop `:1359` predicate `:1364`, refusal `wikiDecide` `:1596` | FIXED | High | FIX now | A save publishes a missing page and rewrites a published page. An archived page is not saved. Unarchive is its own event. An unknown status writes nothing. A lost race is `replay` and does not write a revision. The decide route returns that refusal, which is 409. |
+| 10 | Wiki finding | `wiki/store.ts:1185`, `:1515`, `:1612` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
+| 11 | Brain import outcome | `publishMode` `src/state/import-outcome.ts:30`, `transitionImport` `:40`, import `brains/data.ts:381`, compare-and-set `wiki/store.ts:1231` | FIXED | High | FIX now | A personal auto-accept stays a draft. The dry run and the real import share `publishMode(false)`. Publishing is explicit and updates `WHERE status = 'candidate'`. An unknown word writes nothing. |
 | 12 | Brain member | `src/state/brain-member.ts`, `grantsMemberRole` `:35`, `brainRoleOf` `brains/store.ts:229`, claim key `brains/store.ts:264`, `brainMemberDropClaim` `:331`, `brainMemberFinishProposal` `:355`, `brainMemberRelease` `:466`, `reconcileBrainMember` `:1092`, `placeScopedMember` `:1124`, `propose` `admin/store.ts:632`, `claim_key` column `:248`, unique index `:249`, `changeByKey` `:590`, `reconcileStoredMembers` `brains/open.ts:42`, route 409 `brains/routes.ts:721` | FIXED | High | FIX now | A claim mints an opaque key before `gov.propose`. The same key returns the existing change. Only an active row grants a role. A read during propose changes nothing. Applied finishes the claim. Pending or a missing governance row leaves it. Rejected, expired, or withdrawn releases it by key and previous state. |
 | 13 | Replay nonce | `tenant-policy.ts:632` | FIXED | High | FIX now | Named guard, not a reducer. Expiry does not reopen a key. `expires_at` is strictly after the last accepted millisecond. Prune is outside the guard, and only for `expires_at < now`. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
@@ -64,7 +64,7 @@ Right-sizing:
 - **#13** stays a named guard, not a reducer. Expiry does not reopen a seen key. Fixed in `nonceFirst`.
 - **#5** is a flag. `decodeSwitchEnabled` accepts 0 and 1. The pending re-enable stays the quorum machine. Fixed in `transitionSwitch`.
 - **#9** becomes a status predicate plus an unarchive event. It does not need a full page lifecycle.
-- **#11** Jarvis: a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import share one `publishMode()` that defaults to draft. Publishing takes an explicit action. Not implemented yet.
+- **#11** Jarvis: a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import share one `publishMode()` that defaults to draft. Publishing takes an explicit action. Fixed in `transitionImport`.
 - **#4, #7, and #8** share one quorum / second-person check.
 - **#10** is folded into #8. Finding `open` / `dismissed` / `resolved` are effects of proposal review.
 
@@ -80,7 +80,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 8. #12 Brain member (fixed: a set names the state it read, and two sets cannot both succeed)
 9. #1 Governance change (fixed: a decision writes only a pending row, and an unknown word has no effect)
 10. #9 Wiki page visibility (fixed: a save of an archived page is refused, and unarchive is its own event)
-11. #11 Brain import outcome
+11. #11 Brain import outcome (fixed: a personal auto-accept stays a draft, and publishing compares the previous status)
 12. #8 Wiki proposal review, with #10 folded in
 13. Erasure / rights (#30)
 
@@ -92,9 +92,9 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1081`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
 - **#3.** Fixed. `transitionAccessRequest` approves or denies only from pending, reopens only from approved, and grants or rejects only a pending or approved request. Each write checks that predicate on `RETURNING`. A lost decision is 409 and does not notify.
 - **#12.** Fixed. `transitionMember` sets `active` or `pending` from absent, pending, or active. An unknown stored word is refused. `brainMemberClaim` (`brains/store.ts:239`) stores an opaque key (`:264`) before `gov.propose`. `placeScopedMember` (`:1124`) passes that key. `propose` (`admin/store.ts:632`) returns the change already stored for the key. `gov_changes.claim_key` is added at `:248` and indexed at `:249`. Legacy rows stay null. `brainMemberRelease` (`brains/store.ts:466`) and `brainMemberDropClaim` (`:331`) match the key and the previous state. Zero rows is `state_unreadable`. `brainMemberFinishProposal` (`:355`) matches the key and the previous state, so one overlapping finish logs. `reconcileBrainMember` (`:1092`) looks the key up with `changeByKey` (`admin/store.ts:590`). The route returns a refusal at `brains/routes.ts:721`. Membership reads go through `reconcileStoredMembers` (`brains/open.ts:42`).
-- **#8.** `wikiDecide` (`wiki/store.ts:1433`). A short approval returns `status: "pending"` (`:1540`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` only while the row is still `candidate` (`:1565`). Reject sets the item to `rejected` (`:1471`) and the finding to `dismissed` (`:1481`). The archive loop is `:1322`, and its compare-and-set is `:1330`.
-- **#9.** Fixed. `transitionPage` (`src/state/page-visibility.ts:42`) saves from absent or published, archives from published, and unarchives only from archived. An unknown word is refused. `savePage` (`wiki/store.ts:853`) updates `WHERE id = ? AND status = 'published'` (`:888`). `unarchivePage` (`:922`) updates `WHERE status = 'archived'` (`:931`). The archive loop (`:1325`) keeps `WHERE status = 'published'` (`:1330`). `wikiDecide` (`:1562`) returns the refusal, and the route (`wiki/routes.ts:855`) sends it through `failResponse` (`ux/util.ts:88`), which is 409.
-- **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:380` and `:391`). A real import reports `res.autoAccepted` (`:421`). The citation loop in `wikiPropose` is `wiki/store.ts:1117`. Personal auto-accept starts at `:1196` and can publish a replacement or an `ask` page that the dry run calls a draft. `brains/data.ts:332` is the end of `ImportOut`, and `:377` is the draft markdown. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
+- **#8.** `wikiDecide` (`wiki/store.ts:1467`). A short approval returns `status: "pending"` (`:1574`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` only while the row is still `candidate` (`:1599`). Reject sets the item to `rejected` (`:1505`) and the finding to `dismissed` (`:1515`). The archive loop is `:1356`, and its compare-and-set is `:1364`.
+- **#9.** Fixed. `transitionPage` (`src/state/page-visibility.ts:42`) saves from absent or published, archives from published, and unarchives only from archived. An unknown word is refused. `savePage` (`wiki/store.ts:870`) updates `WHERE id = ? AND status = 'published'` (`:905`). `unarchivePage` (`:939`) updates `WHERE status = 'archived'` (`:948`). The archive loop (`:1359`) keeps `WHERE status = 'published'` (`:1364`). `wikiDecide` (`:1596`) returns the refusal, and the route (`wiki/routes.ts:855`) sends it through `failResponse` (`ux/util.ts:88`), which is 409.
+- **#11.** Fixed. `publishMode` (`src/state/import-outcome.ts:30`) is draft unless the caller passes true. `transitionImport` (`:40`) leaves a draft in place on `auto_accept` and publishes only from a draft. An unknown word is `state_unreadable`. `runImport` (`brains/data.ts:335`) reports `publishMode(false)` for the dry run (`:392`) and the real import (`:422`). The draft markdown is `:378`. `wikiPropose` (`wiki/store.ts:1213`) publishes only for explicit `publishDirect`, and the update matches `status = 'candidate'` (`:1231`). A personal auto-accept (`:1214`) returns `autoAccepted: false`.
 - **#13.** `nonceFirst` (`tenant-policy.ts:632`) is `INSERT OR IGNORE ... RETURNING key`. True when one row comes back. The old `DELETE` of expired rows is gone, so a key is not accepted again after `expires_at`. The stored expiry is `(T + skew + 1)` seconds, strictly after the last millisecond the verifiers accept timestamp `T`.
 - **#6.** Fixed. `commitLoginRecord` (`src/state/login-record.ts`) consumes an issued login on `idp_error`, `missing_state`, `state_mismatch`, `exchange_failed`, and `accepted`. A consumed record accepts nothing. The callback takes the cookie hash and, when it differs, the query hash, before it returns. Logs are reason codes. `loginStateTake` (`identity-store.ts:312`) still deletes the row and then returns null when it is already expired.
 
@@ -500,8 +500,8 @@ Global versus scope changes `required`. It is data on the item (`releaseTarget`,
 Review: includes machine 10. Shares the quorum check with #4 and #7. Still LATER. Step 0 pinned the pending-versus-candidate split.
 
 - Purpose: A wiki proposal is a workspace item of kind `wiki_ingest`, `wiki_lint`, or `wiki_dream`. Deciding it applies or discards a diff.
-- Code: no reducer yet. `wikiPropose` (`:1092`), the archive loop (`:1322`, predicate `:1330`), `wikiDecide` (`:1433`), `wikiEditProposal` (`:1595`), and the erase scrub (`:2063`).
-- Persisted: yes, the same `items.status` column as machine 7. Response field `status: "pending"` (`:1540`) is not the stored status. The row stays `candidate` until the last approval.
+- Code: no reducer yet. `wikiPropose` (`:1109`), the archive loop (`:1356`, predicate `:1364`), `wikiDecide` (`:1467`), `wikiEditProposal` (`:1629`), and the erase scrub (`:2097`).
+- Persisted: yes, the same `items.status` column as machine 7. Response field `status: "pending"` (`:1574`) is not the stored status. The row stays `candidate` until the last approval.
 - What changed: nothing in this commit. Applying a proposal writes page bodies. This machine stays High so that write path is not edited in this pass. `wiki/seed-content.ts` is not part of the machine.
 
 ### States
@@ -521,20 +521,20 @@ Review: includes machine 10. Shares the quorum check with #4 and #7. Still LATER
 | approve / reject | `wikiDecide` |
 | edit | `wikiEditProposal` |
 | erase_source | Retention scrub |
-| auto_accept | `publishDirect`, personal `autoAccept`, or dev seed |
+| auto_accept | explicit `publishDirect`, or dev seed. A personal `autoAccept` stays a draft (#11) |
 
 ### Transitions
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
 | (none) | propose | payload parses | candidate | optional finding row `open` |
-| candidate | auto_accept | dev seed, or ingest and (`publishDirect` or personal autoAccept) | approved | `applyProposal` writes pages |
+| candidate | auto_accept | dev seed, or ingest and explicit `publishDirect` from a candidate | approved | `applyProposal` writes pages |
 | candidate | reject | not an author (personal brain skips that check) | rejected | finding `dismissed` if any |
 | candidate | approve | revision hash matches, pages not stale, this human has not approved, count still short | candidate | response `pending` |
 | candidate | approve | count reaches `required` (1 in a personal brain, else the item's required) | approved | `applyProposal`, finding `resolved` |
 | candidate | edit | page exists, not generated, markdown non-empty | candidate | revision + 1, prior approvals no longer match |
 | candidate | erase_source | proposal cites the erased source | rejected | body replaced with an empty proposal |
-| approved or rejected | erase_source | same | stored status unchanged | body still scrubbed (`:2063` `CASE`) |
+| approved or rejected | erase_source | same | stored status unchanged | body still scrubbed (`:2097` `CASE`) |
 
 Authors cannot decide a non-personal proposal. A second approval by the same human returns `already_done`. Those checks are inside `wikiDecide`, not a shared table with machine 7, which has its own copy for non-wiki items.
 
@@ -548,14 +548,14 @@ stateDiagram-v2
 
 ### Platform / flag differences
 
-`ENVIRONMENT === "dev"` plus `opts.seed` auto-approves seed origin (`:1182`). Personal scope forces `required = 1` (`:1513`). Both are inputs that should be guards. They are branches in the method today.
+`ENVIRONMENT === "dev"` plus `opts.seed` auto-approves seed origin (`:1199`). Personal scope forces `required = 1` (`:1547`). Both are inputs that should be guards. They are branches in the method today.
 
 ## 9. Wiki page visibility
 
 Review: the fix is a status predicate plus an unarchive event, not a larger lifecycle. Fixed.
 
 - Purpose: A page is readable while `published`. Archiving hides it. Saving does not unarchive.
-- Code: `src/state/page-visibility.ts`. `decodePageStatus` (`:35`) reads `published` and `archived`. Any other word is unknown. `savePage` (`wiki/store.ts:853`) commits a save (`:862`) and updates `WHERE status = 'published'` (`:888`). `unarchivePage` (`:922`) commits an unarchive (`:925`) and updates `WHERE status = 'archived'` (`:931`). The archive loop (`:1325`) commits an archive and updates `WHERE status = 'published'` (`:1330`). `wikiDecide` (`:1562`) returns the refusal instead of approving. Callers of `savePage`: proposal pages (`:1311`), generated pages (`:1352`), the overview (`:1364`), and a promotion (`:1879`).
+- Code: `src/state/page-visibility.ts`. `decodePageStatus` (`:35`) reads `published` and `archived`. Any other word is unknown. `savePage` (`wiki/store.ts:870`) commits a save (`:879`) and updates `WHERE status = 'published'` (`:905`). `unarchivePage` (`:939`) commits an unarchive (`:942`) and updates `WHERE status = 'archived'` (`:948`). The archive loop (`:1359`) commits an archive and updates `WHERE status = 'published'` (`:1364`). `wikiDecide` (`:1596`) returns the refusal instead of approving. Callers of `savePage`: proposal pages (`:1345`), generated pages (`:1386`), the overview (`:1398`), and a promotion (`:1913`).
 - Persisted: yes, `wiki_pages.status`. The type says `"published" | "archived"` (`wiki/types.ts:88`). The column is unversioned text. A stored word outside those two is unknown and is not written.
 - What changed: an archived save no longer sets `published`. The revision and the search row are written only when the compare-and-set changes one row. A refused save is not a successful decision.
 
@@ -610,7 +610,7 @@ None.
 Folded into #8. These states are effects of proposal review. Do not write a separate reducer. The transitions below stay as the record of the current writes.
 
 - Purpose: A lint or ingest finding tracks whether the proposal that would fix it is still open.
-- Code: no reducer yet. Insert at `:1168`, dismiss at `:1481`, resolve at `:1578`.
+- Code: no reducer yet. Insert at `:1185`, dismiss at `:1515`, resolve at `:1612`.
 - Persisted: yes, `wiki_findings.status`. Unversioned. No check that `dismissed` is not later marked `resolved` on the same key by a different proposal.
 - What changed: nothing in this commit.
 
@@ -654,56 +654,52 @@ None.
 
 ## 11. Brain import outcome
 
-Review: Jarvis decided that a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import will share one `publishMode()` that defaults to draft, and publishing takes an explicit action. Step 0 pinned that the two formulas still disagree. Still LATER. Not implemented in this change.
+Review: Jarvis decided that a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import share one `publishMode()` that defaults to draft. Publishing is an explicit action. Fixed.
 
-- Purpose: Each file in an OKF, Obsidian, or Outline import is skipped, shown as a dry-run page, or written as a draft proposal or a direct publish.
-- Code: no reducer yet. `runImport` in `brains/data.ts:334`. `brains/data.ts:332` is the end of `ImportOut`. The draft markdown is `:377`. Parsers in `brains/importers.ts` only build documents. They do not publish.
-- Persisted: the proposal and page rows are machines 8 and 9. The import response itself is not stored. `state: "published" | "draft"` on the JSON (`:324`, `:391`, `:421`) is computed twice.
-- What changed: nothing in this commit. Left High because a wrong branch publishes a page.
+- Purpose: Each file in an OKF, Obsidian, or Outline import is skipped, shown as a dry-run draft, or written as a draft proposal. Publishing that proposal is a separate explicit action.
+- Code: `src/state/import-outcome.ts`. `decodeImportStatus` (`:23`) reads `candidate` as draft and `approved` as published. Any other word is unknown. `publishMode` (`:30`) returns draft unless the caller passes true. `transitionImport` (`:40`) commits through `commitImport` (`:49`). `runImport` is `brains/data.ts:335`. `ImportOut` ends at `:333`. The draft markdown is `:378`. Parsers in `brains/importers.ts` only build documents. They do not publish.
+- Persisted: the proposal item status is `candidate` until an explicit publish. The import response itself is not stored. Both response states are `publishMode(false)` (`brains/data.ts:381`, dry `:392`, real `:422`).
+- What changed: the personal `autoAccept` branch no longer publishes. An explicit publish compares the previous status.
 
 ### States
 
 | State | Data carried | Meaning |
 |---|---|---|
-| incoming | path, markdown | Parsed document |
-| skipped | reason | Classifier skip, empty, reserved page, or propose failure |
-| dry | verdict, replaces, would-be state | `dryRun=1`. No write, no audit |
-| proposed | proposal id, published or draft | Real import |
+| draft | stored `candidate` | Open proposal. An import reports this |
+| published | stored `approved` | An explicit publish applied the diff |
+| unknown | anything else | Writes nothing |
 
 ### Events
 
 | Event | Source |
 |---|---|
-| classify | `classify` |
-| existing_page | `wikiPage` |
-| propose_result | `wikiPropose` |
+| auto_accept | Personal `autoAccept`, and every import |
+| publish | Explicit `publishDirect` |
 
 ### Transitions
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| incoming | classify | verdict `skip` or empty kept text | skipped | none |
-| incoming | existing_page | page type is generated or `journal` | skipped | `reserved_page` |
-| incoming | dry | `dry` query is `1` | dry | `publishDirect` is reported, nothing stored |
-| incoming | propose_result | not dry, propose created | proposed | audit already written for the whole import (261) |
-| incoming | propose_result | propose refused | skipped | reason from the stub |
+| draft | auto_accept | — | draft | none |
+| published | auto_accept | — | published | none |
+| draft | publish | one row still `candidate` | published | `applyProposal` writes pages |
+| published | publish | — | published | refused `not_draft`, no write |
+| unknown | auto_accept or publish | — | unknown | refused `state_unreadable`, no write |
 
-`publishDirect` (`:380`) is `personal && verdict === "ingest" && !cur`. The dry-run state is `:391`. The response state for a real import (`:421`) is `res.autoAccepted`, not `publishDirect`. The citation loop in `wikiPropose` is `wiki/store.ts:1117`. Personal auto-accept starts at `:1196` (`opts.autoAccept && personal && autoAccept`, or `publishDirect`). A personal brain that auto-accepts can report `published` for a page that replaces an existing one, while the dry-run branch would have reported `draft` because `cur` makes `publishDirect` false. The two branches do not share a function. Whether that split is intentional is left for review. It is not changed here.
+`wikiPropose` (`wiki/store.ts:1213`) takes the publish event only when `publishDirect` is true. The compare-and-set is `UPDATE items SET status = 'approved' ... WHERE id = ? AND status = 'candidate' RETURNING id` (`:1231`). Zero rows is `replay` (`:1236`) and does not apply the diff. A personal auto-accept (`:1214`) is the `auto_accept` event and returns `autoAccepted: false` (`:1226`). The dev seed (`:1199`) is unchanged. The citation loop is `cleanDraft` at `:1134`.
 
-Ordering that is easy to miss: a real import audits once before the per-page loop (261–269). A dry run returns before that audit (260). A failed audit returns 503 and writes nothing.
+Ordering that is easy to miss: a real import audits once before the per-page loop (`:263`). A dry run returns before that audit (`:262`). A failed audit returns 503 and writes nothing.
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Incoming
-  Incoming --> Skipped: classifier skip or reserved page
-  Incoming --> Dry: dry run
-  Incoming --> Proposed: wiki propose
-  Proposed --> Skipped: propose refused
+  [*] --> Draft: import or personal auto-accept
+  Draft --> Published: explicit publish
+  Published --> Published: auto-accept, no write
 ```
 
 ### Platform / flag differences
 
-The `imports` flag is checked before the handler body (`needFlag`). Personal versus shared is the `publishDirect` input. Both are outside a named guard.
+The `imports` flag is checked before the handler body (`needFlag`). It does not choose the state. Session-report `publishDirect` (`brains/push.ts:212`) is still the explicit publish action and is machine 28.
 
 ## 12. Brain member
 

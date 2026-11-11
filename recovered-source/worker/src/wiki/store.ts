@@ -5,6 +5,11 @@
 // Nothing here knows who the caller is: the API checks policy first and passes the actor.
 
 import { DurableObject } from "cloudflare:workers";
+import {
+  claimImport,
+  commitImport,
+  decodeImportStatus,
+} from "../../../../src/state/import-outcome.ts";
 import { claimPage, commitPage, decodePageStatus } from "../../../../src/state/page-visibility.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
@@ -139,6 +144,18 @@ class PageRefusal extends Error {
     super(fail.code);
     this.fail = fail;
   }
+}
+
+function importFail(reason: string): Fail {
+  if (reason === "replay")
+    return { ok: false, code: "replay", message: "The proposal changed since it was read" };
+  if (reason === "not_draft")
+    return { ok: false, code: "not_draft", message: "Publishing starts from a draft" };
+  return {
+    ok: false,
+    code: "state_unreadable",
+    message: "The proposal status cannot be read",
+  };
 }
 
 function pageFail(reason: string): Fail {
@@ -1193,13 +1210,30 @@ export abstract class WikiBase extends DurableObject<Env> {
       }
       return { ok: true, created: true, id, autoAccepted: true };
     }
-    if (
+    const publishing = p.kind === "wiki_ingest" && opts.publishDirect === true;
+    const staying =
       p.kind === "wiki_ingest" &&
-      ((opts.autoAccept && m.autoAccept && isPersonalScope(m.scopeId)) || opts.publishDirect)
-    ) {
+      opts.autoAccept === true &&
+      m.autoAccept &&
+      isPersonalScope(m.scopeId) &&
+      !publishing;
+    if (publishing || staying) {
+      const step = commitImport(decodeImportStatus(made.status), {
+        type: publishing ? "publish" : "auto_accept",
+      });
+      if (!step.ok) return importFail(step.reason);
+      if (!step.effects.some((effect) => effect.type === "publish"))
+        return { ok: true, created: true, id, autoAccepted: false };
       try {
         this.ctx.storage.transactionSync(() => {
-          this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
+          const wrote = this.sql
+            .exec(
+              "UPDATE items SET status = 'approved', updated_at = ? WHERE id = ? AND status = 'candidate' RETURNING id",
+              now,
+              id,
+            )
+            .toArray();
+          if (claimImport(wrote.length).tag !== "applied") throw new PageRefusal(importFail("replay"));
           const applied = this.applyProposal(p, authorId, null, now, id);
           if (!("pages" in applied)) throw new PageRefusal(applied);
           this.wikiLogAppend(authorId, "auto_accepted", { id }, now);
