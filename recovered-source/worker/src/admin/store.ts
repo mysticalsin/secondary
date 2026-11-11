@@ -7,6 +7,12 @@
 
 import type { Role } from "@secondary/policy";
 import { actorFromDirectory, type DirectoryPrincipal, sameActor } from "../../../../src/state/actor.ts";
+import {
+  claimElevation,
+  commitElevation,
+  decodeElevation,
+  type ElevationState,
+} from "../../../../src/state/elevation.ts";
 import type { SecurityJournal } from "../security-journal.ts";
 import { manageAuthority, noticeLabel, type ScopeDesc } from "./validate.ts";
 
@@ -974,6 +980,7 @@ export class GovStore {
         "You already have an open elevation request or an active window",
       );
     const id = newId("elv");
+    let started = true;
     this.tx(() => {
       this.sql.exec(
         `INSERT INTO gov_elevations (id, principal_id, hours, reason, status, requested_at, lapses_at)
@@ -993,21 +1000,45 @@ export class GovStore {
           id,
           now,
         );
-      else this.startElevation(id, a.principalId, "system", now);
+      else started = this.startElevation(id, a.principalId, "system", now);
     });
+    if (!started)
+      return fail(409, "not_startable", "This elevation cannot be started");
     return { ok: true, elevation: this.getElevation(id, now) as ElevationRequest };
   }
 
-  private startElevation(id: string, principalId: string, decidedBy: string, now: number): void {
-    const r = this.sql.exec("SELECT hours, reason FROM gov_elevations WHERE id = ?", id).one();
-    const until = now + n(r.hours) * HOUR;
-    this.sql.exec(
-      "UPDATE gov_elevations SET status = 'active', decided_by = ?, decided_at = ?, until = ? WHERE id = ?",
-      decidedBy,
-      now,
-      until,
-      id,
+  private elevationState(id: string, now: number): ElevationState | null {
+    const r = this.sql
+      .exec("SELECT status, lapses_at, until FROM gov_elevations WHERE id = ?", id)
+      .toArray()[0];
+    return r ? decodeElevation(s(r.status), now, n(r.lapses_at), nn(r.until)) : null;
+  }
+
+  private startElevation(id: string, principalId: string, decidedBy: string, now: number): boolean {
+    const r = this.sql
+      .exec("SELECT hours, reason, status, lapses_at, until FROM gov_elevations WHERE id = ?", id)
+      .toArray()[0];
+    if (!r) return false;
+    const step = commitElevation(
+      decodeElevation(s(r.status), now, n(r.lapses_at), nn(r.until)),
+      { type: "start", now },
     );
+    if (!step.ok) return false;
+    const until = now + n(r.hours) * HOUR;
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_elevations SET status = 'active', decided_by = ?, decided_at = ?, until = ?
+         WHERE id = ? AND status = 'pending' RETURNING id`,
+        decidedBy,
+        now,
+        until,
+        id,
+      )
+      .toArray().length;
+    if (claimElevation(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "elevation", reason: "replay" }));
+      return false;
+    }
     // The engine reads this table: one row per window, the latest end wins.
     this.sql.exec(
       "INSERT INTO elevations (principal_id, until, reason, created_at) VALUES (?, ?, ?, ?)",
@@ -1017,6 +1048,29 @@ export class GovStore {
       now,
     );
     this.bump();
+    return true;
+  }
+
+  private denyElevation(id: string, deciderId: string, note: string | null, now: number): boolean {
+    const state = this.elevationState(id, now);
+    if (!state) return false;
+    const step = commitElevation(state, { type: "deny", now });
+    if (!step.ok) return false;
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_elevations SET status = 'denied', decided_by = ?, decided_at = ?, note = ?
+         WHERE id = ? AND status = 'pending' RETURNING id`,
+        deciderId,
+        now,
+        note,
+        id,
+      )
+      .toArray().length;
+    if (claimElevation(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "elevation", reason: "replay" }));
+      return false;
+    }
+    return true;
   }
 
   private getElevation(id: string, now: number): ElevationRequest | null {
@@ -1042,16 +1096,15 @@ export class GovStore {
         "self_approval",
         "Nobody approves their own elevation: a second admin must decide",
       );
+    let refused = false;
     this.tx(() => {
-      if (approve) this.startElevation(id, e.principalId, deciderId, now);
-      else
-        this.sql.exec(
-          "UPDATE gov_elevations SET status = 'denied', decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
-          deciderId,
-          now,
-          note,
-          id,
-        );
+      const applied = approve
+        ? this.startElevation(id, e.principalId, deciderId, now)
+        : this.denyElevation(id, deciderId, note, now);
+      if (!applied) {
+        refused = true;
+        return;
+      }
       this.notify(
         e.principalId,
         approve ? "elevation_approved" : "elevation_denied",
@@ -1060,6 +1113,12 @@ export class GovStore {
         now,
       );
     });
+    if (refused)
+      return fail(
+        409,
+        approve ? "not_startable" : "not_pending",
+        approve ? "This elevation cannot be started" : "This request is no longer pending",
+      );
     return { ok: true, elevation: this.getElevation(id, now) as ElevationRequest };
   }
 
@@ -1067,9 +1126,22 @@ export class GovStore {
   endElevation(id: string, now: number): { ok: true; elevation: ElevationRequest } | Fail {
     const e = this.getElevation(id, now);
     if (!e) return fail(404, "not_found", "No such elevation request");
-    if (e.status !== "active") return fail(409, "not_active", "This elevation is not active");
+    const step = commitElevation({ tag: e.status }, { type: "end", now });
+    if (!step.ok) return fail(409, "not_active", "This elevation is not active");
+    let refused = false;
     this.tx(() => {
-      this.sql.exec("UPDATE gov_elevations SET status = 'ended', until = ? WHERE id = ?", now, id);
+      const matched = this.sql
+        .exec(
+          "UPDATE gov_elevations SET status = 'ended', until = ? WHERE id = ? AND status = 'active' RETURNING id",
+          now,
+          id,
+        )
+        .toArray().length;
+      if (claimElevation(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "elevation", reason: "replay" }));
+        refused = true;
+        return;
+      }
       this.sql.exec(
         "UPDATE elevations SET until = ? WHERE principal_id = ? AND until > ?",
         now,
@@ -1078,6 +1150,7 @@ export class GovStore {
       );
       this.bump();
     });
+    if (refused) return fail(409, "not_active", "This elevation is not active");
     return { ok: true, elevation: this.getElevation(id, now) as ElevationRequest };
   }
 

@@ -12,14 +12,14 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, and #5, whose stored flag accepts only 0 and 1. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, and #2, whose start writes only a pending row. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
 | # | Machine | Location | Status | Risk | Decision | Notes |
 |---|---|---|---|---|---|---|
 | 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
-| 2 | Elevation window | `admin/store.ts:38`, writers at 970, 995, 1039, 1062 | LATER | High | LATER | Pending and active expire only in `toElevation` (128–132). |
+| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1017`, predicate at `:1031`, `decideElevation` at `:1081`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only in `toElevation` (`admin/store.ts:135`). |
 | 3 | Access request | `admin/store.ts:55`, writers at 1118, 1181, 1205, 912, 1216 | LATER | High | LATER | `reopenRequest` has no status predicate. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
 | 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:873`, journal replay in `security-journal.ts:108`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. |
@@ -75,7 +75,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 3. #4 Second-person confirmation (fixed: one typed check, and the requester cannot confirm)
 4. #7 Workspace item release (fixed: update cannot set `approved`; release uses the shared quorum result)
 5. #5 Kill switch (fixed: a value other than 0 or 1 stays off, and an unknown name is refused)
-6. #2 Elevation window
+6. #2 Elevation window (fixed: a start from any status but pending is refused, and two starts cannot both succeed)
 7. #3 Access request
 8. #12 Brain member
 9. #1 Governance change
@@ -88,6 +88,7 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 
 - **#7.** Fixed. `commitItem` rejects an update whose status is outside the allow-list, including `approved`. The record route still sends only `STATUSES`, which has no approval word, and those words are in the allow-list. Release calls `commitQuorum`.
 - **#5.** Fixed. `decodeSwitchEnabled` reads 1 as on and 0 as off. Any other stored value reads as off, and turning it on is refused. Turning it off writes canonical 0. An unknown name, a non-boolean, and an unreadable clock do not write. Prod re-enable is still `requestSecond`.
+- **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1017`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
 - **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
@@ -163,9 +164,9 @@ None inside the reducer. Whether a change needs a second person is decided by th
 ## 2. Elevation window
 
 - Purpose: A person asks for a time-boxed elevation, an admin approves or denies it, and the window can be ended early.
-- Code: no reducer yet. `requestElevation`, `startElevation`, `decideElevation`, `endElevation` in `admin/store.ts`.
-- Persisted: yes, `gov_elevations.status`. `toElevation` (128–132) rewrites `pending` and `active` to `expired` in memory when the clock has passed. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
-- What changed: nothing in this commit.
+- Code: `decodeElevation` and `transitionElevation` in `src/state/elevation.ts`. `startElevation` at `admin/store.ts:1017` applies the effect. `decideElevation` is at `:1081`. The approve route is `admin/routes.ts:721`.
+- Persisted: yes, `gov_elevations.status`. `toElevation` (`admin/store.ts:135`) rewrites `pending` and `active` to `expired` in memory when the clock has passed. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
+- What changed: a start from active, denied, ended, expired, or an unknown status is refused and writes nothing. The status update requires `status = 'pending'` and exactly one changed row (`admin/store.ts:1031`). The loser does not insert an engine row and does not bump the epoch. The approve route returns 409 for that refusal.
 
 ### States
 
@@ -192,13 +193,15 @@ None inside the reducer. Whether a change needs a second person is decided by th
 |---|---|---|---|---|
 | (none) | request | reason, whole hours, under role max, no open row | pending | insert |
 | pending | request | `needsApproval` is false, same transaction | active | `startElevation`, bump epoch |
-| pending | approve | not expired, decider is not the subject | active | insert `elevations` row, bump |
-| pending | deny | not expired, not the subject | denied | notify |
-| active | end | status is active after read-time healing | ended | shorten `elevations.until`, bump |
+| pending | approve | not expired, decider is not the subject, the row is still pending | active | update `WHERE status = 'pending'`, insert `elevations` row, bump |
+| active, denied, ended, expired, or unknown | start | — | unchanged | no write. Return 409 `not_startable` |
+| pending | start | the pending row was already taken | unchanged | no write. Return 409 `not_startable` |
+| pending | deny | not expired, not the subject, the row is still pending | denied | update `WHERE status = 'pending'`, notify |
+| active | end | status is active after read-time healing, and the stored row is still active | ended | update `WHERE status = 'active'`, shorten `elevations.until`, bump |
 | pending | lapse | `lapses_at <= now` | expired | none stored |
 | active | lapse | `until <= now` | expired | none stored |
 
-`startElevation` (991) does not read the current status. It is only called after an insert or after `decideElevation`'s pending check. `endElevation` on a window that is past `until` sees `expired` and returns `not_active`, so the engine row is left until its own `until`.
+`startElevation` reads the stored status, including the read-time lapse, and refuses anything that is not pending. The update then requires the row to still be pending. `endElevation` on a window that is past `until` sees `expired` and returns `not_active`, so the engine row is left until its own `until`.
 
 ```mermaid
 stateDiagram-v2
