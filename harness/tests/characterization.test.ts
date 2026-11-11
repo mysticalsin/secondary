@@ -89,14 +89,14 @@ test("CHARACTERIZATION: no API route can pass approved into workspace update", (
 
 test("CHARACTERIZATION: savePage does not republish an archived page", () => {
   const src = read("recovered-source/worker/src/wiki/store.ts");
-  const body = between(src, "protected savePage(", "private validFactsSql(");
-  assert.match(body, /decodePageStatus\(cur\.status\)/);
-  assert.match(body, /commitPage\(from, \{ type: "save", now \}\)/);
+  const save = between(src, "protected savePage(", "protected unarchivePage(");
+  assert.match(save, /decodePageStatus\(cur\.status\)/);
+  assert.match(save, /commitPage\(from, \{ type: "save", now \}\)/);
   assert.match(
-    body,
+    save,
     /SET type = \?, title = \?, markdown = \?, summary = \?, revision = \?, status = 'published', origin = \?, updated_at = \? WHERE id = \? AND status = 'published'/,
   );
-  assert.match(body, /AND status = 'archived'/);
+  assert.doesNotMatch(save, /status = 'archived'/);
 
   const outcome = (
     status: "published" | "archived" | "unknown" | null,
