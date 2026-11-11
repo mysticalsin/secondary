@@ -31,6 +31,11 @@ export function decodeMember(state: unknown): MemberState {
   return { tag: "unknown" };
 }
 
+/** A membership grants its role only when the row is finished and active. A claim and a pending row do not. */
+export function grantsMemberRole(state: unknown): boolean {
+  return state === "active";
+}
+
 export function transitionMember(state: MemberState, event: MemberEvent): MemberStep {
   if (!Number.isSafeInteger(event.now)) {
     return reject("brain_member", state.tag, event.type, "clock_unreadable");

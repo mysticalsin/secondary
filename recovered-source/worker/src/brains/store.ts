@@ -10,6 +10,7 @@ import {
   claimMember,
   commitMember,
   decodeMember,
+  grantsMemberRole,
 } from "../../../../src/state/brain-member.ts";
 import { WikiBase } from "../wiki/store.ts";
 import { citationsOf, lineDiff } from "../wiki/text.ts";
@@ -204,15 +205,15 @@ export abstract class BrainBase extends WikiBase {
       }));
   }
 
-  /** The highest stored role among the ids of one human, or null when they have none. */
+  /** The highest granted role among the ids of one human, or null when none is active. */
   brainRoleOf(principalIds: string[]): BrainRole | null {
     if (!principalIds.length) return null;
     let best = -1;
     for (const id of principalIds.slice(0, 20)) {
       const r = this.sql
-        .exec("SELECT role FROM brain_members WHERE principal_id = ?", id)
+        .exec("SELECT role, state FROM brain_members WHERE principal_id = ?", id)
         .toArray()[0];
-      if (r) best = Math.max(best, BRAIN_ROLES.indexOf(r.role as BrainRole));
+      if (r && grantsMemberRole(r.state)) best = Math.max(best, BRAIN_ROLES.indexOf(r.role as BrainRole));
     }
     return best < 0 ? null : (BRAIN_ROLES[best] as BrainRole);
   }

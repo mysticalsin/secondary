@@ -41,6 +41,7 @@ const PATCHED_RECOVERED = new Set<string>([
   "recovered-source/worker/src/brains/data.ts",
   "recovered-source/worker/src/brains/routes.ts",
   "recovered-source/worker/src/brains/store.ts",
+  "recovered-source/worker/src/brains/shared.ts",
   "recovered-source/worker/src/ops-admin.ts",
   "recovered-source/worker/src/security-journal.ts",
   "recovered-source/worker/src/admin/store.ts",

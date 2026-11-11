@@ -21,6 +21,7 @@ import {
   publicationBound,
 } from "@secondary/policy";
 import { Hono } from "hono";
+import { grantsMemberRole } from "../../../../src/state/brain-member.ts";
 import { quorumConfirmed } from "../../../../src/state/quorum.ts";
 import { govClient } from "../admin/client.ts";
 import { manageAuthority, noticeLabel, scopeDescOf, scopeKey } from "../admin/validate.ts";
@@ -300,13 +301,15 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
           ? await govClient(c.env, s.tenantId).members(kind, b.nodeId)
           : [];
       const out: MemberOut[] = [];
-      for (const m of base)
+      for (const m of base) {
+        const storedRole = byId.get(m.principalId);
         out.push({
           principalId: m.principalId,
           email: m.email,
-          role: byId.get(m.principalId)?.role ?? "contributor",
+          role: storedRole && grantsMemberRole(storedRole.state) ? storedRole.role : "contributor",
           state: "active",
         });
+      }
       for (const m of stored)
         if (!base.some((x) => x.principalId === m.principalId))
           out.push({
@@ -639,7 +642,9 @@ async function setMember(
   const govMember = scoped
     ? (await gov.members(kind, b.nodeId)).some((m) => m.principalId === pid)
     : false;
-  const isMember = govMember || (await b.stub.brainMembers()).some((m) => m.principalId === pid);
+  const isMember =
+    govMember ||
+    (await b.stub.brainMembers()).some((m) => m.principalId === pid && grantsMemberRole(m.state));
   const restricted = isRestrictedBrain(b.facts);
   const heavy = role === "steward" || role === "owner";
   const needsSecond =

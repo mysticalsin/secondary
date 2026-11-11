@@ -7,6 +7,7 @@ import {
   isRestrictedBrain,
   type Publication,
 } from "@secondary/policy";
+import { grantsMemberRole } from "../../../../src/state/brain-member.ts";
 import { govClient } from "../admin/client.ts";
 import { tenantStub } from "../stubs.ts";
 import { type C, sess } from "../ux/util.ts";
@@ -130,14 +131,16 @@ export async function seeBrains(c: C, brains: Brain[]): Promise<Seen[]> {
 export async function readersOf(
   c: C,
   b: Brain,
-  stored: { principalId: string }[],
+  stored: { principalId: string; state: unknown }[],
 ): Promise<number> {
   const s = sess(c);
   if (b.personal) return 1;
   if (b.facts.type === "global")
     return (await tenantStub(c.env, s.tenantId).listPrincipalIds()).length;
   const kind = b.vn?.kind;
-  const ids = new Set(stored.map((m) => m.principalId));
+  const ids = new Set(
+    stored.filter((m) => grantsMemberRole(m.state)).map((m) => m.principalId),
+  );
   if (kind === "circle" || kind === "department" || kind === "account")
     for (const m of await govClient(c.env, s.tenantId).members(kind, b.nodeId))
       ids.add(m.principalId);
