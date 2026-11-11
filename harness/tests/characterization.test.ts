@@ -31,6 +31,22 @@ const walk = (dir: string): string[] => {
   return out;
 };
 
+test("STATUSES contains no approval word, so a record update cannot release an item", () => {
+  const records = read("recovered-source/worker/src/ux/records.ts");
+  const statuses = between(records, "const STATUSES", "const SETTLED");
+  for (const word of [
+    "approved",
+    "released",
+    "confirmed",
+    "accepted",
+    "published",
+    "approval",
+    "verified",
+  ]) {
+    assert.equal(statuses.toLowerCase().includes(word), false, word);
+  }
+});
+
 test("CHARACTERIZATION: workspace update stores whatever status the caller sends", () => {
   const src = read("recovered-source/worker/src/workspace.ts");
   const body = between(src, "update(", "scratch(");

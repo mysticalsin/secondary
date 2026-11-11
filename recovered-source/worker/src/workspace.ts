@@ -533,6 +533,9 @@ export class Workspace extends BrainBase {
     if ("ok" in rec) return rec;
     const label = patch.title ?? rec.label;
     const body = patch.body ?? rec.body;
+    // Latent release hole: any status string is stored, including "approved".
+    // The record route only forwards STATUSES, which has no approval word, so
+    // no current route can bypass two-person release through this assignment.
     const status = patch.status ?? rec.status;
     const tags = patch.tags ?? rec.tags;
     const revision = rec.revision + 1;

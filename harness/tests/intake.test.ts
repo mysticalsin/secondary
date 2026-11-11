@@ -29,6 +29,7 @@ const PATCHED_RECOVERED = new Set<string>([
   "recovered-source/worker/src/tenant-policy.ts",
   "recovered-source/worker/src/wiki/seed.ts",
   "recovered-source/worker/src/agent/loop.ts",
+  "recovered-source/worker/src/workspace.ts",
 ]);
 
 function sha256(file: string): string {

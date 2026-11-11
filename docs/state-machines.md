@@ -24,11 +24,11 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 4 | Second-person confirmation | `tenant-policy.ts:795` | LATER | High | LATER | Shared by kill switches, field exposure, brain roles, erasure. One quorum check with #7 and #8. |
 | 5 | Kill switch | `tenant-policy.ts:754`, names in `switches.ts:3` | LATER | High | LATER | Off is immediate. On in prod waits for a second person. |
 | 6 | OIDC login | `auth/routes.ts:57` and `:99` | LATER | High | LATER | Login record is single-use only when `loginStateTake` runs. |
-| 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` (`workspace.ts:536`) stores the caller status. No current route can pass `approved`. Shares the quorum check with #4 and #8. |
+| 7 | Workspace item release | `workspace.ts:520`, `:730`, `:792`, `:810` | LATER | High | LATER | `update` (`workspace.ts:539`) stores the caller status. No current route can pass `approved`. Shares the quorum check with #4 and #8. |
 | 8 | Wiki proposal review | `wiki/store.ts:1070`, `:1338`, `:1465` | LATER | High | LATER | Includes #10. Approval applies page markdown. Partial approval stays `candidate` while the API says `pending`. Shares the quorum check with #4 and #7. |
 | 9 | Wiki page visibility | `wiki/store.ts:819` and `:1232` | LATER | High | LATER | Right-size to a status predicate plus an unarchive event. `savePage` currently republishes an archived page. |
 | 10 | Wiki finding | `wiki/store.ts:1097`, `:1386`, `:1452` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. Not a separate reducer. |
-| 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | One shared `publishMode()`. Dry run and real import use different formulas today. |
+| 11 | Brain import outcome | `brains/data.ts:332` and `:377` | LATER | High | LATER | Jarvis: a personal auto-accept stays a draft. One `publishMode()` defaults to draft, and publishing is an explicit action. Current formulas still disagree. |
 | 12 | Brain member | `brains/store.ts:211`, set from `brains/routes.ts:704` | LATER | High | LATER | Caller passes `active` or `pending`. No transition check. |
 | 13 | Replay nonce | `tenant-policy.ts:628` | LATER | High | LATER | Named guard with tests, not a reducer. Accept once until TTL, then the row is deleted. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
@@ -58,7 +58,7 @@ Right-sizing:
 
 - **#13** stays a named guard with tests. It does not become a reducer.
 - **#9** becomes a status predicate plus an unarchive event. It does not need a full page lifecycle.
-- **#11** is a decision: one shared `publishMode()` for the dry run and the real import.
+- **#11** Jarvis: a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import share one `publishMode()` that defaults to draft. Publishing takes an explicit action. Not implemented yet.
 - **#4, #7, and #8** share one quorum / second-person check.
 - **#10** is folded into #8. Finding `open` / `dismissed` / `resolved` are effects of proposal review.
 
@@ -80,10 +80,10 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 
 Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and marks the flagged cases. It does not fix them.
 
-- **#7.** `workspace.ts:536` stores `patch.status ?? rec.status` and the `UPDATE` at 542 has no status predicate. The only caller that passes a status is `PUT /ux/accounts/:id/records/:rid` (`ux/records.ts:302`). `readFields` (`records.ts:161`) accepts a status only when it is in `STATUSES` (`records.ts:33`), which has no `approved`. `ux/personal.ts:105` and `:195` and `ux/records.ts:354` omit status. The method would store `approved`. No current route can send it, so this is not an approval bypass today.
+- **#7.** `workspace.ts:539` stores `patch.status ?? rec.status` and the `UPDATE` at 545 has no status predicate. The only caller that passes a status is `PUT /ux/accounts/:id/records/:rid` (`ux/records.ts:302`). `readFields` (`records.ts:161`) accepts a status only when it is in `STATUSES` (`records.ts:33`), which has no `approved`. `ux/personal.ts:105` and `:195` and `ux/records.ts:354` omit status. The method would store `approved`. No current route can send it, so this is not an approval bypass today.
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
 - **#9.** `savePage` (`wiki/store.ts:834`) sets `status = 'published'` with no status predicate. The unchanged-content skip (`:828`) applies only when the page is already published, so saving an archived page republishes it.
-- **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft.
+- **#11.** Dry-run state is `publishDirect ? "published" : "draft"` (`brains/data.ts:378` and `:389`). A real import reports `res.autoAccepted` (`:419`). `wikiPropose` (`wiki/store.ts:1117`) also auto-accepts a personal brain with `autoAccept`. A personal auto-accept can publish a replacement or an `ask` page that the dry run calls a draft. Jarvis's decision, recorded and not yet applied: both paths share `publishMode()`, which defaults to draft. A personal auto-accept stays a draft. Publishing is an explicit action.
 - **#13.** `nonceFirst` (`tenant-policy.ts:628`) deletes expired rows, then `INSERT OR IGNORE ... RETURNING key`. True when one row comes back.
 - **#6.** The callback clears the login cookie (`auth/routes.ts:105`) before `loginStateTake` (`:116`). `error` (`:108`) and a missing or mismatched state (`:113`) return without taking the record, so the login row stays until its TTL. `loginStateTake` (`identity-store.ts:312`) deletes the row and then returns null when it is already expired, so that path does consume the row.
 
@@ -405,7 +405,7 @@ stateDiagram-v2
 
 ## 7. Workspace item release
 
-Review: shares the quorum check with #4 and #8. Step 0 pinned `update` at `workspace.ts:536`. No current route can pass `approved`, so this stays fourth in the High order. Still LATER.
+Review: shares the quorum check with #4 and #8. Step 0 pinned `update` at `workspace.ts:539`. No current route can pass `approved`, so this stays fourth in the High order. Still LATER.
 
 - Purpose: A contributed item waits as a candidate until enough distinct people approve it. An edit of an approved item sends it back to review.
 - Code: no reducer yet. `Workspace.update` (520), the contribute edit (730), `review` (775), `approve` (810).
@@ -443,7 +443,7 @@ Review: shares the quorum check with #4 and #8. Step 0 pinned `update` at `works
 | candidate | approve | not an author, this human has not approved this revision, approvals reach `required` | approved | outbox `item.released` |
 | candidate | approve | approvals still short | candidate | approval row only |
 
-`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1 (`workspace.ts:138`). `update` at line 536 assigns `patch.status` with no allow-list. That is the unguarded transition: any string becomes the stored status, including from `approved` straight to a made-up value, skipping the candidate rule the edit path uses.
+`required` is 2 for a global release or `GLOBAL_NONPERSONAL`, otherwise 1 (`workspace.ts:138`). `update` at line 539 assigns `patch.status` with no allow-list. That is the unguarded transition: any string becomes the stored status, including from `approved` straight to a made-up value, skipping the candidate rule the edit path uses. The comment on that line records the hole. `STATUSES` still has no approval word, so the record route cannot send one.
 
 ```mermaid
 stateDiagram-v2
@@ -610,7 +610,7 @@ None.
 
 ## 11. Brain import outcome
 
-Review: one shared `publishMode()` for the dry run and the real import. Step 0 pinned that the two formulas disagree. Still LATER.
+Review: Jarvis decided that a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import will share one `publishMode()` that defaults to draft, and publishing takes an explicit action. Step 0 pinned that the two formulas still disagree. Still LATER. Not implemented in this change.
 
 - Purpose: Each file in an OKF, Obsidian, or Outline import is skipped, shown as a dry-run page, or written as a draft proposal or a direct publish.
 - Code: no reducer yet. `runImport` in `brains/data.ts:332`. Parsers in `brains/importers.ts` only build documents. They do not publish.
