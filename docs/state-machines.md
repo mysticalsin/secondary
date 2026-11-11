@@ -18,9 +18,9 @@ Status in the table matches the code on this branch. Devin approved this invento
 
 | # | Machine | Location | Status | Risk | Decision | Notes |
 |---|---|---|---|---|---|---|
-| 1 | Governance change | `recovered-source/worker/src/admin/store.ts:18`, writers at 631, 662, 707, 738 | LATER | High | LATER | Two-person approval. Expiry is healed on read and not written back. |
-| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1036`, predicate at `:1050`, `decideElevation` at `:1100`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. An active row with a null `until`, and any unknown status word, read as expired and are not written back. |
-| 3 | Access request | `src/state/access-request.ts`, `markApproved` `admin/store.ts:1306` predicate `:1320`, `denyRequest` `:1268` predicate `:1287`, `reopenRequest` `:1334` predicate `:1342`, `afterDecision` `:899` predicate `:939`, routes `:843` and `:870` | FIXED | High | FIX now | Reopen is legal only from approved. A decision writes only a pending row. A fulfilling change writes only a pending or approved row. A lost race is 409 and does not notify. |
+| 1 | Governance change | `src/state/governance.ts`, `readGovernance` `:52`, `toChange` `admin/store.ts:124`, `propose` `:616` predicate `:686`, `decide` `:706` predicate `:743`, `withdraw` `:781` predicate `:797` | FIXED | High | FIX now | Approve, reject, and withdraw write only a pending row. A pending row past its expiry reads as expired and is not written back. An unknown stored word reads as unknown and has no effect. A lost decision is 409 and does not apply. |
+| 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1081`, predicate at `:1095`, `decideElevation` at `:1145`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. An active row with a null `until`, and any unknown status word, read as expired and are not written back. |
+| 3 | Access request | `src/state/access-request.ts`, `markApproved` `admin/store.ts:1351` predicate `:1365`, `denyRequest` `:1313` predicate `:1332`, `reopenRequest` `:1379` predicate `:1387`, `afterDecision` `:944` predicate `:984`, routes `:843` and `:870` | FIXED | High | FIX now | Reopen is legal only from approved. A decision writes only a pending row. A fulfilling change writes only a pending or approved row. A lost race is 409 and does not notify. |
 | 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). #8 does not call it yet. |
 | 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:876`, `journal.switchSet` at `:922`, pending-ask delete in `security-journal.ts:118`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. An unknown stored name is skipped at `tenant-policy.ts:832`. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
@@ -78,7 +78,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 6. #2 Elevation window (fixed: a start from any status but pending is refused, and two starts cannot both succeed)
 7. #3 Access request (fixed: reopen only from approved, and two decisions cannot both succeed)
 8. #12 Brain member (fixed: a set names the state it read, and two sets cannot both succeed)
-9. #1 Governance change
+9. #1 Governance change (fixed: a decision writes only a pending row, and an unknown word has no effect)
 10. #9 Wiki page visibility
 11. #11 Brain import outcome
 12. #8 Wiki proposal review, with #10 folded in
@@ -88,7 +88,8 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 
 - **#7.** Fixed. `commitItem` rejects an update whose status is outside the allow-list, including `approved`. The record route still sends only `STATUSES`, which has no approval word, and those words are in the allow-list. Release calls `commitQuorum`.
 - **#5.** Fixed. `decodeSwitchEnabled` reads 1 as on and 0 as off. Any other stored value reads as off, and turning it on is refused. Turning it off writes canonical 0. An unknown name, a non-boolean, and an unreadable clock do not write. Prod re-enable is still `requestSecond`.
-- **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1036`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
+- **#1.** Fixed. `transitionGovernance` approves, rejects, or withdraws only from pending. `decide` (`admin/store.ts:706`) and `withdraw` (`:781`) update `WHERE status = 'pending'` (`:743` and `:797`). `propose` (`:616`) applies only when that same predicate changes one row (`:686`). A lost decision does not apply the directory change. An unknown stored word reads as unknown and is not echoed. A pending row past `expires_at` reads as expired in `toChange` (`:124`) and is not written back.
+- **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1081`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
 - **#3.** Fixed. `transitionAccessRequest` approves or denies only from pending, reopens only from approved, and grants or rejects only a pending or approved request. Each write checks that predicate on `RETURNING`. A lost decision is 409 and does not notify.
 - **#12.** Fixed. `transitionMember` sets `active` or `pending` from absent, pending, or active. An unknown stored word is refused. `brainMemberClaim` (`brains/store.ts:225`) inserts only when no row exists (`:240`) and updates only `WHERE state = ? AND at = ?` (`:257`). A lost race does not write the wiki log. A scoped add claims before `gov.propose` (`placeScopedMember` at `:850`). The route returns that 409 at `brains/routes.ts:709`.
 - **#8.** `wikiDecide` (`wiki/store.ts:1338`). A short approval returns `status: "pending"` (`:1445`) and does not update the item, so the row stays `candidate`. The last approval calls `applyProposal` and sets `approved` (`:1448`). Reject sets the item to `rejected` and the finding to `dismissed` (`:1386`).
@@ -110,9 +111,9 @@ Searches were `rg` over the repo for `LaunchAgent`, `launchd`, `recorder`, `cale
 ## 1. Governance change
 
 - Purpose: A directory change is proposed, then applied, rejected, withdrawn, or left to lapse.
-- Code: no reducer yet. Writers are `GovStore.propose`, `decide`, and `withdraw` in `recovered-source/worker/src/admin/store.ts`.
-- Persisted: yes, `gov_changes.status` (unversioned text). Read path `toChange` (109–114) shows `pending` as `expired` when `expires_at <= now` and does not write that back.
-- What changed: nothing in this commit.
+- Code: `readGovernance` and `transitionGovernance` in `src/state/governance.ts`. `propose` is `admin/store.ts:616` (predicate `:686`). `decide` is `:706` (predicate `:743`). `withdraw` is `:781` (predicate `:797`). `toChange` (`:124`) is the read.
+- Persisted: yes, `gov_changes.status` (unversioned text). `readGovernance` (`src/state/governance.ts:52`) shows `pending` as `expired` when `expires_at <= now` and does not write that back. A stored word other than pending, applied, rejected, withdrawn, or expired reads as `unknown`.
+- What changed: approve, reject, and withdraw write only `WHERE status = 'pending'` and keep the directory effect only when one row changes. A lost approve does not apply and does not notify. An unknown stored word is refused with `state_unreadable` and the stored word is not echoed. The row is not rewritten.
 
 ### States
 
@@ -145,9 +146,9 @@ Searches were `rg` over the repo for `LaunchAgent`, `launchd`, `recorder`, `cale
 | pending | withdraw | caller is proposer, not expired | withdrawn | status write |
 | pending | lapse | `expires_at <= now` | expired | none (not stored) |
 
-`decide` (674–717) and `withdraw` (729–745) check the healed status, then write. The check sits outside `tx`. One TenantPolicy object runs requests one at a time, so two decisions do not overlap inside one object. The rule is still not a single function, and a raw SQL reader can treat a lapsed row as `pending` because the stored status was not updated.
+`decide` (`admin/store.ts:743`) and `withdraw` (`:797`) claim `WHERE status = 'pending'` before any directory write. Zero rows is `not_pending` and does not apply. One TenantPolicy object still runs requests one at a time. The predicate is what makes two decisions produce one outcome. A raw SQL reader can still treat a lapsed row as `pending` because the stored status is not updated.
 
-Anything not in this table is illegal. Today an unknown stored status is cast through (`as ChangeStatus`) and later refused only by the `not_pending` branch, which echoes the raw string.
+Anything not in this table is illegal. An unknown stored word reads as `unknown` and every event is `state_unreadable`. The stored word is not written into the refusal.
 
 ```mermaid
 stateDiagram-v2
@@ -166,9 +167,9 @@ None inside the reducer. Whether a change needs a second person is decided by th
 ## 2. Elevation window
 
 - Purpose: A person asks for a time-boxed elevation, an admin approves or denies it, and the window can be ended early.
-- Code: `decodeElevation` and `transitionElevation` in `src/state/elevation.ts`. `startElevation` at `admin/store.ts:1036` applies the effect. `decideElevation` is at `:1100`. The approve route is `admin/routes.ts:721`.
-- Persisted: yes, `gov_elevations.status`. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. `toElevation` (`admin/store.ts:141`), the open-request check, the list, `decideElevation`, and the engine window all call it. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
-- What changed: a start from active, denied, ended, expired, or an unknown status is refused and writes nothing. The status update requires `status = 'pending'` and exactly one changed row (`admin/store.ts:1050`). The loser does not insert an engine row and does not bump the epoch. The approve route returns 409 for that refusal. An active row whose `until` is null, and a status word the table does not know, read as expired. The stored status and `until` stay as they were.
+- Code: `decodeElevation` and `transitionElevation` in `src/state/elevation.ts`. `startElevation` at `admin/store.ts:1081` applies the effect. `decideElevation` is at `:1145`. The approve route is `admin/routes.ts:721`.
+- Persisted: yes, `gov_elevations.status`. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. `toElevation` (`admin/store.ts:142`), the open-request check, the list, `decideElevation`, and the engine window all call it. The row is not updated. A second table, `elevations`, holds the window the policy engine reads.
+- What changed: a start from active, denied, ended, expired, or an unknown status is refused and writes nothing. The status update requires `status = 'pending'` and exactly one changed row (`admin/store.ts:1095`). The loser does not insert an engine row and does not bump the epoch. The approve route returns 409 for that refusal. An active row whose `until` is null, and a status word the table does not know, read as expired. The stored status and `until` stay as they were.
 
 ### States
 
@@ -222,7 +223,7 @@ stateDiagram-v2
 ## 3. Access request
 
 - Purpose: A person asks to join a scope. A steward approves, a change fulfils it, or it is denied.
-- Code: `src/state/access-request.ts`. Writers: `denyRequest` (`admin/store.ts:1268`), `markApproved` (`:1306`), `reopenRequest` (`:1334`), `afterDecision` (`:899`).
+- Code: `src/state/access-request.ts`. Writers: `denyRequest` (`admin/store.ts:1313`), `markApproved` (`:1351`), `reopenRequest` (`:1379`), `afterDecision` (`:944`).
 - Persisted: yes, `gov_access_requests.status` (unversioned text).
 - What changed: each write names the status it may leave. `reopenRequest` requires `approved`. A decision requires `pending`. `afterDecision` requires `pending` or `approved`, and notifies only when that row changes. A lost race is 409.
 
@@ -242,7 +243,7 @@ stateDiagram-v2
 | create | Admin route |
 | deny | Steward |
 | mark_approved | Steward, before `propose` |
-| change_applied / change_rejected | `afterDecision` (`admin/store.ts:899`) |
+| change_applied / change_rejected | `afterDecision` (`admin/store.ts:944`) |
 | reopen | `admin/routes.ts:843` and `:870` when the follow-up change cannot be made |
 
 ### Transitions
@@ -256,7 +257,7 @@ stateDiagram-v2
 | pending or approved | change_applied | row linked by `change_id` | granted | notify |
 | pending or approved | change_rejected | row linked by `change_id` | denied | notify |
 
-`reopenRequest` (`admin/store.ts:1342`) updates only `status = 'approved'`. `markApproved` (`:1320`) and `denyRequest` (`:1287`) update only `status = 'pending'`. `afterDecision` (`:939`) updates only `status IN ('pending', 'approved')` and skips the request notice when no row changes. A granted, denied, or still-pending request cannot be reopened. Two approvers of one pending request produce one approval.
+`reopenRequest` (`admin/store.ts:1387`) updates only `status = 'approved'`. `markApproved` (`:1365`) and `denyRequest` (`:1332`) update only `status = 'pending'`. `afterDecision` (`:984`) updates only `status IN ('pending', 'approved')` and skips the request notice when no row changes. A granted, denied, or still-pending request cannot be reopened. Two approvers of one pending request produce one approval.
 
 ```mermaid
 stateDiagram-v2

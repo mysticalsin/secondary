@@ -19,6 +19,7 @@ import {
   effectiveStatus,
   type ElevationState,
 } from "../../../../src/state/elevation.ts";
+import { claimGovernance, commitGovernance, readGovernance } from "../../../../src/state/governance.ts";
 import type { SecurityJournal } from "../security-journal.ts";
 import { manageAuthority, noticeLabel, type ScopeDesc } from "./validate.ts";
 
@@ -28,7 +29,7 @@ export type ChangeKind =
   | "member_remove"
   | "nda_grant"
   | "nda_revoke";
-export type ChangeStatus = "pending" | "applied" | "rejected" | "withdrawn" | "expired";
+export type ChangeStatus = "pending" | "applied" | "rejected" | "withdrawn" | "expired" | "unknown";
 
 export interface Change {
   id: string;
@@ -120,11 +121,11 @@ const nn = (v: SqlStorageValue | undefined): number | null =>
 const newId = (p: string): string => `${p}_${crypto.randomUUID().slice(0, 8)}`;
 
 const toChange = (r: Row, now: number): Change => {
-  const status = s(r.status) as ChangeStatus;
+  const read = readGovernance(r.status, n(r.expires_at), now);
   return {
     id: s(r.id),
     kind: s(r.kind) as ChangeKind,
-    status: status === "pending" && n(r.expires_at) <= now ? "expired" : status,
+    status: read.tag,
     payload: JSON.parse(s(r.payload)) as Record<string, unknown>,
     scopeKey: s(r.scope_key),
     needsSecond: n(r.needs_second) === 1,
@@ -679,12 +680,21 @@ export class GovStore {
         this.sql.exec("UPDATE gov_access_requests SET change_id = NULL WHERE change_id = ?", id);
         return err;
       }
-      this.sql.exec(
-        "UPDATE gov_changes SET status = 'applied', decided_by = ?, decided_at = ? WHERE id = ?",
-        a.proposedBy,
-        now,
-        id,
-      );
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_changes SET status = 'applied', decided_by = ?, decided_at = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          a.proposedBy,
+          now,
+          id,
+        )
+        .toArray().length;
+      if (claimGovernance(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "governance", reason: "replay" }));
+        this.sql.exec("DELETE FROM gov_changes WHERE id = ?", id);
+        this.sql.exec("UPDATE gov_access_requests SET change_id = NULL WHERE change_id = ?", id);
+        return fail(409, "not_pending", "This change is no longer pending");
+      }
       this.afterDecision(this.getChange(id, now) as Change, true, now);
       return { applied: true };
     });
@@ -702,10 +712,17 @@ export class GovStore {
   ): { ok: true; change: Change } | Fail {
     const c = this.getChange(id, now);
     if (!c) return fail(404, "not_found", "No such change");
-    if (c.status === "expired")
-      return fail(409, "expired", "This change lapsed after 72 hours. Propose it again");
-    if (c.status !== "pending")
+    const step = commitGovernance(
+      { tag: c.status },
+      { type: approve ? "approve" : "reject", now },
+    );
+    if (!step.ok) {
+      if (step.reason === "expired")
+        return fail(409, "expired", "This change lapsed after 72 hours. Propose it again");
+      if (step.reason === "state_unreadable" || step.reason === "clock_unreadable")
+        return fail(409, step.reason, "This change cannot be decided");
       return fail(409, "not_pending", `This change is already ${c.status}`);
+    }
     if (this.sameHuman(c.proposedBy, deciderId))
       return fail(
         403,
@@ -720,18 +737,32 @@ export class GovStore {
         "Two-person rule: this change is about you or your request, so someone else must decide it",
       );
     const r = this.tx((): Fail | null => {
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_changes SET status = ?, decided_by = ?, decided_at = ?, note = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          approve ? "applied" : "rejected",
+          deciderId,
+          now,
+          note,
+          id,
+        )
+        .toArray().length;
+      if (claimGovernance(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "governance", reason: "replay" }));
+        return fail(409, "not_pending", "This change is no longer pending");
+      }
       if (approve) {
         const err = this.applyChange(c, c.proposedBy, deciderId, now);
-        if (err) return err;
+        if (err) {
+          this.sql.exec(
+            `UPDATE gov_changes SET status = 'pending', decided_by = NULL, decided_at = NULL, note = NULL
+             WHERE id = ? AND status = 'applied'`,
+            id,
+          );
+          return err;
+        }
       }
-      this.sql.exec(
-        "UPDATE gov_changes SET status = ?, decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
-        approve ? "applied" : "rejected",
-        deciderId,
-        now,
-        note,
-        id,
-      );
       this.afterDecision(this.getChange(id, now) as Change, approve, now);
       return null;
     });
@@ -752,17 +783,31 @@ export class GovStore {
     if (!c) return fail(404, "not_found", "No such change");
     if (c.proposedBy !== by)
       return fail(403, "not_proposer", "Only the proposer can withdraw a change");
-    if (c.status !== "pending")
+    const step = commitGovernance({ tag: c.status }, { type: "withdraw", now });
+    if (!step.ok) {
+      if (step.reason === "state_unreadable" || step.reason === "clock_unreadable")
+        return fail(409, step.reason, "This change cannot be withdrawn");
       return fail(409, "not_pending", `This change is already ${c.status}`);
+    }
+    let refused = false;
     this.tx(() => {
-      this.sql.exec(
-        "UPDATE gov_changes SET status = 'withdrawn', decided_by = ?, decided_at = ? WHERE id = ?",
-        by,
-        now,
-        id,
-      );
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_changes SET status = 'withdrawn', decided_by = ?, decided_at = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          by,
+          now,
+          id,
+        )
+        .toArray().length;
+      if (claimGovernance(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "governance", reason: "replay" }));
+        refused = true;
+        return;
+      }
       this.afterDecision(this.getChange(id, now) as Change, false, now);
     });
+    if (refused) return fail(409, "not_pending", "This change is no longer pending");
     return { ok: true, change: this.getChange(id, now) as Change };
   }
 
