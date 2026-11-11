@@ -54,7 +54,7 @@ function body(): string {
   });
 }
 
-function item(required: number): Record<string, unknown> & { body: string } {
+function item(required: number): Record<string, unknown> & { id: string; revision: number; body: string } {
   return {
     id: "prop_1",
     label: "Home",

@@ -21,15 +21,15 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 1 | Governance change | `src/state/governance.ts`, `readGovernance` `:52`, `toChange` `admin/store.ts:124`, `propose` `:616` predicate `:686`, `decide` `:706` predicate `:743`, `withdraw` `:781` predicate `:797` | FIXED | High | FIX now | Approve, reject, and withdraw write only a pending row. A pending row past its expiry reads as expired and is not written back. An unknown stored word reads as unknown and has no effect. A lost decision is 409 and does not apply. The duplicate lookup at `admin/store.ts:640` is a second clock comparison (`expires_at > ?`) and does not write. |
 | 2 | Elevation window | `src/state/elevation.ts`, `startElevation` in `admin/store.ts:1081`, predicate at `:1095`, `decideElevation` at `:1145`, approve route `admin/routes.ts:721` | FIXED | High | FIX now | A start is legal only from pending. The update requires `status = 'pending'` and one changed row. A lost start is 409. Pending and active still expire only when read. `effectiveStatus` in `src/state/elevation.ts` is the only clock comparison. An active row with a null `until`, and any unknown status word, read as expired and are not written back. |
 | 3 | Access request | `src/state/access-request.ts`, `markApproved` `admin/store.ts:1351` predicate `:1365`, `denyRequest` `:1313` predicate `:1332`, `reopenRequest` `:1379` predicate `:1387`, `afterDecision` `:944` predicate `:984`, routes `:843` and `:870` | FIXED | High | FIX now | Reopen is legal only from approved. A decision writes only a pending row. A fulfilling change writes only a pending or approved row. A lost race is 409 and does not notify. |
-| 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, workspace release (#7), and wiki proposal review (#8). |
+| 4 | Second-person confirmation | `src/state/quorum.ts`, `requestSecond` in `tenant-policy.ts` | FIXED | High | FIX now | Typed result. The requester cannot confirm. A lost confirm is `replay` and does not apply. Callers: kill switch, field exposure, brain open, brain role, export, erasure, restore, and workspace release (#7). Wiki proposal review counts distinct approvers and does not call this. |
 | 5 | Kill switch | `src/state/kill-switch.ts`, `setSwitch` in `tenant-policy.ts:876`, `journal.switchSet` at `:922`, pending-ask delete in `security-journal.ts:118`, names in `switches.ts:3` | FIXED | High | FIX now | Off is immediate, and an off journal replay clears the pending ask. On in prod waits for a second person. Replay and a quorum refusal are 409. A stored value other than 0 or 1 stays off. An unknown stored name is skipped at `tenant-policy.ts:832`. |
 | 6 | OIDC login | `auth/routes.ts:103` | FIXED | High | FIX now | Login record is one-shot. Every terminal callback consumes the row. |
 | 7 | Workspace item release | `src/state/item-release.ts`, `workspace.ts` `update` and `approve` | FIXED | High | FIX now | `update` rejects a status outside the allow-list, including `approved`. A record status still updates. Release uses the shared quorum result, then one conditional status write. The loser is `replay` and does not emit `item.released`. |
-| 8 | Wiki proposal review | `transitionProposal` `src/state/proposal-review.ts:77`, `wikiDecide` `wiki/store.ts:1494`, reject `:1538`, quorum `:1601`, dismiss `:1553`, resolve `:1684`, `wikiEditProposal` `:1703` predicate `:1738` | FIXED | High | FIX now | Includes #10. A short approval stays `candidate` while the response says `pending`. Reject, the last approval, and an edit compare the previous status. An unknown word writes nothing. A finding changes only from `open`. Approval uses `commitQuorum`. |
-| 9 | Wiki page visibility | `src/state/page-visibility.ts`, `savePage` `wiki/store.ts:890` predicate `:925`, `unarchivePage` `:959` predicate `:968`, archive loop `:1379` predicate `:1384`, refusal `wikiDecide` `:1667` | FIXED | High | FIX now | A save publishes a missing page and rewrites a published page. An archived page is not saved. Unarchive is its own event. An unknown status writes nothing. A lost race is `replay` and does not write a revision. The decide route returns that refusal, which is 409. |
-| 10 | Wiki finding | `transitionFinding` `src/state/proposal-review.ts:65`, insert `wiki/store.ts:1205`, dismiss `:1553`, resolve `:1684` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. A write matches `status = 'open'`. |
-| — | Dev seed approval | `wiki/store.ts:1219`, write `:1222` (`WHERE id = ?` only) | NOT A MACHINE | — | NOT A MACHINE | Dev seed. The approval write is not a review machine. |
-| 11 | Brain import outcome | `publishMode` `src/state/import-outcome.ts:30`, `transitionImport` `:40`, import `brains/data.ts:381`, compare-and-set `wiki/store.ts:1251` | FIXED | High | FIX now | A personal auto-accept stays a draft. The dry run and the real import share `publishMode(false)`. Publishing is explicit and updates `WHERE status = 'candidate'`. An unknown word writes nothing. |
+| 8 | Wiki proposal review | `distinctApprovers` `src/state/proposal-review.ts:49`, `transitionProposal` `:82`, `wikiDecide` `wiki/store.ts:1493`, reject `:1537`, dismiss `:1552`, approve `:1599`, resolve `:1671`, `wikiEditProposal` `:1690` predicate `:1725` | FIXED | High | FIX now | Includes #10. A short approval stays `candidate` while the response says `pending`. Reject, the last approval, and an edit compare the previous status. An unknown word writes nothing. A finding changes only from `open`. Approval counts distinct person ids and does not read a clock. |
+| 9 | Wiki page visibility | `src/state/page-visibility.ts`, `savePage` `wiki/store.ts:889` predicate `:924`, `unarchivePage` `:958` predicate `:967`, archive loop `:1378` predicate `:1383`, refusal `wikiDecide` `:1654` | FIXED | High | FIX now | A save publishes a missing page and rewrites a published page. An archived page is not saved. Unarchive is its own event. An unknown status writes nothing. A lost race is `replay` and does not write a revision. The decide route returns that refusal, which is 409. |
+| 10 | Wiki finding | `transitionFinding` `src/state/proposal-review.ts:70`, insert `wiki/store.ts:1204`, dismiss `:1552`, resolve `:1671` | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. A write matches `status = 'open'`. |
+| — | Dev seed approval | `wiki/store.ts:1218`, write `:1221` (`WHERE id = ?` only) | NOT A MACHINE | — | NOT A MACHINE | Dev seed. The approval write is not a review machine. |
+| 11 | Brain import outcome | `publishMode` `src/state/import-outcome.ts:30`, `transitionImport` `:40`, import `brains/data.ts:381`, compare-and-set `wiki/store.ts:1250` | FIXED | High | FIX now | A personal auto-accept stays a draft. The dry run and the real import share `publishMode(false)`. Publishing is explicit and updates `WHERE status = 'candidate'`. An unknown word writes nothing. |
 | 12 | Brain member | `src/state/brain-member.ts`, `grantsMemberRole` `:35`, `brainRoleOf` `brains/store.ts:229`, claim key `brains/store.ts:264`, `brainMemberDropClaim` `:331`, `brainMemberFinishProposal` `:355`, `brainMemberRelease` `:466`, `reconcileBrainMember` `:1092`, `placeScopedMember` `:1124`, `propose` `admin/store.ts:632`, `claim_key` column `:248`, unique index `:249`, `changeByKey` `:590`, `reconcileStoredMembers` `brains/open.ts:42`, route 409 `brains/routes.ts:721` | FIXED | High | FIX now | A claim mints an opaque key before `gov.propose`. The same key returns the existing change. Only an active row grants a role. A read during propose changes nothing. Applied finishes the claim. Pending or a missing governance row leaves it. Rejected, expired, or withdrawn releases it by key and previous state. |
 | 13 | Replay nonce | `tenant-policy.ts:632` | FIXED | High | FIX now | Named guard, not a reducer. Expiry does not reopen a key. `expires_at` is strictly after the last accepted millisecond. Prune is outside the guard, and only for `expires_at < now`. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
@@ -66,7 +66,7 @@ Right-sizing:
 - **#5** is a flag. `decodeSwitchEnabled` accepts 0 and 1. The pending re-enable stays the quorum machine. Fixed in `transitionSwitch`.
 - **#9** becomes a status predicate plus an unarchive event. It does not need a full page lifecycle.
 - **#11** Jarvis: a personal-brain auto-accept import stays a draft, matching the dry run. The dry run and the real import share one `publishMode()` that defaults to draft. Publishing takes an explicit action. Fixed in `transitionImport`.
-- **#4, #7, and #8** share one quorum / second-person check.
+- **#4 and #7** share one quorum / second-person check. **#8** counts distinct approvers and does not use that clock.
 - **#10** is folded into #8. Finding `open` / `dismissed` / `resolved` are effects of proposal review.
 
 Approved High order. Step 0 found that no API route can set `approved` through `Workspace.update`, so #7 stays fourth.
@@ -82,7 +82,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 9. #1 Governance change (fixed: a decision writes only a pending row, and an unknown word has no effect)
 10. #9 Wiki page visibility (fixed: a save of an archived page is refused, and unarchive is its own event)
 11. #11 Brain import outcome (fixed: a personal auto-accept stays a draft, and publishing compares the previous status)
-12. #8 Wiki proposal review, with #10 folded in (fixed: a decision compares the candidate row, and a finding changes only from open)
+12. #8 Wiki proposal review, with #10 folded in (fixed: a decision compares the candidate row, a finding changes only from open, and approval counts distinct people)
 13. Erasure / rights (#30)
 
 Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and marks the flagged cases. It does not fix them.
@@ -93,9 +93,9 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts:1081`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts:721`) returns that refusal through `mutate`, which is 409.
 - **#3.** Fixed. `transitionAccessRequest` approves or denies only from pending, reopens only from approved, and grants or rejects only a pending or approved request. Each write checks that predicate on `RETURNING`. A lost decision is 409 and does not notify.
 - **#12.** Fixed. `transitionMember` sets `active` or `pending` from absent, pending, or active. An unknown stored word is refused. `brainMemberClaim` (`brains/store.ts:239`) stores an opaque key (`:264`) before `gov.propose`. `placeScopedMember` (`:1124`) passes that key. `propose` (`admin/store.ts:632`) returns the change already stored for the key. `gov_changes.claim_key` is added at `:248` and indexed at `:249`. Legacy rows stay null. `brainMemberRelease` (`brains/store.ts:466`) and `brainMemberDropClaim` (`:331`) match the key and the previous state. Zero rows is `state_unreadable`. `brainMemberFinishProposal` (`:355`) matches the key and the previous state, so one overlapping finish logs. `reconcileBrainMember` (`:1092`) looks the key up with `changeByKey` (`admin/store.ts:590`). The route returns a refusal at `brains/routes.ts:721`. Membership reads go through `reconcileStoredMembers` (`brains/open.ts:42`).
-- **#8.** Fixed. `transitionProposal` (`src/state/proposal-review.ts:77`) approves, rejects, and edits only from candidate. An unknown word is `state_unreadable`. `wikiDecide` (`wiki/store.ts:1494`) calls `commitQuorum` (`:1601`). A short approval returns `status: "pending"` (`:1645`) and does not update the item. That insert and its log share one transaction (`:1622`). The last approval sets `approved` only while the row is still `candidate` (`:1670`). Reject does the same (`:1538`). `wikiEditProposal` (`:1703`) matches `status = 'candidate' AND revision = ?` (`:1738`). An open finding is dismissed (`:1553`) or resolved (`:1684`). The archive loop is `:1376`, and its compare-and-set is `:1384`.
-- **#9.** Fixed. `transitionPage` (`src/state/page-visibility.ts:42`) saves from absent or published, archives from published, and unarchives only from archived. An unknown word is refused. `savePage` (`wiki/store.ts:890`) updates `WHERE id = ? AND status = 'published'` (`:925`). `unarchivePage` (`:959`) updates `WHERE status = 'archived'` (`:968`). The archive loop (`:1379`) keeps `WHERE status = 'published'` (`:1384`). `wikiDecide` (`:1667`) returns the refusal, and the route (`wiki/routes.ts:855`) sends it through `failResponse` (`ux/util.ts:88`), which is 409.
-- **#11.** Fixed. `publishMode` (`src/state/import-outcome.ts:30`) is draft unless the caller passes true. `transitionImport` (`:40`) leaves a draft in place on `auto_accept` and publishes only from a draft. An unknown word is `state_unreadable`. `runImport` (`brains/data.ts:335`) reports `publishMode(false)` for the dry run (`:392`) and the real import (`:422`). The draft markdown is `:378`. `wikiPropose` (`wiki/store.ts:1233`) publishes only for explicit `publishDirect`, and the update matches `status = 'candidate'` (`:1251`). A personal auto-accept (`:1234`) returns `autoAccepted: false`.
+- **#8.** Fixed. `distinctApprovers` (`src/state/proposal-review.ts:49`) counts person ids. The same id twice adds nothing. `transitionProposal` (`:82`) approves, rejects, and edits only from candidate, and releases when that count reaches `required`. An unknown word is `state_unreadable`. `wikiDecide` (`wiki/store.ts:1493`) passes the approver ids (`:1601`) and does not call `commitQuorum`. A short approval returns `status: "pending"` (`:1632`) and does not update the item. That insert and its log share one transaction (`:1609`). The last approval sets `approved` only while the row is still `candidate` (`:1657`). Reject does the same (`:1537`). `wikiEditProposal` (`:1690`) matches `status = 'candidate' AND revision = ?` (`:1725`). An open finding is dismissed (`:1552`) or resolved (`:1671`). The archive loop is `:1375`, and its compare-and-set is `:1383`. Personal review forces `required = 1` (`:1588`).
+- **#9.** Fixed. `transitionPage` (`src/state/page-visibility.ts:42`) saves from absent or published, archives from published, and unarchives only from archived. An unknown word is refused. `savePage` (`wiki/store.ts:889`) updates `WHERE id = ? AND status = 'published'` (`:924`). `unarchivePage` (`:958`) updates `WHERE status = 'archived'` (`:967`). The archive loop (`:1378`) keeps `WHERE status = 'published'` (`:1383`). `wikiDecide` (`:1654`) returns the refusal, and the route (`wiki/routes.ts:855`) sends it through `failResponse` (`ux/util.ts:88`), which is 409.
+- **#11.** Fixed. `publishMode` (`src/state/import-outcome.ts:30`) is draft unless the caller passes true. `transitionImport` (`:40`) leaves a draft in place on `auto_accept` and publishes only from a draft. An unknown word is `state_unreadable`. `runImport` (`brains/data.ts:335`) reports `publishMode(false)` for the dry run (`:392`) and the real import (`:422`). The draft markdown is `:378`. `wikiPropose` (`wiki/store.ts:1232`) publishes only for explicit `publishDirect`, and the update matches `status = 'candidate'` (`:1250`). A personal auto-accept (`:1233`) returns `autoAccepted: false`.
 - **#13.** `nonceFirst` (`tenant-policy.ts:632`) is `INSERT OR IGNORE ... RETURNING key`. True when one row comes back. The old `DELETE` of expired rows is gone, so a key is not accepted again after `expires_at`. The stored expiry is `(T + skew + 1)` seconds, strictly after the last millisecond the verifiers accept timestamp `T`.
 - **#6.** Fixed. `commitLoginRecord` (`src/state/login-record.ts`) consumes an issued login on `idp_error`, `missing_state`, `state_mismatch`, `exchange_failed`, and `accepted`. A consumed record accepts nothing. The callback takes the cookie hash and, when it differs, the query hash, before it returns. Logs are reason codes. `loginStateTake` (`identity-store.ts:312`) still deletes the row and then returns null when it is already expired.
 
@@ -278,7 +278,7 @@ Restricted scopes need a second person on the membership change. That is machine
 
 ## 4. Second-person confirmation
 
-Review: one quorum check. #7 and #8 call `commitQuorum` before they claim a candidate row.
+Review: one quorum check. #7 calls `commitQuorum` before it claims a candidate row. #8 counts distinct approvers and does not call this.
 
 - Purpose: The first actor records an intent. A different human confirms it within 24 hours. The same human confirming does nothing.
 - Code: `transitionQuorum` in `src/state/quorum.ts`. `TenantPolicy.requestSecond` performs the effects. Callers use `quorumConfirmed`.
@@ -331,7 +331,7 @@ stateDiagram-v2
 
 ### Platform / flag differences
 
-Callers decide whether to invoke this at all. Prod kill-switch re-enable does. Turning a switch off does not. A dev restore does not ask. #7 and #8 call this result and then claim the candidate row.
+Callers decide whether to invoke this at all. Prod kill-switch re-enable does. Turning a switch off does not. A dev restore does not ask. #7 calls this result and then claims the candidate row. #8 does not.
 
 ## 5. Kill switch
 
@@ -441,7 +441,7 @@ stateDiagram-v2
 
 ## 7. Workspace item release
 
-Review: shares the quorum check with #4. #8 calls the same `commitQuorum` result before it claims a candidate proposal.
+Review: shares the quorum check with #4. #8 counts distinct approvers and does not use this result.
 
 - Purpose: A contributed item waits as a candidate until enough distinct people approve it. An edit of an approved item sends it back to review.
 - Code: `transitionItem` in `src/state/item-release.ts`. `Workspace.update` and `Workspace.approve` perform it. `approve` calls `commitQuorum` and releases only on that result.
@@ -498,12 +498,12 @@ Global versus scope changes `required`. It is data on the item (`releaseTarget`,
 
 ## 8. Wiki proposal review
 
-Review: includes machine 10. Shares `commitQuorum` with #4 and #7. Fixed.
+Review: includes machine 10. Approval counts distinct person ids. It does not use the 24-hour quorum. Fixed.
 
 - Purpose: A wiki proposal is a workspace item of kind `wiki_ingest`, `wiki_lint`, or `wiki_dream`. Deciding it applies or discards a diff.
-- Code: `src/state/proposal-review.ts`. `decodeProposalStatus` (`:54`) reads `candidate`, `approved`, and `rejected`. Any other word is unknown. `transitionProposal` (`:77`) commits through `commitProposal` (`:109`). `wikiDecide` is `wiki/store.ts:1494`. Reject compares `status = 'candidate'` (`:1538`). `commitQuorum` is `:1601`. The short approval returns pending at `:1645`. The completing approval compares `status = 'candidate'` (`:1670`). `wikiEditProposal` (`:1703`) compares `status = 'candidate' AND revision = ?` (`:1738`). The archive loop is `:1376`, predicate `:1384`. The erase scrub (`:2180`) is still the later erasure change.
-- Persisted: yes, the same `items.status` column as machine 7. Response field `status: "pending"` (`:1645`) is not the stored status. The short approval insert and its log share one transaction (`:1622`). The row stays `candidate` until the last approval.
-- What changed: a decision that loses the candidate row writes nothing. An unknown stored word writes nothing. A finding effect writes only from `open`. The dev seed approval write stays outside this machine.
+- Code: `src/state/proposal-review.ts`. `decodeProposalStatus` (`:59`) reads `candidate`, `approved`, and `rejected`. Any other word is unknown. `distinctApprovers` (`:49`) counts person ids. `transitionProposal` (`:82`) commits through `commitProposal` (`:103`). `wikiDecide` is `wiki/store.ts:1493`. Reject compares `status = 'candidate'` (`:1537`). The approve call passes those ids (`:1599`). The short approval returns pending at `:1632`. The completing approval compares `status = 'candidate'` (`:1657`). `wikiEditProposal` (`:1690`) compares `status = 'candidate' AND revision = ?` (`:1725`). The archive loop is `:1375`, predicate `:1383`. The erase scrub (`:2167`) is still the later erasure change.
+- Persisted: yes, the same `items.status` column as machine 7. Response field `status: "pending"` (`:1632`) is not the stored status. The short approval insert and its log share one transaction (`:1609`). The row stays `candidate` until the last approval.
+- What changed: a decision that loses the candidate row writes nothing. An unknown stored word writes nothing. A finding effect writes only from `open`. A second approver releases a two-person proposal whether they arrive inside a day or after it. The dev seed approval write stays outside this machine.
 
 ### States
 
@@ -535,9 +535,9 @@ Review: includes machine 10. Shares `commitQuorum` with #4 and #7. Fixed.
 | candidate | approve | count reaches `required` (1 in a personal brain, else the item's required) | approved | `applyProposal`, finding `resolved` |
 | candidate | edit | page exists, not generated, markdown non-empty | candidate | revision + 1, prior approvals no longer match |
 | candidate | erase_source | proposal cites the erased source | rejected | body replaced with an empty proposal |
-| approved or rejected | erase_source | same | stored status unchanged | body still scrubbed (`:2180` `CASE`). Erasure itself is later |
+| approved or rejected | erase_source | same | stored status unchanged | body still scrubbed (`:2167` `CASE`). Erasure itself is later |
 
-Authors cannot decide a non-personal proposal. A second approval by the same human returns `already_done`. `wikiDecide` then calls `commitQuorum`, the same result machine 7 uses, and claims the candidate row only when that result releases.
+Authors cannot decide a non-personal proposal. A second approval by the same human returns `already_done` and adds nothing to the count. `wikiDecide` releases when the number of distinct approver ids reaches `required`. Personal scope forces that number to 1. The 24-hour quorum is not consulted.
 
 ```mermaid
 stateDiagram-v2
@@ -549,14 +549,14 @@ stateDiagram-v2
 
 ### Platform / flag differences
 
-`ENVIRONMENT === "dev"` plus `opts.seed` auto-approves seed origin (`:1219`). That write is not this machine. Personal scope forces `required = 1` (`:1589`). That number is the `required` input of `transitionProposal`.
+`ENVIRONMENT === "dev"` plus `opts.seed` auto-approves seed origin (`:1218`). That write is not this machine. Personal scope forces `required = 1` (`:1588`). That number is the `required` input of `transitionProposal`.
 
 ## 9. Wiki page visibility
 
 Review: the fix is a status predicate plus an unarchive event, not a larger lifecycle. Fixed.
 
 - Purpose: A page is readable while `published`. Archiving hides it. Saving does not unarchive.
-- Code: `src/state/page-visibility.ts`. `decodePageStatus` (`:35`) reads `published` and `archived`. Any other word is unknown. `savePage` (`wiki/store.ts:890`) commits a save (`:899`) and updates `WHERE status = 'published'` (`:925`). `unarchivePage` (`:959`) commits an unarchive (`:962`) and updates `WHERE status = 'archived'` (`:968`). The archive loop (`:1379`) commits an archive and updates `WHERE status = 'published'` (`:1384`). `wikiDecide` (`:1667`) returns the refusal instead of approving. Callers of `savePage`: proposal pages (`:1365`), generated pages (`:1406`), the overview (`:1418`), and a promotion (`:1996`).
+- Code: `src/state/page-visibility.ts`. `decodePageStatus` (`:35`) reads `published` and `archived`. Any other word is unknown. `savePage` (`wiki/store.ts:889`) commits a save (`:898`) and updates `WHERE status = 'published'` (`:924`). `unarchivePage` (`:958`) commits an unarchive (`:961`) and updates `WHERE status = 'archived'` (`:967`). The archive loop (`:1378`) commits an archive and updates `WHERE status = 'published'` (`:1383`). `wikiDecide` (`:1654`) returns the refusal instead of approving. Callers of `savePage`: proposal pages (`:1364`), generated pages (`:1405`), the overview (`:1417`), and a promotion (`:1983`).
 - Persisted: yes, `wiki_pages.status`. The type says `"published" | "archived"` (`wiki/types.ts:88`). The column is unversioned text. A stored word outside those two is unknown and is not written.
 - What changed: an archived save no longer sets `published`. The revision and the search row are written only when the compare-and-set changes one row. A refused save is not a successful decision.
 
@@ -611,7 +611,7 @@ None.
 Folded into #8. These states are effects of proposal review. There is no separate reducer. Fixed with #8.
 
 - Purpose: A lint or ingest finding tracks whether the proposal that would fix it is still open.
-- Code: `transitionFinding` (`src/state/proposal-review.ts:65`). Insert at `wiki/store.ts:1205`, dismiss at `:1553`, resolve at `:1684`. Both updates match `status = 'open'`.
+- Code: `transitionFinding` (`src/state/proposal-review.ts:70`). Insert at `wiki/store.ts:1204`, dismiss at `:1552`, resolve at `:1671`. Both updates match `status = 'open'`.
 - Persisted: yes, `wiki_findings.status`. Unversioned. A stored word other than `open`, `dismissed`, or `resolved` is unknown.
 - What changed: a dismissed or unknown finding is not overwritten when a proposal is approved or rejected.
 
@@ -687,7 +687,7 @@ Review: Jarvis decided that a personal-brain auto-accept import stays a draft, m
 | published | publish | — | published | refused `not_draft`, no write |
 | unknown | auto_accept or publish | — | unknown | refused `state_unreadable`, no write |
 
-`wikiPropose` (`wiki/store.ts:1233`) takes the publish event only when `publishDirect` is true. The compare-and-set is `UPDATE items SET status = 'approved' ... WHERE id = ? AND status = 'candidate' RETURNING id` (`:1251`). Zero rows is `replay` (`:1256`) and does not apply the diff. A personal auto-accept (`:1234`) is the `auto_accept` event and returns `autoAccepted: false` (`:1246`). The dev seed (`:1219`) is unchanged. The citation loop is `cleanDraft` at `:1154`.
+`wikiPropose` (`wiki/store.ts:1232`) takes the publish event only when `publishDirect` is true. The compare-and-set is `UPDATE items SET status = 'approved' ... WHERE id = ? AND status = 'candidate' RETURNING id` (`:1250`). Zero rows is `replay` (`:1255`) and does not apply the diff. A personal auto-accept (`:1233`) is the `auto_accept` event and returns `autoAccepted: false` (`:1245`). The dev seed (`:1218`) is unchanged. The citation loop is `cleanDraft` at `:1153`.
 
 Ordering that is easy to miss: a real import audits once before the per-page loop (`:263`). A dry run returns before that audit (`:262`). A failed audit returns 503 and writes nothing.
 

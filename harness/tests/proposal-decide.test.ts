@@ -232,10 +232,11 @@ test("proposal review: an edit that loses the revision compare-and-set writes no
   db.close();
 });
 
-test("proposal review: wikiDecide uses the shared quorum check", () => {
+test("proposal review: wikiDecide counts distinct approvers and does not use the quorum clock", () => {
   const src = readFileSync(new URL("../../recovered-source/worker/src/wiki/store.ts", import.meta.url), "utf8");
   const decide = src.slice(src.indexOf("async wikiDecide("), src.indexOf("wikiEditProposal("));
-  assert.match(decide, /commitQuorum\(/);
+  assert.doesNotMatch(decide, /commitQuorum\(/);
+  assert.match(decide, /approvers: \[\.\.\.prior, actorId\]/);
   assert.match(decide, /commitProposal\(/);
   assert.match(decide, /AND status = 'candidate'/);
   assert.match(decide, /SET status = 'dismissed' WHERE key = \? AND status = 'open'/);

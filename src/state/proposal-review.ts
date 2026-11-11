@@ -2,12 +2,12 @@
  * Wiki proposal review. Findings are effects of this machine, not a second reducer.
  * A decision or an edit starts from candidate. An unknown stored word writes nothing.
  * The caller writes with a from-status predicate and keeps the row when one row changes.
- * Approval uses the shared quorum result: one person releases a single-person proposal,
- * and a second, different person releases every other proposal.
+ * Approval counts distinct person ids. It does not read a clock. The same id twice
+ * adds nothing. One person releases a personal proposal. Any other proposal waits
+ * until that many different people have approved.
  */
 
 import { commit, type IllegalTransition, reject } from "./illegal.ts";
-import type { QuorumResult } from "./quorum.ts";
 
 export type ProposalStatus =
   | { tag: "candidate" }
@@ -22,7 +22,7 @@ export type FindingStatus =
   | { tag: "unknown" };
 
 export type ProposalEvent =
-  | { type: "approve"; quorum: QuorumResult; required: number; approvals: number }
+  | { type: "approve"; required: number; approvers: readonly string[] }
   | { type: "reject" }
   | { type: "edit" };
 
@@ -44,6 +44,11 @@ export type ProposalStep =
 export type FindingStep =
   | { ok: true; state: FindingStatus; effects: FindingEffect[] }
   | IllegalTransition;
+
+/** Distinct person ids. A repeated id adds nothing. This does not read a clock. */
+export function distinctApprovers(ids: readonly string[]): number {
+  return new Set(ids).size;
+}
 
 /** One changed row applies. Zero or several is a lost race and must not write the other rows. */
 export function claimProposal(matchedRows: number): { tag: "applied" } | { tag: "replay" } {
@@ -88,18 +93,7 @@ export function transitionProposal(
     if (dismissed.ok && dismissed.effects.length) effects.push({ type: "dismiss_finding" });
     return allow({ tag: "rejected" }, effects);
   }
-  if (
-    event.quorum.tag === "same_actor" ||
-    event.quorum.tag === "replay" ||
-    event.quorum.tag === "refused"
-  ) {
-    return reject("proposal_review", state.tag, event.type, event.quorum.tag);
-  }
-  const next = event.approvals + 1;
-  const releases =
-    next >= event.required &&
-    (event.quorum.tag === "confirmed" || (event.quorum.tag === "recorded" && event.required <= 1));
-  if (!releases) return allow(state, []);
+  if (distinctApprovers(event.approvers) < event.required) return allow(state, []);
   const effects: ProposalEffect[] = [{ type: "approve" }];
   const resolved = transitionFinding(finding ?? { tag: "unknown" }, { type: "resolve" });
   if (resolved.ok && resolved.effects.length) effects.push({ type: "resolve_finding" });

@@ -32,9 +32,8 @@ const finding = {
 
 const release: ProposalEvent = {
   type: "approve",
-  quorum: { tag: "recorded" },
   required: 1,
-  approvals: 0,
+  approvers: ["ada"],
 };
 
 test("proposal review decode: candidate, approved, and rejected are stored, and any other word is unknown", () => {
@@ -74,39 +73,37 @@ test("proposal review: reject and edit are legal only from candidate", () => {
   }
 });
 
-test("proposal review: one recorded approval publishes a single-person proposal and waits when two are required", () => {
+test("proposal review: one distinct approval publishes a single-person proposal and waits when two are required", () => {
   const one = requireOk(transitionProposal(states.candidate, release, finding.open));
   assert.equal(one.state.tag, "approved");
   assert.equal(one.effects.some((effect) => effect.type === "approve"), true);
   assert.equal(one.effects.some((effect) => effect.type === "resolve_finding"), true);
   const waiting = requireOk(
-    transitionProposal(
-      states.candidate,
-      { type: "approve", quorum: { tag: "recorded" }, required: 2, approvals: 0 },
-      finding.open,
-    ),
+    transitionProposal(states.candidate, { type: "approve", required: 2, approvers: ["ada"] }, finding.open),
   );
   assert.equal(waiting.state.tag, "candidate");
   assert.equal(waiting.effects.length, 0);
-  const confirmed = requireOk(
+  const second = requireOk(
     transitionProposal(
       states.candidate,
-      { type: "approve", quorum: { tag: "confirmed" }, required: 2, approvals: 1 },
+      { type: "approve", required: 2, approvers: ["ada", "cy"] },
       null,
     ),
   );
-  assert.equal(confirmed.state.tag, "approved");
-  assert.equal(confirmed.effects.some((effect) => effect.type === "resolve_finding"), false);
+  assert.equal(second.state.tag, "approved");
+  assert.equal(second.effects.some((effect) => effect.type === "resolve_finding"), false);
 });
 
-test("proposal review: the same person cannot confirm, and a decided or unknown row writes nothing", () => {
-  const same = transitionProposal(
-    states.candidate,
-    { type: "approve", quorum: { tag: "same_actor" }, required: 2, approvals: 1 },
-    finding.open,
+test("proposal review: the same person twice does not count as two, and a decided or unknown row writes nothing", () => {
+  const same = requireOk(
+    transitionProposal(
+      states.candidate,
+      { type: "approve", required: 2, approvers: ["ada", "ada"] },
+      finding.open,
+    ),
   );
-  assert.equal(same.ok, false);
-  if (!same.ok) assert.equal(same.reason, "same_actor");
+  assert.equal(same.state.tag, "candidate");
+  assert.equal(same.effects.length, 0);
   for (const state of [states.approved, states.rejected, states.unknown]) {
     const result = transitionProposal(state, release, finding.open);
     assert.equal(result.ok, false, state.tag);

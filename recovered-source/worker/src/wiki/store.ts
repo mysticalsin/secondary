@@ -18,7 +18,6 @@ import {
   decodeProposalStatus,
   type FindingStatus,
 } from "../../../../src/state/proposal-review.ts";
-import { commitQuorum } from "../../../../src/state/quorum.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import {
@@ -1597,21 +1596,9 @@ export abstract class WikiBase extends DurableObject<Env> {
       .map((r) => r.actor_id as string);
     if (prior.some((actor) => ids.includes(actor)))
       return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const requester = prior[0];
-    const asked = commitQuorum(
-      requester
-        ? {
-            tag: "waiting",
-            requester: { id: requester, subject: null, email: null, directoryEmail: null },
-            requestedAt: item.updatedAt,
-          }
-        : { tag: "empty" },
-      { type: "ask", actor: { id: actorId, subject: null, email: null, directoryEmail: null }, now },
-    );
-    if (!asked.ok) return proposalFail(asked.reason);
     const step = commitProposal(
       from,
-      { type: "approve", quorum: { tag: asked.decision }, required, approvals: prior.length },
+      { type: "approve", required, approvers: [...prior, actorId] },
       this.findingOf(p.findingKey),
     );
     if (!step.ok) return proposalFail(step.reason);
