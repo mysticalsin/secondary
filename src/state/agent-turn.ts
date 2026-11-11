@@ -20,7 +20,7 @@ export type AgentTurnEvent =
   | { type: "stop_max_tokens" }
   | { type: "stop_tool"; count: number }
   | { type: "stop_other" }
-  | { type: "tools_finished" };
+  | { type: "tools_finished"; ran: number };
 
 export type AgentTurnEffect = { type: "answer" } | { type: "run_tools" } | { type: "stop" };
 
@@ -33,6 +33,31 @@ export const isLastRound = (state: { round: number; maxRounds: number }): boolea
   state.round === state.maxRounds;
 
 export const hasToolUses = (count: number): boolean => count > 0;
+
+/** A tool-use count the turn can store. NaN, Infinity, negatives, and fractions are not. */
+export const boundedToolCount = (n: number): boolean =>
+  typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+
+/**
+ * How many of `requested` uses the per-round and per-turn caps allow.
+ * The rest are refused and must not be added to `calls`.
+ */
+export function toolUsesCounted(
+  requested: number,
+  callsSoFar: number,
+  maxPerRound: number,
+  maxPerTurn: number,
+): number {
+  if (
+    !boundedToolCount(requested) ||
+    !boundedToolCount(callsSoFar) ||
+    !boundedToolCount(maxPerRound) ||
+    !boundedToolCount(maxPerTurn)
+  ) {
+    return 0;
+  }
+  return Math.min(requested, maxPerRound, Math.max(0, maxPerTurn - callsSoFar));
+}
 
 export function startAgentTurn(maxRounds: number): AgentTurnState {
   if (!Number.isInteger(maxRounds) || maxRounds < 1) {
@@ -52,12 +77,15 @@ export function transitionAgentTurn(state: AgentTurnState, event: AgentTurnEvent
     if (event.type !== "tools_finished") {
       return reject("agent_turn", "tools", event.type, "the tool round is still open");
     }
+    if (!boundedToolCount(event.ran) || event.ran > state.toolUses) {
+      return reject("agent_turn", "tools", "tools_finished", "ran must count only uses the cap allowed");
+    }
     return {
       ok: true,
       state: {
         tag: "round",
         round: state.round + 1,
-        calls: state.calls + state.toolUses,
+        calls: state.calls + event.ran,
         maxRounds: state.maxRounds,
       },
       effects: [],
@@ -77,6 +105,9 @@ export function transitionAgentTurn(state: AgentTurnState, event: AgentTurnEvent
     case "stop_max_tokens":
       return { ok: true, state: { tag: "answered", truncated: true }, effects: [{ type: "answer" }] };
     case "stop_tool":
+      if (!boundedToolCount(event.count)) {
+        return reject("agent_turn", "round", "stop_tool", "tool count must be a non-negative integer");
+      }
       if (!hasToolUses(event.count) || isLastRound(state)) return stop("ai_unavailable");
       return {
         ok: true,
@@ -93,7 +124,13 @@ export function transitionAgentTurn(state: AgentTurnState, event: AgentTurnEvent
       return reject("agent_turn", "round", "tools_finished", "this round has no tools to finish");
     default: {
       const unreachable: never = event;
-      return reject("agent_turn", "round", "unknown", `unhandled ${JSON.stringify(unreachable)}`);
+      const kind = (unreachable as { type?: unknown }).type;
+      return reject(
+        "agent_turn",
+        "round",
+        typeof kind === "string" ? kind : "unknown",
+        "unhandled event",
+      );
     }
   }
 }

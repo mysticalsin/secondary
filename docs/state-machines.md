@@ -1036,9 +1036,11 @@ stateDiagram-v2
 | round | stop_other | — | failed unavailable | return |
 | round | stop_tool | round is the last allowed, or tool list is empty | failed unavailable | tools are not run |
 | round | stop_tool | an earlier round, and at least one tool use | tools | per-call limits stay in the tool map. They do not change the turn status |
-| tools | tools_finished | — | round, round + 1, calls increased by the tool-use count | messages gain the assistant block and the tool results |
+| round | stop_tool | count is not a non-negative integer | rejected | the count is not logged |
+| tools | tools_finished | `ran` is an integer from 0 through the tool-use count | round, round + 1, calls increased by `ran` | messages gain the assistant block and the tool results |
+| tools | tools_finished | `ran` is larger than the tool-use count, or not an integer | rejected | nothing is added |
 
-`startAgentTurn` with a max below 1 is already failed, so the loop does not run. With `AGENT_LIMITS.maxRounds >= 1` every real turn still leaves through a terminal state. Tool-call admission (`unknown tool`, invalid JSON, too many calls) does not change the turn status. Those calls still count, because `tools_finished` adds the whole tool-use list.
+`startAgentTurn` with a max below 1 is already failed, so the loop does not run. With `AGENT_LIMITS.maxRounds >= 1` every real turn still leaves through a terminal state. A tool that runs and returns an error still counts. A use the loop refuses as over the cap does not: `tools_finished` adds `ran`, which is `toolUsesCounted`, not the whole list. An unhandled event is logged by `event.type` only.
 
 ```mermaid
 stateDiagram-v2

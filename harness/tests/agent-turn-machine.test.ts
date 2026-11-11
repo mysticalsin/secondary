@@ -6,10 +6,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { requireFail, requireOk, requireTag } from "./require-ok.ts";
 import {
+  boundedToolCount,
   commitAgentTurn,
   hasToolUses,
   isLastRound,
   startAgentTurn,
+  toolUsesCounted,
   type AgentTurnEvent,
   type AgentTurnState,
   transitionAgentTurn,
@@ -39,7 +41,7 @@ const events = {
   stop_tool: { type: "stop_tool", count: 2 } as const,
   stop_empty: { type: "stop_tool", count: 0 } as const,
   stop_other: { type: "stop_other" } as const,
-  tools_finished: { type: "tools_finished" } as const,
+  tools_finished: { type: "tools_finished", ran: 2 } as const,
 };
 
 const states = {
@@ -117,6 +119,57 @@ test("agent turn: guards allow and deny", () => {
   assert.equal(isLastRound(round(3)), false);
   assert.equal(hasToolUses(2), true);
   assert.equal(hasToolUses(0), false);
+});
+
+test("agent turn: a bad tool count is rejected, and an unknown event logs only its type", () => {
+  for (const count of [Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5]) {
+    const rejected = requireFail(transitionAgentTurn(round(1), { type: "stop_tool", count }));
+    assert.equal(rejected.event, "stop_tool");
+    assert.equal(rejected.reason.includes(String(count)), false);
+  }
+  assert.equal(boundedToolCount(2), true);
+  assert.equal(boundedToolCount(Number.NaN), false);
+
+  const secret = "tool-payload-SECRET";
+  const event = { type: "mystery", text: secret } as unknown as AgentTurnEvent;
+  const lines: string[] = [];
+  const original = console.warn;
+  console.warn = (line?: unknown) => {
+    lines.push(String(line));
+  };
+  try {
+    const result = commitAgentTurn(round(1), event);
+    assert.equal(result.ok, false);
+    assert.equal("event" in result && result.event, "mystery");
+    assert.equal("reason" in result && result.reason, "unhandled event");
+    assert.equal((lines[0] ?? "").includes(secret), false);
+  } finally {
+    console.warn = original;
+  }
+});
+
+test("agent turn: uses the cap refused are not added to the call count", () => {
+  assert.equal(toolUsesCounted(5, 10, 6, 12), 2);
+  assert.equal(toolUsesCounted(5, 12, 6, 12), 0);
+  assert.equal(toolUsesCounted(Number.POSITIVE_INFINITY, 0, 6, 12), 0);
+  const partial = requireOk(
+    transitionAgentTurn(
+      { tag: "tools", round: 1, calls: 10, maxRounds: 4, toolUses: 5 },
+      { type: "tools_finished", ran: 2 },
+    ),
+  );
+  assert.equal(requireTag(partial.state, "round").calls, 12);
+  const over = requireFail(
+    transitionAgentTurn(
+      { tag: "tools", round: 1, calls: 10, maxRounds: 4, toolUses: 5 },
+      { type: "tools_finished", ran: 6 },
+    ),
+  );
+  assert.equal(over.event, "tools_finished");
+  const bad = requireFail(
+    transitionAgentTurn(tools, { type: "tools_finished", ran: Number.NaN }),
+  );
+  assert.equal(bad.reason.includes("NaN"), false);
 });
 
 test("agent turn: tools on the last round fail, and finishing tools counts every use", () => {

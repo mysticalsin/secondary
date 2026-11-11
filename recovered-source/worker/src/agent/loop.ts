@@ -12,6 +12,7 @@ import {
   type AgentTurnEvent,
   type AgentTurnState,
   startAgentTurn,
+  toolUsesCounted,
 } from "../../../../src/state/agent-turn.ts";
 import {
   AGENT_TOOLS,
@@ -136,6 +137,12 @@ export async function runLoop(i: LoopInput): Promise<LoopOutcome> {
     }
     if (!res.ok || next.state.tag !== "tools") return done({ ok: false, code: "ai_unavailable" });
     state = next.state;
+    const ran = toolUsesCounted(
+      res.toolUses.length,
+      calls,
+      AGENT_LIMITS.maxCallsPerRound,
+      AGENT_LIMITS.maxCallsPerTurn,
+    );
 
     const results: Block[] = await Promise.all(
       res.toolUses.map(async (t, n): Promise<Block> => {
@@ -147,8 +154,7 @@ export async function runLoop(i: LoopInput): Promise<LoopOutcome> {
         });
         if (!isToolName(t.name)) return fail("unknown tool");
         if (t.invalid) return fail("invalid input: arguments are not a JSON object");
-        if (n >= AGENT_LIMITS.maxCallsPerRound || calls + n >= AGENT_LIMITS.maxCallsPerTurn)
-          return fail("too many tool calls");
+        if (n >= ran) return fail("too many tool calls");
         const parsed = AGENT_TOOLS[t.name].input.safeParse(asObject(t.input));
         if (!parsed.success) return fail("invalid input: arguments do not match the tool");
         if (!used.includes(t.name)) used.push(t.name);
@@ -167,7 +173,7 @@ export async function runLoop(i: LoopInput): Promise<LoopOutcome> {
     );
     messages.push({ role: "assistant", content: res.content });
     messages.push({ role: "user", content: results });
-    const advanced = commitAgentTurn(state, { type: "tools_finished" });
+    const advanced = commitAgentTurn(state, { type: "tools_finished", ran });
     if (!advanced.ok || advanced.state.tag !== "round") {
       return done({ ok: false, code: "ai_unavailable" });
     }
