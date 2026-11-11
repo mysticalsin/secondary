@@ -150,7 +150,7 @@ test("brain claim: the key is on the row before propose runs", async () => {
       (db.prepare("SELECT role FROM brain_members WHERE principal_id = 'ada'").get() as { role: string }).role,
       "owner",
     );
-    const store = brain as { brainRoleOf(ids: string[]): string | null };
+    const store = brain as unknown as { brainRoleOf(ids: string[]): string | null };
     assert.equal(store.brainRoleOf(["ada"]), null);
     db.close();
   } finally {

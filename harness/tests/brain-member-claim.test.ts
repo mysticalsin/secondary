@@ -26,7 +26,15 @@ type Brain = {
   brainRoleOf(principalIds: string[]): string | null;
   brainMemberRelease(
     principalId: string,
-    hold: { ok: true; at: number; inserted: boolean; previousAt: number | null; previousState: string },
+    hold: {
+      ok: true;
+      at: number;
+      inserted: boolean;
+      previousAt: number | null;
+      previousState: string;
+      key: string;
+      previousKey: string | null;
+    },
   ): Release;
 };
 

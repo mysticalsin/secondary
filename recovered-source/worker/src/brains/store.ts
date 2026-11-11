@@ -361,6 +361,7 @@ export abstract class BrainBase extends WikiBase {
     changeId: string,
     at: number | null,
     key: string,
+    previousState: string,
   ): { ok: true; state: "active" | "pending" } | { ok: false; code: "mismatch"; changeId: string } {
     const row = this.brainMemberRead(principalId);
     if (row && row.claimKey === key && row.role === role && row.state === state) {
@@ -371,7 +372,7 @@ export abstract class BrainBase extends WikiBase {
         ? this.sql
             .exec(
               `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?
-               WHERE principal_id = ? AND claim_key = ? RETURNING principal_id`,
+               WHERE principal_id = ? AND claim_key = ? AND state = ? RETURNING principal_id`,
               role,
               state,
               actor,
@@ -379,12 +380,13 @@ export abstract class BrainBase extends WikiBase {
               changeId,
               principalId,
               key,
+              previousState,
             )
             .toArray().length
         : this.sql
             .exec(
               `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?
-               WHERE principal_id = ? AND claim_key = ? AND at = ? RETURNING principal_id`,
+               WHERE principal_id = ? AND claim_key = ? AND state = ? AND at = ? RETURNING principal_id`,
               role,
               state,
               actor,
@@ -392,10 +394,15 @@ export abstract class BrainBase extends WikiBase {
               changeId,
               principalId,
               key,
+              previousState,
               at,
             )
             .toArray().length;
     if (matched !== 1) {
+      const again = this.brainMemberRead(principalId);
+      if (again && again.claimKey === key && again.role === role && again.state === state) {
+        return { ok: true, state };
+      }
       console.warn(
         JSON.stringify({
           at: "brain_member",
@@ -1062,6 +1069,7 @@ type MemberBrain = {
     changeId: string,
     at: number | null,
     key: string,
+    previousState: string,
   ):
     | { ok: true; state: "active" | "pending" }
     | { ok: false; code: "mismatch"; changeId: string }
@@ -1094,7 +1102,17 @@ export async function reconcileBrainMember(
   if (!change || change.status === "pending") return;
   if (change.status === "applied") {
     await Promise.resolve(
-      brain.brainMemberFinishProposal(principalId, row.role, "active", row.addedBy, now, change.id, null, row.claimKey),
+      brain.brainMemberFinishProposal(
+        principalId,
+        row.role,
+        "active",
+        row.addedBy,
+        now,
+        change.id,
+        null,
+        row.claimKey,
+        row.state,
+      ),
     );
     return;
   }
@@ -1130,7 +1148,17 @@ export async function placeScopedMember(
   if (!noted.ok) return { ok: false, status: 409, code: noted.code };
   const state = made.applied ? "active" : "pending";
   const set = await Promise.resolve(
-    brain.brainMemberFinishProposal(principalId, role, state, actor, now, made.change.id, hold.at, hold.key),
+    brain.brainMemberFinishProposal(
+      principalId,
+      role,
+      state,
+      actor,
+      now,
+      made.change.id,
+      hold.at,
+      hold.key,
+      hold.previousState,
+    ),
   );
   if (!set.ok) return { ok: false, status: 409, code: "mismatch", changeId: made.change.id };
   return { ok: true, status: made.applied ? "applied" : "pending", changeId: made.change.id };

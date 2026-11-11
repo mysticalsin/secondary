@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { Worker } from "node:worker_threads";
 import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
@@ -333,6 +334,57 @@ test("brain reconcile: a legacy null-key governance row does not finish the clai
     assert.equal(brain.brainRoleOf(["ada"]), null);
     assert.equal(logs(db).length, 0);
     db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("brain finish: overlapping finishes of one claim log once", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const db = openSqlite(file);
+    db.exec(`
+      CREATE TABLE brain_members (
+        principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
+        added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT, claim_key TEXT);
+      CREATE TABLE wiki_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
+        kind TEXT NOT NULL, detail TEXT NOT NULL);
+    `);
+    db.prepare(
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, claim_key) VALUES ('ada', 'owner', 'claimed', 'bea', ?, 'mem_overlap')",
+    ).run(NOW);
+    db.close();
+    const barrier = new Int32Array(new SharedArrayBuffer(4));
+    const run = (actor: string) =>
+      new Promise<{ ok: boolean; code?: string }>((resolve, reject) => {
+        const worker = new Worker(new URL("../runtime/brain-finish-worker.mts", import.meta.url), {
+          execArgv: ["--experimental-strip-types"],
+          workerData: {
+            file,
+            id: "ada",
+            actor,
+            role: "owner",
+            now: NOW,
+            key: "mem_overlap",
+            changeId: "chg_1",
+            previousState: "claimed",
+            barrier,
+          },
+        });
+        worker.once("message", (value: { ok: boolean; code?: string }) => resolve(value));
+        worker.once("error", reject);
+      });
+    const [a, b] = await Promise.all([run("bea"), run("cy")]);
+    assert.equal(a.ok, true);
+    assert.equal(b.ok, true);
+    const check = openSqlite(file);
+    assert.equal(
+      (check.prepare("SELECT state FROM brain_members WHERE principal_id = 'ada'").get() as { state: string }).state,
+      "active",
+    );
+    assert.equal((check.prepare("SELECT COUNT(*) AS n FROM wiki_log").get() as { n: number }).n, 1);
+    check.close();
   } finally {
     remove();
   }
