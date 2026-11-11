@@ -8,6 +8,7 @@ import { requireFail, requireOk } from "./require-ok.ts";
 import {
   commitBudgetHold,
   finiteHoldNumber,
+  logIfRefundFailed,
   openHold,
   type BudgetHoldEvent,
   type BudgetHoldState,
@@ -114,6 +115,42 @@ test("budget hold: a second settle does not adjust the counter again", async () 
     assert.deepEqual(nan.adds, []);
     const logged = commitBudgetHold(settled, events.settle);
     assert.equal(logged.ok, false);
+  } finally {
+    console.warn = original;
+  }
+});
+
+test("budget hold: a failed adjust is logged without amounts", async () => {
+  const adds: number[] = [];
+  const lines: string[] = [];
+  const original = console.warn;
+  console.warn = (line?: unknown) => {
+    lines.push(String(line));
+  };
+  try {
+    const hold = await openHold(
+      {
+        async add(tokens: number) {
+          adds.push(tokens);
+          return tokens === 10 ? 10 : null;
+        },
+      },
+      10,
+      100,
+    );
+    assert.ok(hold);
+    await hold.settle(7);
+    await hold.settle(1);
+    assert.deepEqual(adds, [10, -3]);
+    assert.match(lines[0] ?? "", /budget_adjust_failed/);
+    assert.equal((lines[0] ?? "").includes("-3"), false);
+    assert.equal((lines[0] ?? "").includes("7"), false);
+    logIfRefundFailed(null);
+    assert.match(lines.at(-1) ?? "", /budget_refund_failed/);
+    assert.equal((lines.at(-1) ?? "").includes("9"), false);
+    const before = lines.length;
+    logIfRefundFailed(9);
+    assert.equal(lines.length, before);
   } finally {
     console.warn = original;
   }

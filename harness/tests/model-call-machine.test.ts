@@ -9,6 +9,7 @@ import { commit } from "../../src/state/illegal.ts";
 import { requireFail, requireOk, requireTag } from "./require-ok.ts";
 import {
   commitModelCall,
+  boundedRetryCount,
   modelAttemptsRemain,
   type ModelCallEvent,
   type ModelCallState,
@@ -145,8 +146,26 @@ test("model call: guards allow and deny", () => {
   assert.equal(modelAttemptsRemain(calling(2, 2)), false);
   assert.equal(modelAttemptsRemain(calling(0, 0)), false);
   assert.equal(modelAttemptsRemain(calling(1, 1.5)), false);
+  assert.equal(boundedRetryCount(Number.POSITIVE_INFINITY), false);
+  assert.equal(boundedRetryCount(Number.NaN), false);
+  assert.equal(boundedRetryCount(-1), false);
+  assert.equal(boundedRetryCount(1.5), true);
   assert.equal(startModelCall(-1).tag, "done");
   assert.equal(startModelCall(Number.NaN).tag, "done");
+  assert.equal(startModelCall(Number.POSITIVE_INFINITY).tag, "done");
+  assert.equal(modelAttemptsRemain({ attempt: 0, retries: Number.POSITIVE_INFINITY }), false);
+  assert.deepEqual(
+    requireTag(
+      requireOk(
+        transitionModelCall(
+          { tag: "calling", attempt: Number.NaN, retries: 2, last: "upstream_error" },
+          { type: "http", status: 429 },
+        ),
+      ).state,
+      "done",
+    ).reply,
+    { ok: false, code: "upstream_error" },
+  );
   assert.equal(requireTag(requireOk(transitionModelCall(calling(0, 1), { type: "http", status: 503 })).state, "calling").tag, "calling");
   assert.equal(requireTag(requireOk(transitionModelCall(calling(0, 1), { type: "http", status: 422 })).state, "done").tag, "done");
 });

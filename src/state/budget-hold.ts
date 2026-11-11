@@ -73,6 +73,11 @@ export interface HoldStore {
   add(tokens: number, cap: number): Promise<number | null>;
 }
 
+/** Log a refund that did not land. The line has no amounts. Idempotent repair is later. */
+export function logIfRefundFailed(refunded: number | null): void {
+  if (refunded === null) console.warn(JSON.stringify({ at: "budget_refund_failed" }));
+}
+
 /** Reserve, then settle at most once. A non-finite estimate never reaches the store. */
 export async function openHold(
   store: HoldStore,
@@ -96,7 +101,9 @@ export async function openHold(
       if (!next.ok || next.state.tag !== "settled") return;
       hold = next.state;
       for (const effect of next.effects) {
-        if (effect.type === "adjust") await store.add(effect.delta, Number.MAX_SAFE_INTEGER);
+        if (effect.type !== "adjust") continue;
+        const wrote = await store.add(effect.delta, Number.MAX_SAFE_INTEGER);
+        if (wrote === null) console.warn(JSON.stringify({ at: "budget_adjust_failed" }));
       }
     },
   };

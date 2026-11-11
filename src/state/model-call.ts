@@ -41,17 +41,21 @@ export type ModelCallStep =
   | { ok: true; state: ModelCallState; effects: ModelCallEffect[] }
   | IllegalTransition;
 
+/** A count the retry loop can use. NaN, Infinity, and negatives are not. */
+export const boundedRetryCount = (n: number): boolean =>
+  typeof n === "number" && Number.isFinite(n) && n >= 0;
+
 /** Another iteration of `for (attempt = 0; attempt <= retries; attempt++)` still fits. */
-export const modelAttemptsRemain = (state: {
-  attempt: number;
-  retries: number;
-}): boolean => state.attempt + 1 <= state.retries;
+export const modelAttemptsRemain = (state: { attempt: number; retries: number }): boolean =>
+  boundedRetryCount(state.attempt) &&
+  boundedRetryCount(state.retries) &&
+  state.attempt + 1 <= state.retries;
 
 const backoffMs = (nextAttempt: number): number => 250 * 2 ** (nextAttempt - 1);
 
-/** `retries < 0` or a non-number never enters the loop and fails closed. */
+/** NaN, Infinity, a negative, or a non-number never enters the loop and fails closed. */
 export function startModelCall(retries: number): ModelCallState {
-  if (typeof retries !== "number" || !(retries >= 0)) {
+  if (!boundedRetryCount(retries)) {
     return { tag: "done", reply: { ok: false, code: "upstream_error" } };
   }
   return { tag: "calling", attempt: 0, retries, last: "upstream_error" };

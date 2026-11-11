@@ -704,7 +704,7 @@ None. TTL is an argument (`ttlMs`).
 - Purpose: One non-streaming Messages call retries bounded HTTP failures and stops on a terminal body.
 - Code: `src/state/model-call.ts` (`transitionModelCall`). Tests: `harness/tests/model-call-machine.test.ts`. `callModel` fetches and sleeps from the effect list.
 - Persisted: no. There is no codec. A reply's text stays in the call result and is not written.
-- What changed: the retry decision moved into the reducer. `callModel` still returns the same reply for the same responses. A 2xx status sent as an HTTP failure is rejected and logged. The caller classifies a 2xx body instead, which is what the old loop did. Sleep stays `250 * 2 ** (attempt - 1)` before the next fetch.
+- What changed: the retry decision moved into the reducer. `callModel` still returns the same reply for the same responses. A 2xx status sent as an HTTP failure is rejected and logged. The caller classifies a 2xx body instead, which is what the old loop did. Sleep stays `250 * 2 ** (attempt - 1)` before the next fetch. NaN, Infinity, and a negative retry count fail closed instead of looping.
 
 ### States
 
@@ -802,7 +802,7 @@ None.
 - Purpose: Reserve an estimate before a model call and settle to the real token count after it.
 - Code: `src/state/budget-hold.ts` (`transitionBudgetHold`). Tests: `harness/tests/budget-hold-machine.test.ts`. `reserve` applies the `adjust` effect.
 - Persisted: the day counter is a workspace row (`ai:usage`). The hold is request-local and has no codec. `reserve` does not write it.
-- What changed: `settle` is once only. A second call is logged and does not add the diff again. A non-finite estimate is rejected before `store.add`. Previously a second `settle` added the diff again, and a non-finite estimate was passed to the counter. `withUserCap`'s refund, when the user add succeeds and the tenant add then fails, is unchanged. If that refund add also returns null, the user counter stays high. That gap is still open.
+- What changed: `settle` is once only. A second call is logged and does not add the diff again. A non-finite estimate is rejected before `store.add`. If the settle diff itself fails to write, that failure is logged with no amounts and the hold stays settled. `withUserCap` logs a refund that returns null, still with no amounts. Making that refund idempotent is later. If the refund does not land, the user counter stays high.
 
 ### States
 

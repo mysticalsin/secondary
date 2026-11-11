@@ -3,7 +3,7 @@
 // compare-and-set, so concurrent requests cannot both spend the last tokens.
 
 import { commitBudgetCas, type BudgetCasEvent, type BudgetCasState } from "../../../../src/state/budget-cas.ts";
-import { openHold } from "../../../../src/state/budget-hold.ts";
+import { logIfRefundFailed, openHold } from "../../../../src/state/budget-hold.ts";
 import { decodeUsageBody } from "../../../../src/state/usage-body.ts";
 import { workspaceStub } from "../stubs.ts";
 
@@ -80,7 +80,7 @@ export function withUserCap(tenant: BudgetStore, user: BudgetStore, userCap: num
       const u = await user.add(tokens, cap === Number.MAX_SAFE_INTEGER ? cap : userCap);
       if (u === null) return null;
       const t = await tenant.add(tokens, cap);
-      if (t === null) await user.add(-tokens, Number.MAX_SAFE_INTEGER);
+      if (t === null) logIfRefundFailed(await user.add(-tokens, Number.MAX_SAFE_INTEGER));
       return t;
     },
   };
