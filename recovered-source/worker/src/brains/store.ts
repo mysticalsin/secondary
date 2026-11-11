@@ -250,7 +250,18 @@ export abstract class BrainBase extends WikiBase {
       : undefined;
     const previousKey =
       keyed?.claim_key === null || keyed?.claim_key === undefined ? null : String(keyed.claim_key);
-    const key = previousKey ?? `mem_${crypto.randomUUID().slice(0, 8)}`;
+    if (row && (String(row.state) === "claimed" || String(row.state) === "pending") && previousKey) {
+      return {
+        ok: true,
+        at: Number(row.at),
+        inserted: false,
+        previousAt: Number(row.at),
+        previousState: String(row.state),
+        key: previousKey,
+        previousKey,
+      };
+    }
+    const key = `mem_${crypto.randomUUID().slice(0, 8)}`;
     const from = row ? decodeMember(row.state) : { tag: "absent" as const };
     const step = commitMember(from, { type: "set", state: "pending", now });
     if (!step.ok) return { ok: false, code: step.reason };
@@ -294,11 +305,12 @@ export abstract class BrainBase extends WikiBase {
     role: BrainRole;
     state: string;
     changeId: string | null;
+    claimKey: string | null;
     addedBy: string;
   } | null {
     const row = this.sql
       .exec(
-        "SELECT role, state, change_id, added_by FROM brain_members WHERE principal_id = ?",
+        "SELECT role, state, change_id, claim_key, added_by FROM brain_members WHERE principal_id = ?",
         principalId,
       )
       .toArray()[0];
@@ -307,6 +319,7 @@ export abstract class BrainBase extends WikiBase {
       role: row.role as BrainRole,
       state: String(row.state),
       changeId: row.change_id === null || row.change_id === undefined ? null : String(row.change_id),
+      claimKey: row.claim_key === null || row.claim_key === undefined ? null : String(row.claim_key),
       addedBy: String(row.added_by),
     };
   }
@@ -324,7 +337,7 @@ export abstract class BrainBase extends WikiBase {
     const matched = this.sql
       .exec(
         `DELETE FROM brain_members
-         WHERE principal_id = ? AND change_id = ? AND state = ?
+         WHERE principal_id = ? AND claim_key = ? AND state = ?
          RETURNING principal_id`,
         principalId,
         key,
@@ -347,35 +360,38 @@ export abstract class BrainBase extends WikiBase {
     now: number,
     changeId: string,
     at: number | null,
+    key: string,
   ): { ok: true; state: "active" | "pending" } | { ok: false; code: "mismatch"; changeId: string } {
     const row = this.brainMemberRead(principalId);
-    if (row && row.changeId === changeId && row.role === role && row.state === state) {
+    if (row && row.claimKey === key && row.role === role && row.state === state) {
       return { ok: true, state };
     }
     const matched =
       at === null
         ? this.sql
             .exec(
-              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?
-               WHERE principal_id = ? AND change_id = ? RETURNING principal_id`,
+              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?
+               WHERE principal_id = ? AND claim_key = ? RETURNING principal_id`,
               role,
               state,
               actor,
               now,
-              principalId,
               changeId,
+              principalId,
+              key,
             )
             .toArray().length
         : this.sql
             .exec(
-              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?
-               WHERE principal_id = ? AND change_id = ? AND at = ? RETURNING principal_id`,
+              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?
+               WHERE principal_id = ? AND claim_key = ? AND at = ? RETURNING principal_id`,
               role,
               state,
               actor,
               now,
-              principalId,
               changeId,
+              principalId,
+              key,
               at,
             )
             .toArray().length;
@@ -1005,9 +1021,11 @@ type Proposed =
   | { ok: true; change: { id: string }; applied: boolean }
   | { ok: false; status: HttpStatus; code: string; message?: string };
 
+type GovView = { id: string; status: string };
+
 type MemberGov = {
   propose(a: MemberProposal, now: number): Proposed | Promise<Proposed>;
-  change(id: string, now: number): { status: string } | null | Promise<{ status: string } | null>;
+  changeByKey(key: string, now: number): GovView | null | Promise<GovView | null>;
 };
 
 type MemberBrain = {
@@ -1015,11 +1033,13 @@ type MemberBrain = {
     role: BrainRole;
     state: string;
     changeId: string | null;
+    claimKey: string | null;
     addedBy: string;
   } | null | Promise<{
     role: BrainRole;
     state: string;
     changeId: string | null;
+    claimKey: string | null;
     addedBy: string;
   } | null>;
   brainMemberDropClaim(
@@ -1041,6 +1061,7 @@ type MemberBrain = {
     now: number,
     changeId: string,
     at: number | null,
+    key: string,
   ):
     | { ok: true; state: "active" | "pending" }
     | { ok: false; code: "mismatch"; changeId: string }
@@ -1059,39 +1080,26 @@ type MemberBrain = {
   ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
 };
 
-/** Look up the proposal and make the claim match it. A claim with no proposal id is left untouched. */
+/** Look up the claim key. Pending or not-yet-proposed leaves the row. Applied finishes it. */
 export async function reconcileBrainMember(
-  gov: { change(id: string, now: number): { status: string } | null | Promise<{ status: string } | null> },
+  gov: { changeByKey(key: string, now: number): GovView | null | Promise<GovView | null> },
   brain: MemberBrain,
   principalId: string,
   now: number,
 ): Promise<void> {
   const row = await Promise.resolve(brain.brainMemberRead(principalId));
-  if (!row) return;
-  if (row.state !== "claimed" && !(row.state === "pending" && row.changeId)) return;
-  if (!row.changeId) return;
-  const change = await Promise.resolve(gov.change(row.changeId, now));
-  const status = change?.status;
-  if (
-    !change ||
-    status === "rejected" ||
-    status === "expired" ||
-    status === "withdrawn" ||
-    status === "unknown"
-  ) {
-    await Promise.resolve(brain.brainMemberDropClaim(principalId, row.changeId, row.state));
-    return;
-  }
-  if (status === "applied") {
+  if (!row || !row.claimKey) return;
+  if (row.state !== "claimed" && row.state !== "pending") return;
+  const change = await Promise.resolve(gov.changeByKey(row.claimKey, now));
+  if (!change || change.status === "pending") return;
+  if (change.status === "applied") {
     await Promise.resolve(
-      brain.brainMemberFinishProposal(principalId, row.role, "active", row.addedBy, now, row.changeId, null),
+      brain.brainMemberFinishProposal(principalId, row.role, "active", row.addedBy, now, change.id, null, row.claimKey),
     );
     return;
   }
-  if (status === "pending" && row.state !== "pending") {
-    await Promise.resolve(
-      brain.brainMemberFinishProposal(principalId, row.role, "pending", row.addedBy, now, row.changeId, null),
-    );
+  if (change.status === "rejected" || change.status === "expired" || change.status === "withdrawn") {
+    await Promise.resolve(brain.brainMemberDropClaim(principalId, row.claimKey, row.state));
   }
 }
 
@@ -1105,6 +1113,11 @@ export async function placeScopedMember(
   now: number,
 ): Promise<PlaceMember> {
   await reconcileBrainMember(gov, brain, principalId, now);
+  const open = await Promise.resolve(brain.brainMemberRead(principalId));
+  if (open && grantsMemberRole(open.state) && open.role === role && open.claimKey) {
+    const done = await Promise.resolve(gov.changeByKey(open.claimKey, now));
+    if (done?.status === "applied") return { ok: true, status: "applied", changeId: done.id };
+  }
   const hold = await Promise.resolve(brain.brainMemberClaim(principalId, role, actor, now));
   if (!hold.ok) return { ok: false, status: 409, code: hold.code };
   const made = await Promise.resolve(gov.propose({ ...proposal, claimKey: hold.key }, now));
@@ -1117,7 +1130,7 @@ export async function placeScopedMember(
   if (!noted.ok) return { ok: false, status: 409, code: noted.code };
   const state = made.applied ? "active" : "pending";
   const set = await Promise.resolve(
-    brain.brainMemberFinishProposal(principalId, role, state, actor, now, made.change.id, hold.at),
+    brain.brainMemberFinishProposal(principalId, role, state, actor, now, made.change.id, hold.at, hold.key),
   );
   if (!set.ok) return { ok: false, status: 409, code: "mismatch", changeId: made.change.id };
   return { ok: true, status: made.applied ? "applied" : "pending", changeId: made.change.id };

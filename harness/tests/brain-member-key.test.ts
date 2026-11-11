@@ -198,3 +198,120 @@ test("governance propose: a legacy null claim key is not rewritten", async () =>
     remove();
   }
 });
+
+async function openPair(file: string): Promise<{
+  db: DatabaseSync;
+  gov: {
+    propose(a: typeof proposal & { claimKey?: string }, now: number): { ok: true; change: { id: string; status?: string }; applied: boolean } | { ok: false; code: string };
+    changeByKey(key: string, now: number): { id: string; status: string } | null;
+  };
+  brain: { sql: SqlStorage; brainRoleOf(ids: string[]): string | null };
+  place: Function;
+}> {
+  const db = openSqlite(file);
+  db.exec(`
+    CREATE TABLE nda_grants (
+      principal_id TEXT NOT NULL, account_id TEXT NOT NULL,
+      reason TEXT, expires_at INTEGER, granted_by TEXT, approved_by TEXT, granted_at INTEGER,
+      PRIMARY KEY (principal_id, account_id));
+    CREATE TABLE principals (id TEXT PRIMARY KEY, email TEXT NOT NULL, subject TEXT);
+    CREATE TABLE role_assignments (principal_id TEXT, role_id TEXT);
+    CREATE TABLE memberships (
+      principal_id TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+      PRIMARY KEY (principal_id, scope_type, scope_id));
+    INSERT INTO principals (id, email, subject) VALUES
+      ('ada', 'ada@example.com', 'ada'),
+      ('bea', 'bea@example.com', 'bea');
+  `);
+  brainSchema(db);
+  const sql = sqliteStorage(db);
+  const journalMod = (await import(journalSpecifier)) as {
+    SecurityJournal: new (sql: SqlStorage) => { init(): void };
+  };
+  const journal = new journalMod.SecurityJournal(sql);
+  journal.init();
+  const govMod = (await import(govSpecifier)) as {
+    GovStore: new (
+      host: { sql: SqlStorage; tx: <T>(fn: () => T) => T; bump: () => number; journal: unknown },
+      defaults: readonly unknown[],
+    ) => {
+      propose(a: typeof proposal & { claimKey?: string }, now: number): { ok: true; change: { id: string; status?: string }; applied: boolean } | { ok: false; code: string };
+      changeByKey(key: string, now: number): { id: string; status: string } | null;
+    };
+  };
+  const storeMod = (await import(storeSpecifier)) as {
+    BrainBase: { prototype: { sql: SqlStorage; brainRoleOf(ids: string[]): string | null } };
+    placeScopedMember: Function;
+  };
+  const gov = new govMod.GovStore({ sql, tx: (fn) => fn(), bump: () => 1, journal }, []);
+  const brain = Object.create(storeMod.BrainBase.prototype) as { sql: SqlStorage; brainRoleOf(ids: string[]): string | null };
+  brain.sql = sql;
+  return { db, gov, brain, place: storeMod.placeScopedMember };
+}
+
+test("brain claim: a proposal that throws after commit is finished by a retry with the same key", async () => {
+  const { file, remove } = tempFile("brain-retry-");
+  try {
+    const { db, gov, brain, place } = await openPair(file);
+    let thrown = false;
+    const govFace = {
+      propose(a: typeof proposal & { claimKey?: string }, now: number) {
+        const result = gov.propose(a, now);
+        if (!thrown) {
+          thrown = true;
+          throw new Error("after commit");
+        }
+        return result;
+      },
+      changeByKey(key: string, now: number) {
+        return gov.changeByKey(key, now);
+      },
+    };
+    await assert.rejects(() => place(govFace, brain, proposal, "ada", "owner", "bea", NOW), /after commit/);
+    assert.equal(brain.brainRoleOf(["ada"]), null);
+    const held = db.prepare("SELECT state, claim_key FROM brain_members WHERE principal_id = 'ada'").get() as {
+      state: string;
+      claim_key: string;
+    };
+    assert.equal(held.state, "claimed");
+    const before = db.prepare("SELECT id, claim_key FROM gov_changes").all() as { id: string; claim_key: string }[];
+    assert.equal(before.length, 1);
+    assert.equal(before[0]?.claim_key, held.claim_key);
+    const again = await place(govFace, brain, proposal, "ada", "owner", "bea", NOW + 1);
+    assert.equal(again.ok, true);
+    assert.equal(again.changeId, before[0]?.id);
+    assert.equal(brain.brainRoleOf(["ada"]), "owner");
+    const after = db.prepare("SELECT id, claim_key FROM gov_changes").all() as { id: string; claim_key: string }[];
+    assert.equal(after.length, 1);
+    assert.equal(after[0]?.claim_key, held.claim_key);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("brain claim: a crash between claim and propose reuses the key on the next attempt", async () => {
+  const { file, remove } = tempFile("brain-crash-");
+  try {
+    const { db, gov, brain, place } = await openPair(file);
+    db.prepare(
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, claim_key) VALUES ('ada', 'owner', 'claimed', 'bea', ?, 'mem_crash')",
+    ).run(NOW);
+    assert.equal(brain.brainRoleOf(["ada"]), null);
+    const placed = await place(gov, brain, proposal, "ada", "owner", "bea", NOW + 1);
+    assert.equal(placed.ok, true);
+    const rows = db.prepare("SELECT id, claim_key, status FROM gov_changes").all() as { id: string; claim_key: string; status: string }[];
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.claim_key, "mem_crash");
+    assert.equal(brain.brainRoleOf(["ada"]), "owner");
+    const member = db.prepare("SELECT state, claim_key FROM brain_members WHERE principal_id = 'ada'").get() as {
+      state: string;
+      claim_key: string;
+    };
+    assert.equal(member.state, "active");
+    assert.equal(member.claim_key, "mem_crash");
+    db.close();
+  } finally {
+    remove();
+  }
+});

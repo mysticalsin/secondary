@@ -586,6 +586,14 @@ export class GovStore {
     return this.getChange(id, now);
   }
 
+  /** The governance row for a claim key. A null or unknown key matches nothing, including legacy rows. */
+  changeByKey(key: string, now: number): Change | null {
+    if (!key) return null;
+    const row = this.sql.exec("SELECT id FROM gov_changes WHERE claim_key = ?", key).toArray()[0];
+    if (!row) return null;
+    return this.getChange(s(row.id), now);
+  }
+
   listChanges(
     now: number,
     f: {
@@ -1447,6 +1455,7 @@ export const GOV_METHODS = [
   "markRead",
   "deliver",
   "change",
+  "changeByKey",
   "listChanges",
   "propose",
   "decide",

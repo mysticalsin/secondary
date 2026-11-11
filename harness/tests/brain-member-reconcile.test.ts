@@ -152,8 +152,8 @@ test("brain reconcile: finish matches zero rows after governance applied, then t
     assert.equal(JSON.stringify(hit).includes("owner"), false);
     await reconcile(
       {
-        change(id: string) {
-          return id === "chg_1" ? { status: "applied" } : null;
+        changeByKey() {
+          return { status: "applied", id: "chg_1" };
         },
       },
       brain,
@@ -165,8 +165,8 @@ test("brain reconcile: finish matches zero rows after governance applied, then t
     assert.equal(brain.brainRoleOf(["ada"]), "owner");
     await reconcile(
       {
-        change(id: string) {
-          return id === "chg_1" ? { status: "applied" } : null;
+        changeByKey() {
+          return { status: "applied", id: "chg_1" };
         },
       },
       brain,
@@ -190,17 +190,18 @@ test("brain reconcile: finish matches zero rows after a pending proposal, and th
     assert.equal(brain.brainRoleOf(["ada"]), null);
     await reconcile(
       {
-        change(id: string) {
-          return id === "chg_1" ? { status: "pending" } : null;
+        changeByKey() {
+          return { status: "pending", id: "chg_1" };
         },
       },
       brain,
       "ada",
       NOW + 1,
     );
-    assert.equal(row(db)?.state, "pending");
+    assert.equal(row(db)?.state, "claimed");
     assert.equal(row(db)?.change_id, "chg_1");
     assert.equal(brain.brainRoleOf(["ada"]), null);
+    assert.equal(logs(db).length, 0);
     db.close();
   } finally {
     console.warn = warn;
@@ -243,6 +244,94 @@ test("brain reconcile: a read while propose is in flight changes nothing", async
     assert.equal(dropped.ok, false);
     assert.equal(dropped.code, "state_unreadable");
     assert.deepEqual(row(db), before);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("brain reconcile: a pending change leaves the claim and writes no log", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const db = openSqlite(file);
+    db.exec(`
+      CREATE TABLE brain_members (
+        principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
+        added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT, claim_key TEXT);
+      CREATE TABLE wiki_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
+        kind TEXT NOT NULL, detail TEXT NOT NULL);
+    `);
+    db.prepare(
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, change_id, claim_key) VALUES ('ada', 'owner', 'claimed', 'bea', ?, 'chg_1', 'mem_1')",
+    ).run(NOW);
+    const sql = sqliteStorage(db);
+    const mod = (await import(storeSpecifier)) as {
+      BrainBase: { prototype: Brain };
+      reconcileBrainMember: Function;
+    };
+    const brain = Object.create(mod.BrainBase.prototype) as Brain & { sql: SqlStorage };
+    brain.sql = sql;
+    await mod.reconcileBrainMember(
+      {
+        change() {
+          return { status: "pending", id: "chg_1" };
+        },
+        changeByKey() {
+          return { status: "pending", id: "chg_1" };
+        },
+      },
+      brain,
+      "ada",
+      NOW + 1,
+    );
+    assert.equal(row(db)?.state, "claimed");
+    assert.equal(brain.brainRoleOf(["ada"]), null);
+    assert.equal(logs(db).length, 0);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("brain reconcile: a legacy null-key governance row does not finish the claim", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const db = openSqlite(file);
+    db.exec(`
+      CREATE TABLE brain_members (
+        principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
+        added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT, claim_key TEXT);
+      CREATE TABLE wiki_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
+        kind TEXT NOT NULL, detail TEXT NOT NULL);
+    `);
+    db.prepare(
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, change_id, claim_key) VALUES ('ada', 'owner', 'claimed', 'bea', ?, 'chg_old', 'mem_new')",
+    ).run(NOW);
+    const sql = sqliteStorage(db);
+    const mod = (await import(storeSpecifier)) as {
+      BrainBase: { prototype: Brain };
+      reconcileBrainMember: Function;
+    };
+    const brain = Object.create(mod.BrainBase.prototype) as Brain & { sql: SqlStorage };
+    brain.sql = sql;
+    await mod.reconcileBrainMember(
+      {
+        change(id: string) {
+          return id === "chg_old" ? { status: "applied", id } : null;
+        },
+        changeByKey() {
+          return null;
+        },
+      },
+      brain,
+      "ada",
+      NOW + 1,
+    );
+    assert.equal(row(db)?.state, "claimed");
+    assert.equal(brain.brainRoleOf(["ada"]), null);
+    assert.equal(logs(db).length, 0);
     db.close();
   } finally {
     remove();
