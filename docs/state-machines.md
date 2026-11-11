@@ -1,6 +1,6 @@
 # State machines in secondary-api-recovery (Second Brain API)
 
-Last reviewed: 2026-11-11 at `190cd04877812c1d238c4468e98a8714086b457f`
+Last reviewed: 2026-11-11 at `7070cd4256b2e7493b2390da4fee6b37d9f43141`
 
 Standard: Implicit state machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. No XState or other state-machine dependency. A plain reducer is the intended fix shape.
 
@@ -49,6 +49,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 29 | Wiki job queue | `wiki/store.ts:54`, `:618`–`:638` | LATER | Medium | LATER | `pending` / `running` / `failed`, plus `done`. A claim older than five minutes returns to `pending`, or `failed` after 3 attempts. |
 | 30 | Erasure / rights | `ops-admin.ts:174`–`:189`; tombstones `tenant-policy.ts:979`–`:1008`; re-apply `ops-internal.ts:188` | LATER | High | LATER | Privacy. `erase_incomplete` is a 502 with no stored status. Tombstones outlive the person. A restore applies them again. |
 | 31 | Outbox dispatched flag | `workspace.ts:181`, `:617`, `:671` | NOT A MACHINE | — | NOT A MACHINE | `dispatched` defaults to 0. `outboxPending` reads `dispatched = 0`. This archive never sets the flag. |
+| 32 | Worker typecheck | `tsconfig.worker.json` | LATER | — | LATER | QA note: 119 pre-existing `typecheck:worker` errors. Not part of this machine work. |
 
 ## Review notes
 
@@ -867,7 +868,7 @@ None.
 | Event | Source |
 |---|---|
 | reserved / denied | Result of `store.add` |
-| settle | Caller after the model returns (`agent/loop.ts:102`, and the other `reserve` callers) |
+| settle | Caller after the model returns (`agent/loop.ts:116`, and the other `reserve` callers) |
 
 ### Transitions
 
@@ -875,9 +876,10 @@ None.
 |---|---|---|---|---|
 | idle | reserved | add returned a total | held | estimate already added |
 | idle | denied | add returned null | denied | `reserve` returns null |
-| held | settle | — | settled | `add(actual - estimate)` when the diff is non-zero, cap `MAX_SAFE_INTEGER` so the settle is not refused |
+| held | settle | finite actual | settled | `add(Math.round(actual) - estimate)` when the diff is non-zero, cap `MAX_SAFE_INTEGER` so the settle is not refused |
+| settled | settle | — | rejected | `openHold` returns before `store.add`, so the diff is not applied again |
 
-Unguarded: `settle` (77–81) does not remember that it ran. A second call adds the diff again. Callers today call it once. The refund path in `withUserCap` is separate: if the user add succeeds and the tenant add returns null, it tries `user.add(-tokens)`. If that refund add also returns null, the user counter stays high and the tenant counter does not move. That gap is not fixed with this machine. It is called out so a later review does not treat the hold fix as covering it.
+The refund path in `withUserCap` is separate: if the user add succeeds and the tenant add returns null, it tries `user.add(-tokens)`. If that refund add also returns null, the user counter stays high and the tenant counter does not move. That gap is not fixed with this machine. It is called out so a later review does not treat the hold fix as covering it.
 
 ```mermaid
 stateDiagram-v2
@@ -910,23 +912,20 @@ None. The cap is an argument.
 
 | Event | Source |
 |---|---|
-| missing | `get` returned nothing |
-| still_missing | `create` did not yield a row |
-| under_cap | read total, add fits, or the add is not positive |
-| over_cap | positive add would exceed `cap` |
-| wrote | `edit` ok |
-| conflict | `edit` not ok |
+| over_cap | positive add would exceed `cap`, or the stored body is unreadable |
+| wrote | `edit` ok. Carries the new total |
+| retry | `doBudget` maps a missing row (get or create yielded nothing) and a failed edit onto this event |
 
 ### Transitions
 
 | From | Event | Guard | To | Side effects |
 |---|---|---|---|---|
-| trying | over_cap | tokens > 0 and used + tokens > cap | refused | return null immediately, remaining attempts unused |
+| trying | over_cap | — | refused | return null immediately, remaining attempts unused. The row is not edited |
 | trying | wrote | — | committed | return the new total |
-| trying | missing, still_missing, or conflict | `attempt + 1 < 6` | trying | loop |
-| trying | missing, still_missing, or conflict | attempt is 5 | refused | return null |
+| trying | retry | `attempt + 1 < 6` | trying | loop |
+| trying | retry | attempt is 5 | refused | return null |
 
-The cap check is not retried. A conflict is. Those are both `continue` or `return` inside one loop, with the cap check easy to move by mistake.
+The cap check is not retried. A missing row and a failed edit are. `doBudget` is what turns those two outcomes into `retry`.
 
 ```mermaid
 stateDiagram-v2
