@@ -41,6 +41,7 @@ import {
 } from "./model.ts";
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
 import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag } from "./open.ts";
+import { placeScopedMember } from "./store.ts";
 import { cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
 
 const WEEK = 7 * DAY;
@@ -684,16 +685,42 @@ async function setMember(
         403,
       );
     const wantMember = role !== null;
-    if (wantMember !== govMember) {
-      const made = await gov.propose(
+    if (wantMember !== govMember && role !== null) {
+      const placed = await placeScopedMember(
+        gov,
+        b.stub,
         {
-          kind: wantMember ? "member_add" : "member_remove",
+          kind: "member_add",
           payload: { principalId: pid, scope: { type: d.type, id: d.id }, subspace: null },
           scopeKey: scopeKey(d),
           scope: d,
           needsSecond: d.restricted,
           proposedBy: s.principal.id,
-          label: `${wantMember ? "Adding" : "Removing"} a member of ${noticeLabel(d)}`,
+          label: `Adding a member of ${noticeLabel(d)}`,
+        },
+        pid,
+        role,
+        s.principal.id,
+        s.ctx.now,
+      );
+      if (!placed.ok) {
+        return c.json(
+          { error: placed.code, ...(placed.message ? { reason: placed.message } : {}) },
+          placed.status,
+        );
+      }
+      status = placed.status;
+      changeId = placed.changeId;
+    } else if (wantMember !== govMember) {
+      const made = await gov.propose(
+        {
+          kind: "member_remove",
+          payload: { principalId: pid, scope: { type: d.type, id: d.id }, subspace: null },
+          scopeKey: scopeKey(d),
+          scope: d,
+          needsSecond: d.restricted,
+          proposedBy: s.principal.id,
+          label: `Removing a member of ${noticeLabel(d)}`,
         },
         s.ctx.now,
       );
@@ -704,7 +731,7 @@ async function setMember(
   }
   if (role === null) {
     if (status === "applied") await b.stub.brainMemberRemove(pid, s.principal.id, s.ctx.now);
-  } else {
+  } else if (!(scoped && !govMember)) {
     const set = await b.stub.brainMemberSet(
       pid,
       role,

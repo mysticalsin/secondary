@@ -42,6 +42,10 @@ export interface BrainConfig {
   fields: FieldDef[];
 }
 
+export type MemberHold =
+  | { ok: false; code: string }
+  | { ok: true; at: number; inserted: boolean; previousAt: number | null };
+
 export interface MemberRow {
   principalId: string;
   role: BrainRole;
@@ -213,6 +217,102 @@ export abstract class BrainBase extends WikiBase {
     return best < 0 ? null : (BRAIN_ROLES[best] as BrainRole);
   }
 
+  /**
+   * Read, decode, and claim the row before any other effect. The claim bumps `at` or inserts a
+   * pending placeholder. It does not log. `brainMemberFinish` writes the destination. `brainMemberRelease`
+   * gives the row back when a later step fails.
+   */
+  brainMemberClaim(
+    principalId: string,
+    role: BrainRole,
+    actor: string,
+    now: number,
+  ): MemberHold {
+    const row = this.sql
+      .exec("SELECT role, state, at FROM brain_members WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    const from = row ? decodeMember(row.state) : { tag: "absent" as const };
+    const step = commitMember(from, { type: "set", state: "pending", now });
+    if (!step.ok) return { ok: false, code: step.reason };
+    if (from.tag === "absent") {
+      const matched = this.sql
+        .exec(
+          `INSERT INTO brain_members (principal_id, role, state, added_by, at) VALUES (?, ?, 'pending', ?, ?)
+           ON CONFLICT(principal_id) DO NOTHING RETURNING principal_id`,
+          principalId,
+          role,
+          actor,
+          now,
+        )
+        .toArray().length;
+      if (claimMember(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
+        return { ok: false, code: "replay" };
+      }
+      return { ok: true, at: now, inserted: true, previousAt: null };
+    }
+    const previousAt = Number(row?.at);
+    const matched = this.sql
+      .exec(
+        `UPDATE brain_members SET at = ? WHERE principal_id = ? AND state = ? AND at = ? RETURNING principal_id`,
+        now,
+        principalId,
+        from.tag,
+        previousAt,
+      )
+      .toArray().length;
+    if (claimMember(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
+      return { ok: false, code: "replay" };
+    }
+    return { ok: true, at: now, inserted: false, previousAt };
+  }
+
+  brainMemberFinish(
+    principalId: string,
+    role: BrainRole,
+    state: "active" | "pending",
+    actor: string,
+    now: number,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true; state: "active" | "pending" } | { ok: false; code: string } {
+    const matched = this.sql
+      .exec(
+        `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?
+         WHERE principal_id = ? AND at = ? RETURNING principal_id`,
+        role,
+        state,
+        actor,
+        now,
+        principalId,
+        hold.at,
+      )
+      .toArray().length;
+    if (claimMember(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
+      return { ok: false, code: "replay" };
+    }
+    this.wikiLogAppend(actor, "brain.member", { principalId, role, state }, now);
+    return { ok: true, state };
+  }
+
+  brainMemberRelease(principalId: string, hold: Extract<MemberHold, { ok: true }>): void {
+    if (hold.inserted) {
+      this.sql.exec(
+        "DELETE FROM brain_members WHERE principal_id = ? AND at = ?",
+        principalId,
+        hold.at,
+      );
+      return;
+    }
+    this.sql.exec(
+      "UPDATE brain_members SET at = ? WHERE principal_id = ? AND at = ?",
+      hold.previousAt,
+      principalId,
+      hold.at,
+    );
+  }
+
   brainMemberSet(
     principalId: string,
     role: BrainRole,
@@ -220,44 +320,9 @@ export abstract class BrainBase extends WikiBase {
     actor: string,
     now: number,
   ): { ok: true; state: "active" | "pending" } | { ok: false; code: string } {
-    const row = this.sql
-      .exec("SELECT role, state, at FROM brain_members WHERE principal_id = ?", principalId)
-      .toArray()[0];
-    const from = row ? decodeMember(row.state) : { tag: "absent" as const };
-    const step = commitMember(from, { type: "set", state, now });
-    if (!step.ok) return { ok: false, code: step.reason };
-    const matched =
-      from.tag === "absent"
-        ? this.sql
-            .exec(
-              `INSERT INTO brain_members (principal_id, role, state, added_by, at) VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(principal_id) DO NOTHING RETURNING principal_id`,
-              principalId,
-              role,
-              state,
-              actor,
-              now,
-            )
-            .toArray().length
-        : this.sql
-            .exec(
-              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?
-               WHERE principal_id = ? AND state = ? AND at = ? RETURNING principal_id`,
-              role,
-              state,
-              actor,
-              now,
-              principalId,
-              from.tag,
-              row?.at,
-            )
-            .toArray().length;
-    if (claimMember(matched).tag !== "applied") {
-      console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
-      return { ok: false, code: "replay" };
-    }
-    this.wikiLogAppend(actor, "brain.member", { principalId, role, state }, now);
-    return { ok: true, state };
+    const hold = this.brainMemberClaim(principalId, role, actor, now);
+    if (!hold.ok) return { ok: false, code: hold.code };
+    return this.brainMemberFinish(principalId, role, state, actor, now, hold);
   }
 
   brainMemberRemove(principalId: string, actor: string, now: number): boolean {
@@ -744,6 +809,83 @@ export abstract class BrainBase extends WikiBase {
     const p = this.pageById(pageId);
     return p ? citationsOf(p.markdown) : [];
   }
+}
+
+export type MemberProposal = {
+  kind: "member_add" | "member_remove";
+  payload: Record<string, unknown>;
+  scopeKey: string;
+  scope: {
+    type: "circle" | "department" | "account";
+    id: string;
+    dept: string | null;
+    label: string;
+    restricted: boolean;
+    nda: boolean;
+    subspace: string | null;
+  };
+  needsSecond: boolean;
+  proposedBy: string;
+  label: string;
+};
+
+type HttpStatus = 400 | 403 | 404 | 409 | 422;
+
+export type PlaceMember =
+  | { ok: true; status: "applied" | "pending"; changeId: string }
+  | { ok: false; status: HttpStatus; code: string; message?: string };
+
+/**
+ * Claim the brain member, then propose, then finish the role.
+ * The tenant store and the brain store do not share SQLite, and `propose` already opens
+ * `transactionSync`, so the claim stays outside that transaction. A refused claim never proposes.
+ * A refused proposal releases the claim and does not log.
+ */
+type Proposed =
+  | { ok: true; change: { id: string }; applied: boolean }
+  | { ok: false; status: HttpStatus; code: string; message?: string };
+
+type MemberWrite = { ok: true; state: "active" | "pending" } | { ok: false; code: string };
+
+export async function placeScopedMember(
+  gov: { propose(a: MemberProposal, now: number): Proposed | Promise<Proposed> },
+  brain: {
+    brainMemberClaim(
+      principalId: string,
+      role: BrainRole,
+      actor: string,
+      now: number,
+    ): MemberHold | Promise<MemberHold>;
+    brainMemberFinish(
+      principalId: string,
+      role: BrainRole,
+      state: "active" | "pending",
+      actor: string,
+      now: number,
+      hold: Extract<MemberHold, { ok: true }>,
+    ): MemberWrite | Promise<MemberWrite>;
+    brainMemberRelease(
+      principalId: string,
+      hold: Extract<MemberHold, { ok: true }>,
+    ): void | Promise<void>;
+  },
+  proposal: MemberProposal,
+  principalId: string,
+  role: BrainRole,
+  actor: string,
+  now: number,
+): Promise<PlaceMember> {
+  const hold = await Promise.resolve(brain.brainMemberClaim(principalId, role, actor, now));
+  if (!hold.ok) return { ok: false, status: 409, code: hold.code };
+  const made = await Promise.resolve(gov.propose(proposal, now));
+  if (!made.ok) {
+    await Promise.resolve(brain.brainMemberRelease(principalId, hold));
+    return { ok: false, status: made.status, code: made.code, message: made.message };
+  }
+  const state = made.applied ? "active" : "pending";
+  const set = await Promise.resolve(brain.brainMemberFinish(principalId, role, state, actor, now, hold));
+  if (!set.ok) return { ok: false, status: 409, code: set.code };
+  return { ok: true, status: made.applied ? "applied" : "pending", changeId: made.change.id };
 }
 
 export { DEFAULT_SCHEMA };
