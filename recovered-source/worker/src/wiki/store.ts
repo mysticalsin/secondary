@@ -18,7 +18,7 @@ import {
   type FindingStatus,
 } from "../../../../src/state/proposal-review.ts";
 import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
-import { replaceName } from "../../../../src/state/pseudonym-text.ts";
+import { boundedName } from "../../../../src/state/pseudonym-text.ts";
 import { forgetFactSources, pageIndexMatches } from "../../../../src/state/source-forget.ts";
 import { decodeWikiJobStatus, forgetWikiJob, sourceSubject } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
@@ -2043,7 +2043,7 @@ export abstract class WikiBase extends DurableObject<Env> {
         .exec(`UPDATE ${t} SET ${c} = ? WHERE ${c} = ? RETURNING 1`, to, from)
         .toArray().length;
     const names = [
-      ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length >= 3)),
+      ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length > 0)),
     ];
     const touched = new Set<string>();
     for (const a of names) {
@@ -2054,7 +2054,7 @@ export abstract class WikiBase extends DurableObject<Env> {
           .toArray();
         let changed = 0;
         for (const row of rows) {
-          const next = cols.map((c) => replaceName(String(row[c] ?? ""), a, to));
+          const next = cols.map((c) => boundedName(String(row[c] ?? ""), a, to));
           if (next.every((value, i) => value === String(row[cols[i]!] ?? ""))) continue;
           this.sql.exec(
             `UPDATE ${t} SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE rowid = ?`,

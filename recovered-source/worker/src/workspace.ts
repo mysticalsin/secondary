@@ -6,7 +6,7 @@
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
 import { claimRelease, commitItem } from "../../../src/state/item-release.ts";
-import { replaceName } from "../../../src/state/pseudonym-text.ts";
+import { boundedName } from "../../../src/state/pseudonym-text.ts";
 import { commitQuorum } from "../../../src/state/quorum.ts";
 import { readUserValidated } from "../../../src/state/user-validated.ts";
 import { BrainBase } from "./brains/store.ts";
@@ -160,38 +160,6 @@ function personalTags(raw: unknown): { tag: "ok"; tags: string[] } | { tag: "unr
   } catch {
     return { tag: "unreadable" };
   }
-}
-
-function wholeWord(text: string, at: number, token: string): boolean {
-  if (token === "" || !text.startsWith(token, at)) return false;
-  const before = at === 0 || !/[A-Za-z0-9_]/.test(text[at - 1] ?? "");
-  const end = at + token.length;
-  const after = end >= text.length || !/[A-Za-z0-9_]/.test(text[end] ?? "");
-  return before && after;
-}
-
-/** Replace a name of any length when it stands as its own word. A second pass finds it gone. */
-function boundedName(text: string, from: string, to: string): string {
-  if (from === "" || from === to) return text;
-  const first = from.length >= to.length ? from : to;
-  const second = first === from ? to : from;
-  let out = "";
-  let i = 0;
-  while (i < text.length) {
-    if (wholeWord(text, i, first)) {
-      out += first === from ? to : first;
-      i += first.length;
-      continue;
-    }
-    if (second !== "" && wholeWord(text, i, second)) {
-      out += second === from ? to : second;
-      i += second.length;
-      continue;
-    }
-    out += text[i];
-    i += 1;
-  }
-  return out;
 }
 
 function storedValidation(raw: unknown): UserValidated | { tag: "unreadable" } | null {
@@ -1193,26 +1161,12 @@ export class Workspace extends BrainBase {
     let out = { items: 0, comments: 0, approvals: 0, edits: 0 };
     this.ctx.storage.transactionSync(() => {
       const names = [
-        ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length >= 3)),
+        ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length > 0)),
       ];
       for (const r of this.sql
         .exec("SELECT id FROM items WHERE author_id = ? AND origin != 'seed'", from)
         .toArray())
         this.sql.exec("DELETE FROM items_fts WHERE id = ?", r.id as string);
-      for (const name of names) {
-        for (const row of this.sql
-          .exec(
-            `SELECT f.id AS id, f.label AS label FROM items_fts f
-             JOIN items i ON i.id = f.id
-             WHERE i.origin = 'seed' AND instr(f.label, ?) > 0`,
-            name,
-          )
-          .toArray()) {
-          const label = replaceName(String(row.label ?? ""), name, to);
-          if (label === String(row.label ?? "")) continue;
-          this.reindex(row.id as string, label);
-        }
-      }
       const count = (t: string, col: string) =>
         this.sql.exec(`SELECT COUNT(*) AS n FROM ${t} WHERE ${col} = ?`, from).one().n as number;
       out = {
@@ -1234,8 +1188,8 @@ export class Workspace extends BrainBase {
             name,
           )
           .toArray()) {
-          const label = replaceName(String(row.label ?? ""), name, to);
-          const body = row.body === null ? null : replaceName(String(row.body), name, to);
+          const label = boundedName(String(row.label ?? ""), name, to);
+          const body = row.body === null ? null : boundedName(String(row.body), name, to);
           if (label === String(row.label ?? "") && body === row.body) continue;
           this.sql.exec(
             "UPDATE revisions SET label = ?, body = ? WHERE item_id = ? AND revision = ?",
@@ -1246,8 +1200,8 @@ export class Workspace extends BrainBase {
           );
         }
       }
-      this.wikiPseudonymise(from, to, aliases);
       this.forgetDerived({ type: "person", from, to, aliases });
+      this.wikiPseudonymise(from, to, aliases);
       for (const r of this.sql
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
         .toArray()) {
