@@ -138,6 +138,22 @@ export type EraseSummary = {
 
 export type ErasureRun = EraseSummary & { status: string; step: string | null };
 
+function ledgerVersion(ledger: unknown): number {
+  if (typeof ledger !== "string") return 0;
+  try {
+    const body = JSON.parse(ledger) as { v?: unknown };
+    return typeof body.v === "number" && Number.isSafeInteger(body.v) && body.v > 0 ? body.v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function withLedgerVersion(ledger: string, version: number): string {
+  const body = JSON.parse(ledger) as Record<string, unknown>;
+  body.v = version;
+  return JSON.stringify(body);
+}
+
 async function runErasure(
   env: Parameters<typeof exportSubject>[0],
   tenantId: string,
@@ -207,9 +223,10 @@ async function runErasure(
     },
     async (next: StoredErasure) => {
       const stored = encodeErasure(next);
-      if (next.receipts)
-        tenant.erasureSaveAtomic(principalId, stored.status, stored.ledger, event.now);
-      else await tenant.erasureSave(principalId, stored.status, stored.ledger, event.now);
+      const ledger = next.receipts
+        ? withLedgerVersion(stored.ledger, ledgerVersion((await tenant.erasureLoad(principalId))?.ledger) + 1)
+        : stored.ledger;
+      await tenant.erasureSaveAtomic(principalId, stored.status, ledger, event.now);
     },
   );
   return { ...summary, ...erasureOutcome(state) };

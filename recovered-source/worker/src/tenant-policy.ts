@@ -1187,7 +1187,9 @@ export class TenantPolicy extends DurableObject<Env> {
     this.sql.exec(
       `INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(principal_id) DO UPDATE SET status = excluded.status, ledger = excluded.ledger,
-         updated_at = excluded.updated_at`,
+         updated_at = excluded.updated_at
+       WHERE json_extract(excluded.ledger, '$.v') IS NULL
+          OR COALESCE(json_extract(erasure_requests.ledger, '$.v'), 0) < json_extract(excluded.ledger, '$.v')`,
       principalId,
       status,
       ledger,
