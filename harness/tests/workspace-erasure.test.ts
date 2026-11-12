@@ -155,6 +155,36 @@ test("an unreadable validation is left unreadable and a real one is rewritten", 
   db.close();
 });
 
+test("an unreadable validation that contains the id is cleared, and one that does not stays", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const item = db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, user_validated, created_at, updated_at)
+     VALUES (?, 'Item', 'record', 'INTERNAL', 'human', 'published', 1, 'user_1', ?, 1, 1)`,
+  );
+  item.run("named", "not-json user_1");
+  item.run("plain", "not-json");
+  ws.pseudonymise("user_1", "pz_user", []);
+  const second = ws.pseudonymise("user_1", "pz_user", []);
+  const stored = db
+    .prepare("SELECT id, user_validated FROM items ORDER BY id")
+    .all()
+    .map((row) => ({ ...(row as { id: string; user_validated: string | null }) }));
+  const read = ws.get("named")?.userValidated ?? null;
+  assert.deepEqual(
+    { stored, read, second },
+    {
+      stored: [
+        { id: "named", user_validated: null },
+        { id: "plain", user_validated: "not-json" },
+      ],
+      read: null,
+      second: { items: 0, comments: 0, approvals: 0, edits: 0 },
+    },
+  );
+  db.close();
+});
+
 test("a personal wipe removes revisions and source rows, and a second wipe returns 0", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
