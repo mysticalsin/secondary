@@ -2003,13 +2003,16 @@ async function eraseRoute(org: Org, trace: string[]): Promise<{
   };
 }
 
-function keyedEnv(connector: boolean): Record<string, unknown> {
+function keyedEnv(connector: boolean, trace: string[]): Record<string, unknown> {
   if (!connector) return { PSEUDONYM_KEY };
   return {
     PSEUDONYM_KEY,
     CONNECTOR_HMAC_KEY: CONNECTOR_SECRET,
     CONNECTOR: {
-      fetch: async () => new Response(null, { status: 200 }),
+      fetch: async () => {
+        trace.push("connector");
+        return new Response(null, { status: 200 });
+      },
     },
   };
 }
@@ -2027,10 +2030,10 @@ test("erasure append T1: a refused no-key erase then a keyed erase stores the ca
     assert.deepEqual(await refused.json(), { error: "erase_disabled" });
     assert.equal(afterRefusal?.status, before?.status);
     assert.equal(afterRefusal?.ledger, before?.ledger);
-    const first = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false));
+    const first = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false, trace));
     assert.equal(first.status, 202);
     trace.length = 0;
-    const second = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false));
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false, trace));
     const failed = storedPlan(file);
     assert.equal(second.status, 502);
     assert.deepEqual(failed.order, plan);
@@ -2038,14 +2041,7 @@ test("erasure append T1: a refused no-key erase then a keyed erase stores the ca
     assert.equal(plan[0], "receipts");
     assert.equal(plan.at(-1), "directory");
     trace.length = 0;
-    const connector = keyedEnv(true);
-    connector.CONNECTOR = {
-      fetch: async () => {
-        trace.push("connector");
-        return new Response(null, { status: 200 });
-      },
-    };
-    const retry = await post(admin("ada", "ada@example.invalid"), NOW + 3, connector);
+    const retry = await post(admin("ada", "ada@example.invalid"), NOW + 3, keyedEnv(true, trace));
     const done = storedPlan(file);
     assert.equal(retry.status, 200);
     assert.equal(done.status, "completed");
@@ -2066,10 +2062,10 @@ test("erasure append T1b: receipts is the first step that runs", async () => {
     const { post } = await eraseRoute(org, trace);
     const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
     assert.equal(refused.status, 503);
-    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false));
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false, trace));
     assert.equal(pending.status, 202);
     trace.length = 0;
-    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false));
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false, trace));
     assert.equal(ran.status, 502);
     assert.equal(trace[0], "receipts");
   } finally {
@@ -2085,9 +2081,9 @@ test("erasure append T2: every step returning true stores the canonical plan and
     const { post } = await eraseRoute(org, trace);
     const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
     assert.equal(refused.status, 503);
-    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(true));
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(true, trace));
     assert.equal(pending.status, 202);
-    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(true));
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(true, trace));
     const stored = storedPlan(file);
     assert.deepEqual(stored.order, plan);
     assert.equal(stored.status, "completed");
@@ -2096,3 +2092,27 @@ test("erasure append T2: every step returning true stores the canonical plan and
     remove();
   }
 });
+
+test("erasure append T3: a done step is kept and is not run again", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "done");
+    const { post } = await eraseRoute(org, trace);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 1, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    const rest = plan.filter((id) => id !== "directory");
+    assert.equal(ran.status, 200);
+    assert.equal(stored.status, "completed");
+    assert.equal(stored.mark.directory, "done");
+    assert.equal(trace.includes("directory"), false);
+    assert.deepEqual(trace, rest);
+    assert.deepEqual(stored.order, ["directory", ...rest]);
+  } finally {
+    remove();
+  }
+});
+
