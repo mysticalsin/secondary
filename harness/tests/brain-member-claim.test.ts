@@ -225,3 +225,135 @@ test("brain claim: a claim replaced during propose is left in place", async () =
     remove();
   }
 });
+
+test("brain claim: a second role cannot take the claim while propose is open", async () => {
+  const { file, remove } = tempFile();
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map((part) => String(part)).join(" "));
+  };
+  try {
+    const { db, brain, place } = await openBrain(file);
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let inside = false;
+    const firstGov = {
+      changeByKey() {
+        return null;
+      },
+      async propose() {
+        inside = true;
+        await gate;
+        return { ok: true, change: { id: "chg_owner" }, applied: true };
+      },
+    };
+    const secondGov = {
+      changeByKey() {
+        return null;
+      },
+      propose() {
+        return { ok: true, change: { id: "chg_reader" }, applied: true };
+      },
+    };
+    const first = place(firstGov, brain, proposal, "ada", "owner", "bea", NOW);
+    while (!inside) await new Promise((resolve) => setImmediate(resolve));
+    const second = await place(secondGov, brain, proposal, "ada", "reader", "bea", NOW + 1);
+    releaseFirst();
+    const owner = await first;
+    const row = db
+      .prepare("SELECT role, state, change_id FROM brain_members WHERE principal_id = 'ada'")
+      .get() as { role: string; state: string; change_id: string | null };
+    const logged = warnings.map((line) => JSON.parse(line) as { reason?: string; principalId?: string });
+    assert.deepEqual(
+      {
+        owner,
+        secondOk: second.ok,
+        row: { ...row },
+        logged: logged.map((line) => ({ reason: line.reason ?? null, principalId: line.principalId ?? null })),
+        leaked: warnings.some((line) => line.includes("Engineering") || line.includes("Adding")),
+      },
+      {
+        owner: { ok: true, status: "applied", changeId: "chg_owner" },
+        secondOk: false,
+        row: { role: "owner", state: "active", change_id: "chg_owner" },
+        logged: [{ reason: "illegal_move", principalId: "ada" }],
+        leaked: false,
+      },
+    );
+  } finally {
+    console.warn = original;
+    remove();
+  }
+});
+
+test("brain claim: an active member keeps the in-flight role while propose is open", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { db, brain, place } = await openBrain(file);
+    db.prepare(
+      "INSERT INTO brain_members (principal_id, role, state, added_by, at, claim_key) VALUES ('ada', 'reader', 'active', 'bea', 1, NULL)",
+    ).run();
+    let releaseFirst: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let inside = false;
+    const first = place(
+      {
+        changeByKey() {
+          return null;
+        },
+        async propose() {
+          inside = true;
+          await gate;
+          return { ok: true, change: { id: "chg_owner" }, applied: true };
+        },
+      },
+      brain,
+      proposal,
+      "ada",
+      "owner",
+      "bea",
+      NOW,
+    );
+    while (!inside) await new Promise((resolve) => setImmediate(resolve));
+    const held = db
+      .prepare("SELECT role, state FROM brain_members WHERE principal_id = 'ada'")
+      .get() as { role: string; state: string };
+    const second = await place(
+      {
+        changeByKey() {
+          return null;
+        },
+        propose() {
+          return { ok: true, change: { id: "chg_reader" }, applied: true };
+        },
+      },
+      brain,
+      proposal,
+      "ada",
+      "reader",
+      "bea",
+      NOW + 1,
+    );
+    releaseFirst();
+    const owner = await first;
+    const row = db
+      .prepare("SELECT role, state, change_id FROM brain_members WHERE principal_id = 'ada'")
+      .get() as { role: string; state: string; change_id: string | null };
+    assert.deepEqual(
+      { held: { ...held }, owner, secondOk: second.ok, row: { ...row } },
+      {
+        held: { role: "owner", state: "claimed" },
+        owner: { ok: true, status: "applied", changeId: "chg_owner" },
+        secondOk: false,
+        row: { role: "owner", state: "active", change_id: "chg_owner" },
+      },
+    );
+  } finally {
+    remove();
+  }
+});
