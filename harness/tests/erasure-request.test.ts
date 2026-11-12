@@ -1107,6 +1107,8 @@ type Tombstones = OpenedPolicy & {
     now: number,
     expiresAt: number,
   ): void;
+  tombstoneList(now: number): { principalId: string; pseudonym: string; aliases: string[] }[];
+  tombstonePurge(now: number): number;
 };
 
 type StoneRow = {
@@ -1247,6 +1249,51 @@ test("erasure tombstone: a row that appears before the insert is not clobbered",
       erased_at: 1,
       expires_at: 900,
     });
+  } finally {
+    remove();
+  }
+});
+
+test("erasure tombstone: an expiry equal to now is expired and one tick later stays", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = (await openPolicy(file)) as Tombstones;
+    const now = 100;
+    policy.tombstoneAdd("edge", "pz-edge", ["a@example.invalid"], 10, now);
+    policy.tombstoneAdd("due", "pz-due", ["a@example.invalid"], 10, now);
+    policy.tombstoneAdd("live", "pz-live", ["c@example.invalid"], 10, now + 1);
+    const listed = policy.tombstoneList(now).map((row) => row.principalId).sort();
+    assert.deepEqual(listed, ["live"]);
+    armTombstoneWrites(file);
+    policy.tombstoneAdd("edge", "pz-next", ["b@example.invalid"], now, 400);
+    policy.tombstoneAdd("live", "pz-later", ["d@example.invalid"], now, 900);
+    assert.deepEqual(
+      { writes: tombstoneWrites(file), edge: readStone(file, "edge"), live: readStone(file, "live") },
+      {
+        writes: 1,
+        edge: {
+          pseudonym: "pz-edge",
+          aliases: JSON.stringify(["a@example.invalid"]),
+          erased_at: 10,
+          expires_at: 400,
+        },
+        live: {
+          pseudonym: "pz-live",
+          aliases: JSON.stringify(["c@example.invalid"]),
+          erased_at: 10,
+          expires_at: now + 1,
+        },
+      },
+    );
+    assert.equal(policy.tombstonePurge(now), 1);
+    assert.equal(readStone(file, "due"), undefined);
+    assert.deepEqual(readStone(file, "live"), {
+      pseudonym: "pz-live",
+      aliases: JSON.stringify(["c@example.invalid"]),
+      erased_at: 10,
+      expires_at: now + 1,
+    });
+    assert.equal(readStone(file, "edge")?.expires_at, 400);
   } finally {
     remove();
   }
