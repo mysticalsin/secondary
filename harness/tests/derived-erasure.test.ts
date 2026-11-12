@@ -124,6 +124,41 @@ test("a source scrub removes the proposal snapshot review serves", async () => {
   db.close();
 });
 
+test("a source scrub updates only the proposals it scrubbed", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const item = db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, body, created_at, updated_at)
+     VALUES (?, ?, 'wiki_ingest', 'INTERNAL', 'human', 'candidate', 1, 'ada', ?, 1, 1)`,
+  );
+  const revision = db.prepare(
+    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES (?, 1, ?, ?, 'ada', 1)",
+  );
+  const kept = "ALREADY_ERASED";
+  item.run("kept", "Erased source", kept);
+  revision.run("kept", "Original title", "KEEP_HISTORY");
+  const first = proposal("Quote", "src_secret");
+  const secondBody = proposal("Other", "src_secret");
+  item.run("scrub_a", "Quote", first);
+  item.run("scrub_b", "Other", secondBody);
+  revision.run("scrub_a", "Quote", first);
+  revision.run("scrub_b", "Other", secondBody);
+  ws.wikiForgetSources(["src_secret"], NOW);
+  ws.wikiForgetSources(["src_secret"], NOW + 1);
+  const live = (id: string) =>
+    db.prepare("SELECT label, body FROM items WHERE id = ?").get(id) as { label: string; body: string };
+  const historyOf = (id: string) => ws.history(id).map((row) => ({ label: row.label, body: row.body }));
+  assert.deepEqual(
+    { kept: historyOf("kept"), scrubA: historyOf("scrub_a"), scrubB: historyOf("scrub_b") },
+    {
+      kept: [{ label: "Original title", body: "KEEP_HISTORY" }],
+      scrubA: [{ label: "Erased source", body: live("scrub_a").body }],
+      scrubB: [{ label: "Erased source", body: live("scrub_b").body }],
+    },
+  );
+  db.close();
+});
+
 test("person erasure removes the email from served source text and source search", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
