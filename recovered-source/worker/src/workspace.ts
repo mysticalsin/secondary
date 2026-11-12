@@ -1281,22 +1281,34 @@ export class Workspace extends BrainBase {
 
   /**
    * Retention: delete Personal Brain items of the given kinds that were last changed before the
-   * cutoff for their kind. `cutoffs` maps a kind (draft, brief) to a timestamp in ms.
-   * An unreadable tags cell is removed as well, and the other rows continue.
+   * cutoff for their kind. `cutoffs` maps a kind (draft, brief, view) to a timestamp in ms.
+   * A note stays. An unreadable tags cell is deleted only when it is older than every cutoff.
+   * A newer unreadable cell stays, and the log records its id.
    */
   purgeExpired(cutoffs: Record<string, number>): number {
     let n = 0;
     const purged: string[] = [];
+    let longest = Number.NEGATIVE_INFINITY;
+    for (const value of Object.values(cutoffs)) {
+      if (typeof value === "number" && value > longest) longest = value;
+    }
     this.ctx.storage.transactionSync(() => {
       const rows = this.sql
         .exec("SELECT id, label, tags, updated_at FROM items WHERE kind = 'personalitem'")
         .toArray();
       for (const r of rows) {
         const tags = personalTags(r.tags);
-        if (tags.tag === "ok") {
+        const updated = r.updated_at as number;
+        if (tags.tag === "unreadable") {
+          if (!(updated < longest)) {
+            console.warn(JSON.stringify({ at: "retention", id: r.id as string }));
+            continue;
+          }
+        } else {
           const kind = personalKindOf(r.label as string, tags.tags);
+          if (kind === "note") continue;
           const cutoff = cutoffs[kind];
-          if (cutoff === undefined || (r.updated_at as number) >= cutoff) continue;
+          if (cutoff === undefined || updated >= cutoff) continue;
         }
         const id = r.id as string;
         purged.push(id);

@@ -67,7 +67,7 @@ test("an unreadable tags cell is removed and the other personal rows are still p
     `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, tags, body, created_at, updated_at)
      VALUES (?, ?, 'personalitem', 'PERSONAL', 'human', 'published', 1, 'user_1', ?, ?, 1, ?)`,
   );
-  item.run("old", "Private note", '["note"]', "SECRET-NOTE", 1);
+  item.run("old", "draft page", '["draft"]', "SECRET-NOTE", 1);
   item.run("bad", "Broken", "not-json", "SECRET-BAD", 1);
   item.run("fresh", "Fresh", '["note"]', "kept fresh", NOW);
   let thrown: string | null = null;
