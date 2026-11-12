@@ -127,28 +127,67 @@ test("a source scrub removes the proposal snapshot review serves", async () => {
 test("person erasure removes the email from served source text and source search", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
-  const email = "ada.lovelace@example.invalid";
-  const insert = db.prepare(
+  const email = "ada@example.invalid";
+  db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, body, created_at, updated_at)
+     VALUES ('cand_1', 'Candidate', 'candidate', 'INTERNAL', 'human', 'candidate', 1, 'user_1', ?, 1, 1)`,
+  ).run(`ping ${email}`);
+  db.prepare(
+    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES ('cand_1', 1, 'Candidate', ?, 'user_1', 1)",
+  ).run(`ping ${email}`);
+  db.prepare(
+    "INSERT INTO comments (item_id, author_id, text, at) VALUES ('cand_1', 'user_1', ?, 1)",
+  ).run(`ping ${email}`);
+  db.prepare(
     `INSERT INTO source_items (id, source_id, gate_node_id, plane, title, body, size, etag, synced_at)
-     VALUES (?, ?, 'gate', 'INTERNAL', ?, ?, 1, 'e', 1)`,
+     VALUES ('file_1', 'src_mail', 'gate', 'INTERNAL', ?, ?, 1, 'e', 1)`,
+  ).run(`file ${email}`, `body ${email}`);
+  db.prepare("INSERT INTO source_fts (title, body, id) VALUES (?, ?, 'file_1')").run(
+    `file ${email}`,
+    `body ${email}`,
   );
-  insert.run("mail", "src_mail", `Mail from ${email}`, `${email} wrote the note`);
-  insert.run("other", "src_other", "Notes for bea@example.com", "bea@example.com kept this");
-  const index = db.prepare("INSERT INTO source_fts (title, body, id) VALUES (?, ?, ?)");
-  index.run(`Mail from ${email}`, `${email} wrote the note`, "mail");
-  index.run("Notes for bea@example.com", "bea@example.com kept this", "other");
+  db.prepare(
+    "INSERT INTO brain_fields (page_id, field_key, value, written_by, written_at) VALUES ('page_kept', 'note', ?, 'bea', 1)",
+  ).run(email);
+  db.prepare(
+    "INSERT INTO brain_fields (page_id, field_key, value, written_by, written_at) VALUES ('page_other', 'note', 'bea@example.com', 'bea', 1)",
+  ).run();
   ws.pseudonymise("user_1", "pz_user", [email]);
   const second = ws.pseudonymise("user_1", "pz_user", [email]);
-  const text = (row: { title: string; body: string | null } | null) =>
-    row === null ? null : { title: row.title, body: row.body };
-  const mail = text(ws.sourceGet("mail"));
-  const other = text(ws.sourceGet("other"));
-  const found = ws.sourceSearch("lovelace", 10).map((row) => ({ id: row.id, title: row.title }));
+  const item = db.prepare("SELECT body FROM items WHERE id = 'cand_1'").get() as { body: string };
+  const revision = db.prepare("SELECT body FROM revisions WHERE item_id = 'cand_1'").get() as { body: string };
+  const comment = db.prepare("SELECT author_id, text FROM comments WHERE item_id = 'cand_1'").get() as {
+    author_id: string;
+    text: string;
+  };
+  const source = db.prepare("SELECT title, body FROM source_items WHERE id = 'file_1'").get() as {
+    title: string;
+    body: string;
+  };
+  const fields = db
+    .prepare("SELECT page_id, value FROM brain_fields ORDER BY page_id")
+    .all()
+    .map((row) => ({ ...(row as { page_id: string; value: string }) }));
+  const found = ws.sourceSearch("ada", 10).map((row) => row.title);
   assert.deepEqual(
-    { mail, other, found, second },
     {
-      mail: { title: "Mail from pz_user", body: "pz_user wrote the note" },
-      other: { title: "Notes for bea@example.com", body: "bea@example.com kept this" },
+      item: item.body,
+      revision: revision.body,
+      comment: { ...comment },
+      source: { ...source },
+      fields,
+      found,
+      second,
+    },
+    {
+      item: "ping pz_user",
+      revision: "ping pz_user",
+      comment: { author_id: "pz_user", text: "ping pz_user" },
+      source: { title: "file pz_user", body: "body pz_user" },
+      fields: [
+        { page_id: "page_kept", value: "pz_user" },
+        { page_id: "page_other", value: "bea@example.com" },
+      ],
       found: [],
       second: { items: 0, comments: 0, approvals: 0, edits: 0 },
     },
