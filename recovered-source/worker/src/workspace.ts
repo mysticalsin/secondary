@@ -1022,6 +1022,132 @@ export class Workspace extends BrainBase {
   }
 
   /**
+   * Derived stores that erasure owns in one place: the proposal snapshot review serves,
+   * source text and source search, a purged item's revisions, and fields of a deleted page.
+   */
+  override wikiForgetSources(
+    ids: string[],
+    now: number,
+  ): { facts: number; pages: number; proposals: number } {
+    const before = this.sql
+      .exec("SELECT id FROM wiki_pages")
+      .toArray()
+      .map((row) => String(row.id));
+    const out = super.wikiForgetSources(ids, now);
+    const removed = before.filter(
+      (id) => this.sql.exec("SELECT id FROM wiki_pages WHERE id = ?", id).toArray().length === 0,
+    );
+    this.forgetDerived({ type: "source", removedPages: removed });
+    return out;
+  }
+
+  private forgetDerived(
+    op:
+      | { type: "source"; removedPages: string[] }
+      | { type: "items"; ids: string[] }
+      | { type: "person"; from: string; to: string; aliases: string[] },
+  ): void {
+    if (op.type === "items") {
+      for (const id of op.ids) this.sql.exec("DELETE FROM revisions WHERE item_id = ?", id);
+      return;
+    }
+    if (op.type === "source") {
+      for (const item of this.sql
+        .exec(
+          "SELECT id, label, body FROM items WHERE label = 'Erased source' AND kind LIKE 'wiki\\_%' ESCAPE '\\'",
+        )
+        .toArray()) {
+        const label = String(item.label);
+        const body = item.body === null || item.body === undefined ? null : String(item.body);
+        for (const rev of this.sql
+          .exec("SELECT revision, label, body FROM revisions WHERE item_id = ?", item.id as string)
+          .toArray()) {
+          const revBody = rev.body === null || rev.body === undefined ? null : String(rev.body);
+          if (String(rev.label) === label && revBody === body) continue;
+          this.sql.exec(
+            "UPDATE revisions SET label = ?, body = ? WHERE item_id = ? AND revision = ?",
+            label,
+            body,
+            item.id as string,
+            rev.revision as number,
+          );
+        }
+      }
+      for (const pageId of op.removedPages)
+        this.sql.exec("DELETE FROM brain_fields WHERE page_id = ?", pageId);
+      return;
+    }
+    const names = [
+      ...new Set([op.from, ...op.aliases].map((name) => name.trim()).filter((name) => name.length >= 3)),
+    ];
+    const sources = new Set<string>();
+    for (const name of names) {
+      for (const row of this.sql
+        .exec("SELECT id, text FROM comments WHERE instr(text, ?) > 0", name)
+        .toArray()) {
+        const text = replaceName(String(row.text ?? ""), name, op.to);
+        if (text === String(row.text ?? "")) continue;
+        this.sql.exec("UPDATE comments SET text = ? WHERE id = ?", text, row.id as number);
+      }
+      for (const row of this.sql
+        .exec(
+          "SELECT id, label, body FROM items WHERE instr(label, ?) > 0 OR instr(COALESCE(body, ''), ?) > 0",
+          name,
+          name,
+        )
+        .toArray()) {
+        const label = replaceName(String(row.label ?? ""), name, op.to);
+        const current = row.body === null || row.body === undefined ? null : String(row.body);
+        const body = current === null ? null : replaceName(current, name, op.to);
+        if (label === String(row.label ?? "") && body === current) continue;
+        this.sql.exec("UPDATE items SET label = ?, body = ? WHERE id = ?", label, body, row.id as string);
+      }
+      for (const row of this.sql
+        .exec(
+          "SELECT id, title, body FROM source_items WHERE instr(title, ?) > 0 OR instr(COALESCE(body, ''), ?) > 0",
+          name,
+          name,
+        )
+        .toArray()) {
+        const title = replaceName(String(row.title ?? ""), name, op.to);
+        const current = row.body === null || row.body === undefined ? null : String(row.body);
+        const body = current === null ? null : replaceName(current, name, op.to);
+        if (title === String(row.title ?? "") && body === current) continue;
+        this.sql.exec(
+          "UPDATE source_items SET title = ?, body = ? WHERE id = ?",
+          title,
+          body,
+          row.id as string,
+        );
+        sources.add(row.id as string);
+      }
+      for (const row of this.sql
+        .exec("SELECT page_id, field_key, value FROM brain_fields WHERE instr(value, ?) > 0", name)
+        .toArray()) {
+        const value = replaceName(String(row.value ?? ""), name, op.to);
+        if (value === String(row.value ?? "")) continue;
+        this.sql.exec(
+          "UPDATE brain_fields SET value = ? WHERE page_id = ? AND field_key = ?",
+          value,
+          row.page_id as string,
+          row.field_key as string,
+        );
+      }
+    }
+    for (const id of sources) {
+      const row = this.sql.exec("SELECT title, body FROM source_items WHERE id = ?", id).toArray()[0];
+      if (!row) continue;
+      this.sql.exec("DELETE FROM source_fts WHERE id = ?", id);
+      this.sql.exec(
+        "INSERT INTO source_fts (title, body, id) VALUES (?, ?, ?)",
+        String(row.title ?? ""),
+        row.body === null || row.body === undefined ? "" : String(row.body),
+        id,
+      );
+    }
+  }
+
+  /**
    * Replace a person's id with a pseudonym everywhere this workspace stores it, and drop the search
    * index entries of the items they authored. A seeded item stays indexed, and the name in that
    * label is rewritten. Any other authored row is dropped from search.
@@ -1088,6 +1214,7 @@ export class Workspace extends BrainBase {
         }
       }
       this.wikiPseudonymise(from, to, aliases);
+      this.forgetDerived({ type: "person", from, to, aliases });
       for (const r of this.sql
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
         .toArray()) {
@@ -1152,6 +1279,7 @@ export class Workspace extends BrainBase {
         n++;
       }
       // What the personal wiki learned from a purged note goes with it (M-02).
+      this.forgetDerived({ type: "items", ids: purged });
       this.wikiForgetSources(purged, Date.now());
     });
     return n;
