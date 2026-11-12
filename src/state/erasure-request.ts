@@ -1,9 +1,12 @@
 /**
- * One erasure request per subject. The ledger remembers each step.
- * Callers perform the effects and pass the clock in. This module does not read one.
- * Only a proven order resumes. Corrupt JSON, an unknown status word, a mark that is
- * missing or not one of the three, an unknown step, and a completed row whose marks
- * are not all done are unreadable. Loading does not rewrite that row.
+ * One erasure request per subject. The ledger remembers each step and the grant
+ * that approved it. Callers perform the effects and pass the clock in. This module
+ * does not read one. A row resumes only when two different people approved that
+ * subject and every plan step is inside that grant. A missing grant, the same
+ * person twice, a mismatched subject, a corrupt ledger, an unknown status or mark,
+ * an unknown step, and a completed row whose marks are not all done are unreadable.
+ * Loading does not rewrite that row. Rows stored before the grant existed have
+ * none, so they are unreadable too.
  */
 
 import { commit, type IllegalTransition, reject } from "./illegal.ts";
@@ -18,10 +21,19 @@ export type ErasureStatus =
 
 export type StepMark = "pending" | "done" | "failed";
 
+/** The two people who approved this subject, and the steps they approved. */
+export type ErasureGrant = {
+  subject: string;
+  requester: string;
+  confirmer: string;
+  steps: string[];
+};
+
 export type StoredErasure = {
   status: ErasureStatus;
   order: string[];
   mark: Record<string, StepMark>;
+  grant: ErasureGrant | null;
 };
 
 export type ErasureEvent =
@@ -66,12 +78,37 @@ function knownErasureStep(id: string): boolean {
 }
 
 export function absentErasure(): StoredErasure {
-  return { status: { tag: "absent" }, order: [], mark: {} };
+  return { status: { tag: "absent" }, order: [], mark: {}, grant: null };
 }
 
 /** A row the caller must not resume. Decoding it does not write. */
 export function unreadableErasure(): StoredErasure {
-  return { status: { tag: "unreadable" }, order: [], mark: {} };
+  return { status: { tag: "unreadable" }, order: [], mark: {}, grant: null };
+}
+
+/**
+ * Resume only when both approvers are present and distinct, the subject is the
+ * one they approved, and every plan step is one of the approved steps.
+ */
+export function erasureGrantOk(
+  grant: ErasureGrant | null,
+  subject: string,
+  plan: readonly string[],
+): boolean {
+  if (!grant || subject === "") return false;
+  if (grant.subject !== subject) return false;
+  if (grant.requester === "" || grant.confirmer === "" || grant.requester === grant.confirmer)
+    return false;
+  return plan.every((step) => grant.steps.includes(step));
+}
+
+function readGrant(value: unknown): ErasureGrant | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.subject !== "string" || typeof raw.requester !== "string" || typeof raw.confirmer !== "string")
+    return null;
+  if (!Array.isArray(raw.steps) || !raw.steps.every((step) => typeof step === "string")) return null;
+  return { subject: raw.subject, requester: raw.requester, confirmer: raw.confirmer, steps: raw.steps };
 }
 
 /**
@@ -99,10 +136,13 @@ export function decodeErasure(row: { status: unknown; order: unknown; mark: unkn
   const decoded = decodeErasureStatus(row.status);
   if (decoded.tag === "unreadable") return unreadableErasure();
   if (decoded.tag === "completed" && !allDone(order, mark)) return unreadableErasure();
-  return { status: decoded, order, mark };
+  return { status: decoded, order, mark, grant: null };
 }
 
-export function decodeErasureLedger(row: { status: unknown; ledger: unknown } | null): StoredErasure {
+export function decodeErasureLedger(
+  row: { status: unknown; ledger: unknown } | null,
+  subject = "",
+): StoredErasure {
   if (!row) return absentErasure();
   if (typeof row.ledger !== "string") return unreadableErasure();
   let parsed: unknown;
@@ -112,15 +152,37 @@ export function decodeErasureLedger(row: { status: unknown; ledger: unknown } | 
     return unreadableErasure();
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return unreadableErasure();
-  const body = parsed as { order?: unknown; mark?: unknown };
-  return decodeErasure({ status: row.status, order: body.order, mark: body.mark });
+  const body = parsed as { order?: unknown; mark?: unknown; grant?: unknown };
+  const state = decodeErasure({ status: row.status, order: body.order, mark: body.mark });
+  if (state.status.tag === "absent" || state.status.tag === "unreadable") return state;
+  const grant = readGrant(body.grant);
+  if (!erasureGrantOk(grant, subject, state.order)) return unreadableErasure();
+  return { ...state, grant };
 }
 
 export function encodeErasure(state: StoredErasure): { status: string; ledger: string } {
   return {
     status: state.status.tag,
-    ledger: JSON.stringify({ order: state.order, mark: state.mark }),
+    ledger: JSON.stringify(
+      state.grant
+        ? { order: state.order, mark: state.mark, grant: state.grant }
+        : { order: state.order, mark: state.mark },
+    ),
   };
+}
+
+/**
+ * Keep a ledger whose grant already covers its own steps. Newly approved steps
+ * join that grant. A missing or invalid grant starts the approved plan instead.
+ * The same state comes back when the stored grant already covers the new plan,
+ * so the caller writes nothing.
+ */
+export function erasureWithGrant(existing: StoredErasure, grant: ErasureGrant): StoredErasure {
+  if (!erasureGrantOk(existing.grant, grant.subject, existing.order) || !existing.grant)
+    return { ...requestedFrom(grant.steps), grant };
+  if (erasureGrantOk(existing.grant, grant.subject, grant.steps)) return existing;
+  const steps = [...new Set([...existing.grant.steps, ...grant.steps])];
+  return { ...existing, grant: { ...grant, steps } };
 }
 
 /** Receipts, the tombstone, each company scope, the personal brain, the connector, then the directory. */
@@ -185,7 +247,7 @@ function requestedFrom(steps: readonly string[]): StoredErasure {
   const order = [...new Set(steps.filter((id) => id !== ""))];
   const mark: Record<string, StepMark> = {};
   for (const id of order) mark[id] = "pending";
-  return { status: { tag: "requested" }, order, mark };
+  return { status: { tag: "requested" }, order, mark, grant: null };
 }
 
 function addSteps(state: StoredErasure, steps: readonly string[]): StoredErasure {

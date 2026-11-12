@@ -2,16 +2,17 @@
 //   GET  /v1/admin/switches            state of the switches and pending re-enable requests
 //   POST /v1/admin/switches            { switch, enabled }; re-enabling needs a second person in prod.
 //   POST /v1/admin/rights/export       { principal } (id or email); needs a second person (202 until then)
-//   POST /v1/admin/rights/erase        { principal }; always needs a second person
+//   POST /v1/admin/rights/erase        { principal }; a second person, unless this subject already holds their grant
 
 import { Hono, type MiddlewareHandler } from "hono";
-import { decodeErasureLedger } from "../../../src/state/erasure-request.ts";
+import { decodeErasureLedger, erasureGrantOk, erasurePlan } from "../../../src/state/erasure-request.ts";
 import { quorumConfirmed } from "../../../src/state/quorum.ts";
 import { HTTPException } from "hono/http-exception";
 import { appendReceipt, newReceiptId } from "./audit.ts";
 import { requireOrg, viewOf } from "./auth.ts";
 import { humanIdsOf } from "./human.ts";
 import {
+  companyScopes,
   eraseSubject,
   exportSubject,
   pseudonymFor,
@@ -180,17 +181,19 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "cannot_erase_self" }, 409);
 
     const tenant = tenantStub(c.env, s.tenantId);
-    const existing = decodeErasureLedger(await tenant.erasureLoad(principalId));
+    const plan = erasurePlan(companyScopes(org));
+    const existing = decodeErasureLedger(await tenant.erasureLoad(principalId), principalId);
     const tag = existing.status.tag;
     const resumable =
       (tag === "requested" || tag === "running" || tag === "partial_failed") &&
-      existing.order.length > 0;
+      erasureGrantOk(existing.grant, principalId, plan);
     if (!resumable) {
       const step = await tenant.requestSecond(
         `erase:${principalId}`,
         s.principal.id,
         now(),
         s.principal.email,
+        plan,
       );
       if (!quorumConfirmed(step)) {
         await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);

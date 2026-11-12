@@ -188,18 +188,17 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
             : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
         // Anyone erased since the snapshot was taken is erased again (M-03).
         const restoredAt = deps.now?.() ?? Date.now();
-        const erasuresReapplied = await reapplyErasures(
-          c.env,
-          t.tenant,
-          t.kind,
-          t.scope,
-          restoredAt,
-        );
+        const again = await reapplyErasures(c.env, t.tenant, t.kind, t.scope, restoredAt);
         await receipt(
           "ops_restore_done",
-          `restored ${rows} rows, ${erasuresReapplied} erasures applied again`,
+          `restored ${rows} rows, ${again.applied} erasures applied again`,
         );
-        return c.json({ ok: true, rows, erasuresReapplied });
+        return c.json({
+          ok: true,
+          rows,
+          erasuresReapplied: again.applied,
+          erasuresSkipped: again.skipped,
+        });
       } catch {
         return c.json({ error: "invalid_snapshot" }, 422);
       }

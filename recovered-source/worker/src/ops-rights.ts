@@ -10,6 +10,7 @@ import type { Org } from "@secondary/policy";
 import {
   decodeErasureLedger,
   encodeErasure,
+  erasureGrantOk,
   erasureOutcome,
   erasurePlan,
   runErasure as applyLedger,
@@ -143,7 +144,7 @@ async function runErasure(
     connectorCacheForgotten: false,
   };
   const state = await applyLedger(
-    decodeErasureLedger(await tenant.erasureLoad(principalId)),
+    decodeErasureLedger(await tenant.erasureLoad(principalId), principalId),
     event,
     async (step) => {
       if (step === "receipts") {
@@ -218,7 +219,9 @@ export async function eraseSubject(
 /**
  * After a restore: erase again everyone who was erased since the snapshot was taken (M-03). A tenant
  * restore brings back the directory rows of erased people; a workspace restore brings back their items,
- * comments and Personal Brain. Both steps are idempotent. Returns how many erasures were applied.
+ * comments and Personal Brain. Both steps are idempotent. A row runs only when its own grant passes
+ * the same check as a resume, and only for steps that grant approved. A row without that grant is
+ * skipped and listed. Restore does not write a grant of its own.
  */
 export async function reapplyErasures(
   env: Env,
@@ -226,11 +229,21 @@ export async function reapplyErasures(
   kind: "tenant" | "workspace",
   scope: string,
   now: number,
-): Promise<number> {
+): Promise<{ applied: number; skipped: string[] }> {
   const t = tenantStub(env, tenantId);
   const stones = await t.tombstoneList(now);
+  const skipped: string[] = [];
+  let applied = 0;
   for (const s of stones) {
-    const steps = stepsForRestore(kind, scope, s.principalId);
+    const wanted = stepsForRestore(kind, scope, s.principalId);
+    if (wanted.length === 0) continue;
+    const state = decodeErasureLedger(await t.erasureLoad(s.principalId), s.principalId);
+    const grant = state.grant;
+    if (!grant || !erasureGrantOk(grant, s.principalId, state.order)) {
+      skipped.push(s.principalId);
+      continue;
+    }
+    const steps = wanted.filter((step) => grant.steps.includes(step));
     if (steps.length === 0) continue;
     const email = await t.emailOfPrincipal(s.principalId);
     await runErasure(env, tenantId, s.principalId, s.pseudonym, s.aliases, email, {
@@ -238,6 +251,7 @@ export async function reapplyErasures(
       now,
       steps,
     });
+    applied++;
   }
-  return stones.length;
+  return { applied, skipped };
 }

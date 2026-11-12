@@ -79,16 +79,27 @@ test("erasure request: a completed row with an empty order is unreadable", () =>
 });
 
 test("erasure request: a proven partial failure stays partial_failed", () => {
-  const proven = decodeErasureLedger({
-    status: "partial_failed",
-    ledger: JSON.stringify({ order: ["receipts"], mark: { receipts: "failed" } }),
-  });
+  const grant = { subject: "subject-1", requester: "ada", confirmer: "bea", steps: ["receipts"] };
+  const proven = decodeErasureLedger(
+    {
+      status: "partial_failed",
+      ledger: JSON.stringify({ order: ["receipts"], mark: { receipts: "failed" }, grant }),
+    },
+    "subject-1",
+  );
   assert.equal(proven.status.tag, "partial_failed");
   assert.deepEqual(proven.order, ["receipts"]);
-  const explicit = decodeErasureLedger({
-    status: "partial_failed",
-    ledger: JSON.stringify({ order: ["directory"], mark: { directory: "failed" } }),
-  });
+  const explicit = decodeErasureLedger(
+    {
+      status: "partial_failed",
+      ledger: JSON.stringify({
+        order: ["directory"],
+        mark: { directory: "failed" },
+        grant: { subject: "subject-1", requester: "ada", confirmer: "bea", steps: ["directory"] },
+      }),
+    },
+    "subject-1",
+  );
   assert.equal(explicit.status.tag, "partial_failed");
   assert.equal(explicit.mark.directory, "failed");
 });
@@ -130,9 +141,17 @@ test("erasure request: an order with an unknown step is unreadable", () => {
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {
   const seen: string[] = [];
   const saved: StoredErasure[] = [];
+  const plan = erasurePlan(["acme"]);
+  const opened: Record<string, "pending"> = {};
+  for (const id of plan) opened[id] = "pending";
   const stopped = await runErasure(
-    absentErasure(),
-    { type: "request", now: NOW, steps: erasurePlan(["acme"]) },
+    {
+      status: { tag: "requested" },
+      order: plan,
+      mark: opened,
+      grant: { subject: "p1", requester: "ada", confirmer: "bea", steps: plan },
+    },
+    { type: "request", now: NOW, steps: plan },
     async (step) => {
       seen.push(step);
       return step !== "receipts";
@@ -148,6 +167,7 @@ test("erasure request: a failed step stops the attempt and a resume continues it
   const persisted = saved.filter((state) => state.status.tag === "partial_failed").at(-1);
   const reloaded = decodeErasureLedger(
     persisted ? { status: encodeErasure(persisted).status, ledger: encodeErasure(persisted).ledger } : null,
+    "p1",
   );
   assert.equal(reloaded.mark.receipts, "failed");
   const continued = await runErasure(
@@ -426,7 +446,7 @@ test("erasure request: a second person plans a damaged ledger in full", async ()
     const body = (await second.json()) as { status?: string };
     assert.equal(body.status, "erased");
     const row = readLedger(file);
-    const stored = decodeErasureLedger(row ?? null);
+    const stored = decodeErasureLedger(row ?? null, SUBJECT);
     assert.deepEqual(stored.order, plan);
     assert.equal(stored.status.tag, "completed");
     assert.equal(stored.order.every((id) => stored.mark[id] === "done"), true);
@@ -438,7 +458,12 @@ test("erasure request: a second person plans a damaged ledger in full", async ()
 function completedLedger(order: readonly string[]): { status: string; ledger: string } {
   const mark: Record<string, "done"> = {};
   for (const id of order) mark[id] = "done";
-  return encodeErasure({ status: { tag: "completed" }, order: [...order], mark });
+  return encodeErasure({
+    status: { tag: "completed" },
+    order: [...order],
+    mark,
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: [...order] },
+  });
 }
 
 test("erasure request: a later company scope needs a new quorum and only that step", async () => {
@@ -463,7 +488,7 @@ test("erasure request: a later company scope needs a new quorum and only that st
     assert.equal(body.status, "erased");
     assert.deepEqual(erasureCalls(), ["pseudonymise:beta"]);
     assert.equal(audits.some((url) => url.includes("pseudonymise")), false);
-    const stored = decodeErasureLedger(readLedger(file) ?? null);
+    const stored = decodeErasureLedger(readLedger(file) ?? null, SUBJECT);
     assert.equal(stored.mark["scope:beta"], "done");
     assert.equal(stored.mark.receipts, "done");
     assert.equal(stored.status.tag, "completed");
@@ -514,13 +539,14 @@ test("erasure request: a proven partial failure resumes without a second person"
       status: { tag: "partial_failed" },
       order,
       mark: Object.fromEntries(order.map((id) => [id, id === "receipts" ? "failed" : "pending"])),
+      grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
     });
     putLedger(file, stored.status, stored.ledger);
     const { post } = await eraseApp(org);
     const res = await post(admin("ada", "ada@example.invalid"), NOW);
     assert.equal(res.status, 200);
     assert.equal(pendingErase(file), undefined);
-    const loaded = decodeErasureLedger(readLedger(file) ?? null);
+    const loaded = decodeErasureLedger(readLedger(file) ?? null, SUBJECT);
     assert.equal(loaded.status.tag, "completed");
     assert.equal(loaded.mark.receipts, "done");
   } finally {
@@ -539,7 +565,12 @@ test("erasure request: a failed step is stored, and the next call resumes that r
     const order = erasurePlan(rights.companyScopes(org));
     const mark: Record<string, "failed" | "pending"> = {};
     for (const id of order) mark[id] = id === "receipts" ? "failed" : "pending";
-    const stored = encodeErasure({ status: { tag: "partial_failed" }, order, mark });
+    const stored = encodeErasure({
+      status: { tag: "partial_failed" },
+      order,
+      mark,
+      grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
+    });
     putLedger(file, stored.status, stored.ledger);
     const failing = await eraseApp(org, { receipts: false });
     const stopped = await failing.post(admin("ada", "ada@example.invalid"), NOW);
@@ -548,7 +579,7 @@ test("erasure request: a failed step is stored, and the next call resumes that r
     assert.equal(body.error, "erase_incomplete");
     assert.equal(body.status, "partial_failed");
     assert.equal(body.step, "receipts");
-    const reloaded = decodeErasureLedger(readLedger(file) ?? null);
+    const reloaded = decodeErasureLedger(readLedger(file) ?? null, SUBJECT);
     assert.equal(reloaded.status.tag, "partial_failed");
     assert.equal(reloaded.mark.receipts, "failed");
     const again = await eraseApp(org);
@@ -556,7 +587,7 @@ test("erasure request: a failed step is stored, and the next call resumes that r
     assert.equal(resumed.status, 200);
     const doneBody = (await resumed.json()) as { status?: string };
     assert.equal(doneBody.status, "erased");
-    const done = decodeErasureLedger(readLedger(file) ?? null);
+    const done = decodeErasureLedger(readLedger(file) ?? null, SUBJECT);
     assert.equal(done.status.tag, "completed");
     assert.equal(done.mark.receipts, "done");
   } finally {
@@ -577,7 +608,7 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
         kind: "tenant",
         scope: string,
         now: number,
-      ) => Promise<number>;
+      ) => Promise<{ applied: number; skipped: string[] }>;
     };
     const finished = completedLedger(erasurePlan(rights.companyScopes(org)));
     putLedger(file, finished.status, finished.ledger);
@@ -602,7 +633,7 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
       "tenant",
       NOW,
     );
-    assert.equal(applied, 1);
+    assert.deepEqual(applied, { applied: 1, skipped: [] });
     const left = openSqlite(file);
     const person = left.prepare("SELECT id FROM principals WHERE id = ?").get(SUBJECT);
     left.close();
@@ -610,7 +641,7 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
     assert.deepEqual(erasureCalls(), []);
     assert.equal(audits.some((url) => url.includes("pseudonymise")), false);
     const row = readLedger(file);
-    const stored = decodeErasureLedger(row ?? null);
+    const stored = decodeErasureLedger(row ?? null, SUBJECT);
     assert.equal(stored.status.tag, "completed");
     assert.equal(stored.mark.receipts, "done");
     assert.equal(stored.mark.directory, "done");
@@ -662,7 +693,7 @@ async function damagePlansInFull(status: string, ledger: string): Promise<void> 
     assert.equal(second.status, 200);
     const body = (await second.json()) as { status?: string };
     assert.equal(body.status, "erased");
-    const stored = decodeErasureLedger(readLedger(file) ?? null);
+    const stored = decodeErasureLedger(readLedger(file) ?? null, SUBJECT);
     assert.deepEqual(stored.order, plan);
     assert.equal(stored.status.tag, "completed");
     assert.equal(stored.order.every((id) => stored.mark[id] === "done"), true);

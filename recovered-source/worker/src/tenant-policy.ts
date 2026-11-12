@@ -13,6 +13,11 @@ import {
   sameActor,
 } from "../../../src/state/actor.ts";
 import {
+  decodeErasureLedger,
+  encodeErasure,
+  erasureWithGrant,
+} from "../../../src/state/erasure-request.ts";
+import {
   commitQuorum,
   type QuorumResult,
   type QuorumState,
@@ -941,7 +946,13 @@ export class TenantPolicy extends DurableObject<Env> {
    * delete matched no row, so the caller must not apply. `email` is the sign-in
    * address. One human under two ids is one person when a normalised address matches (N-01).
    */
-  requestSecond(key: string, actor: string, now: number, email = ""): QuorumResult {
+  requestSecond(
+    key: string,
+    actor: string,
+    now: number,
+    email = "",
+    approvedSteps?: readonly string[],
+  ): QuorumResult {
     this.rememberAddress(actor, email);
     const row = this.sql
       .exec("SELECT requested_by, requested_at FROM pending_ops WHERE key = ?", key)
@@ -965,15 +976,32 @@ export class TenantPolicy extends DurableObject<Env> {
           effect.requestedAt,
         );
       } else if (effect.type === "delete") {
-        const gone = this.sql
-          .exec(
-            "DELETE FROM pending_ops WHERE key = ? AND requested_by = ? AND requested_at = ? RETURNING key",
-            key,
-            effect.requesterId,
-            effect.requestedAt,
-          )
-          .toArray();
-        if (gone.length === 0) {
+        const writeGrant =
+          key.startsWith("erase:") && approvedSteps !== undefined && effect.requesterId !== actor;
+        let deleted = false;
+        const apply = () => {
+          const gone = this.sql
+            .exec(
+              "DELETE FROM pending_ops WHERE key = ? AND requested_by = ? AND requested_at = ? RETURNING key",
+              key,
+              effect.requesterId,
+              effect.requestedAt,
+            )
+            .toArray();
+          if (gone.length === 0) return;
+          deleted = true;
+          if (writeGrant && approvedSteps)
+            this.recordErasureGrant(
+              key.slice("erase:".length),
+              effect.requesterId,
+              actor,
+              approvedSteps,
+              now,
+            );
+        };
+        if (writeGrant) this.ctx.storage.transactionSync(apply);
+        else apply();
+        if (!deleted) {
           console.warn(JSON.stringify({ at: "quorum", reason: "replay" }));
           return { tag: "replay" };
         }
@@ -1124,6 +1152,24 @@ export class TenantPolicy extends DurableObject<Env> {
       .toArray()[0];
     if (!row) return null;
     return { status: row.status as string, ledger: row.ledger as string };
+  }
+
+  /**
+   * Write the confirmed grant on this subject's erasure row. Called inside the
+   * same transaction as the pending_ops delete. A one-person ask never reaches it.
+   */
+  private recordErasureGrant(
+    subject: string,
+    requester: string,
+    confirmer: string,
+    steps: readonly string[],
+    now: number,
+  ): void {
+    const existing = decodeErasureLedger(this.erasureLoad(subject), subject);
+    const next = erasureWithGrant(existing, { subject, requester, confirmer, steps: [...steps] });
+    if (next === existing) return;
+    const stored = encodeErasure(next);
+    this.erasureSave(subject, stored.status, stored.ledger, now);
   }
 
   /** Replace the erasure request for one subject. The caller supplies the clock. */
