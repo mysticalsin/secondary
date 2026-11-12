@@ -7,7 +7,7 @@ import { humanIdsOf } from "../human.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import { type C, sess } from "../ux/util.ts";
 import { type FieldDef, fieldAppliesTo, normaliseValue, type Sensitivity } from "./model.ts";
-import type { Brain } from "./open.ts";
+import { type Brain, storedBrainRole } from "./open.ts";
 
 export type Purpose = "view" | "export" | "ai";
 
@@ -48,7 +48,7 @@ export async function fieldsFor(
     !agent &&
     !b.personal &&
     defs.some((f) => f.sensitivity === "confidential");
-  const role = needsRole ? await b.stub.brainRoleOf(await humanIdsOf(c.env, s)) : null;
+  const role = needsRole ? await storedBrainRole(c, b.stub, await humanIdsOf(c.env, s)) : null;
   const canEdit = b.can.edit && roleAllows(role, "edit");
   const out: FieldOut[] = [];
   for (const f of defs) {

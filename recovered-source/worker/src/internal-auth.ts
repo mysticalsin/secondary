@@ -17,15 +17,20 @@
 // is accepted once when the verifier passes a ReplayStore.
 
 import {
+  CLOCK_GRANULARITY_MS,
   type KeyRing,
   KID_PATTERN,
+  MAX_SKEW_SECONDS,
   NONCE_PATTERN,
   newNonce,
   REPLAY_TTL_MS,
   type ReplayStore,
   ringOf,
   signingKid,
+  unixSeconds,
 } from "../../../packages/contracts/src/signed-call.ts";
+
+export { MAX_SKEW_SECONDS };
 
 export const HEADER_PRINCIPAL = "x-secondary-principal";
 export const HEADER_TIMESTAMP = "x-secondary-timestamp";
@@ -33,7 +38,6 @@ export const HEADER_SIGNATURE = "x-secondary-signature";
 export const HEADER_KID = "x-secondary-key-id";
 export const HEADER_NONCE = "x-secondary-nonce";
 export const SIGNATURE_VERSION = "v2";
-export const MAX_SKEW_SECONDS = 60;
 export const MIN_SECRET_LENGTH = 32;
 
 export interface InternalPrincipal {
@@ -158,7 +162,7 @@ export interface SignInput {
 /** Returns the three headers to add to a service-binding request. Throws if the secret is too short. */
 export async function signInternalRequest(input: SignInput): Promise<Record<string, string>> {
   if (input.secret.length < MIN_SECRET_LENGTH) throw new Error("INTERNAL_HMAC_KEY too short");
-  const timestamp = String(Math.floor(input.now ?? Date.now() / 1000));
+  const timestamp = String(input.now === undefined ? unixSeconds() : Math.floor(input.now));
   const principalHeader = base64urlEncode(enc.encode(JSON.stringify(input.principal)));
   const body = utf8(input.body ?? "");
   const kid = signingKid(input.kid);
@@ -242,7 +246,7 @@ export async function verifyInternalRequest(
   if (!signature.startsWith(prefix)) return { ok: false, reason: "bad_version" };
 
   if (!/^[0-9]{1,12}$/.test(timestamp)) return { ok: false, reason: "bad_timestamp" };
-  const now = Math.floor(options.now ?? Date.now() / 1000);
+  const now = Math.floor(options.now ?? Date.now() / CLOCK_GRANULARITY_MS);
   const skew = options.maxSkewSeconds ?? MAX_SKEW_SECONDS;
   if (Math.abs(now - Number(timestamp)) > skew) return { ok: false, reason: "stale_timestamp" };
 
@@ -269,7 +273,14 @@ export async function verifyInternalRequest(
   // Only a correctly signed request may spend a nonce, so strangers cannot fill the replay cache.
   if (
     options.replay &&
-    !(await options.replay.first(`${options.channel ?? "internal"}:${kid}:${nonce}`, REPLAY_TTL_MS))
+    !(await options.replay.first(
+      `${options.channel ?? "internal"}:${kid}:${nonce}`,
+      REPLAY_TTL_MS,
+      {
+        tokenExpMs: Number(timestamp) * CLOCK_GRANULARITY_MS,
+        maxSkewMs: skew * CLOCK_GRANULARITY_MS,
+      },
+    ))
   )
     return { ok: false, reason: "replayed" };
 

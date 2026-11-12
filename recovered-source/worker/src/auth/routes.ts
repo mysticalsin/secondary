@@ -17,6 +17,10 @@ import {
 } from "./config.ts";
 import { LOGIN_COOKIE, SESSION_COOKIE } from "./limits.ts";
 import {
+  commitLoginRecord,
+  type LoginRecordEvent,
+} from "../../../../src/state/login-record.ts";
+import {
   authorizeUrl,
   discover,
   exchangeCode,
@@ -99,36 +103,65 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
   app.get("/callback", async (c) => {
     const cfg = entraConfig(c.env);
     const dir = directoryTenant(c.env);
-    if (!entraEnabled(c.env) || !cfg || !dir) return c.json({ error: "entra_disabled" }, 404);
     const now = nowOf();
     const cookieState = getCookie(c, LOGIN_COOKIE);
     clearLoginCookie(c);
+    // Entra is off. Consume the cookie's login row when the directory tenant is known, so it does
+    // not sit until its TTL. Without that tenant there is no store to take from, and the row stays
+    // until the TTL. The query string is not used as a key here.
+    if (!entraEnabled(c.env) || !cfg || !dir) {
+      if (dir && cookieState)
+        await tenantStub(c.env, dir).loginStateTake(await sha256Hex(cookieState), now);
+      log("entra_disabled");
+      return c.json({ error: "entra_disabled" }, 404);
+    }
     const state = c.req.query("state");
     const code = c.req.query("code");
-    if (c.req.query("error")) {
-      log(`idp_${(c.req.query("error") ?? "").replace(/[^a-z_]/g, "").slice(0, 40)}`);
+    // Every terminal callback consumes the login row. A second use is refused.
+    const event: LoginRecordEvent = c.req.query("error")
+      ? { type: "idp_error" }
+      : !state || !code || !cookieState
+        ? { type: "missing_state" }
+        : !safeEqual(state, cookieState)
+          ? { type: "state_mismatch" }
+          : { type: "accepted" };
+    const step = commitLoginRecord({ tag: "issued" }, event);
+    const stub = tenantStub(c.env, dir);
+    let saved: { nonce: string; verifier: string; returnTo: string | null } | null = null;
+    if (step.ok && step.effects.some((effect) => effect.type === "take")) {
+      const seen = new Set<string>();
+      for (const raw of [cookieState, state]) {
+        if (!raw || seen.has(raw)) continue;
+        seen.add(raw);
+        const row = await stub.loginStateTake(await sha256Hex(raw), now);
+        if (row && raw === cookieState) saved = row;
+      }
+    }
+    if (event.type === "idp_error") {
+      log("idp_error");
       return c.json({ error: "sign_in_failed" }, 400);
     }
-    // The browser that started the login must be the one that finishes it (login CSRF).
-    if (!state || !code || !cookieState || !safeEqual(state, cookieState))
+    if (event.type !== "accepted") {
+      log(event.type);
       return c.json({ error: "invalid_state" }, 400);
-    // Single use: the record is consumed, so a replayed callback finds nothing.
-    const saved = await tenantStub(c.env, dir).loginStateTake(await sha256Hex(state), now);
-    if (!saved) return c.json({ error: "invalid_state" }, 400);
+    }
+    if (!saved) {
+      commitLoginRecord({ tag: "consumed" }, event);
+      return c.json({ error: "invalid_state" }, 400);
+    }
 
     let identity: Awaited<ReturnType<typeof verifyIdToken>>;
     try {
       const entra = deps.entra ?? {};
       const doc = await discover(cfg, entra, now);
       const idToken = await exchangeCode(cfg, doc, entra, {
-        code,
+        code: code ?? "",
         verifier: saved.verifier,
         redirectUri: `${new URL(c.req.url).origin}/auth/callback`,
       });
       identity = await verifyIdToken(idToken, cfg, doc, entra, saved.nonce, now);
-    } catch (e) {
-      const reason = e instanceof OidcError ? e.code : "unexpected";
-      log(reason);
+    } catch {
+      log("exchange_failed");
       return c.json({ error: "sign_in_failed" }, 401);
     }
     if (identity.groupsOverage) log("groups_overage");

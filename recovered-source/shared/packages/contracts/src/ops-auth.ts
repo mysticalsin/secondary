@@ -14,19 +14,23 @@ export const OPS_HEADER_TIMESTAMP = "x-secondary-ops-timestamp";
 export const OPS_HEADER_SIGNATURE = "x-secondary-ops-signature";
 export const OPS_HEADER_KID = "x-secondary-ops-key-id";
 export const OPS_HEADER_NONCE = "x-secondary-ops-nonce";
-export const OPS_MAX_SKEW_SECONDS = 60;
 export const OPS_MIN_SECRET_LENGTH = 32;
 
 import {
+  CLOCK_GRANULARITY_MS,
   type KeyRing,
   KID_PATTERN,
+  MAX_SKEW_SECONDS,
   NONCE_PATTERN,
   newNonce,
   REPLAY_TTL_MS,
   type ReplayStore,
   ringOf,
   signingKid,
+  unixSeconds,
 } from "./signed-call.ts";
+
+export const OPS_MAX_SKEW_SECONDS = MAX_SKEW_SECONDS;
 
 const enc = new TextEncoder();
 const utf8 = (s: string) => enc.encode(s) as Uint8Array<ArrayBuffer>;
@@ -72,7 +76,7 @@ export interface OpsSignInput {
 /** Headers to add to a service-binding request. Throws when the secret is too short. */
 export async function signOpsRequest(i: OpsSignInput): Promise<Record<string, string>> {
   if (i.secret.length < OPS_MIN_SECRET_LENGTH) throw new Error("ops secret too short");
-  const ts = String(Math.floor(i.now ?? Date.now() / 1000));
+  const ts = String(i.now === undefined ? unixSeconds() : Math.floor(i.now));
   const kid = signingKid(i.kid);
   const nonce = newNonce();
   const data = await signingString(kid, nonce, ts, i.method, i.url, utf8(i.body ?? ""));
@@ -105,8 +109,8 @@ export async function verifyOpsRequest(
   if (!kid || !KID_PATTERN.test(kid) || !nonce || !NONCE_PATTERN.test(nonce)) return false;
   const secret = Object.hasOwn(ring, kid) ? ring[kid] : undefined;
   if (!secret || secret.length < OPS_MIN_SECRET_LENGTH) return false;
-  const now = Math.floor(o.now ?? Date.now() / 1000);
-  if (Math.abs(now - Number(ts)) > OPS_MAX_SKEW_SECONDS) return false;
+  const now = Math.floor(o.now ?? Date.now() / CLOCK_GRANULARITY_MS);
+  if (Math.abs(now - Number(ts)) > MAX_SKEW_SECONDS) return false;
   const bytes = fromHex(sig.slice(3));
   if (!bytes) return false;
   const body = new Uint8Array(await request.clone().arrayBuffer()) as Uint8Array<ArrayBuffer>;
@@ -114,7 +118,13 @@ export async function verifyOpsRequest(
   if (!(await crypto.subtle.verify("HMAC", await key(secret, "verify"), bytes, utf8(data))))
     return false;
   // Only a request that carries a valid signature may spend a nonce.
-  if (o.replay && !(await o.replay.first(`${o.channel ?? "ops"}:${kid}:${nonce}`, REPLAY_TTL_MS)))
+  if (
+    o.replay &&
+    !(await o.replay.first(`${o.channel ?? "ops"}:${kid}:${nonce}`, REPLAY_TTL_MS, {
+      tokenExpMs: Number(ts) * CLOCK_GRANULARITY_MS,
+      maxSkewMs: MAX_SKEW_SECONDS * CLOCK_GRANULARITY_MS,
+    }))
+  )
     return false;
   return true;
 }

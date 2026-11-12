@@ -3,15 +3,26 @@
 // whole content (text, thinking with its signature, redacted thinking, tool calls, server blocks) can be
 // sent back unchanged in the next round. Nothing here decides what is shown: the caller checks the text.
 //
-// Bounds: one timeout for the round, a cap on bytes read, and one retry only while no byte has been
-// read (a 429 or 5xx status). After the first byte there is never a retry: a broken stream is a failure.
+// Bounds: each attempt has its own abort timeout, cleared before the retry sleep, a cap on bytes
+// read, and one retry only while no byte has been read (a 429 or 5xx status). After the first byte
+// there is never a retry: a broken stream is a failure.
 // No temperature, top_p, top_k, prefill, forced tool_choice or budget_tokens: the default model takes
 // none of them. The key is sent as a header and never logged.
 
+import {
+  commitSse,
+  freshSse,
+  sseEvent,
+  type SseState,
+} from "../../../../src/state/sse-assembly.ts";
+import {
+  commitStreamOpen,
+  type StreamOpenEvent,
+  type StreamOpenState,
+} from "../../../../src/state/stream-open.ts";
 import { ANTHROPIC_URL, type FetchFn } from "../ai/anthropic.ts";
 
 const ANTHROPIC_VERSION = "2023-06-01";
-const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 /** Bytes of event stream one round may deliver. Far above a program of 8 KB plus thinking. */
 const MAX_STREAM_BYTES = 1_000_000;
 
@@ -62,7 +73,6 @@ export interface RoundRequest {
   onToolUse?: () => void;
 }
 
-const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
 const isObj = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === "object" && !Array.isArray(v);
 
@@ -85,12 +95,23 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
   const doFetch: FetchFn = r.fetch ?? ((i, init) => fetch(i, init));
   const sleep = r.sleep ?? ((ms: number) => new Promise<void>((ok) => setTimeout(ok, ms)));
   const body = roundBody(r);
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), r.timeoutMs);
   const known: { usage: Usage | null } = { usage: null };
+  let open: StreamOpenState = { tag: "opening", attempt: 0 };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (): AbortSignal => {
+    if (timer !== undefined) clearTimeout(timer);
+    const attempt = new AbortController();
+    timer = setTimeout(() => attempt.abort(), r.timeoutMs);
+    return attempt.signal;
+  };
+  const disarm = (): void => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
   try {
     let res: Response | undefined;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    while (open.tag === "opening") {
+      const signal = arm();
       res = await doFetch(ANTHROPIC_URL, {
         method: "POST",
         headers: {
@@ -99,115 +120,50 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
           "anthropic-version": ANTHROPIC_VERSION,
         },
         body,
-        signal: ctl.signal,
+        signal,
       });
-      // Before the first byte of a stream a retry is safe; afterwards it never is.
-      if (RETRYABLE.has(res.status) && attempt === 0) {
+      const next = commitStreamOpen(open, {
+        type: "http",
+        status: res.status,
+        hasBody: res.body != null,
+      });
+      if (!next.ok) {
+        disarm();
         await res.body?.cancel().catch(() => {});
-        await sleep(250);
+        return { ok: false, code: "upstream_error", usage: known.usage };
+      }
+      open = next.state;
+      if (open.tag === "opening") {
+        disarm();
+        await res.body?.cancel().catch(() => {});
+        for (const effect of next.effects) {
+          if (effect.type === "retry") await sleep(effect.delayMs);
+        }
         continue;
       }
       break;
     }
-    if (!res?.ok || !res.body) {
+    if (open.tag !== "streaming" || !res?.ok || !res.body) {
       await res?.body?.cancel().catch(() => {});
-      return { ok: false, code: "upstream_error", usage: known.usage };
+      return {
+        ok: false,
+        code: open.tag === "failed" ? open.code : "upstream_error",
+        usage: known.usage,
+      };
     }
 
-    const blocks: (Block | undefined)[] = [];
-    const json = new Map<number, string>();
-    const invalid = new Set<number>();
-    let model = r.model;
-    let stopReason = "";
-    let stopped = false;
-    const u = { in: 0, out: 0 };
-    const seen = () => {
-      known.usage = { inputTokens: u.in, outputTokens: u.out };
-    };
-
+    let assembly: SseState = freshSse(r.model);
     const onEvent = (ev: Record<string, unknown>): boolean => {
-      switch (ev.type) {
-        case "message_start": {
-          const m = isObj(ev.message) ? ev.message : {};
-          if (typeof m.model === "string") model = m.model;
-          const mu = isObj(m.usage) ? m.usage : {};
-          // Cached prefix tokens are tokens the model read: they count as input.
-          u.in =
-            num(mu.input_tokens) +
-            num(mu.cache_creation_input_tokens) +
-            num(mu.cache_read_input_tokens);
-          u.out = num(mu.output_tokens);
-          seen();
-          return true;
-        }
-        case "content_block_start": {
-          const i = num(ev.index);
-          if (!isObj(ev.content_block) || typeof ev.content_block.type !== "string") return false;
-          const b = structuredClone(ev.content_block) as Block;
-          if (b.type === "text" && typeof b.text !== "string") b.text = "";
-          if (b.type === "thinking" && typeof b.thinking !== "string") b.thinking = "";
-          if (b.type === "tool_use" || b.type === "server_tool_use") {
-            json.set(i, "");
-            r.onToolUse?.();
-          }
-          blocks[i] = b;
-          return true;
-        }
-        case "content_block_delta": {
-          const i = num(ev.index);
-          const b = blocks[i];
-          const d = isObj(ev.delta) ? ev.delta : null;
-          if (!b || !d) return false;
-          if (d.type === "text_delta" && typeof d.text === "string") {
-            b.text = `${typeof b.text === "string" ? b.text : ""}${d.text}`;
-            r.onText?.(d.text);
-          } else if (d.type === "input_json_delta" && typeof d.partial_json === "string")
-            json.set(i, `${json.get(i) ?? ""}${d.partial_json}`);
-          else if (d.type === "thinking_delta" && typeof d.thinking === "string")
-            b.thinking = `${typeof b.thinking === "string" ? b.thinking : ""}${d.thinking}`;
-          else if (d.type === "signature_delta" && typeof d.signature === "string")
-            b.signature = d.signature;
-          else if (d.type === "citations_delta" && d.citation !== undefined)
-            b.citations = [...(Array.isArray(b.citations) ? b.citations : []), d.citation];
-          return true;
-        }
-        case "content_block_stop": {
-          const i = num(ev.index);
-          const b = blocks[i];
-          if (b && json.has(i)) {
-            const raw = json.get(i) ?? "";
-            try {
-              const v: unknown = raw.trim() === "" ? {} : JSON.parse(raw);
-              if (isObj(v)) b.input = v;
-              else {
-                b.input = {};
-                invalid.add(i);
-              }
-            } catch {
-              b.input = {};
-              invalid.add(i);
-            }
-          }
-          return true;
-        }
-        case "message_delta": {
-          const d = isObj(ev.delta) ? ev.delta : {};
-          if (typeof d.stop_reason === "string") stopReason = d.stop_reason;
-          const mu = isObj(ev.usage) ? ev.usage : {};
-          if (num(mu.output_tokens)) u.out = num(mu.output_tokens);
-          const more = num(mu.input_tokens) + num(mu.cache_creation_input_tokens);
-          if (more) u.in = Math.max(u.in, more + num(mu.cache_read_input_tokens));
-          seen();
-          return true;
-        }
-        case "message_stop":
-          stopped = true;
-          return true;
-        case "error":
-          return false;
-        default:
-          return true; // ping and event types this client does not know
+      const step = commitSse(assembly, sseEvent(ev));
+      if (!step.ok || step.state.tag !== "assembling") return false;
+      assembly = step.state;
+      // Cached prefix tokens are tokens the model read: the reducer counts them as input.
+      known.usage = { inputTokens: assembly.inputTokens, outputTokens: assembly.outputTokens };
+      for (const effect of step.effects) {
+        if (effect.type === "text") r.onText?.(effect.delta);
+        else r.onToolUse?.();
       }
+      return true;
     };
 
     const reader = res.body.getReader();
@@ -245,36 +201,40 @@ export async function streamRound(r: RoundRequest): Promise<RoundResult> {
           break;
         }
       }
-      if (broken || stopped) break;
+      if (broken || (assembly.tag === "assembling" && assembly.stopped)) break;
     }
     await reader.cancel().catch(() => {});
-    if (broken || !stopped || !stopReason)
+    if (broken || assembly.tag !== "assembling" || !assembly.stopped || !assembly.stopReason)
       return { ok: false, code: "upstream_error", usage: known.usage };
 
-    const content = blocks.filter((b): b is Block => b !== undefined);
+    const content = assembly.blocks.filter((b): b is Block => b !== undefined);
+    const bad = new Set(assembly.invalid);
     const toolUses: ToolUse[] = [];
-    for (const [i, b] of blocks.entries())
+    for (const [i, b] of assembly.blocks.entries())
       if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string")
-        toolUses.push({ id: b.id, name: b.name, input: b.input ?? {}, invalid: invalid.has(i) });
+        toolUses.push({ id: b.id, name: b.name, input: b.input ?? {}, invalid: bad.has(i) });
     const text = content
       .flatMap((b) => (b.type === "text" && typeof b.text === "string" ? [b.text] : []))
       .join("");
     return {
       ok: true,
       content,
-      stopReason,
+      stopReason: assembly.stopReason,
       text,
       toolUses,
-      model,
-      usage: { inputTokens: u.in, outputTokens: u.out },
+      model: assembly.model,
+      usage: { inputTokens: assembly.inputTokens, outputTokens: assembly.outputTokens },
     };
   } catch (e) {
+    const event: StreamOpenEvent =
+      e instanceof Error && e.name === "AbortError" ? { type: "timeout" } : { type: "transport" };
+    const next = commitStreamOpen(open, event);
     return {
       ok: false,
-      code: e instanceof Error && e.name === "AbortError" ? "timeout" : "upstream_error",
+      code: next.ok && next.state.tag === "failed" ? next.state.code : "upstream_error",
       usage: known.usage,
     };
   } finally {
-    clearTimeout(timer);
+    disarm();
   }
 }

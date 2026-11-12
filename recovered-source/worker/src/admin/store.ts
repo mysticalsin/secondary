@@ -6,6 +6,20 @@
 // never be the one who approves it, whatever the route above decided.
 
 import type { Role } from "@secondary/policy";
+import { actorFromDirectory, type DirectoryPrincipal, sameActor } from "../../../../src/state/actor.ts";
+import {
+  claimAccessRequest,
+  commitAccessRequest,
+  decodeAccessRequest,
+} from "../../../../src/state/access-request.ts";
+import {
+  claimElevation,
+  commitElevation,
+  decodeElevation,
+  effectiveStatus,
+  type ElevationState,
+} from "../../../../src/state/elevation.ts";
+import { claimGovernance, commitGovernance, readGovernance } from "../../../../src/state/governance.ts";
 import type { SecurityJournal } from "../security-journal.ts";
 import { manageAuthority, noticeLabel, type ScopeDesc } from "./validate.ts";
 
@@ -15,7 +29,7 @@ export type ChangeKind =
   | "member_remove"
   | "nda_grant"
   | "nda_revoke";
-export type ChangeStatus = "pending" | "applied" | "rejected" | "withdrawn" | "expired";
+export type ChangeStatus = "pending" | "applied" | "rejected" | "withdrawn" | "expired" | "unknown";
 
 export interface Change {
   id: string;
@@ -107,11 +121,11 @@ const nn = (v: SqlStorageValue | undefined): number | null =>
 const newId = (p: string): string => `${p}_${crypto.randomUUID().slice(0, 8)}`;
 
 const toChange = (r: Row, now: number): Change => {
-  const status = s(r.status) as ChangeStatus;
+  const read = readGovernance(r.status, n(r.expires_at), now);
   return {
     id: s(r.id),
     kind: s(r.kind) as ChangeKind,
-    status: status === "pending" && n(r.expires_at) <= now ? "expired" : status,
+    status: read.tag,
     payload: JSON.parse(s(r.payload)) as Record<string, unknown>,
     scopeKey: s(r.scope_key),
     needsSecond: n(r.needs_second) === 1,
@@ -126,10 +140,9 @@ const toChange = (r: Row, now: number): Change => {
 };
 
 const toElevation = (r: Row, now: number): ElevationRequest => {
-  let status = s(r.status) as ElevationStatus;
   const until = nn(r.until);
-  if (status === "pending" && n(r.lapses_at) <= now) status = "expired";
-  if (status === "active" && until !== null && until <= now) status = "expired";
+  const read = effectiveStatus({ status: s(r.status), lapsesAt: n(r.lapses_at), until }, now);
+  const status = (read.tag === "unknown" ? s(r.status) : read.tag) as ElevationStatus;
   return {
     id: s(r.id),
     principalId: s(r.principal_id),
@@ -197,7 +210,7 @@ export class GovStore {
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL,
         scope_key TEXT NOT NULL, needs_second INTEGER NOT NULL, proposed_by TEXT NOT NULL,
         proposed_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_by TEXT,
-        decided_at INTEGER, note TEXT, base_version INTEGER);
+        decided_at INTEGER, note TEXT, base_version INTEGER, claim_key TEXT);
       CREATE TABLE IF NOT EXISTS gov_elevations (
         id TEXT PRIMARY KEY, principal_id TEXT NOT NULL, hours INTEGER NOT NULL, reason TEXT NOT NULL,
         status TEXT NOT NULL, requested_at INTEGER NOT NULL, lapses_at INTEGER NOT NULL,
@@ -226,6 +239,14 @@ export class GovStore {
       ["granted_at", "INTEGER"],
     ] as const)
       if (!cols.has(c)) this.sql.exec(`ALTER TABLE nda_grants ADD COLUMN ${c} ${t}`);
+    const changeCols = new Set(
+      this.sql
+        .exec("PRAGMA table_info(gov_changes)")
+        .toArray()
+        .map((r) => s(r.name)),
+    );
+    if (!changeCols.has("claim_key")) this.sql.exec("ALTER TABLE gov_changes ADD COLUMN claim_key TEXT");
+    this.sql.exec("CREATE UNIQUE INDEX IF NOT EXISTS gov_changes_claim_key ON gov_changes (claim_key)");
     this.tx(() => this.seedRoles(0));
   }
 
@@ -279,22 +300,31 @@ export class GovStore {
     );
   }
 
-  private emailOf(principalId: string): string | null {
-    const r = this.sql
-      .exec(
-        `SELECT email FROM gov_identity WHERE principal_id = ?1
-         UNION SELECT lower(email) FROM principals WHERE id = ?1 LIMIT 1`,
-        principalId,
-      )
-      .toArray()[0];
-    return r ? s(r.email) : null;
+  private directoryRows(): DirectoryPrincipal[] {
+    return this.sql
+      .exec("SELECT id, subject, email FROM principals")
+      .toArray()
+      .map((r) => ({
+        id: s(r.id),
+        subject: sn(r.subject),
+        email: sn(r.email),
+      }));
   }
 
-  /** The same principal id, or two ids that acted with one address. */
+  private signInOf(principalId: string): string | null {
+    const row = this.sql
+      .exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    return row ? sn(row.email) : null;
+  }
+
+  /** The same actor as quorum and humanIds. A display name is not an identity. */
   private sameHuman(a: string, b: string): boolean {
-    if (a === b) return true;
-    const ea = this.emailOf(a);
-    return ea !== null && ea === this.emailOf(b);
+    const rows = this.directoryRows();
+    return sameActor(
+      actorFromDirectory(a, this.signInOf(a), rows),
+      actorFromDirectory(b, this.signInOf(b), rows),
+    );
   }
 
   // ---- roles ----
@@ -556,6 +586,14 @@ export class GovStore {
     return this.getChange(id, now);
   }
 
+  /** The governance row for a claim key. A null or unknown key matches nothing, including legacy rows. */
+  changeByKey(key: string, now: number): Change | null {
+    if (!key) return null;
+    const row = this.sql.exec("SELECT id FROM gov_changes WHERE claim_key = ?", key).toArray()[0];
+    if (!row) return null;
+    return this.getChange(s(row.id), now);
+  }
+
   listChanges(
     now: number,
     f: {
@@ -603,6 +641,8 @@ export class GovStore {
       /** An access request this change fulfils. */
       requestId?: string | null;
       label: string;
+      /** When set, a second propose with this key returns the change already stored. */
+      claimKey?: string | null;
     },
     now: number,
   ): { ok: true; change: Change; applied: boolean } | Fail {
@@ -613,6 +653,10 @@ export class GovStore {
         !(this.hasPrincipal(target) || (a.kind === "member_add" && this.hasRequester(target))))
     )
       return fail(404, "unknown_principal", "That person is not in this tenant's directory");
+    if (a.claimKey) {
+      const same = this.storedByClaimKey(a.claimKey, now);
+      if (same) return same;
+    }
     const dup = this.sql
       .exec(
         "SELECT id FROM gov_changes WHERE status = 'pending' AND expires_at > ? AND kind = ? AND scope_key = ? AND payload = ?",
@@ -625,10 +669,14 @@ export class GovStore {
     if (dup) return fail(409, "duplicate", "The same change is already waiting for approval");
 
     const id = newId("chg");
-    const result = this.tx((): Fail | { applied: boolean } => {
+    const result = this.tx((): Fail | { applied: boolean } | { existing: string } => {
+      if (a.claimKey) {
+        const again = this.sql.exec("SELECT id FROM gov_changes WHERE claim_key = ?", a.claimKey).toArray()[0];
+        if (again) return { existing: s(again.id) };
+      }
       this.sql.exec(
-        `INSERT INTO gov_changes (id, kind, status, payload, scope_key, needs_second, proposed_by, proposed_at, expires_at, base_version)
-         VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO gov_changes (id, kind, status, payload, scope_key, needs_second, proposed_by, proposed_at, expires_at, base_version, claim_key)
+         VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
         a.kind,
         JSON.stringify(a.payload),
@@ -638,6 +686,7 @@ export class GovStore {
         now,
         now + CHANGE_TTL_MS,
         a.baseVersion ?? null,
+        a.claimKey ?? null,
       );
       if (a.requestId)
         this.sql.exec("UPDATE gov_access_requests SET change_id = ? WHERE id = ?", id, a.requestId);
@@ -658,17 +707,39 @@ export class GovStore {
         this.sql.exec("UPDATE gov_access_requests SET change_id = NULL WHERE change_id = ?", id);
         return err;
       }
-      this.sql.exec(
-        "UPDATE gov_changes SET status = 'applied', decided_by = ?, decided_at = ? WHERE id = ?",
-        a.proposedBy,
-        now,
-        id,
-      );
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_changes SET status = 'applied', decided_by = ?, decided_at = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          a.proposedBy,
+          now,
+          id,
+        )
+        .toArray().length;
+      if (claimGovernance(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "governance", reason: "replay" }));
+        this.sql.exec("DELETE FROM gov_changes WHERE id = ?", id);
+        this.sql.exec("UPDATE gov_access_requests SET change_id = NULL WHERE change_id = ?", id);
+        return fail(409, "not_pending", "This change is no longer pending");
+      }
       this.afterDecision(this.getChange(id, now) as Change, true, now);
       return { applied: true };
     });
+    if ("existing" in result) {
+      const change = this.getChange(result.existing, now) as Change;
+      return { ok: true, change, applied: change.status === "applied" };
+    }
     if ("ok" in result) return result;
     return { ok: true, change: this.getChange(id, now) as Change, applied: result.applied };
+  }
+
+  /** The change already stored for this correlation key, if any. A null key matches nothing. */
+  private storedByClaimKey(key: string, now: number): { ok: true; change: Change; applied: boolean } | null {
+    const row = this.sql.exec("SELECT id FROM gov_changes WHERE claim_key = ?", key).toArray()[0];
+    if (!row) return null;
+    const change = this.getChange(s(row.id), now);
+    if (!change) return null;
+    return { ok: true, change, applied: change.status === "applied" };
   }
 
   /** Approve or reject a pending change. The proposer is refused here regardless of the caller. */
@@ -681,10 +752,17 @@ export class GovStore {
   ): { ok: true; change: Change } | Fail {
     const c = this.getChange(id, now);
     if (!c) return fail(404, "not_found", "No such change");
-    if (c.status === "expired")
-      return fail(409, "expired", "This change lapsed after 72 hours. Propose it again");
-    if (c.status !== "pending")
+    const step = commitGovernance(
+      { tag: c.status },
+      { type: approve ? "approve" : "reject", now },
+    );
+    if (!step.ok) {
+      if (step.reason === "expired")
+        return fail(409, "expired", "This change lapsed after 72 hours. Propose it again");
+      if (step.reason === "state_unreadable" || step.reason === "clock_unreadable")
+        return fail(409, step.reason, "This change cannot be decided");
       return fail(409, "not_pending", `This change is already ${c.status}`);
+    }
     if (this.sameHuman(c.proposedBy, deciderId))
       return fail(
         403,
@@ -699,18 +777,32 @@ export class GovStore {
         "Two-person rule: this change is about you or your request, so someone else must decide it",
       );
     const r = this.tx((): Fail | null => {
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_changes SET status = ?, decided_by = ?, decided_at = ?, note = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          approve ? "applied" : "rejected",
+          deciderId,
+          now,
+          note,
+          id,
+        )
+        .toArray().length;
+      if (claimGovernance(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "governance", reason: "replay" }));
+        return fail(409, "not_pending", "This change is no longer pending");
+      }
       if (approve) {
         const err = this.applyChange(c, c.proposedBy, deciderId, now);
-        if (err) return err;
+        if (err) {
+          this.sql.exec(
+            `UPDATE gov_changes SET status = 'pending', decided_by = NULL, decided_at = NULL, note = NULL
+             WHERE id = ? AND status = 'applied'`,
+            id,
+          );
+          return err;
+        }
       }
-      this.sql.exec(
-        "UPDATE gov_changes SET status = ?, decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
-        approve ? "applied" : "rejected",
-        deciderId,
-        now,
-        note,
-        id,
-      );
       this.afterDecision(this.getChange(id, now) as Change, approve, now);
       return null;
     });
@@ -731,17 +823,31 @@ export class GovStore {
     if (!c) return fail(404, "not_found", "No such change");
     if (c.proposedBy !== by)
       return fail(403, "not_proposer", "Only the proposer can withdraw a change");
-    if (c.status !== "pending")
+    const step = commitGovernance({ tag: c.status }, { type: "withdraw", now });
+    if (!step.ok) {
+      if (step.reason === "state_unreadable" || step.reason === "clock_unreadable")
+        return fail(409, step.reason, "This change cannot be withdrawn");
       return fail(409, "not_pending", `This change is already ${c.status}`);
+    }
+    let refused = false;
     this.tx(() => {
-      this.sql.exec(
-        "UPDATE gov_changes SET status = 'withdrawn', decided_by = ?, decided_at = ? WHERE id = ?",
-        by,
-        now,
-        id,
-      );
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_changes SET status = 'withdrawn', decided_by = ?, decided_at = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          by,
+          now,
+          id,
+        )
+        .toArray().length;
+      if (claimGovernance(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "governance", reason: "replay" }));
+        refused = true;
+        return;
+      }
       this.afterDecision(this.getChange(id, now) as Change, false, now);
     });
+    if (refused) return fail(409, "not_pending", "This change is no longer pending");
     return { ok: true, change: this.getChange(id, now) as Change };
   }
 
@@ -905,21 +1011,33 @@ export class GovStore {
         now,
       );
     const req = this.sql
-      .exec("SELECT id, principal_id FROM gov_access_requests WHERE change_id = ?", c.id)
+      .exec("SELECT id, principal_id, status FROM gov_access_requests WHERE change_id = ?", c.id)
       .toArray()[0];
     if (req) {
-      this.sql.exec(
-        "UPDATE gov_access_requests SET status = ? WHERE id = ?",
-        applied ? "granted" : "denied",
-        s(req.id),
-      );
-      this.notify(
-        s(req.principal_id),
-        applied ? "request_granted" : "request_denied",
-        applied ? "Your access request was granted" : "Your access request was not granted",
-        s(req.id),
+      const step = commitAccessRequest(decodeAccessRequest(s(req.status)), {
+        type: applied ? "grant" : "reject",
         now,
-      );
+      });
+      if (step.ok) {
+        const matched = this.sql
+          .exec(
+            `UPDATE gov_access_requests SET status = ? WHERE id = ? AND status IN ('pending', 'approved') RETURNING id`,
+            applied ? "granted" : "denied",
+            s(req.id),
+          )
+          .toArray().length;
+        if (claimAccessRequest(matched).tag !== "applied") {
+          console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+        } else {
+          this.notify(
+            s(req.principal_id),
+            applied ? "request_granted" : "request_denied",
+            applied ? "Your access request was granted" : "Your access request was not granted",
+            s(req.id),
+            now,
+          );
+        }
+      }
     }
   }
 
@@ -950,13 +1068,15 @@ export class GovStore {
         `Your role allows at most ${a.maxHours} hours at a time`,
       );
     const open = this.sql
-      .exec(
-        "SELECT id FROM gov_elevations WHERE principal_id = ? AND ((status = 'pending' AND lapses_at > ?) OR (status = 'active' AND until > ?))",
-        a.principalId,
-        now,
-        now,
-      )
-      .toArray()[0];
+      .exec("SELECT status, lapses_at, until FROM gov_elevations WHERE principal_id = ?", a.principalId)
+      .toArray()
+      .some((r) => {
+        const tag = effectiveStatus(
+          { status: s(r.status), lapsesAt: n(r.lapses_at), until: nn(r.until) },
+          now,
+        ).tag;
+        return tag === "pending" || tag === "active";
+      });
     if (open)
       return fail(
         409,
@@ -964,6 +1084,7 @@ export class GovStore {
         "You already have an open elevation request or an active window",
       );
     const id = newId("elv");
+    let started = true;
     this.tx(() => {
       this.sql.exec(
         `INSERT INTO gov_elevations (id, principal_id, hours, reason, status, requested_at, lapses_at)
@@ -983,21 +1104,45 @@ export class GovStore {
           id,
           now,
         );
-      else this.startElevation(id, a.principalId, "system", now);
+      else started = this.startElevation(id, a.principalId, "system", now);
     });
+    if (!started)
+      return fail(409, "not_startable", "This elevation cannot be started");
     return { ok: true, elevation: this.getElevation(id, now) as ElevationRequest };
   }
 
-  private startElevation(id: string, principalId: string, decidedBy: string, now: number): void {
-    const r = this.sql.exec("SELECT hours, reason FROM gov_elevations WHERE id = ?", id).one();
-    const until = now + n(r.hours) * HOUR;
-    this.sql.exec(
-      "UPDATE gov_elevations SET status = 'active', decided_by = ?, decided_at = ?, until = ? WHERE id = ?",
-      decidedBy,
-      now,
-      until,
-      id,
+  private elevationState(id: string, now: number): ElevationState | null {
+    const r = this.sql
+      .exec("SELECT status, lapses_at, until FROM gov_elevations WHERE id = ?", id)
+      .toArray()[0];
+    return r ? decodeElevation(s(r.status), now, n(r.lapses_at), nn(r.until)) : null;
+  }
+
+  private startElevation(id: string, principalId: string, decidedBy: string, now: number): boolean {
+    const r = this.sql
+      .exec("SELECT hours, reason, status, lapses_at, until FROM gov_elevations WHERE id = ?", id)
+      .toArray()[0];
+    if (!r) return false;
+    const step = commitElevation(
+      decodeElevation(s(r.status), now, n(r.lapses_at), nn(r.until)),
+      { type: "start", now },
     );
+    if (!step.ok) return false;
+    const until = now + n(r.hours) * HOUR;
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_elevations SET status = 'active', decided_by = ?, decided_at = ?, until = ?
+         WHERE id = ? AND status = 'pending' RETURNING id`,
+        decidedBy,
+        now,
+        until,
+        id,
+      )
+      .toArray().length;
+    if (claimElevation(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "elevation", reason: "replay" }));
+      return false;
+    }
     // The engine reads this table: one row per window, the latest end wins.
     this.sql.exec(
       "INSERT INTO elevations (principal_id, until, reason, created_at) VALUES (?, ?, ?, ?)",
@@ -1007,6 +1152,29 @@ export class GovStore {
       now,
     );
     this.bump();
+    return true;
+  }
+
+  private denyElevation(id: string, deciderId: string, note: string | null, now: number): boolean {
+    const state = this.elevationState(id, now);
+    if (!state) return false;
+    const step = commitElevation(state, { type: "deny", now });
+    if (!step.ok) return false;
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_elevations SET status = 'denied', decided_by = ?, decided_at = ?, note = ?
+         WHERE id = ? AND status = 'pending' RETURNING id`,
+        deciderId,
+        now,
+        note,
+        id,
+      )
+      .toArray().length;
+    if (claimElevation(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "elevation", reason: "replay" }));
+      return false;
+    }
+    return true;
   }
 
   private getElevation(id: string, now: number): ElevationRequest | null {
@@ -1032,16 +1200,15 @@ export class GovStore {
         "self_approval",
         "Nobody approves their own elevation: a second admin must decide",
       );
+    let refused = false;
     this.tx(() => {
-      if (approve) this.startElevation(id, e.principalId, deciderId, now);
-      else
-        this.sql.exec(
-          "UPDATE gov_elevations SET status = 'denied', decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
-          deciderId,
-          now,
-          note,
-          id,
-        );
+      const applied = approve
+        ? this.startElevation(id, e.principalId, deciderId, now)
+        : this.denyElevation(id, deciderId, note, now);
+      if (!applied) {
+        refused = true;
+        return;
+      }
       this.notify(
         e.principalId,
         approve ? "elevation_approved" : "elevation_denied",
@@ -1050,6 +1217,12 @@ export class GovStore {
         now,
       );
     });
+    if (refused)
+      return fail(
+        409,
+        approve ? "not_startable" : "not_pending",
+        approve ? "This elevation cannot be started" : "This request is no longer pending",
+      );
     return { ok: true, elevation: this.getElevation(id, now) as ElevationRequest };
   }
 
@@ -1057,17 +1230,32 @@ export class GovStore {
   endElevation(id: string, now: number): { ok: true; elevation: ElevationRequest } | Fail {
     const e = this.getElevation(id, now);
     if (!e) return fail(404, "not_found", "No such elevation request");
-    if (e.status !== "active") return fail(409, "not_active", "This elevation is not active");
+    const step = commitElevation({ tag: e.status }, { type: "end", now });
+    if (!step.ok) return fail(409, "not_active", "This elevation is not active");
+    let refused = false;
     this.tx(() => {
-      this.sql.exec("UPDATE gov_elevations SET status = 'ended', until = ? WHERE id = ?", now, id);
-      this.sql.exec(
-        "UPDATE elevations SET until = ? WHERE principal_id = ? AND until > ?",
-        now,
-        e.principalId,
-        now,
-      );
+      const matched = this.sql
+        .exec(
+          "UPDATE gov_elevations SET status = 'ended', until = ? WHERE id = ? AND status = 'active' RETURNING id",
+          now,
+          id,
+        )
+        .toArray().length;
+      if (claimElevation(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "elevation", reason: "replay" }));
+        refused = true;
+        return;
+      }
+      for (const row of this.sql
+        .exec("SELECT id, until FROM elevations WHERE principal_id = ?", e.principalId)
+        .toArray()) {
+        const open =
+          effectiveStatus({ status: "active", lapsesAt: 0, until: n(row.until) }, now).tag === "active";
+        if (open) this.sql.exec("UPDATE elevations SET until = ? WHERE id = ?", now, row.id);
+      }
       this.bump();
     });
+    if (refused) return fail(409, "not_active", "This elevation is not active");
     return { ok: true, elevation: this.getElevation(id, now) as ElevationRequest };
   }
 
@@ -1089,7 +1277,7 @@ export class GovStore {
   activeElevation(principalId: string, now: number): ElevationRequest | null {
     return (
       this.listElevations(now, principalId).find(
-        (e) => e.status === "active" && (e.until ?? 0) > now,
+        (e) => e.status === "active",
       ) ?? null
     );
   }
@@ -1170,22 +1358,32 @@ export class GovStore {
   ): { ok: true; request: AccessRequest } | Fail {
     const r = this.request(id);
     if (!r) return fail(404, "not_found", "No such request");
-    if (r.status !== "pending")
-      return fail(409, "not_pending", `This request is already ${r.status}`);
+    const step = commitAccessRequest(decodeAccessRequest(r.status), { type: "deny", now });
+    if (!step.ok) return fail(409, step.reason, `This request is already ${r.status}`);
     if (this.sameHuman(r.principalId, deciderId))
       return fail(403, "self_approval", "You cannot decide your own request");
     if (!note.trim())
       return fail(422, "reason_required", "Give the requester a reason for the denial");
+    let refused = false;
     this.tx(() => {
-      this.sql.exec(
-        "UPDATE gov_access_requests SET status = 'denied', decided_by = ?, decided_at = ?, note = ? WHERE id = ?",
-        deciderId,
-        now,
-        note.trim().slice(0, 300),
-        id,
-      );
+      const matched = this.sql
+        .exec(
+          `UPDATE gov_access_requests SET status = 'denied', decided_by = ?, decided_at = ?, note = ?
+           WHERE id = ? AND status = 'pending' RETURNING id`,
+          deciderId,
+          now,
+          note.trim().slice(0, 300),
+          id,
+        )
+        .toArray().length;
+      if (claimAccessRequest(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+        refused = true;
+        return;
+      }
       this.notify(r.principalId, "request_denied", "Your access request was denied", id, now);
     });
+    if (refused) return fail(409, "not_pending", "This request is no longer pending");
     return { ok: true, request: this.request(id) as AccessRequest };
   }
 
@@ -1197,25 +1395,44 @@ export class GovStore {
   ): { ok: true; request: AccessRequest } | Fail {
     const r = this.request(id);
     if (!r) return fail(404, "not_found", "No such request");
-    if (r.status !== "pending")
-      return fail(409, "not_pending", `This request is already ${r.status}`);
+    const step = commitAccessRequest(decodeAccessRequest(r.status), { type: "approve", now });
+    if (!step.ok) return fail(409, step.reason, `This request is already ${r.status}`);
     if (this.sameHuman(r.principalId, deciderId))
       return fail(403, "self_approval", "You cannot decide your own request");
-    this.sql.exec(
-      "UPDATE gov_access_requests SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?",
-      deciderId,
-      now,
-      id,
-    );
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_access_requests SET status = 'approved', decided_by = ?, decided_at = ?
+         WHERE id = ? AND status = 'pending' RETURNING id`,
+        deciderId,
+        now,
+        id,
+      )
+      .toArray().length;
+    if (claimAccessRequest(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+      return fail(409, "not_pending", "This request is no longer pending");
+    }
     return { ok: true, request: this.request(id) as AccessRequest };
   }
 
-  /** A change that fulfils a request failed to apply: the request goes back to the queue. */
-  reopenRequest(id: string): void {
-    this.sql.exec(
-      "UPDATE gov_access_requests SET status = 'pending', decided_by = NULL, decided_at = NULL, change_id = NULL WHERE id = ?",
-      id,
-    );
+  /** A change that fulfils a request failed to apply: an approved request goes back to the queue. */
+  reopenRequest(id: string): { ok: true } | Fail {
+    const r = this.request(id);
+    if (!r) return fail(404, "not_found", "No such request");
+    const step = commitAccessRequest(decodeAccessRequest(r.status), { type: "reopen" });
+    if (!step.ok) return fail(409, step.reason, "This request cannot be reopened");
+    const matched = this.sql
+      .exec(
+        `UPDATE gov_access_requests SET status = 'pending', decided_by = NULL, decided_at = NULL, change_id = NULL
+         WHERE id = ? AND status = 'approved' RETURNING id`,
+        id,
+      )
+      .toArray().length;
+    if (claimAccessRequest(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "access_request", reason: "replay" }));
+      return fail(409, "not_approved", "This request cannot be reopened");
+    }
+    return { ok: true };
   }
 }
 
@@ -1238,6 +1455,7 @@ export const GOV_METHODS = [
   "markRead",
   "deliver",
   "change",
+  "changeByKey",
   "listChanges",
   "propose",
   "decide",

@@ -201,10 +201,11 @@ export function scimRoutes(deps: AppDeps): Hono<AppEnv> {
   app.post("/Users", async (c) => {
     const input = userCreate(await body(c));
     const r = await stub(c.env).scimUserCreate(input, nowOf());
-    if (!r.ok)
-      return r.code === "uniqueness"
-        ? error(409, "userName is already in use.", "uniqueness")
-        : error(400, "userName must be an email address.", "invalidValue");
+    if (!r.ok) {
+      if (r.code === "uniqueness") return error(409, "userName is already in use.", "uniqueness");
+      if (r.code === "ambiguous") return error(409, "ambiguous_principal");
+      return error(400, "userName must be an email address.", "invalidValue");
+    }
     const root = base(c.req.url);
     return send(userJson(r.user, root), 201, { Location: `${root}/Users/${r.user.id}` });
   });

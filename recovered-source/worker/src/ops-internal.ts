@@ -7,8 +7,10 @@
 // signed with INTERNAL_HMAC_KEY. That key cannot reach anything under /v1/internal/ops.
 
 import { Hono } from "hono";
+import { quorumConfirmed } from "../../../src/state/quorum.ts";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../../packages/contracts/src/ops-auth.ts";
+import { unixSeconds } from "../../../packages/contracts/src/signed-call.ts";
 import { appendReceipt, newReceiptId } from "./audit.ts";
 import { reapplyErasures } from "./ops-rights.ts";
 import { getOrg } from "./org.ts";
@@ -69,7 +71,7 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
     const at = deps.now?.() ?? Date.now();
     const ok = await verifyOpsRequest(c.req.raw, opsKeys(c.env), {
-      now: Math.floor(at / 1000),
+      now: unixSeconds(at),
       replay: replayStore(c.env, at),
       channel: "ops",
     });
@@ -159,8 +161,8 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
         const at = deps.now?.() ?? Date.now();
         const requester = await tenant.pendingRequester(key, at);
         const step = await tenant.requestSecond(key, `ops:${handle}`, at);
-        if (step === "same") return c.json({ error: "same_person" }, 409);
-        if (step === "first") {
+        if (step.tag === "same_actor") return c.json({ error: "same_person" }, 409);
+        if (!quorumConfirmed(step)) {
           if (
             !(await receipt(
               "ops_restore_request",
@@ -185,12 +187,18 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
             ? await tenantStub(c.env, t.tenant).importAll(tables)
             : await workspaceStub(c.env, t.tenant, t.scope).importAll(tables);
         // Anyone erased since the snapshot was taken is erased again (M-03).
-        const erasuresReapplied = await reapplyErasures(c.env, t.tenant, t.kind, t.scope);
+        const restoredAt = deps.now?.() ?? Date.now();
+        const again = await reapplyErasures(c.env, t.tenant, t.kind, t.scope, restoredAt);
         await receipt(
           "ops_restore_done",
-          `restored ${rows} rows, ${erasuresReapplied} erasures applied again`,
+          `restored ${rows} rows, ${again.applied} erasures applied again`,
         );
-        return c.json({ ok: true, rows, erasuresReapplied });
+        return c.json({
+          ok: true,
+          rows,
+          erasuresReapplied: again.applied,
+          erasuresSkipped: again.skipped,
+        });
       } catch {
         return c.json({ error: "invalid_snapshot" }, 422);
       }
@@ -227,7 +235,7 @@ export function mcpInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
     if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
     const at = deps.now?.() ?? Date.now();
     const ok = await verifyOpsRequest(c.req.raw, internalKeys(c.env), {
-      now: Math.floor(at / 1000),
+      now: unixSeconds(at),
       replay: replayStore(c.env, at),
       channel: "mcp-switches",
     });

@@ -15,6 +15,7 @@
     }
   },
   "include": [
+    "src/state/**/*.ts",
     "recovered-source/shared/packages/**/*.ts",
     "harness/adapters/**/*.ts",
     "harness/tests/**/*.ts",

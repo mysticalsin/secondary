@@ -2,17 +2,20 @@
 //   GET  /v1/admin/switches            state of the switches and pending re-enable requests
 //   POST /v1/admin/switches            { switch, enabled }; re-enabling needs a second person in prod.
 //   POST /v1/admin/rights/export       { principal } (id or email); needs a second person (202 until then)
-//   POST /v1/admin/rights/erase        { principal }; always needs a second person
+//   POST /v1/admin/rights/erase        { principal }; a second person, unless this subject already holds their grant
 
 import { Hono, type MiddlewareHandler } from "hono";
+import { decodeErasureLedger, erasureGrantOk, erasurePlan } from "../../../src/state/erasure-request.ts";
+import { quorumConfirmed } from "../../../src/state/quorum.ts";
 import { HTTPException } from "hono/http-exception";
 import { appendReceipt, newReceiptId } from "./audit.ts";
 import { requireOrg, viewOf } from "./auth.ts";
 import { humanIdsOf } from "./human.ts";
 import {
+  companyScopes,
   eraseSubject,
   exportSubject,
-  pseudonymFor,
+  pseudonymKey,
   resolveSubject,
   SUBJECT_PARAM,
 } from "./ops-rights.ts";
@@ -125,6 +128,8 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     );
     // Turning a switch off must never wait for the audit log (incident response).
     if (!enabled) await audit(c, s, "switch_disable", `${name} off`);
+    if (res.status === "refused" || res.status === "replay")
+      return c.json({ error: "switch_refused" }, 409);
     if (res.status === "pending")
       return c.json({ ok: true, status: "pending", switch: name, needs: "second_person" }, 202);
     return c.json({ ok: true, status: "applied", switch: name, enabled });
@@ -143,15 +148,16 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!SUBJECT_PARAM.test(raw)) return c.json({ error: "invalid_principal" }, 400);
     const org = requireOrg(s);
     const principalId = await resolveSubject(c.env, s.tenantId, raw);
-    const pseudonym = await pseudonymFor(c.env, s.tenantId, principalId);
-    if (!pseudonym) return c.json({ error: "export_disabled" }, 503);
+    const key = await pseudonymKey(c.env, s.tenantId, principalId);
+    if (key.tag === "refused") return c.json({ error: "export_disabled" }, 503);
+    const pseudonym = key.pseudonym;
     const step = await tenantStub(c.env, s.tenantId).requestSecond(
       `export:${principalId}`,
       s.principal.id,
       now(),
       s.principal.email,
     );
-    if (step !== "second") {
+    if (!quorumConfirmed(step)) {
       if (!(await audit(c, s, "rights_export_request", `export requested for ${pseudonym}`)))
         return c.json({ error: "audit_unavailable" }, 503);
       return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
@@ -170,25 +176,38 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     const raw = typeof body?.principal === "string" ? body.principal : "";
     if (!SUBJECT_PARAM.test(raw)) return c.json({ error: "invalid_principal" }, 400);
     const principalId = await resolveSubject(c.env, s.tenantId, raw);
-    const pseudonym = await pseudonymFor(c.env, s.tenantId, principalId);
-    if (!pseudonym) return c.json({ error: "erase_disabled" }, 503);
+    const key = await pseudonymKey(c.env, s.tenantId, principalId);
+    if (key.tag === "refused") return c.json({ error: "erase_disabled" }, 503);
+    const pseudonym = key.pseudonym;
     if ((await humanIdsOf(c.env, s)).includes(principalId))
       return c.json({ error: "cannot_erase_self" }, 409);
 
-    const step = await tenantStub(c.env, s.tenantId).requestSecond(
-      `erase:${principalId}`,
-      s.principal.id,
-      now(),
-      s.principal.email,
-    );
-    if (step !== "second") {
-      await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);
-      return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
+    const tenant = tenantStub(c.env, s.tenantId);
+    const plan = erasurePlan(companyScopes(org));
+    const existing = decodeErasureLedger(await tenant.erasureLoad(principalId), principalId);
+    const tag = existing.status.tag;
+    const resumable =
+      (tag === "requested" || tag === "running" || tag === "partial_failed") &&
+      erasureGrantOk(existing.grant, principalId, plan);
+    if (!resumable) {
+      const step = await tenant.requestSecond(
+        `erase:${principalId}`,
+        s.principal.id,
+        now(),
+        s.principal.email,
+        plan,
+      );
+      if (!quorumConfirmed(step)) {
+        await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);
+        return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
+      }
     }
-    const done = await eraseSubject(c.env, s.tenantId, org, principalId, pseudonym);
-    if (!done) return c.json({ error: "erase_incomplete", reason: "audit_unavailable" }, 502);
+    const outcome = await eraseSubject(c.env, s.tenantId, org, principalId, pseudonym, now());
+    if ("reason" in outcome) return c.json({ error: "erase_disabled" }, 503);
+    if (outcome.status !== "completed")
+      return c.json({ error: "erase_incomplete", status: outcome.status, step: outcome.step }, 502);
     await audit(c, s, "rights_erase", `erased ${pseudonym}`);
-    return c.json({ ok: true, status: "erased", ...done });
+    return c.json({ ok: true, ...outcome, status: "erased" });
   });
 
   return r;

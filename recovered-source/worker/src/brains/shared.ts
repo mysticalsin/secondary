@@ -7,6 +7,7 @@ import {
   isRestrictedBrain,
   type Publication,
 } from "@secondary/policy";
+import { grantsMemberRole } from "../../../../src/state/brain-member.ts";
 import { govClient } from "../admin/client.ts";
 import { tenantStub } from "../stubs.ts";
 import { type C, sess } from "../ux/util.ts";
@@ -22,7 +23,7 @@ import {
   TEMPLATES,
   type TemplateId,
 } from "./model.ts";
-import type { Brain } from "./open.ts";
+import { type Brain, reconcileStoredMembers } from "./open.ts";
 import type { BrainConfig } from "./store.ts";
 
 export { lineReadable };
@@ -130,14 +131,16 @@ export async function seeBrains(c: C, brains: Brain[]): Promise<Seen[]> {
 export async function readersOf(
   c: C,
   b: Brain,
-  stored: { principalId: string }[],
+  stored: { principalId: string; state: unknown }[],
 ): Promise<number> {
   const s = sess(c);
   if (b.personal) return 1;
   if (b.facts.type === "global")
     return (await tenantStub(c.env, s.tenantId).listPrincipalIds()).length;
   const kind = b.vn?.kind;
-  const ids = new Set(stored.map((m) => m.principalId));
+  const ids = new Set(
+    stored.filter((m) => grantsMemberRole(m.state)).map((m) => m.principalId),
+  );
   if (kind === "circle" || kind === "department" || kind === "account")
     for (const m of await govClient(c.env, s.tenantId).members(kind, b.nodeId))
       ids.add(m.principalId);
@@ -158,6 +161,12 @@ export const roleOfBrain = (b: Brain): BrainRole =>
 
 export async function cardOf(c: C, x: Seen): Promise<BrainCard> {
   const b = x.brain;
+  const preliminary = await b.stub.brainMembers();
+  await reconcileStoredMembers(
+    c,
+    b.stub,
+    preliminary.map((m) => m.principalId),
+  );
   const stored = await b.stub.brainMembers();
   return {
     id: b.param,

@@ -21,6 +21,8 @@ import {
   publicationBound,
 } from "@secondary/policy";
 import { Hono } from "hono";
+import { grantsMemberRole } from "../../../../src/state/brain-member.ts";
+import { quorumConfirmed } from "../../../../src/state/quorum.ts";
 import { govClient } from "../admin/client.ts";
 import { manageAuthority, noticeLabel, scopeDescOf, scopeKey } from "../admin/validate.ts";
 import { requireOrg, viewOf } from "../auth.ts";
@@ -39,7 +41,8 @@ import {
   type TemplateId,
 } from "./model.ts";
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
-import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag } from "./open.ts";
+import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag, reconcileStoredMembers } from "./open.ts";
+import { placeScopedMember } from "./store.ts";
 import { cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
 
 const WEEK = 7 * DAY;
@@ -290,6 +293,12 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
     let members: MemberOut[] | null = null;
     if (b.can.manage && isShareable(b.facts)) {
       const tenant = tenantStub(c.env, s.tenantId);
+      const preliminary = await b.stub.brainMembers();
+      await reconcileStoredMembers(
+        c,
+        b.stub,
+        preliminary.map((m) => m.principalId),
+      );
       const stored = await b.stub.brainMembers();
       const byId = new Map(stored.map((m) => [m.principalId, m]));
       const kind = b.vn?.kind;
@@ -298,21 +307,24 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
           ? await govClient(c.env, s.tenantId).members(kind, b.nodeId)
           : [];
       const out: MemberOut[] = [];
-      for (const m of base)
+      for (const m of base) {
+        const storedRole = byId.get(m.principalId);
         out.push({
           principalId: m.principalId,
           email: m.email,
-          role: byId.get(m.principalId)?.role ?? "contributor",
+          role: storedRole && grantsMemberRole(storedRole.state) ? storedRole.role : "contributor",
           state: "active",
         });
-      for (const m of stored)
-        if (!base.some((x) => x.principalId === m.principalId))
-          out.push({
-            principalId: m.principalId,
-            email: (await tenant.emailOfPrincipal(m.principalId)) ?? "",
-            role: m.role,
-            state: m.state,
-          });
+      }
+      for (const m of stored) {
+        if (base.some((x) => x.principalId === m.principalId) || !grantsMemberRole(m.state)) continue;
+        out.push({
+          principalId: m.principalId,
+          email: (await tenant.emailOfPrincipal(m.principalId)) ?? "",
+          role: m.role,
+          state: "active",
+        });
+      }
       members = out.sort((a, z) => a.email.localeCompare(z.email));
     }
     c.header("Cache-Control", "no-store");
@@ -383,12 +395,12 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
         s.ctx.now,
         s.principal.email,
       );
-      if (step === "same")
+      if (step.tag === "same_actor")
         return c.json(
           { error: "same_person", reason: "A different person must confirm opening this brain" },
           409,
         );
-      if (step === "first") {
+      if (!quorumConfirmed(step)) {
         await audit(c, {
           action: "brain.open_request",
           nodeId: b.nodeId,
@@ -637,7 +649,9 @@ async function setMember(
   const govMember = scoped
     ? (await gov.members(kind, b.nodeId)).some((m) => m.principalId === pid)
     : false;
-  const isMember = govMember || (await b.stub.brainMembers()).some((m) => m.principalId === pid);
+  const isMember =
+    govMember ||
+    (await b.stub.brainMembers()).some((m) => m.principalId === pid && grantsMemberRole(m.state));
   const restricted = isRestrictedBrain(b.facts);
   const heavy = role === "steward" || role === "owner";
   const needsSecond =
@@ -645,12 +659,12 @@ async function setMember(
   if (needsSecond) {
     const key = `brainrole:${b.scope}:${pid}:${role}`;
     const step = await tenant.requestSecond(key, s.principal.id, s.ctx.now, s.principal.email);
-    if (step === "same")
+    if (step.tag === "same_actor")
       return c.json(
         { error: "same_person", reason: "A different person must confirm this change" },
         409,
       );
-    if (step === "first") {
+    if (!quorumConfirmed(step)) {
       await audit(c, {
         action: "brain.role_request",
         nodeId: b.nodeId,
@@ -683,16 +697,42 @@ async function setMember(
         403,
       );
     const wantMember = role !== null;
-    if (wantMember !== govMember) {
-      const made = await gov.propose(
+    if (wantMember !== govMember && role !== null) {
+      const placed = await placeScopedMember(
+        gov,
+        b.stub,
         {
-          kind: wantMember ? "member_add" : "member_remove",
+          kind: "member_add",
           payload: { principalId: pid, scope: { type: d.type, id: d.id }, subspace: null },
           scopeKey: scopeKey(d),
           scope: d,
           needsSecond: d.restricted,
           proposedBy: s.principal.id,
-          label: `${wantMember ? "Adding" : "Removing"} a member of ${noticeLabel(d)}`,
+          label: `Adding a member of ${noticeLabel(d)}`,
+        },
+        pid,
+        role,
+        s.principal.id,
+        s.ctx.now,
+      );
+      if (!placed.ok) {
+        return c.json(
+          { error: placed.code, ...(placed.message ? { reason: placed.message } : {}) },
+          placed.status,
+        );
+      }
+      status = placed.status;
+      changeId = placed.changeId;
+    } else if (wantMember !== govMember) {
+      const made = await gov.propose(
+        {
+          kind: "member_remove",
+          payload: { principalId: pid, scope: { type: d.type, id: d.id }, subspace: null },
+          scopeKey: scopeKey(d),
+          scope: d,
+          needsSecond: d.restricted,
+          proposedBy: s.principal.id,
+          label: `Removing a member of ${noticeLabel(d)}`,
         },
         s.ctx.now,
       );
@@ -703,14 +743,16 @@ async function setMember(
   }
   if (role === null) {
     if (status === "applied") await b.stub.brainMemberRemove(pid, s.principal.id, s.ctx.now);
-  } else
-    await b.stub.brainMemberSet(
+  } else if (!(scoped && !govMember)) {
+    const set = await b.stub.brainMemberSet(
       pid,
       role,
       status === "applied" ? "active" : "pending",
       s.principal.id,
       s.ctx.now,
     );
+    if (!set.ok) return c.json({ error: set.code }, 409);
+  }
   return c.json({
     ok: true,
     status,

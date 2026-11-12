@@ -16,7 +16,7 @@ import {
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
-import { needFlag } from "../brains/open.ts";
+import { needFlag, storedBrainRole } from "../brains/open.ts";
 import { humanIdsOf } from "../human.ts";
 import { parseCandidateId, personalScope, scopeOfNode } from "../scope.ts";
 import type { SensitivityFlag } from "../sensitivity.ts";
@@ -154,7 +154,7 @@ export async function questionsOf(c: C): Promise<Question[]> {
   const roleIn = (sc: string): Promise<BrainRole | null> => {
     let p = roles.get(sc);
     if (!p) {
-      p = sc.startsWith("personal:") ? Promise.resolve(null) : stubOf(c, sc).brainRoleOf(human);
+      p = sc.startsWith("personal:") ? Promise.resolve(null) : storedBrainRole(c, stubOf(c, sc), human);
       roles.set(sc, p);
     }
     return p;
@@ -414,7 +414,7 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
     const right = mayDecide(view, s.principal, node);
     if (!right.allowed) return deny(c, `wiki.${action}`, id, scope, right.reason);
     // The stored brain role only narrows (H-2): a demoted steward cannot decide here either.
-    if (!personal && !roleAllows(await stub.brainRoleOf(sameHuman), "review"))
+    if (!personal && !roleAllows(await storedBrainRole(c, stub, sameHuman), "review"))
       return deny(
         c,
         `wiki.${action}`,
@@ -567,7 +567,7 @@ async function resolveQuestion(c: C, id: string, b: Record<string, unknown>): Pr
     rec,
   );
   if (!d.allowed) return deny(c, wantsRelease ? "approve_release" : "review", id, scope, d.reason);
-  if (!roleAllows(await stub.brainRoleOf(sameHuman), wantsRelease ? "approve_release" : "review"))
+  if (!roleAllows(await storedBrainRole(c, stub, sameHuman), wantsRelease ? "approve_release" : "review"))
     return deny(
       c,
       wantsRelease ? "approve_release" : "review",

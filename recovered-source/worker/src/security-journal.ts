@@ -4,6 +4,8 @@
 // and `replay` applies it again afterwards. Entries hold ids and names only. They expire after
 // JOURNAL_DAYS, which must stay above the backup retention (the oldest snapshot a restore can use).
 
+import { forgetJournalEntry } from "../../../src/state/journal-forget.ts";
+
 export const JOURNAL_DAYS = 90;
 const DAY_MS = 86_400_000;
 
@@ -76,9 +78,35 @@ export class SecurityJournal {
     this.add(at, "revoke_all", principalId);
   }
 
-  /** An erased person leaves no entries behind (the tombstone covers a restore). */
-  forget(principalId: string): void {
-    this.sql.exec("DELETE FROM security_journal WHERE a = ?", principalId);
+  /**
+   * An erased person leaves no entries behind where they are the principal.
+   * `pseudonym` is the value from `pseudonymFor`. Another person's row stays,
+   * and an exact copy of the id in another field becomes that pseudonym.
+   * There is no empty stand-in: the caller passes `pseudonymFor`.
+   */
+  forget(principalId: string, pseudonym: string): void {
+    for (const row of this.sql.exec("SELECT seq, kind, a, b, c FROM security_journal").toArray()) {
+      const decision = forgetJournalEntry(
+        {
+          kind: String(row.kind ?? ""),
+          a: String(row.a ?? ""),
+          b: String(row.b ?? ""),
+          c: String(row.c ?? ""),
+        },
+        principalId,
+        pseudonym,
+      );
+      if (decision.tag === "keep") continue;
+      if (decision.tag === "delete")
+        this.sql.exec("DELETE FROM security_journal WHERE seq = ?", row.seq as number);
+      else
+        this.sql.exec(
+          "UPDATE security_journal SET b = ?, c = ? WHERE seq = ?",
+          decision.b,
+          decision.c,
+          row.seq as number,
+        );
+    }
   }
 
   clear(): void {
@@ -114,6 +142,8 @@ export class SecurityJournal {
             on ? 1 : 0,
             r.at as number,
           );
+          // An off entry is a kill. Drop the pending re-enable so a restored ask cannot confirm it back on.
+          if (!on) this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${a}`);
           break;
         case "nda":
           if (!on)

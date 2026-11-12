@@ -5,6 +5,10 @@ import {
   newReceiptId as newId,
   type Receipt as StoredReceipt,
 } from "../../../packages/contracts/src/audit-receipt.ts";
+import {
+  decodeReceiptCursor,
+  type ReceiptErase,
+} from "../../../src/state/erasure-request.ts";
 
 /** What the API sends. The audit worker fills the MCP-only fields with defaults and stamps `source`. */
 export type Receipt = Omit<
@@ -50,35 +54,69 @@ export async function fetchReceipts(
   }
 }
 
+function scanFrom(prior: ReceiptErase | null): { rewritten: number; cursor?: string; done: boolean } {
+  if (!prior || prior.tag === "rejected" || !("rewritten" in prior)) return { rewritten: 0, done: false };
+  if (prior.tag === "done") return { rewritten: prior.rewritten, done: true };
+  if (prior.cursor) return { rewritten: prior.rewritten, cursor: prior.cursor, done: false };
+  return { rewritten: 0, done: false };
+}
+
 /**
  * Right to erasure: ask workers/audit to replace a principal id with its pseudonym in every stored
- * receipt of the tenant. Pages through the bucket. Returns the number of receipts rewritten, or
- * null when the audit worker is unavailable or refuses.
+ * receipt of the tenant. Each saved page is the next cursor. A finished scan does not run again.
+ * A missing or unusable cursor starts at the first page. The caller persists each page.
  */
 export async function pseudonymiseReceipts(
   env: Env,
   tenantId: string,
   from: string,
   to: string,
-): Promise<number | null> {
-  let rewritten = 0;
-  let cursor: string | undefined;
-  try {
-    // Each page is one subrequest; a Worker may make 1000, and the other steps of an erase need some.
-    for (let page = 0; page < MAX_ERASE_PAGES; page++) {
-      const res = await env.AUDIT.fetch(`${AUDIT_ORIGIN}/pseudonymise`, {
+  prior: ReceiptErase | null,
+  persist: (result: ReceiptErase) => Promise<void>,
+): Promise<ReceiptErase> {
+  const start = scanFrom(prior);
+  if (start.done) return { tag: "done", rewritten: start.rewritten };
+  let rewritten = start.rewritten;
+  let cursor = start.cursor;
+  const failed = (
+    reason: "unavailable" | "refused" | "malformed",
+  ): ReceiptErase => ({ tag: "failed", reason, rewritten, cursor: cursor ?? null });
+  // Each page is one subrequest; a Worker may make 1000, and the other steps of an erase need some.
+  for (let page = 0; page < MAX_ERASE_PAGES; page++) {
+    let res: Response;
+    try {
+      res = await env.AUDIT.fetch(`${AUDIT_ORIGIN}/pseudonymise`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Audit-Key": env.AUDIT_KEY_ERASE ?? "" },
         body: JSON.stringify({ tenant: tenantId, from, to, ...(cursor ? { cursor } : {}) }),
       });
-      if (!res.ok) return null;
-      const out = (await res.json()) as { rewritten: number; cursor?: string };
-      rewritten += out.rewritten;
-      if (!out.cursor) return rewritten;
-      cursor = out.cursor;
+    } catch {
+      return failed("unavailable");
     }
-  } catch {
-    return null;
+    if (!res.ok) return failed("refused");
+    let out: unknown;
+    try {
+      out = await res.json();
+    } catch {
+      return failed("malformed");
+    }
+    if (!out || typeof out !== "object") return failed("malformed");
+    const body = out as { rewritten?: unknown; cursor?: unknown };
+    if (typeof body.rewritten !== "number" || !Number.isSafeInteger(body.rewritten) || body.rewritten < 0)
+      return failed("malformed");
+    rewritten += body.rewritten;
+    if (body.cursor === undefined || body.cursor === null) {
+      const done: ReceiptErase = { tag: "done", rewritten };
+      await persist(done);
+      return done;
+    }
+    const next = decodeReceiptCursor(body.cursor);
+    if (!next) return failed("malformed");
+    cursor = next;
+    await persist({ tag: "partial", rewritten, cursor });
   }
-  return null;
+  if (!cursor) return failed("malformed");
+  const partial: ReceiptErase = { tag: "partial", rewritten, cursor };
+  await persist(partial);
+  return partial;
 }

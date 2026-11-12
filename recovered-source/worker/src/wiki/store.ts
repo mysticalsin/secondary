@@ -3,8 +3,24 @@
 // lint findings live in wiki_* tables beside the items they cite. Review items are ordinary
 // workspace items (kinds wiki_ingest, wiki_lint, wiki_dream), so they ride the existing review queue.
 // Nothing here knows who the caller is: the API checks policy first and passes the actor.
-
 import { DurableObject } from "cloudflare:workers";
+import {
+  claimImport,
+  commitImport,
+  decodeImportStatus,
+} from "../../../../src/state/import-outcome.ts";
+import { claimPage, commitPage, decodePageStatus } from "../../../../src/state/page-visibility.ts";
+import {
+  claimProposal,
+  commitProposal,
+  decodeFindingStatus,
+  decodeProposalStatus,
+  type FindingStatus,
+} from "../../../../src/state/proposal-review.ts";
+import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
+import { boundedName } from "../../../../src/state/pseudonym-text.ts";
+import { forgetFactSources, pageIndexMatches } from "../../../../src/state/source-forget.ts";
+import { decodeWikiJobStatus, forgetWikiJob, sourceSubject } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import {
@@ -86,7 +102,6 @@ export const WIKI_TABLES = [
   "brain_fields",
   "brain_coach",
 ] as const;
-
 /** A record tagged "contacts" in an account is gated by the account's Contacts subspace, not the account. */
 const gateOfItem = (own: string, tagsJson: string): string =>
   own.startsWith("a_") && tagsJson.includes('"contacts"') ? `${own}:con` : own;
@@ -131,6 +146,63 @@ export type DecideResult =
       required: number;
     }
   | Fail;
+
+class PageRefusal extends Error {
+  readonly fail: Fail;
+  constructor(fail: Fail) {
+    super(fail.code);
+    this.fail = fail;
+  }
+}
+
+function proposalFail(reason: string): Fail {
+  if (reason === "replay")
+    return { ok: false, code: "replay", message: "The proposal changed since it was read" };
+  if (reason === "not_pending")
+    return { ok: false, code: "not_pending", message: "The proposal was already decided" };
+  if (reason === "same_actor" || reason === "already_done")
+    return { ok: false, code: "already_done", message: "You already approved this revision" };
+  if (reason === "clock_unreadable")
+    return { ok: false, code: "clock_unreadable", message: "The clock cannot be read" };
+  return { ok: false, code: "state_unreadable", message: "The proposal status cannot be read" };
+}
+
+function importFail(reason: string): Fail {
+  if (reason === "replay")
+    return { ok: false, code: "replay", message: "The proposal changed since it was read" };
+  if (reason === "not_draft")
+    return { ok: false, code: "not_draft", message: "Publishing starts from a draft" };
+  return {
+    ok: false,
+    code: "state_unreadable",
+    message: "The proposal status cannot be read",
+  };
+}
+
+function pageFail(reason: string): Fail {
+  const code =
+    reason === "archived" ||
+    reason === "state_unreadable" ||
+    reason === "clock_unreadable" ||
+    reason === "replay" ||
+    reason === "not_archived" ||
+    reason === "absent"
+      ? reason
+      : "state_unreadable";
+  const message =
+    code === "archived"
+      ? "An archived page is not saved. Unarchive it first"
+      : code === "state_unreadable"
+        ? "The page status cannot be read"
+        : code === "clock_unreadable"
+          ? "The clock cannot be read"
+          : code === "replay"
+            ? "The page changed since it was read"
+            : code === "not_archived"
+              ? "The page is not archived"
+              : "There is no page to unarchive";
+  return { ok: false, code, message };
+}
 
 const rowFact = (r: Record<string, SqlStorageValue>): Fact => ({
   id: r.id as number,
@@ -212,6 +284,20 @@ export abstract class WikiBase extends DurableObject<Env> {
       const cols = this.sql.exec("PRAGMA table_info(wiki_jobs)").toArray();
       if (!cols.some((c) => c.name === "attempts"))
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
+      if (!cols.some((c) => c.name === "subject"))
+        this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN subject TEXT");
+      for (const row of this.sql.exec("SELECT id, payload, subject FROM wiki_jobs").toArray()) {
+        const current = typeof row.subject === "string" ? row.subject : null;
+        let next = sourceSubject(current);
+        if (next === null && current === null) {
+          let raw: unknown = null;
+          try { raw = (JSON.parse(String(row.payload)) as { sourceId?: unknown }).sourceId; }
+          catch { raw = null; }
+          next = sourceSubject(raw);
+        }
+        if (next !== current)
+          this.sql.exec("UPDATE wiki_jobs SET subject = ? WHERE id = ? AND subject IS ?", next, row.id as number, current);
+      }
       // Pages made by the dev seed say so ("seed"); everything else is "human".
       if (
         !this.sql
@@ -583,14 +669,12 @@ export abstract class WikiBase extends DurableObject<Env> {
     runAt?: number,
   ): Promise<void> {
     const body = JSON.stringify(payload);
+    const subject = sourceSubject(payload.sourceId);
     // A source read again soon after its last ingest waits for the debounce window: saving a record
-    // in a loop makes one job per window, not one per save (M-05).
-    if (kind === "ingest" && runAt === undefined && payload.force !== true) {
+    // in a loop makes one job per window, not one per save (M-05). The stored subject is that id.
+    if (kind === "ingest" && runAt === undefined && payload.force !== true && subject !== null) {
       const last = this.sql
-        .exec(
-          "SELECT ingested_at FROM wiki_sources WHERE source_id = ?",
-          String(payload.sourceId ?? ""),
-        )
+        .exec("SELECT ingested_at FROM wiki_sources WHERE source_id = ?", subject)
         .toArray()[0]?.ingested_at as number | null | undefined;
       if (last) runAt = Math.max(now + 1_000, last + INGEST_DEBOUNCE_MS);
     }
@@ -603,10 +687,11 @@ export abstract class WikiBase extends DurableObject<Env> {
       .toArray().length;
     if (!dup)
       this.sql.exec(
-        "INSERT INTO wiki_jobs (kind, payload, run_at) VALUES (?, ?, ?)",
+        "INSERT INTO wiki_jobs (kind, payload, run_at, subject) VALUES (?, ?, ?, ?)",
         kind,
         body,
         runAt ?? now + 1_000,
+        subject,
       );
     await this.wikiSchedule(now);
   }
@@ -627,6 +712,15 @@ export abstract class WikiBase extends DurableObject<Env> {
       "DELETE FROM wiki_jobs WHERE state IN ('done', 'failed') AND run_at < ?",
       real - DONE_JOB_KEEP_MS,
     );
+    const refused = this.sql
+      .exec(
+        `UPDATE wiki_jobs SET state = 'failed', result = 'unattributed'
+         WHERE kind = 'ingest' AND state = 'pending' AND (subject IS NULL OR subject = '')
+         RETURNING id`,
+      )
+      .toArray();
+    if (refused.length > 0)
+      this.wikiLogAppend("system", "job.unattributed", { ids: refused.map((r) => r.id as number) }, now);
     return this.sql
       .exec(
         `UPDATE wiki_jobs SET state = 'running', result = ?, attempts = attempts + 1
@@ -822,37 +916,47 @@ export abstract class WikiBase extends DurableObject<Env> {
     proposalId: string | null,
     now: number,
     origin: PageOrigin = "human",
-  ): boolean {
+  ): { ok: true; wrote: boolean } | Fail {
     const cur = this.pageById(p.id);
+    const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
+    const step = commitPage(from, { type: "save", now });
+    if (!step.ok) return pageFail(step.reason);
+    const effect = step.effects[0];
+    if (!effect) return { ok: true, wrote: false };
     const md = capLines(p.markdown.slice(0, MAX_PAGE_CHARS));
-    if (cur && cur.status === "published" && cur.markdown === md && cur.title === p.title)
-      return false;
-    const revision = cur ? cur.revision + 1 : 1;
+    if (effect.type === "update" && cur && cur.markdown === md && cur.title === p.title)
+      return { ok: true, wrote: false };
     const summary = summaryOf(md);
-    if (cur)
-      this.sql.exec(
-        "UPDATE wiki_pages SET type = ?, title = ?, markdown = ?, summary = ?, revision = ?, status = 'published', origin = ?, updated_at = ? WHERE id = ?",
-        p.type,
-        p.title,
-        md,
-        summary,
-        revision,
-        origin,
-        now,
-        p.id,
-      );
-    else
-      this.sql.exec(
-        "INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 'published', ?, ?, ?)",
-        p.id,
-        p.type,
-        p.title,
-        md,
-        summary,
-        origin,
-        now,
-        now,
-      );
+    const revision = effect.type === "insert" ? 1 : (cur?.revision ?? 0) + 1;
+    const wrote =
+      effect.type === "insert"
+        ? this.sql
+            .exec(
+              "INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, origin, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 'published', ?, ?, ?) RETURNING id",
+              p.id,
+              p.type,
+              p.title,
+              md,
+              summary,
+              origin,
+              now,
+              now,
+            )
+            .toArray()
+        : this.sql
+            .exec(
+              "UPDATE wiki_pages SET type = ?, title = ?, markdown = ?, summary = ?, revision = ?, status = 'published', origin = ?, updated_at = ? WHERE id = ? AND status = 'published' RETURNING id",
+              p.type,
+              p.title,
+              md,
+              summary,
+              revision,
+              origin,
+              now,
+              p.id,
+            )
+            .toArray();
+    if (claimPage(wrote.length).tag !== "applied") return pageFail("replay");
     this.sql.exec(
       "INSERT OR REPLACE INTO wiki_page_revisions (page_id, revision, title, markdown, actor, at, proposal_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
       p.id,
@@ -871,7 +975,34 @@ export abstract class WikiBase extends DurableObject<Env> {
       md.replace(/\{src:[^}]*\}/g, ""),
       p.id,
     );
-    return true;
+    return { ok: true, wrote: true };
+  }
+
+  /** Publish an archived page. A save does not do this. */
+  protected unarchivePage(id: string, now: number): { ok: true; wrote: boolean } | Fail {
+    const cur = this.pageById(id);
+    const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
+    const step = commitPage(from, { type: "unarchive", now });
+    if (!step.ok) return pageFail(step.reason);
+    if (!cur || !step.effects.some((effect) => effect.type === "unarchive"))
+      return { ok: true, wrote: false };
+    const wrote = this.sql
+      .exec(
+        "UPDATE wiki_pages SET status = 'published', updated_at = ? WHERE id = ? AND status = 'archived' RETURNING id",
+        now,
+        id,
+      )
+      .toArray();
+    if (claimPage(wrote.length).tag !== "applied") return pageFail("replay");
+    this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", id);
+    this.sql.exec(
+      "INSERT INTO wiki_fts (title, summary, body, id) VALUES (?, ?, ?, ?)",
+      cur.title,
+      cur.summary,
+      cur.markdown.replace(/\{src:[^}]*\}/g, ""),
+      id,
+    );
+    return { ok: true, wrote: true };
   }
 
   // ---- facts ----
@@ -1109,18 +1240,51 @@ export abstract class WikiBase extends DurableObject<Env> {
     );
     // Dev seed: synthetic data accepted at once and marked as such. Never outside the dev environment.
     if (opts.seed && p.origin === "seed" && this.env.ENVIRONMENT === "dev") {
-      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
-      this.applyProposal(p, authorId, SEED_VERIFIER, now, id);
-      this.wikiLogAppend(authorId, "seed.accepted", { id }, now);
+      try {
+        this.ctx.storage.transactionSync(() => {
+          this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
+          const applied = this.applyProposal(p, authorId, SEED_VERIFIER, now, id);
+          if (!("pages" in applied)) throw new PageRefusal(applied);
+          this.wikiLogAppend(authorId, "seed.accepted", { id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
       return { ok: true, created: true, id, autoAccepted: true };
     }
-    if (
+    const publishing = p.kind === "wiki_ingest" && opts.publishDirect === true;
+    const staying =
       p.kind === "wiki_ingest" &&
-      ((opts.autoAccept && m.autoAccept && isPersonalScope(m.scopeId)) || opts.publishDirect)
-    ) {
-      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
-      this.applyProposal(p, authorId, null, now, id);
-      this.wikiLogAppend(authorId, "auto_accepted", { id }, now);
+      opts.autoAccept === true &&
+      m.autoAccept &&
+      isPersonalScope(m.scopeId) &&
+      !publishing;
+    if (publishing || staying) {
+      const step = commitImport(decodeImportStatus(made.status), {
+        type: publishing ? "publish" : "auto_accept",
+      });
+      if (!step.ok) return importFail(step.reason);
+      if (!step.effects.some((effect) => effect.type === "publish"))
+        return { ok: true, created: true, id, autoAccepted: false };
+      try {
+        this.ctx.storage.transactionSync(() => {
+          const wrote = this.sql
+            .exec(
+              "UPDATE items SET status = 'approved', updated_at = ? WHERE id = ? AND status = 'candidate' RETURNING id",
+              now,
+              id,
+            )
+            .toArray();
+          if (claimImport(wrote.length).tag !== "applied") throw new PageRefusal(importFail("replay"));
+          const applied = this.applyProposal(p, authorId, null, now, id);
+          if (!("pages" in applied)) throw new PageRefusal(applied);
+          this.wikiLogAppend(authorId, "auto_accepted", { id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
       return { ok: true, created: true, id, autoAccepted: true };
     }
     return { ok: true, created: true, id, autoAccepted: false };
@@ -1162,11 +1326,16 @@ export abstract class WikiBase extends DurableObject<Env> {
     verifier: string | null,
     now: number,
     proposalId: string,
-  ): ApplyResult {
+  ): ApplyResult | Fail {
     const at = new Date(now).toISOString();
     const touched: string[] = [];
     let invalidated = 0;
     let archived = 0;
+    const kept = (saved: { ok: true; wrote: boolean } | Fail, pageId: string): Fail | null => {
+      if (!saved.ok) return saved;
+      if (saved.wrote) touched.push(pageId);
+      return null;
+    };
     const result = (): ApplyResult => ({
       pages: touched,
       facts: p.facts.length,
@@ -1215,18 +1384,24 @@ export abstract class WikiBase extends DurableObject<Env> {
     const origin: PageOrigin = p.origin === "seed" ? "seed" : "human";
     for (const d of p.pages) {
       if (GENERATED[d.type]) continue;
-      if (
+      const refused = kept(
         this.savePage(
           { id: d.pageId, type: d.type, title: d.title, markdown: d.markdown },
           actor,
           proposalId,
           now,
           origin,
-        )
-      )
-        touched.push(d.pageId);
+        ),
+        d.pageId,
+      );
+      if (refused) return refused;
     }
     for (const id of p.archive) {
+      const cur = this.pageById(id);
+      const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
+      const step = commitPage(from, { type: "archive", now });
+      if (!step.ok) return pageFail(step.reason);
+      if (!step.effects.some((effect) => effect.type === "archive")) continue;
       const r = this.sql
         .exec(
           "UPDATE wiki_pages SET status = 'archived', updated_at = ? WHERE id = ? AND status = 'published' RETURNING id",
@@ -1234,11 +1409,10 @@ export abstract class WikiBase extends DurableObject<Env> {
           id,
         )
         .toArray();
-      if (r.length) {
-        this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", id);
-        archived++;
-        touched.push(id);
-      }
+      if (claimPage(r.length).tag !== "applied") continue;
+      this.sql.exec("DELETE FROM wiki_fts WHERE id = ?", id);
+      archived++;
+      touched.push(id);
     }
     // Generated pages follow the facts that hold now.
     const valid = this.validFactsSql();
@@ -1250,38 +1424,36 @@ export abstract class WikiBase extends DurableObject<Env> {
         edited.get(g.id)?.markdown ??
         renderGenerated(type, valid, []) ??
         (cur ? emptyGenerated(type) : null);
-      if (
-        md !== null &&
-        this.savePage(
-          { id: g.id, type, title: g.title, markdown: md },
-          actor,
-          proposalId,
-          now,
-          origin,
-        )
-      )
-        touched.push(g.id);
+      if (md !== null) {
+        const refused = kept(
+          this.savePage({ id: g.id, type, title: g.title, markdown: md }, actor, proposalId, now, origin),
+          g.id,
+        );
+        if (refused) return refused;
+      }
     }
     const others = this.wikiPages()
       .map((x) => x.id)
       .filter((x) => x !== "overview");
     const ov = renderGenerated("overview", valid, others);
-    if (
-      ov !== null &&
-      this.savePage(
-        {
-          id: "overview",
-          type: "overview",
-          title: "Overview",
-          markdown: edited.get("overview")?.markdown ?? ov,
-        },
-        actor,
-        proposalId,
-        now,
-        origin,
-      )
-    )
-      touched.push("overview");
+    if (ov !== null) {
+      const refused = kept(
+        this.savePage(
+          {
+            id: "overview",
+            type: "overview",
+            title: "Overview",
+            markdown: edited.get("overview")?.markdown ?? ov,
+          },
+          actor,
+          proposalId,
+          now,
+          origin,
+        ),
+        "overview",
+      );
+      if (refused) return refused;
+    }
     for (const s of p.sources)
       this.wikiSourceSeen(s.id, s.hash, s.title, this.sourceGate(s.id), true, now);
     this.wikiLogAppend(
@@ -1329,6 +1501,13 @@ export abstract class WikiBase extends DurableObject<Env> {
     return false;
   }
 
+  /** The finding named by a proposal. A missing row is unknown and writes nothing. */
+  private findingOf(key: string | null): FindingStatus | null {
+    if (!key) return null;
+    const row = this.sql.exec("SELECT status FROM wiki_findings WHERE key = ?", key).toArray()[0];
+    return decodeFindingStatus(row ? row.status : null);
+  }
+
   /**
    * The decision on one review item. The API has already checked that the actor may decide.
    * Approving names the exact revision (`revisionHash`); a proposal edited since gives a conflict.
@@ -1348,8 +1527,9 @@ export abstract class WikiBase extends DurableObject<Env> {
     const m = this.wikiMeta();
     if (!item || !m || !isWikiKind(item.kind))
       return { ok: false, code: "not_found", message: "No such proposal" };
-    if (item.status !== "candidate")
-      return { ok: false, code: "not_pending", message: "The proposal was already decided" };
+    const from = decodeProposalStatus(item.status);
+    if (from.tag === "unknown") return proposalFail("state_unreadable");
+    if (from.tag !== "candidate") return proposalFail("not_pending");
     const personal = isPersonalScope(m.scopeId);
     if (!personal && this.wikiAuthored(item, ids))
       return {
@@ -1372,22 +1552,36 @@ export abstract class WikiBase extends DurableObject<Env> {
         message: "You wrote a source of this proposal, so a different person must decide it",
       };
     if (decision === "reject") {
-      this.ctx.storage.transactionSync(() => {
-        this.sql.exec("UPDATE items SET status = 'rejected', updated_at = ? WHERE id = ?", now, id);
-        this.sql.exec(
-          "INSERT OR REPLACE INTO approvals (item_id, revision, actor_id, kind, at, verdict) VALUES (?, ?, ?, 'review', ?, 'rejected')",
-          id,
-          item.revision,
-          actorId,
-          now,
-        );
-        if (p.findingKey)
+      const step = commitProposal(from, { type: "reject" }, this.findingOf(p.findingKey));
+      if (!step.ok) return proposalFail(step.reason);
+      try {
+        this.ctx.storage.transactionSync(() => {
+          const wrote = this.sql
+            .exec(
+              "UPDATE items SET status = 'rejected', updated_at = ? WHERE id = ? AND status = 'candidate' RETURNING id",
+              now,
+              id,
+            )
+            .toArray();
+          if (claimProposal(wrote.length).tag !== "applied") throw new PageRefusal(proposalFail("replay"));
           this.sql.exec(
-            "UPDATE wiki_findings SET status = 'dismissed' WHERE key = ?",
-            p.findingKey,
+            "INSERT OR REPLACE INTO approvals (item_id, revision, actor_id, kind, at, verdict) VALUES (?, ?, ?, 'review', ?, 'rejected')",
+            id,
+            item.revision,
+            actorId,
+            now,
           );
-        this.wikiLogAppend(actorId, `${p.kind}.rejected`, { id }, now);
-      });
+          if (p.findingKey && step.effects.some((effect) => effect.type === "dismiss_finding"))
+            this.sql.exec(
+              "UPDATE wiki_findings SET status = 'dismissed' WHERE key = ? AND status = 'open'",
+              p.findingKey,
+            );
+          this.wikiLogAppend(actorId, `${p.kind}.rejected`, { id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
       return { ok: true, status: "rejected", applied: null, approvals: 0, required: 0 };
     }
     if (!opts.revisionHash)
@@ -1416,18 +1610,55 @@ export abstract class WikiBase extends DurableObject<Env> {
         };
     }
     const required = personal ? 1 : item.required;
-    const already = this.sql
+    const prior = this.sql
       .exec(
-        `SELECT 1 FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'
-         AND actor_id IN (${ids.map(() => "?").join(",")}) LIMIT 1`,
+        "SELECT actor_id FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'",
         id,
         item.revision,
-        ...ids,
       )
-      .toArray();
-    const mine = already.length
-      ? []
-      : this.sql
+      .toArray()
+      .map((r) => r.actor_id as string);
+    if (prior.some((actor) => ids.includes(actor)))
+      return { ok: false, code: "already_done", message: "You already approved this revision" };
+    const step = commitProposal(
+      from,
+      { type: "approve", required, approvers: [...prior, actorId] },
+      this.findingOf(p.findingKey),
+    );
+    if (!step.ok) return proposalFail(step.reason);
+    const approvals = prior.length + 1;
+    const releasing = step.effects.some((effect) => effect.type === "approve");
+    if (!releasing) {
+      try {
+        this.ctx.storage.transactionSync(() => {
+          const noted = this.sql
+            .exec(
+              `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
+               RETURNING actor_id`,
+              id,
+              item.revision,
+              actorId,
+              now,
+            )
+            .toArray();
+          if (!noted.length)
+            throw new PageRefusal({
+              ok: false,
+              code: "already_done",
+              message: "You already approved this revision",
+            });
+          this.wikiLogAppend(actorId, `${p.kind}.approval`, { id, approvals, required }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) return e.fail;
+        throw e;
+      }
+      return { ok: true, status: "pending", applied: null, approvals, required };
+    }
+    let applied: ApplyResult | null = null;
+    try {
+      this.ctx.storage.transactionSync(() => {
+        const mine = this.sql
           .exec(
             `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
              RETURNING actor_id`,
@@ -1437,20 +1668,38 @@ export abstract class WikiBase extends DurableObject<Env> {
             now,
           )
           .toArray();
-    if (!mine.length)
-      return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const approvals = item.approvals + 1;
-    if (approvals < required) {
-      this.wikiLogAppend(actorId, `${p.kind}.approval`, { id, approvals, required }, now);
-      return { ok: true, status: "pending", applied: null, approvals, required };
+        if (!mine.length)
+          throw new PageRefusal({
+            ok: false,
+            code: "already_done",
+            message: "You already approved this revision",
+          });
+        const out = this.applyProposal(p, actorId, actorId, now, id);
+        if (!("pages" in out)) throw new PageRefusal(out);
+        const changed = this.sql
+          .exec(
+            "UPDATE items SET status = 'approved', updated_at = ? WHERE id = ? AND status = 'candidate' RETURNING id",
+            now,
+            id,
+          )
+          .toArray();
+        if (changed.length !== 1)
+          throw new PageRefusal({
+            ok: false,
+            code: "replay",
+            message: "The proposal was already decided",
+          });
+        applied = out;
+        if (p.findingKey && step.effects.some((effect) => effect.type === "resolve_finding"))
+          this.sql.exec(
+            "UPDATE wiki_findings SET status = 'resolved' WHERE key = ? AND status = 'open'",
+            p.findingKey,
+          );
+      });
+    } catch (e) {
+      if (e instanceof PageRefusal) return e.fail;
+      throw e;
     }
-    let applied: ApplyResult | null = null;
-    this.ctx.storage.transactionSync(() => {
-      applied = this.applyProposal(p, actorId, actorId, now, id);
-      this.sql.exec("UPDATE items SET status = 'approved', updated_at = ? WHERE id = ?", now, id);
-      if (p.findingKey)
-        this.sql.exec("UPDATE wiki_findings SET status = 'resolved' WHERE key = ?", p.findingKey);
-    });
     for (const src of p.reingest)
       await this.wikiEnqueue("ingest", { sourceId: src, force: true }, now);
     return { ok: true, status: "approved", applied, approvals, required };
@@ -1473,8 +1722,8 @@ export abstract class WikiBase extends DurableObject<Env> {
     const item = this.get(id);
     if (!item || !isWikiKind(item.kind))
       return { ok: false, code: "not_found", message: "No such proposal" };
-    if (item.status !== "candidate")
-      return { ok: false, code: "not_pending", message: "The proposal was already decided" };
+    const edited = commitProposal(decodeProposalStatus(item.status), { type: "edit" }, null);
+    if (!edited.ok) return proposalFail(edited.reason);
     const p = this.parse(item);
     const d = p?.pages.find((x) => x.pageId === pageId);
     if (!p || !d) return { ok: false, code: "not_found", message: "No such page in this proposal" };
@@ -1493,23 +1742,32 @@ export abstract class WikiBase extends DurableObject<Env> {
     d.markdown = clean;
     d.edited = true;
     const revision = item.revision + 1;
-    this.ctx.storage.transactionSync(() => {
-      this.sql.exec(
-        "UPDATE items SET body = ?, revision = ?, updated_at = ? WHERE id = ?",
-        JSON.stringify(p),
-        revision,
-        now,
-        id,
-      );
-      this.sql.exec(
-        "INSERT INTO edits (item_id, revision, actor_id, at) VALUES (?, ?, ?, ?)",
-        id,
-        revision,
-        actorId,
-        now,
-      );
-      this.wikiLogAppend(actorId, "proposal.edited", { id, pageId, revision }, now);
-    });
+    try {
+      this.ctx.storage.transactionSync(() => {
+        const wrote = this.sql
+          .exec(
+            "UPDATE items SET body = ?, revision = ?, updated_at = ? WHERE id = ? AND status = 'candidate' AND revision = ? RETURNING id",
+            JSON.stringify(p),
+            revision,
+            now,
+            id,
+            item.revision,
+          )
+          .toArray();
+        if (claimProposal(wrote.length).tag !== "applied") throw new PageRefusal(proposalFail("replay"));
+        this.sql.exec(
+          "INSERT INTO edits (item_id, revision, actor_id, at) VALUES (?, ?, ?, ?)",
+          id,
+          revision,
+          actorId,
+          now,
+        );
+        this.wikiLogAppend(actorId, "proposal.edited", { id, pageId, revision }, now);
+      });
+    } catch (e) {
+      if (e instanceof PageRefusal) return e.fail;
+      throw e;
+    }
     return { ok: true, revision };
   }
 
@@ -1743,17 +2001,23 @@ export abstract class WikiBase extends DurableObject<Env> {
         .map((l) => (/^\s*[-*]\s+\S/.test(l) ? `${l} {src:${cid}}` : l))
         .join("\n");
       const md = /^#\s/m.test(body) ? body : `# ${it.label}\n\n${body}`;
-      this.ctx.storage.transactionSync(() => {
-        // The revision names the service, not the promoter: a Global reader must not learn the account team (L-06).
-        this.savePage(
-          { id, type: "topic", title: it.label, markdown: md },
-          serviceId("global"),
-          cid,
-          now,
-        );
-        this.sql.exec("UPDATE wiki_promotions SET page_id = ? WHERE candidate_id = ?", id, cid);
-        this.wikiLogAppend("system", "promotion.published", { pageId: id }, now);
-      });
+      try {
+        this.ctx.storage.transactionSync(() => {
+          // The revision names the service, not the promoter: a Global reader must not learn the account team (L-06).
+          const saved = this.savePage(
+            { id, type: "topic", title: it.label, markdown: md },
+            serviceId("global"),
+            cid,
+            now,
+          );
+          if (!saved.ok || !saved.wrote) throw new PageRefusal(saved.ok ? pageFail("replay") : saved);
+          this.sql.exec("UPDATE wiki_promotions SET page_id = ? WHERE candidate_id = ?", id, cid);
+          this.wikiLogAppend("system", "promotion.published", { pageId: id }, now);
+        });
+      } catch (e) {
+        if (e instanceof PageRefusal) continue;
+        throw e;
+      }
     }
   }
 
@@ -1779,17 +2043,27 @@ export abstract class WikiBase extends DurableObject<Env> {
         .exec(`UPDATE ${t} SET ${c} = ? WHERE ${c} = ? RETURNING 1`, to, from)
         .toArray().length;
     const names = [
-      ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length >= 3)),
+      ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length > 0)),
     ];
     const touched = new Set<string>();
     for (const a of names) {
       const hit = (t: string, cols: string[], extra = "") => {
-        const set = cols.map((c) => `${c} = replace(${c}, ?, ?)`).join(", ");
         const any = cols.map((c) => `instr(${c}, ?) > 0`).join(" OR ");
-        const args: string[] = [...cols.flatMap(() => [a, to]), ...cols.map(() => a)];
-        return this.sql
-          .exec(`UPDATE ${t} SET ${set} WHERE (${any})${extra} RETURNING 1`, ...args)
-          .toArray().length;
+        const rows = this.sql
+          .exec(`SELECT rowid AS __k, ${cols.join(", ")} FROM ${t} WHERE (${any})${extra}`, ...cols.map(() => a))
+          .toArray();
+        let changed = 0;
+        for (const row of rows) {
+          const next = cols.map((c) => boundedName(String(row[c] ?? ""), a, to));
+          if (next.every((value, i) => value === String(row[cols[i]!] ?? ""))) continue;
+          this.sql.exec(
+            `UPDATE ${t} SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE rowid = ?`,
+            ...next,
+            row.__k as number,
+          );
+          changed++;
+        }
+        return changed;
       };
       for (const r of this.sql
         .exec("SELECT id FROM wiki_pages WHERE instr(markdown, ?) > 0 OR instr(title, ?) > 0", a, a)
@@ -1828,37 +2102,40 @@ export abstract class WikiBase extends DurableObject<Env> {
   /**
    * Retention and erasure follow derived knowledge (M-02). A source is gone (deleted at the customer's
    * request, retention purge, a removed note): the facts that rest on it are deleted, the page lines
-   * that cite it are removed from every page and every revision, search rows are rebuilt, proposals
-   * that cite it are rejected and emptied, and its title leaves the source table, the jobs and the
-   * log. Runs inside the caller's transaction.
+   * that cite it are removed from every page. Revision targets are returned and not written.
+   * Search rows are rebuilt, proposals that cite it are rejected and emptied, and its title
+   * leaves the source table, the jobs and the log. Runs inside the caller's transaction.
    */
   wikiForgetSources(
     ids: string[],
     now: number,
-  ): { facts: number; pages: number; proposals: number } {
+  ): {
+    facts: number;
+    pages: number;
+    proposals: number;
+    ids: string[];
+    revisions: { pageId: string; revision: number; markdown: string }[];
+  } {
     const gone = new Set(ids);
-    const out = { facts: 0, pages: 0, proposals: 0 };
-    if (!gone.size) return out;
+    const out = { facts: 0, pages: 0, proposals: 0, ids: [] as string[] };
+    const revisions: { pageId: string; revision: number; markdown: string }[] = [];
+    if (!gone.size) return { ...out, revisions };
     const hit = (cites: string[]) => cites.some((x) => gone.has(x));
     for (const r of this.sql
       .exec("SELECT id, source_ids, source_hashes FROM wiki_facts")
       .toArray()) {
-      const sids = JSON.parse(r.source_ids as string) as string[];
-      if (!hit(sids)) continue;
-      const rest = sids.filter((x) => !gone.has(x));
-      if (!rest.length) {
+      const decision = forgetFactSources(r.source_ids, r.source_hashes, gone);
+      if (decision.tag === "keep") continue;
+      if (decision.tag === "delete") {
         this.sql.exec("DELETE FROM wiki_facts WHERE id = ?", r.id as number);
         out.facts++;
-      } else {
-        const hashes = JSON.parse(r.source_hashes as string) as Record<string, string>;
-        for (const x of gone) delete hashes[x];
+      } else
         this.sql.exec(
           "UPDATE wiki_facts SET source_ids = ?, source_hashes = ? WHERE id = ?",
-          JSON.stringify(rest),
-          JSON.stringify(hashes),
+          JSON.stringify(decision.sourceIds),
+          JSON.stringify(decision.hashes),
           r.id as number,
         );
-      }
     }
     // A line that cites a gone source is dropped from the page and from every revision.
     const redact = (md: string): string =>
@@ -1891,52 +2168,98 @@ export abstract class WikiBase extends DurableObject<Env> {
       .exec("SELECT page_id, revision, markdown FROM wiki_page_revisions")
       .toArray()) {
       const md = r.markdown as string;
-      if (hit(citationsOf(md)))
-        this.sql.exec(
-          "UPDATE wiki_page_revisions SET markdown = ? WHERE page_id = ? AND revision = ?",
-          redact(md),
-          r.page_id as string,
-          r.revision as number,
-        );
+      if (!hit(citationsOf(md))) continue;
+      revisions.push({
+        pageId: r.page_id as string,
+        revision: r.revision as number,
+        markdown: redact(md),
+      });
     }
-    const scrubbed: string[] = [];
-    for (const r of this.sql
-      .exec("SELECT id FROM items WHERE kind LIKE 'wiki\\_%' ESCAPE '\\'")
-      .toArray()) {
-      const it = this.get(r.id as string);
-      const p = it ? this.parse(it) : null;
-      if (!it || !p) continue;
-      if (!hit([...(p.titleSources ?? []), ...sourcesOfLegacy(p), ...p.reingest])) continue;
-      const empty: Proposal = {
-        v: 1,
-        kind: p.kind,
-        title: "Erased source",
-        rationale: "",
-        origin: p.origin,
-        pages: [],
-        facts: [],
-        invalidate: [],
-        confirm: [],
-        archive: [],
-        reingest: [],
-        sources: [],
-        findingKey: p.findingKey,
-        titleSources: [],
+    for (const r of this.sql.exec("SELECT id, title, markdown, status FROM wiki_pages").toArray()) {
+      const markdown = String(r.markdown ?? "");
+      const indexed = this.sql
+        .exec("SELECT title, summary, body FROM wiki_fts WHERE id = ?", r.id as string)
+        .toArray();
+      const expected = {
+        title: String(r.title ?? ""),
+        summary: summaryOf(markdown),
+        body: markdown.replace(/\{src:[^}]*\}/g, ""),
       };
-      this.sql.exec(
-        "UPDATE items SET label = ?, body = ?, status = CASE WHEN status = 'candidate' THEN 'rejected' ELSE status END, updated_at = ? WHERE id = ?",
-        empty.title,
-        JSON.stringify(empty),
-        now,
-        it.id,
-      );
-      this.sql.exec("DELETE FROM items_fts WHERE id = ?", it.id);
-      scrubbed.push(it.id);
-      out.proposals++;
+      if (!pageIndexMatches(r.status, expected, indexed)) this.reindexPage(r.id as string);
+    }
+    this.sql.exec("DELETE FROM wiki_fts WHERE id NOT IN (SELECT id FROM wiki_pages)");
+    const scrubbed = out.ids;
+    // Status is read before any proposal write, so a later change misses the compare-and-set.
+    // The citation decision is in code. This statement only writes the row that decision named.
+    const proposals = this.sql
+      .exec("SELECT id, status, body FROM items WHERE kind LIKE 'wiki\\_%' ESCAPE '\\' ORDER BY id")
+      .toArray()
+      .map((r) => ({
+        id: r.id as string,
+        status: r.status as string,
+        body: typeof r.body === "string" ? r.body : "",
+      }));
+    for (const row of proposals) {
+      const cited = citedSourceIds(row.body);
+      for (const sourceId of gone) {
+        const quoted = cited.malformed && row.body.includes(`"${sourceId}"`);
+        if (!cited.ids.has(sourceId) && !quoted) continue;
+        const changed = this.sql
+          .exec(
+            `UPDATE items SET
+               label = 'Erased source',
+               body = json_object(
+                 'v', 1,
+                 'kind', CASE WHEN json_valid(body) THEN json_extract(body, '$.kind') END,
+                 'title', 'Erased source',
+                 'rationale', '',
+                 'origin', CASE WHEN json_valid(body) THEN json_extract(body, '$.origin') END,
+                 'pages', json('[]'),
+                 'facts', json('[]'),
+                 'invalidate', json('[]'),
+                 'confirm', json('[]'),
+                 'archive', json('[]'),
+                 'reingest', json('[]'),
+                 'sources', json('[]'),
+                 'findingKey', CASE WHEN json_valid(body) THEN json_extract(body, '$.findingKey') END,
+                 'titleSources', json('[]')
+               ),
+               status = CASE WHEN status IN ('approved', 'rejected') THEN status ELSE 'rejected' END,
+               updated_at = ?
+             WHERE id = ? AND status = ?
+             RETURNING id`,
+            now,
+            row.id,
+            row.status,
+          )
+          .toArray();
+        if (changed.length !== 1) continue;
+        this.sql.exec("DELETE FROM items_fts WHERE id = ?", row.id);
+        scrubbed.push(row.id);
+        out.proposals++;
+        break;
+      }
     }
     for (const x of gone) {
       this.sql.exec("DELETE FROM wiki_sources WHERE source_id = ?", x);
-      this.sql.exec("DELETE FROM wiki_jobs WHERE instr(payload, ?) > 0", x);
+      for (const job of this.sql
+        .exec("SELECT id, state FROM wiki_jobs WHERE subject = ?", x)
+        .toArray()) {
+        const effect = forgetWikiJob(decodeWikiJobStatus(job.state));
+        if (effect.tag === "delete")
+          this.sql.exec(
+            "DELETE FROM wiki_jobs WHERE id = ? AND state = ? AND subject = ?",
+            job.id as number,
+            job.state as string,
+            x,
+          );
+        else if (effect.tag === "cancel")
+          this.sql.exec(
+            "UPDATE wiki_jobs SET state = 'cancelled' WHERE id = ? AND state = 'running' AND subject = ?",
+            job.id as number,
+            x,
+          );
+      }
     }
     for (const x of scrubbed)
       this.sql.exec(
@@ -1945,7 +2268,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       );
     if (out.facts || out.pages || out.proposals)
       this.wikiLogAppend("system", "sources.forgotten", { ...out, sources: gone.size }, now);
-    return out;
+    return { ...out, revisions };
   }
 
   /** What a person did in this wiki, for the subject export. */

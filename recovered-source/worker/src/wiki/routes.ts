@@ -18,7 +18,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { viewOf } from "../auth.ts";
 import { fieldsFor } from "../brains/fields.ts";
-import { directPublish } from "../brains/open.ts";
+import { directPublish, storedBrainRole } from "../brains/open.ts";
 import { checkSourceAccess } from "../connector.ts";
 import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";
@@ -301,7 +301,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     }
     // A stored brain role only narrows what the policy allows (API-CONTRACT "v3 brains").
     if (need !== "read" && !w.personal) {
-      const role = await w.stub.brainRoleOf(await humanIdsOf(c.env, s));
+      const role = await storedBrainRole(c, w.stub, await humanIdsOf(c.env, s));
       const action = need === "decide" ? "review" : need === "edit" ? "edit" : "contribute";
       if (!roleAllows(role, action))
         return forbidden(c, "Your role in this brain does not allow this");
@@ -428,7 +428,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
       page.hidden &&
       (!w.can.edit ||
         (!w.personal &&
-          !roleAllows(await w.stub.brainRoleOf(await humanIdsOf(c.env, sess(c))), "edit")))
+          !roleAllows(await storedBrainRole(c, w.stub, await humanIdsOf(c.env, sess(c))), "edit")))
     )
       throw notFound();
     const ids = citationsOf(page.markdown);

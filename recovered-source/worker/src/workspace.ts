@@ -5,6 +5,10 @@
 // only addresses workspaces the caller's admitted view reaches. It does enforce the invariants
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
+import { claimRelease, commitItem } from "../../../src/state/item-release.ts";
+import { boundedName } from "../../../src/state/pseudonym-text.ts";
+import { commitQuorum } from "../../../src/state/quorum.ts";
+import { readUserValidated } from "../../../src/state/user-validated.ts";
 import { BrainBase } from "./brains/store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { personalKindOf } from "./personal-kind.ts";
@@ -41,7 +45,7 @@ export type ItemRecord = {
   body: string | null;
   targetNode: string | null;
   releaseTarget: ReleaseTarget;
-  userValidated: UserValidated | null;
+  userValidated: UserValidated | { tag: "unreadable" } | null;
   sensitivityFlags: SensitivityFlag[];
   reviewedBy2: boolean;
   /** Distinct approvers of the current revision, and how many the release needs. */
@@ -110,10 +114,18 @@ export type Fail = {
     | "self_approval"
     | "not_author"
     | "not_pending"
+    | "replay"
     | "already_done"
+    | "invalid_status"
     | "revision_required"
     | "generated_page"
-    | "exists";
+    | "exists"
+    | "archived"
+    | "state_unreadable"
+    | "clock_unreadable"
+    | "not_archived"
+    | "absent"
+    | "not_draft";
   message: string;
   currentRevision?: number;
 };
@@ -137,6 +149,25 @@ const SNAPSHOT_TABLES = [
 
 const requiredFor = (releaseTarget: string, plane: string): number =>
   releaseTarget === "global" || plane === "GLOBAL_NONPERSONAL" ? 2 : 1;
+
+function personalTags(raw: unknown): { tag: "ok"; tags: string[] } | { tag: "unreadable" } {
+  if (typeof raw !== "string") return { tag: "unreadable" };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((tag) => typeof tag !== "string"))
+      return { tag: "unreadable" };
+    return { tag: "ok", tags: parsed };
+  } catch {
+    return { tag: "unreadable" };
+  }
+}
+
+function storedValidation(raw: unknown): UserValidated | { tag: "unreadable" } | null {
+  const read = readUserValidated(raw);
+  if (read.tag === "ok") return read.value;
+  if (read.tag === "unreadable") return { tag: "unreadable" };
+  return null;
+}
 
 export class Workspace extends BrainBase {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -386,9 +417,7 @@ export class Workspace extends BrainBase {
       body: (r.body as string | null) ?? null,
       targetNode: (r.target_node as string | null) ?? null,
       releaseTarget,
-      userValidated: r.user_validated
-        ? (JSON.parse(r.user_validated as string) as UserValidated)
-        : null,
+      userValidated: storedValidation(r.user_validated),
       sensitivityFlags: JSON.parse(r.sensitivity_flags as string) as SensitivityFlag[],
       reviewedBy2: r.reviewed_by_2 === 1,
       approvals,
@@ -533,7 +562,14 @@ export class Workspace extends BrainBase {
     if ("ok" in rec) return rec;
     const label = patch.title ?? rec.label;
     const body = patch.body ?? rec.body;
-    const status = patch.status ?? rec.status;
+    const step = commitItem({ status: rec.status }, { type: "update", status: patch.status ?? null });
+    if (!step.ok)
+      return {
+        ok: false,
+        code: "invalid_status",
+        message: "That status cannot be set from here",
+      };
+    const status = step.state.status;
     const tags = patch.tags ?? rec.tags;
     const revision = rec.revision + 1;
     this.ctx.storage.transactionSync(() => {
@@ -728,7 +764,10 @@ export class Workspace extends BrainBase {
         message: "Only the contributor can edit a candidate. Comment or request changes instead.",
       };
     // An approved item that changes goes back to review. Drafts and candidates keep their status.
-    const status = rec.status === "approved" ? "candidate" : rec.status;
+    const edited = commitItem({ status: rec.status }, { type: "edit" });
+    if (!edited.ok)
+      return { ok: false, code: "not_pending", message: "The item is not awaiting review" };
+    const status = edited.state.status;
     const label = patch.title ?? rec.label;
     const body = patch.body ?? rec.body;
     const revision = rec.revision + 1;
@@ -839,32 +878,89 @@ export class Workspace extends BrainBase {
         .toArray().length
     )
       return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const inserted = this.sql
+    const prior = this.sql
       .exec(
-        `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
-         RETURNING actor_id`,
+        "SELECT actor_id FROM approvals WHERE item_id = ? AND revision = ? AND kind = 'approve'",
         id,
         rec.revision,
-        actorId,
-        now,
       )
-      .toArray();
-    if (!inserted.length)
-      return { ok: false, code: "already_done", message: "You already approved this revision" };
-    const approvals = rec.approvals + 1;
-    const released = approvals >= rec.required;
-    if (released) {
-      this.ctx.storage.transactionSync(() => {
-        this.sql.exec(
-          "UPDATE items SET status = 'approved', reviewed_by_2 = ?, updated_at = ? WHERE id = ?",
+      .toArray()
+      .map((r) => r.actor_id as string);
+    const requester = prior[0];
+    const asked = commitQuorum(
+      requester
+        ? {
+            tag: "waiting",
+            requester: { id: requester, subject: null, email: null, directoryEmail: null },
+            requestedAt: rec.updatedAt,
+          }
+        : { tag: "empty" },
+      {
+        type: "ask",
+        actor: { id: actorId, subject: null, email: null, directoryEmail: null },
+        now,
+      },
+    );
+    if (!asked.ok)
+      return { ok: false, code: "not_pending", message: "The item is not awaiting release" };
+    const decided = commitItem(
+      { status: rec.status },
+      {
+        type: "approve",
+        quorum: { tag: asked.decision },
+        required: rec.required,
+        approvals: prior.length,
+      },
+    );
+    if (!decided.ok)
+      return { ok: false, code: "not_pending", message: "The item is not awaiting release" };
+    let result: ApproveResult = {
+      ok: false,
+      code: "not_pending",
+      message: "The item is not awaiting release",
+    };
+    this.ctx.storage.transactionSync(() => {
+      const inserted = this.sql
+        .exec(
+          `INSERT OR IGNORE INTO approvals (item_id, revision, actor_id, kind, at) VALUES (?, ?, ?, 'approve', ?)
+           RETURNING actor_id`,
+          id,
+          rec.revision,
+          actorId,
+          now,
+        )
+        .toArray();
+      if (!inserted.length) {
+        result = { ok: false, code: "already_done", message: "You already approved this revision" };
+        return;
+      }
+      const approvals = prior.length + 1;
+      const claim = decided.effects.find((effect) => effect.type === "claim_release");
+      if (!claim) {
+        result = { ok: true, released: false, approvals, required: rec.required, revision: rec.revision };
+        return;
+      }
+      const matched = this.sql
+        .exec(
+          "UPDATE items SET status = ?, reviewed_by_2 = ?, updated_at = ? WHERE id = ? AND status = ? RETURNING id",
+          claim.to,
           approvals >= 2 ? 1 : 0,
           now,
           id,
-        );
-        this.outbox("item.released", { id, revision: rec.revision, approvals }, now);
-      });
+          claim.from,
+        )
+        .toArray().length;
+      if (claimRelease(matched).tag !== "released") {
+        result = { ok: false, code: "replay", message: "The release was already taken" };
+        return;
+      }
+      this.outbox("item.released", { id, revision: rec.revision, approvals }, now);
+      result = { ok: true, released: true, approvals, required: rec.required, revision: rec.revision };
+    });
+    if (!result.ok && result.code === "replay") {
+      console.warn(JSON.stringify({ at: "item_release", reason: "replay" }));
     }
-    return { ok: true, released, approvals, required: rec.required, revision: rec.revision };
+    return result;
   }
 
   // ---- operations: snapshots, rights, retention ----
@@ -926,8 +1022,171 @@ export class Workspace extends BrainBase {
   }
 
   /**
+   * Derived stores that erasure owns in one place: the proposal snapshot review serves,
+   * source text and source search, a purged item's revisions, and fields of a deleted page.
+   */
+  /** Aged values stay a single-key delete. A page that is gone loses its fields on the derived path. */
+  override brainPurgeFields(now: number): number {
+    const n = super.brainPurgeFields(now);
+    const orphans = this.sql
+      .exec("SELECT DISTINCT page_id FROM brain_fields WHERE page_id NOT IN (SELECT id FROM wiki_pages)")
+      .toArray()
+      .map((row) => String(row.page_id));
+    if (orphans.length)
+      this.forgetDerived({ type: "source", ids: [], removedPages: orphans, pageRevisions: [] });
+    return n;
+  }
+
+  override wikiForgetSources(
+    ids: string[],
+    now: number,
+  ): {
+    facts: number;
+    pages: number;
+    proposals: number;
+    ids: string[];
+    revisions: { pageId: string; revision: number; markdown: string }[];
+  } {
+    const before = this.sql
+      .exec("SELECT id FROM wiki_pages")
+      .toArray()
+      .map((row) => String(row.id));
+    const out = super.wikiForgetSources(ids, now);
+    const removed = before.filter(
+      (id) => this.sql.exec("SELECT id FROM wiki_pages WHERE id = ?", id).toArray().length === 0,
+    );
+    this.forgetDerived({
+      type: "source",
+      ids: out.ids,
+      removedPages: removed,
+      pageRevisions: out.revisions,
+    });
+    return out;
+  }
+
+  private forgetDerived(
+    op:
+      | {
+          type: "source";
+          ids: string[];
+          removedPages: string[];
+          pageRevisions: { pageId: string; revision: number; markdown: string }[];
+        }
+      | { type: "items"; ids: string[] }
+      | { type: "person"; from: string; to: string; aliases: string[] },
+  ): void {
+    if (op.type === "items") {
+      for (const id of op.ids) this.sql.exec("DELETE FROM revisions WHERE item_id = ?", id);
+      return;
+    }
+    if (op.type === "source") {
+      for (const id of op.ids) {
+        const item = this.sql.exec("SELECT label, body FROM items WHERE id = ?", id).toArray()[0];
+        if (!item) continue;
+        const label = String(item.label);
+        const body = item.body === null || item.body === undefined ? null : String(item.body);
+        for (const rev of this.sql
+          .exec("SELECT revision, label, body FROM revisions WHERE item_id = ?", id)
+          .toArray()) {
+          const revBody = rev.body === null || rev.body === undefined ? null : String(rev.body);
+          if (String(rev.label) === label && revBody === body) continue;
+          this.sql.exec(
+            "UPDATE revisions SET label = ?, body = ? WHERE item_id = ? AND revision = ?",
+            label,
+            body,
+            id,
+            rev.revision as number,
+          );
+        }
+      }
+      for (const pageId of op.removedPages)
+        this.sql.exec("DELETE FROM brain_fields WHERE page_id = ?", pageId);
+      for (const rev of op.pageRevisions)
+        this.sql.exec(
+          "UPDATE wiki_page_revisions SET markdown = ? WHERE page_id = ? AND revision = ?",
+          rev.markdown,
+          rev.pageId,
+          rev.revision,
+        );
+      return;
+    }
+    const names = [
+      ...new Set([op.from, ...op.aliases].map((name) => name.trim()).filter((name) => name.length > 0)),
+    ];
+    const sources = new Set<string>();
+    for (const name of names) {
+      for (const row of this.sql
+        .exec("SELECT id, text FROM comments WHERE instr(text, ?) > 0", name)
+        .toArray()) {
+        const text = boundedName(String(row.text ?? ""), name, op.to);
+        if (text === String(row.text ?? "")) continue;
+        this.sql.exec("UPDATE comments SET text = ? WHERE id = ?", text, row.id as number);
+      }
+      for (const row of this.sql
+        .exec(
+          "SELECT id, label, body FROM items WHERE instr(label, ?) > 0 OR instr(COALESCE(body, ''), ?) > 0",
+          name,
+          name,
+        )
+        .toArray()) {
+        const label = boundedName(String(row.label ?? ""), name, op.to);
+        const current = row.body === null || row.body === undefined ? null : String(row.body);
+        const body = current === null ? null : boundedName(current, name, op.to);
+        if (label === String(row.label ?? "") && body === current) continue;
+        const id = row.id as string;
+        this.sql.exec("UPDATE items SET label = ?, body = ? WHERE id = ?", label, body, id);
+        if (label !== String(row.label ?? "") && this.sql.exec("SELECT id FROM items_fts WHERE id = ?", id).toArray().length)
+          this.reindex(id, label);
+      }
+      for (const row of this.sql
+        .exec(
+          "SELECT id, title, body FROM source_items WHERE instr(title, ?) > 0 OR instr(COALESCE(body, ''), ?) > 0",
+          name,
+          name,
+        )
+        .toArray()) {
+        const title = boundedName(String(row.title ?? ""), name, op.to);
+        const current = row.body === null || row.body === undefined ? null : String(row.body);
+        const body = current === null ? null : boundedName(current, name, op.to);
+        if (title === String(row.title ?? "") && body === current) continue;
+        this.sql.exec(
+          "UPDATE source_items SET title = ?, body = ? WHERE id = ?",
+          title,
+          body,
+          row.id as string,
+        );
+        sources.add(row.id as string);
+      }
+      for (const row of this.sql
+        .exec("SELECT page_id, field_key, value FROM brain_fields WHERE instr(value, ?) > 0", name)
+        .toArray()) {
+        const value = boundedName(String(row.value ?? ""), name, op.to);
+        if (value === String(row.value ?? "")) continue;
+        this.sql.exec(
+          "UPDATE brain_fields SET value = ? WHERE page_id = ? AND field_key = ?",
+          value,
+          row.page_id as string,
+          row.field_key as string,
+        );
+      }
+    }
+    for (const id of sources) {
+      const row = this.sql.exec("SELECT title, body FROM source_items WHERE id = ?", id).toArray()[0];
+      if (!row) continue;
+      this.sql.exec("DELETE FROM source_fts WHERE id = ?", id);
+      this.sql.exec(
+        "INSERT INTO source_fts (title, body, id) VALUES (?, ?, ?)",
+        String(row.title ?? ""),
+        row.body === null || row.body === undefined ? "" : String(row.body),
+        id,
+      );
+    }
+  }
+
+  /**
    * Replace a person's id with a pseudonym everywhere this workspace stores it, and drop the search
-   * index entries of the items they authored (seeded items stay indexed: they are not personal data).
+   * index entries of the items they authored. A seeded item stays indexed, and the name in that
+   * label is rewritten. Any other authored row is dropped from search.
    */
   pseudonymise(
     from: string,
@@ -936,6 +1195,9 @@ export class Workspace extends BrainBase {
   ): { items: number; comments: number; approvals: number; edits: number } {
     let out = { items: 0, comments: 0, approvals: 0, edits: 0 };
     this.ctx.storage.transactionSync(() => {
+      const names = [
+        ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length > 0)),
+      ];
       for (const r of this.sql
         .exec("SELECT id FROM items WHERE author_id = ? AND origin != 'seed'", from)
         .toArray())
@@ -952,17 +1214,44 @@ export class Workspace extends BrainBase {
       this.sql.exec("UPDATE comments SET author_id = ? WHERE author_id = ?", to, from);
       this.sql.exec("UPDATE approvals SET actor_id = ? WHERE actor_id = ?", to, from);
       this.sql.exec("UPDATE edits SET actor_id = ? WHERE actor_id = ?", to, from);
+      this.sql.exec("UPDATE revisions SET actor_id = ? WHERE actor_id = ?", to, from);
+      for (const name of names) {
+        for (const row of this.sql
+          .exec(
+            "SELECT item_id, revision, label, body FROM revisions WHERE instr(label, ?) > 0 OR instr(COALESCE(body, ''), ?) > 0",
+            name,
+            name,
+          )
+          .toArray()) {
+          const label = boundedName(String(row.label ?? ""), name, to);
+          const body = row.body === null ? null : boundedName(String(row.body), name, to);
+          if (label === String(row.label ?? "") && body === row.body) continue;
+          this.sql.exec(
+            "UPDATE revisions SET label = ?, body = ? WHERE item_id = ? AND revision = ?",
+            label,
+            body,
+            row.item_id as string,
+            row.revision as number,
+          );
+        }
+      }
+      this.forgetDerived({ type: "person", from, to, aliases });
       this.wikiPseudonymise(from, to, aliases);
       for (const r of this.sql
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
         .toArray()) {
-        const uv = JSON.parse(r.user_validated as string) as UserValidated;
-        if (uv.by === from)
-          this.sql.exec(
-            "UPDATE items SET user_validated = ? WHERE id = ?",
-            JSON.stringify({ ...uv, by: to }),
-            r.id as string,
-          );
+        const read = readUserValidated(r.user_validated);
+        if (read.tag === "unreadable") {
+          if (from !== "" && String(r.user_validated ?? "").includes(from))
+            this.sql.exec("UPDATE items SET user_validated = NULL WHERE id = ?", r.id as string);
+          continue;
+        }
+        if (read.tag !== "ok" || read.value.by !== from) continue;
+        this.sql.exec(
+          "UPDATE items SET user_validated = ? WHERE id = ?",
+          JSON.stringify({ ...read.value, by: to }),
+          r.id as string,
+        );
       }
     });
     return out;
@@ -973,26 +1262,45 @@ export class Workspace extends BrainBase {
     let n = 0;
     this.ctx.storage.transactionSync(() => {
       n = this.sql.exec("SELECT COUNT(*) AS n FROM items").one().n as number;
-      for (const t of SNAPSHOT_TABLES) this.sql.exec(`DELETE FROM ${t}`);
+      for (const t of [...SNAPSHOT_TABLES, "revisions", "source_items", "source_fts"] as const)
+        this.sql.exec(`DELETE FROM ${t}`);
     });
     return n;
   }
 
   /**
    * Retention: delete Personal Brain items of the given kinds that were last changed before the
-   * cutoff for their kind. `cutoffs` maps a kind (draft, brief) to a timestamp in ms.
+   * cutoff for their kind. `cutoffs` maps a kind (draft, brief, view) to a timestamp in ms.
+   * A note stays. A non-finite cutoff for a kind counts as no cutoff, and that row stays.
+   * An unreadable tags cell is deleted only when updated_at is below the minimum cutoff, the
+   * oldest finite timestamp in `cutoffs`. A cell at or after that minimum stays, and the log
+   * records its id.
    */
   purgeExpired(cutoffs: Record<string, number>): number {
     let n = 0;
     const purged: string[] = [];
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const value of Object.values(cutoffs)) {
+      if (typeof value === "number" && Number.isFinite(value) && value < oldest) oldest = value;
+    }
     this.ctx.storage.transactionSync(() => {
       const rows = this.sql
         .exec("SELECT id, label, tags, updated_at FROM items WHERE kind = 'personalitem'")
         .toArray();
       for (const r of rows) {
-        const kind = personalKindOf(r.label as string, JSON.parse(r.tags as string) as string[]);
-        const cutoff = cutoffs[kind];
-        if (cutoff === undefined || (r.updated_at as number) >= cutoff) continue;
+        const tags = personalTags(r.tags);
+        const updated = r.updated_at as number;
+        if (tags.tag === "unreadable") {
+          if (!Number.isFinite(oldest) || !(updated < oldest)) {
+            console.warn(JSON.stringify({ at: "retention", id: r.id as string }));
+            continue;
+          }
+        } else {
+          const kind = personalKindOf(r.label as string, tags.tags);
+          if (kind === "note") continue;
+          const cutoff = cutoffs[kind];
+          if (cutoff === undefined || !Number.isFinite(cutoff) || updated >= cutoff) continue;
+        }
         const id = r.id as string;
         purged.push(id);
         for (const [t, col] of [
@@ -1007,6 +1315,7 @@ export class Workspace extends BrainBase {
         n++;
       }
       // What the personal wiki learned from a purged note goes with it (M-02).
+      this.forgetDerived({ type: "items", ids: purged });
       this.wikiForgetSources(purged, Date.now());
     });
     return n;

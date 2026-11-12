@@ -4,6 +4,45 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { ROLE_ORDER, ROLES, type ScopeType } from "@secondary/policy";
+import {
+  actorFromDirectory,
+  type ActorIdentity,
+  type DirectoryPrincipal,
+  normalEmail,
+  normalizedEmailSql,
+  sameActor,
+} from "../../../src/state/actor.ts";
+import {
+  decodeErasureLedger,
+  encodeErasure,
+  erasureWithGrant,
+  ledgerVersion,
+  withLedgerVersion,
+} from "../../../src/state/erasure-request.ts";
+import { forgetPilotMember } from "../../../src/state/pilot-member.ts";
+import {
+  commitQuorum,
+  type QuorumResult,
+  type QuorumState,
+  SECOND_PERSON_TTL_MS,
+} from "../../../src/state/quorum.ts";
+import {
+  commitWikiSeed,
+  loadSeed,
+  readSeedVersion,
+  RESEED_NEEDED,
+  type SeedEvent,
+  seedWrites,
+  storeSeed,
+} from "../../../src/state/wiki-seed.ts";
+import { effectiveStatus } from "../../../src/state/elevation.ts";
+import { commit, reject } from "../../../src/state/illegal.ts";
+import {
+  commitSwitch,
+  decodeSwitchEnabled,
+  type SwitchEvent,
+} from "../../../src/state/kill-switch.ts";
+import { lastAcceptedMs, nonceExpiresAt } from "../../../packages/contracts/src/signed-call.ts";
 import { GOV_METHODS, GovStore } from "./admin/store.ts";
 import {
   type EntraSubject,
@@ -57,8 +96,6 @@ export type Session = {
 
 const WINDOW_MS = 60_000;
 const MAX_ELEVATION_HOURS = 24;
-/** A first approval waits this long for the second person. */
-const SECOND_PERSON_TTL_MS = 24 * 3_600_000;
 /** Tables that make up a TenantPolicy snapshot. The request counter is not part of it. */
 const SNAPSHOT_TABLES = [
   "config",
@@ -165,6 +202,11 @@ export class TenantPolicy extends DurableObject<Env> {
         CREATE TABLE IF NOT EXISTS erasure_tombstones (
           principal_id TEXT PRIMARY KEY, pseudonym TEXT NOT NULL, aliases TEXT NOT NULL,
           erased_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+        -- One erasure request per subject. Not in SNAPSHOT_TABLES: a restore must not roll
+        -- the ledger back. Re-apply reopens the steps that snapshot brought back.
+        CREATE TABLE IF NOT EXISTS erasure_requests (
+          principal_id TEXT PRIMARY KEY, status TEXT NOT NULL, ledger TEXT NOT NULL,
+          updated_at INTEGER NOT NULL);
       `);
       this.journal.init();
       this.identity.init();
@@ -220,13 +262,14 @@ export class TenantPolicy extends DurableObject<Env> {
         "elevations",
         "rate",
         "erasure_tombstones",
+        "erasure_requests",
         "open_brains",
       ])
         this.sql.exec(`DELETE FROM ${t}`);
       this.govStore.reset(now);
       this.journal.clear();
       // The workspaces are emptied by a reseed, so the wiki seed starts over too.
-      this.sql.exec("DELETE FROM config WHERE k IN ('seed_version', 'seed_claim')");
+      this.applySeed({ type: "reset" });
       this.sql.exec(
         "INSERT INTO config (k, v) VALUES ('tenant', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
         JSON.stringify(config),
@@ -268,38 +311,71 @@ export class TenantPolicy extends DurableObject<Env> {
     return done ? null : this.seed(config, principals, now);
   }
 
-  /** The version of the dev wiki seed this tenant has completed (0 when none). */
-  seedVersion(): number {
-    const r = this.sql.exec("SELECT v FROM config WHERE k = 'seed_version'").toArray()[0];
-    return r ? Number(r.v) || 0 : 0;
+  /**
+   * The version of the dev wiki seed this tenant has completed (0 when none).
+   * A corrupt cell is `reseed needed`. The log names the key and not the cell.
+   */
+  seedVersion(): number | typeof RESEED_NEEDED {
+    const read = readSeedVersion(this.seedCell("seed_version"), this.seedCell("seed_claim"));
+    if (read.keys.length) console.warn(JSON.stringify({ at: "wiki_seed_unreadable", keys: read.keys }));
+    return read.completed;
   }
 
   /**
-   * Dev wiki seed: take the right to run version `version`. False when that version (or a newer one)
-   * is done, or another request holds an unexpired claim, so concurrent requests seed once. A claim
-   * that never completes expires after `leaseMs` and the next request tries again.
+   * Dev wiki seed: take the right to run version `version`. Returns the owner token the
+   * completer must present, or null when the claim is refused. An unexpired claim blocks
+   * every version. A corrupt cell refuses the claim.
    */
-  seedClaim(version: number, now: number, leaseMs = 120_000): boolean {
-    if (this.seedVersion() >= version) return false;
-    const r = this.sql.exec("SELECT v FROM config WHERE k = 'seed_claim'").toArray()[0];
-    if (r) {
-      const c = JSON.parse(r.v as string) as { version: number; at: number };
-      if (c.version >= version && now - c.at < leaseMs) return false;
-    }
-    this.sql.exec(
-      "INSERT INTO config (k, v) VALUES ('seed_claim', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-      JSON.stringify({ version, at: now }),
-    );
-    return true;
+  seedClaim(version: number, now: number, leaseMs = 120_000): string | null {
+    const owner = crypto.randomUUID();
+    return this.applySeed({ type: "claim", version, now, leaseMs, owner }) ? owner : null;
   }
 
-  /** The claimed version finished: later requests skip it. */
-  seedDone(version: number): void {
-    this.sql.exec(
-      "INSERT INTO config (k, v) VALUES ('seed_version', ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-      String(version),
+  /** The same owner finishes the claim. A different owner, or no claim, is refused. */
+  seedDone(version: number, owner: string): boolean {
+    return this.applySeed({ type: "complete", version, owner }) !== null;
+  }
+
+  private seedCell(key: string): string | null {
+    const row = this.sql.exec("SELECT v FROM config WHERE k = ?", key).toArray()[0];
+    return row ? String(row.v) : null;
+  }
+
+  private applySeed(event: SeedEvent): ReturnType<typeof loadSeed> | null {
+    const next = commitWikiSeed(
+      loadSeed(this.seedCell("seed_version"), this.seedCell("seed_claim")),
+      event,
     );
-    this.sql.exec("DELETE FROM config WHERE k = 'seed_claim'");
+    if (!next.ok) return null;
+    if (!seedWrites(next.effects)) return next.state;
+    const cells = storeSeed(next.state);
+    for (const [key, value] of [
+      ["seed_version", cells.version],
+      ["seed_claim", cells.claim],
+    ] as const) {
+      if (value === null) this.sql.exec("DELETE FROM config WHERE k = ?", key);
+      else {
+        this.sql.exec(
+          "INSERT INTO config (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+          key,
+          value,
+        );
+      }
+    }
+    return next.state;
+  }
+
+  /** Ids whose stored email normalises to `email`. Blank is not an identity. Stored text is not rewritten. */
+  private principalIdsForEmail(email: string): string[] {
+    const normalized = normalEmail(email);
+    if (!normalized) return [];
+    return this.sql
+      .exec(
+        `SELECT id FROM principals WHERE ${normalizedEmailSql("email")} = ? ORDER BY id`,
+        normalized,
+      )
+      .toArray()
+      .map((r) => r.id as string);
   }
 
   /**
@@ -307,9 +383,26 @@ export class TenantPolicy extends DurableObject<Env> {
    * `actAs` (dev personas only, decided by the API) replaces stored roles and memberships.
    */
   async session(input: SessionInput): Promise<Session> {
-    const email = input.email.trim().toLowerCase();
-    const row = this.sql.exec("SELECT id FROM principals WHERE email = ?", email).toArray()[0];
-    const identityId = (row?.id as string | undefined) ?? (await principalIdFor(email));
+    const email = normalEmail(input.email) ?? "";
+    const matches = this.principalIdsForEmail(email);
+    if (matches.length > 1 && !input.actAs) {
+      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: matches }));
+      return {
+        limited: false,
+        retryAfter: 1,
+        principal: { id: "", email, roleIds: [], memberships: [] },
+        ndaGrants: [],
+        openBrains: [],
+        elevatedUntil: null,
+        epoch: this.epoch(),
+        config: this.getConfig(),
+        switches: this.switchState(),
+        active: false,
+        rolesVersion: this.govStore.rolesVersion(),
+      };
+    }
+    const rowId = matches.length === 1 ? matches[0] : undefined;
+    const identityId = rowId ?? (await principalIdFor(email));
 
     const window = Math.floor(input.now / WINDOW_MS);
     const count = this.sql
@@ -341,7 +434,7 @@ export class TenantPolicy extends DurableObject<Env> {
             !memberships.some((x) => x.scope_type === m.scope_type && x.scope_id === m.scope_id),
         ),
       ];
-    } else if (row) {
+    } else if (rowId) {
       roleIds = this.sql
         .exec("SELECT role_id FROM role_assignments WHERE principal_id = ? ORDER BY role_id", id)
         .toArray()
@@ -357,7 +450,7 @@ export class TenantPolicy extends DurableObject<Env> {
     }
     // Grants and elevations load only for a principal that exists (M-10): a renamed or unknown email
     // falls back to a derived id and must not inherit what an earlier holder of that id was given.
-    const known = !!row || !!input.actAs;
+    const known = !!rowId || !!input.actAs;
     const ndaGrants = known
       ? this.sql
           .exec(
@@ -368,15 +461,17 @@ export class TenantPolicy extends DurableObject<Env> {
           .toArray()
           .map((r) => r.account_id as string)
       : [];
-    const until = known
-      ? (this.sql
-          .exec(
-            "SELECT MAX(until) AS u FROM elevations WHERE principal_id = ? AND until > ?",
-            id,
-            input.now,
+    const openUntil = known
+      ? this.sql
+          .exec("SELECT until FROM elevations WHERE principal_id = ?", id)
+          .toArray()
+          .map((r) => r.until as number)
+          .filter(
+            (until) =>
+              effectiveStatus({ status: "active", lapsesAt: 0, until }, input.now).tag === "active",
           )
-          .one().u as number | null)
-      : null;
+      : [];
+    const until = openUntil.length ? Math.max(...openUntil) : null;
     // H-01: an Entra-bound principal is not reachable through another identity source by email alone.
     const hijack =
       !input.actAs &&
@@ -570,13 +665,12 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** A person's name leaves every invite list (erasure). */
   private pilotForget(email: string): void {
-    for (const c of this.pilotList())
-      if (c.members.includes(email))
-        this.sql.exec(
-          "UPDATE pilot_cohorts SET members = ? WHERE id = ?",
-          JSON.stringify(c.members.filter((m) => m !== email)),
-          c.id,
-        );
+    for (const row of this.sql.exec("SELECT id, members FROM pilot_cohorts").toArray()) {
+      const decision = forgetPilotMember(row.members, email);
+      if (decision.tag === "keep") continue;
+      const members = decision.tag === "write" ? JSON.stringify(decision.members) : "[]";
+      this.sql.exec("UPDATE pilot_cohorts SET members = ? WHERE id = ?", members, row.id as string);
+    }
   }
 
   /** Flags for one address: a key is managed once any cohort sets it, and is then on only for its members. */
@@ -593,20 +687,53 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   /**
-   * Replay cache for the signed service calls. True the first time a key is seen inside its TTL,
-   * false for a replay. Expired keys are dropped on every call, so the table holds about two minutes.
+   * Replay guard for the signed service calls. True only the first time a key is stored.
+   * A stored key stays refused after expires_at: deleting the row would accept it again.
+   * When `bound` is set, expires_at comes from the token time and the verifier's acceptance
+   * window, not from this call's receive time. It must be strictly after the last millisecond
+   * that window still accepts. An unsafe bound is refused and not inserted. This method does not delete rows.
    */
-  nonceFirst(key: string, now: number, ttlMs: number): boolean {
-    this.sql.exec("DELETE FROM nonces WHERE expires_at <= ?", now);
+  nonceFirst(
+    key: string,
+    now: number,
+    ttlMs: number,
+    bound?: { tokenExpMs: number; maxSkewMs: number },
+  ): boolean {
+    let expiresAt = now + ttlMs;
+    if (bound) {
+      const last = lastAcceptedMs(bound.tokenExpMs, bound.maxSkewMs);
+      expiresAt = nonceExpiresAt(bound.tokenExpMs, bound.maxSkewMs);
+      if (
+        !Number.isSafeInteger(bound.tokenExpMs) ||
+        !Number.isSafeInteger(bound.maxSkewMs) ||
+        bound.maxSkewMs < 0 ||
+        !Number.isSafeInteger(expiresAt) ||
+        !(expiresAt > last)
+      ) {
+        console.warn(JSON.stringify({ at: "nonce_window_short" }));
+        return false;
+      }
+    }
     return (
       this.sql
         .exec(
           "INSERT OR IGNORE INTO nonces (key, expires_at) VALUES (?, ?) RETURNING key",
           key,
-          now + ttlMs,
+          expiresAt,
         )
         .toArray().length === 1
     );
+  }
+
+  /**
+   * Drop nonce rows whose stored window is already over. Not part of accepting a key:
+   * callers run this on a schedule, or beside the guard, never inside `nonceFirst`.
+   * A row is removed only when `expires_at < now`.
+   */
+  pruneNonces(now: number): number {
+    return this.sql
+      .exec("DELETE FROM nonces WHERE expires_at < ? RETURNING key", now)
+      .toArray().length;
   }
 
   /** Fixed one-minute window counter for sensitive low-volume routes such as seeding. */
@@ -714,8 +841,16 @@ export class TenantPolicy extends DurableObject<Env> {
 
   private switchState(): SwitchState {
     const out = allOn();
-    for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray())
-      if (isSwitchName(r.name)) out[r.name] = r.enabled === 1;
+    for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray()) {
+      if (!isSwitchName(r.name)) continue;
+      const flag = decodeSwitchEnabled(r.enabled);
+      if (flag.tag === "corrupt") {
+        commit(reject("kill_switch", "corrupt", "read", "corrupt_value"));
+        out[r.name] = false;
+        continue;
+      }
+      out[r.name] = flag.tag === "on";
+    }
     return out;
   }
 
@@ -740,10 +875,10 @@ export class TenantPolicy extends DurableObject<Env> {
         now - SECOND_PERSON_TTL_MS,
       )
       .toArray()
-      .map((r) => ({
-        switch: (r.key as string).slice(7) as SwitchName,
-        requestedAt: r.requested_at as number,
-      }));
+      .flatMap((r) => {
+        const name = (r.key as string).slice("switch:".length);
+        return isSwitchName(name) ? [{ switch: name, requestedAt: r.requested_at as number }] : [];
+      });
     return { switches, pending };
   }
 
@@ -752,64 +887,129 @@ export class TenantPolicy extends DurableObject<Env> {
    * when `twoPerson` is set (prod): the first request is recorded and expires after 24 hours.
    */
   setSwitch(
-    name: SwitchName,
+    name: string,
     enabled: boolean,
     actor: string,
     now: number,
     twoPerson: boolean,
     email = "",
-  ): { status: "applied" | "pending"; sameActor?: boolean } {
-    const apply = () => {
-      this.sql.exec(
-        `INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, changed_by = excluded.changed_by,
-           changed_at = excluded.changed_at`,
-        name,
-        enabled ? 1 : 0,
-        actor,
+  ): { status: "applied" | "pending" | "replay" | "refused"; sameActor?: boolean } {
+    const turn = enabled === true ? "turn_on" : "turn_off";
+    if (!isSwitchName(name)) {
+      commit(reject("kill_switch", "unreadable", turn, "unknown_name"));
+      return { status: "refused" };
+    }
+    if (typeof enabled !== "boolean") {
+      commit(reject("kill_switch", "unreadable", "turn", "enabled_unreadable"));
+      return { status: "refused" };
+    }
+    const stored = this.sql.exec("SELECT enabled FROM switches WHERE name = ?", name).toArray()[0];
+    const flag = stored === undefined ? { tag: "on" as const } : decodeSwitchEnabled(stored.enabled);
+    let event: SwitchEvent;
+    if (!enabled) event = { type: "turn_off", now };
+    else if (twoPerson && flag.tag === "off" && Number.isSafeInteger(now)) {
+      event = {
+        type: "turn_on",
         now,
-      );
-      // Kept outside the snapshot, so a restore cannot turn a kill switch back on (N-02).
-      this.journal.switchSet(name, enabled, now);
-    };
-    if (!enabled) {
-      apply();
-      this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${name}`);
-      return { status: "applied" };
+        twoPerson: true,
+        quorum: this.requestSecond(`switch:${name}`, actor, now, email),
+      };
+    } else event = { type: "turn_on", now, twoPerson: false };
+    const step = commitSwitch(flag, event);
+    if (flag.tag === "corrupt" && step.ok) {
+      commit(reject("kill_switch", "corrupt", event.type, "corrupt_value"));
     }
-    if (this.switchState()[name]) return { status: "applied" };
-    if (twoPerson) {
-      const r = this.requestSecond(`switch:${name}`, actor, now, email);
-      if (r !== "second") return { status: "pending", sameActor: r === "same" };
+    if (!step.ok) return { status: "refused" };
+    for (const effect of step.effects) {
+      if (effect.type === "write") {
+        this.sql.exec(
+          `INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled, changed_by = excluded.changed_by,
+             changed_at = excluded.changed_at`,
+          name,
+          effect.enabled ? 1 : 0,
+          actor,
+          now,
+        );
+        // Kept outside the snapshot, so a restore cannot turn a kill switch back on (N-02).
+        this.journal.switchSet(name, effect.enabled, now);
+      } else {
+        this.sql.exec("DELETE FROM pending_ops WHERE key = ?", `switch:${name}`);
+      }
     }
-    apply();
+    if (step.status === "pending") return { status: "pending", sameActor: step.sameActor === true };
+    if (step.status === "replay" || step.status === "refused") return { status: step.status };
     return { status: "applied" };
   }
 
   /**
-   * Two-person rule. "first": recorded. "same": the same person asked again, nothing changes.
-   * "second": a different person confirmed within 24 hours, so the caller may proceed.
-   * "Same" is decided on the stable identity (N-01): one human under two principal ids is one person.
-   * `email` is the address the actor is signed in with; pass it so the identity can be matched.
+   * Two-person rule. The decision is `transitionQuorum`. `recorded` stores the ask.
+   * `same_actor` changes nothing. `confirmed` deletes that ask. `replay` means the
+   * delete matched no row, so the caller must not apply. `email` is the sign-in
+   * address. One human under two ids is one person when a normalised address matches (N-01).
    */
-  requestSecond(key: string, actor: string, now: number, email = ""): "first" | "same" | "second" {
+  requestSecond(
+    key: string,
+    actor: string,
+    now: number,
+    email = "",
+    approvedSteps?: readonly string[],
+  ): QuorumResult {
     this.rememberAddress(actor, email);
     const row = this.sql
       .exec("SELECT requested_by, requested_at FROM pending_ops WHERE key = ?", key)
       .toArray()[0];
-    if (!row || (row.requested_at as number) <= now - SECOND_PERSON_TTL_MS) {
-      this.sql.exec(
-        `INSERT INTO pending_ops (key, requested_by, requested_at) VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET requested_by = excluded.requested_by, requested_at = excluded.requested_at`,
-        key,
-        actor,
-        now,
-      );
-      return "first";
+    const state: QuorumState = row
+      ? {
+          tag: "waiting",
+          requester: this.actorIdentity(row.requested_by as string),
+          requestedAt: row.requested_at as number,
+        }
+      : { tag: "empty" };
+    const step = commitQuorum(state, { type: "ask", actor: this.actorIdentity(actor), now });
+    if (!step.ok) return { tag: "refused" };
+    for (const effect of step.effects) {
+      if (effect.type === "upsert") {
+        this.sql.exec(
+          `INSERT INTO pending_ops (key, requested_by, requested_at) VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET requested_by = excluded.requested_by, requested_at = excluded.requested_at`,
+          key,
+          effect.requesterId,
+          effect.requestedAt,
+        );
+      } else if (effect.type === "delete") {
+        const writeGrant =
+          key.startsWith("erase:") && approvedSteps !== undefined && effect.requesterId !== actor;
+        let deleted = false;
+        const apply = () => {
+          const gone = this.sql
+            .exec(
+              "DELETE FROM pending_ops WHERE key = ? AND requested_by = ? AND requested_at = ? RETURNING key",
+              key,
+              effect.requesterId,
+              effect.requestedAt,
+            )
+            .toArray();
+          if (gone.length === 0) return;
+          deleted = true;
+          if (writeGrant && approvedSteps)
+            this.recordErasureGrant(
+              key.slice("erase:".length),
+              effect.requesterId,
+              actor,
+              approvedSteps,
+              now,
+            );
+        };
+        if (writeGrant) this.ctx.storage.transactionSync(apply);
+        else apply();
+        if (!deleted) {
+          console.warn(JSON.stringify({ at: "quorum", reason: "replay" }));
+          return { tag: "replay" };
+        }
+      }
     }
-    if (this.sameHuman(row.requested_by as string, actor)) return "same";
-    this.sql.exec("DELETE FROM pending_ops WHERE key = ?", key);
-    return "second";
+    return { tag: step.decision };
   }
 
   /** Who asked first for a pending two-person step, or null when none is waiting. */
@@ -820,6 +1020,30 @@ export class TenantPolicy extends DurableObject<Env> {
     return row && (row.requested_at as number) > now - SECOND_PERSON_TTL_MS
       ? (row.requested_by as string)
       : null;
+  }
+
+  /** Directory rows for `actorFromDirectory`. Stored text is not rewritten. */
+  private directoryRows(): DirectoryPrincipal[] {
+    return this.sql
+      .exec("SELECT id, subject, email FROM principals")
+      .toArray()
+      .map((r) => ({
+        id: r.id as string,
+        subject: (r.subject as string | null | undefined) ?? null,
+        email: (r.email as string | null | undefined) ?? null,
+      }));
+  }
+
+  private signInOf(principalId: string): string | null {
+    return (
+      (this.sql.exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId).toArray()[0]
+        ?.email as string | undefined) ?? null
+    );
+  }
+
+  /** Identity for quorum and humanIds. The rule is `actorFromDirectory` / `sameActor`. */
+  private actorIdentity(principalId: string): ActorIdentity {
+    return actorFromDirectory(principalId, this.signInOf(principalId), this.directoryRows());
   }
 
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */
@@ -833,52 +1057,28 @@ export class TenantPolicy extends DurableObject<Env> {
     );
   }
 
-  /**
-   * The stable identity behind a principal id: the Entra subject (tenant + oid) when the directory
-   * has one, else the normalised address it signed in with, else the id itself.
-   */
-  private humanKey(principalId: string): string {
-    const p = this.sql
-      .exec("SELECT subject, email FROM principals WHERE id = ?", principalId)
-      .toArray()[0];
-    const e = (
-      (p?.email as string | undefined) ??
-      (this.sql
-        .exec("SELECT email FROM gov_identity WHERE principal_id = ?", principalId)
-        .toArray()[0]?.email as string | undefined)
-    )?.toLowerCase();
-    const subject =
-      (p?.subject as string | null | undefined) ??
-      (e
-        ? (this.sql.exec("SELECT subject FROM principals WHERE email = ?", e).toArray()[0]
-            ?.subject as string | null | undefined)
-        : null);
-    if (subject) return `sub:${subject}`;
-    return e ? `mail:${e}` : `id:${principalId}`;
-  }
-
-  private sameHuman(a: string, b: string): boolean {
-    return a === b || this.humanKey(a) === this.humanKey(b);
-  }
-
   /** Every principal id of the same human as `principalId`, itself included (N-01). */
   humanIds(principalId: string, email = ""): string[] {
     this.rememberAddress(principalId, email);
-    const key = this.humanKey(principalId);
+    const rows = this.directoryRows();
+    const self = actorFromDirectory(principalId, this.signInOf(principalId), rows);
     const ids = new Set([principalId]);
-    for (const r of [
-      ...this.sql.exec("SELECT id FROM principals").toArray(),
-      ...this.sql.exec("SELECT principal_id AS id FROM gov_identity").toArray(),
-    ])
-      if (this.humanKey(r.id as string) === key) ids.add(r.id as string);
+    const seen = new Set(rows.map((r) => r.id));
+    for (const r of this.sql.exec("SELECT principal_id AS id FROM gov_identity").toArray())
+      seen.add(r.id as string);
+    for (const id of seen)
+      if (sameActor(self, actorFromDirectory(id, this.signInOf(id), rows))) ids.add(id);
     return [...ids];
   }
 
   /** Id of the principal behind an email, or the stable anonymous id when the email is not in the directory. */
   async resolvePrincipalId(email: string): Promise<string> {
-    const e = email.trim().toLowerCase();
-    const row = this.sql.exec("SELECT id FROM principals WHERE email = ?", e).toArray()[0];
-    return (row?.id as string | undefined) ?? (await principalIdFor(e));
+    const matches = this.principalIdsForEmail(email);
+    if (matches.length > 1) {
+      console.warn(JSON.stringify({ at: "identity", reason: "ambiguous_principal", ids: matches }));
+      throw new Error("ambiguous_principal");
+    }
+    return matches[0] ?? (await principalIdFor(normalEmail(email) ?? ""));
   }
 
   /** The address behind a principal id, for erasure (it may be typed into wiki text). */
@@ -901,7 +1101,7 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   /** Right to erasure for the directory: identity, roles, memberships, grants, elevations, counters. */
-  erasePrincipal(principalId: string): number {
+  async erasePrincipal(principalId: string, pseudonym: string): Promise<number> {
     const erasedEmail =
       (this.sql
         .exec("SELECT lower(email) AS e FROM principals WHERE id = ?", principalId)
@@ -938,7 +1138,7 @@ export class TenantPolicy extends DurableObject<Env> {
       this.sql.exec("DELETE FROM pending_ops WHERE requested_by = ?", principalId);
       this.sql.exec("DELETE FROM agent_grants WHERE principal_id = ?", principalId);
       if (erasedEmail) this.pilotForget(erasedEmail);
-      this.journal.forget(principalId);
+      this.journal.forget(principalId, pseudonym);
     });
     return this.bump();
   }
@@ -946,6 +1146,68 @@ export class TenantPolicy extends DurableObject<Env> {
   /**
    * Remember an erasure so a restore can be undone by applying it again. `aliases` are the person's
    * addresses as typed into text. The row lives until the last backup that could hold the person has expired.
+   */
+  /** The stored erasure request, or null when this subject has none. */
+  erasureLoad(principalId: string): { status: string; ledger: string } | null {
+    const row = this.sql
+      .exec("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    if (!row) return null;
+    return { status: row.status as string, ledger: row.ledger as string };
+  }
+
+  /**
+   * Write the confirmed grant on this subject's erasure row. Called inside the
+   * same transaction as the pending_ops delete. A one-person ask never reaches it.
+   */
+  private recordErasureGrant(
+    subject: string,
+    requester: string,
+    confirmer: string,
+    steps: readonly string[],
+    now: number,
+  ): void {
+    const loaded = this.erasureLoad(subject);
+    const existing = decodeErasureLedger(loaded, subject);
+    const next = erasureWithGrant(existing, { subject, requester, confirmer, steps: [...steps] });
+    if (next === existing) return;
+    const stored = encodeErasure(next);
+    this.erasureSave(
+      subject,
+      stored.status,
+      withLedgerVersion(stored.ledger, ledgerVersion(loaded?.ledger) + 1),
+      now,
+    );
+  }
+
+  /**
+   * Save an erasure row and its receipt cursor in one transaction.
+   * The clock is `updatedAt`, supplied by the caller.
+   */
+  erasureSaveAtomic(principalId: string, status: string, ledger: string, updatedAt: number): void {
+    this.ctx.storage.transactionSync(() => {
+      this.erasureSave(principalId, status, ledger, updatedAt);
+    });
+  }
+
+  /** Replace the erasure request for one subject. The caller supplies the clock. */
+  erasureSave(principalId: string, status: string, ledger: string, updatedAt: number): void {
+    this.sql.exec(
+      `INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(principal_id) DO UPDATE SET status = excluded.status, ledger = excluded.ledger,
+         updated_at = excluded.updated_at
+       WHERE COALESCE(json_extract(excluded.ledger, '$.v'), 0) > COALESCE(json_extract(erasure_requests.ledger, '$.v'), 0)`,
+      principalId,
+      status,
+      ledger,
+      updatedAt,
+    );
+  }
+
+  /**
+   * Remember an erasure until the backup window ends. One statement.
+   * A live row (expires_at > now) is left alone. An expired row takes the new
+   * expiry and keeps every other column. `now` is the caller's clock.
    */
   tombstoneAdd(
     principalId: string,
@@ -957,13 +1219,14 @@ export class TenantPolicy extends DurableObject<Env> {
     this.sql.exec(
       `INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at)
        VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(principal_id) DO UPDATE SET pseudonym = excluded.pseudonym,
-         aliases = excluded.aliases, erased_at = excluded.erased_at, expires_at = excluded.expires_at`,
+       ON CONFLICT(principal_id) DO UPDATE SET expires_at = excluded.expires_at
+       WHERE erasure_tombstones.expires_at <= ?`,
       principalId,
       pseudonym,
       JSON.stringify(aliases),
       now,
       expiresAt,
+      now,
     );
   }
 

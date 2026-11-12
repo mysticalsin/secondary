@@ -19,6 +19,7 @@ import {
   verifyInternalRequest,
 } from "./internal-auth.ts";
 import { getOrg, isRoleId, makeCtx, personaId, personaPrincipal } from "./org.ts";
+import { unixSeconds } from "../../../packages/contracts/src/signed-call.ts";
 import { internalKeys, replayStore } from "./replay.ts";
 import { seedTenant } from "./seed.ts";
 import { tenantStub } from "./stubs.ts";
@@ -177,7 +178,7 @@ export const authenticate =
       if (c.req.header("CF-Connecting-IP") || c.req.header(HEADER_SIGNATURE) === undefined)
         return c.json({ error: "unauthorized" }, 401);
       const r = await verifyInternalRequest(c.req.raw, internalKeys(c.env), {
-        now: Math.floor(now / 1000),
+        now: unixSeconds(now),
         replay: replayStore(c.env, now),
         channel: "mcp",
       });

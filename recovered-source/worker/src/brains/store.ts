@@ -6,6 +6,13 @@
 
 import type { BrainRole, Everyone, Publication } from "@secondary/policy";
 import { BRAIN_ROLES } from "@secondary/policy";
+import {
+  claimMember,
+  commitMember,
+  decodeMember,
+  grantsMemberRole,
+} from "../../../../src/state/brain-member.ts";
+import { CHANGE_TTL_MS } from "../admin/store.ts";
 import { WikiBase } from "../wiki/store.ts";
 import { citationsOf, lineDiff } from "../wiki/text.ts";
 import { DEFAULT_SCHEMA, type Proposal, type SchemaType, type WikiSchema } from "../wiki/types.ts";
@@ -29,6 +36,8 @@ const JOURNAL_ID = /^journal-\d{4}-\d{2}-\d{2}$/;
 const SERVICE = "system:journal";
 const MAX_LOOKBACK_DAYS = 7;
 const SCHEMA_TYPE_KEY = /^[a-z][a-z0-9_]{0,40}$/;
+/** A claim with no governance row is released after two proposal lifetimes, 144 hours. */
+const CLAIM_LEASE_MS = 2 * CHANGE_TTL_MS;
 
 export interface BrainConfig {
   template: TemplateId | null;
@@ -36,6 +45,22 @@ export interface BrainConfig {
   everyone: Everyone | null;
   fields: FieldDef[];
 }
+
+export type MemberHold =
+  | { ok: false; code: string }
+  | {
+      ok: true;
+      at: number;
+      inserted: boolean;
+      previousAt: number | null;
+      previousState: string;
+      key: string;
+      previousKey: string | null;
+      previousRole: BrainRole | null;
+      inflightState: string;
+      pendingRole?: BrainRole | null;
+      pendingAt?: number | null;
+    };
 
 export interface MemberRow {
   principalId: string;
@@ -104,7 +129,7 @@ export abstract class BrainBase extends WikiBase {
       this.sql.exec(`
         CREATE TABLE IF NOT EXISTS brain_members (
           principal_id TEXT PRIMARY KEY, role TEXT NOT NULL, state TEXT NOT NULL,
-          added_by TEXT NOT NULL, at INTEGER NOT NULL);
+          added_by TEXT NOT NULL, at INTEGER NOT NULL, change_id TEXT, claim_key TEXT);
         CREATE TABLE IF NOT EXISTS brain_fields (
           page_id TEXT NOT NULL, field_key TEXT NOT NULL, value TEXT NOT NULL,
           written_by TEXT NOT NULL, written_at INTEGER NOT NULL, PRIMARY KEY (page_id, field_key));
@@ -120,6 +145,12 @@ export abstract class BrainBase extends WikiBase {
       ] as const)
         if (!cols.some((c) => c.name === name))
           this.sql.exec(`ALTER TABLE wiki_page_revisions ADD COLUMN ${name} ${type}`);
+      const memberCols = this.sql.exec("PRAGMA table_info(brain_members)").toArray();
+      if (!memberCols.some((c) => c.name === "change_id"))
+        this.sql.exec("ALTER TABLE brain_members ADD COLUMN change_id TEXT");
+      if (!memberCols.some((c) => c.name === "claim_key"))
+        this.sql.exec("ALTER TABLE brain_members ADD COLUMN claim_key TEXT");
+      this.ensureMemberClaimColumns();
     });
   }
 
@@ -195,17 +226,510 @@ export abstract class BrainBase extends WikiBase {
       }));
   }
 
-  /** The highest stored role among the ids of one human, or null when they have none. */
+  /** Columns that remember an in-flight role without replacing the granted one. */
+  private ensureMemberClaimColumns(): void {
+    const cols = this.sql.exec("PRAGMA table_info(brain_members)").toArray();
+    const add = (name: "pending_role" | "pending_at", type: "TEXT" | "INTEGER") => {
+      if (cols.some((c) => c.name === name)) return;
+      try {
+        this.sql.exec(`ALTER TABLE brain_members ADD COLUMN ${name} ${type}`);
+      } catch (error) {
+        if (!String(error).toLowerCase().includes("duplicate column")) throw error;
+      }
+    };
+    add("pending_role", "TEXT");
+    add("pending_at", "INTEGER");
+  }
+
+  /** The highest granted role among the ids of one human, or null when none is active. */
   brainRoleOf(principalIds: string[]): BrainRole | null {
     if (!principalIds.length) return null;
     let best = -1;
     for (const id of principalIds.slice(0, 20)) {
       const r = this.sql
-        .exec("SELECT role FROM brain_members WHERE principal_id = ?", id)
+        .exec("SELECT role, state FROM brain_members WHERE principal_id = ?", id)
         .toArray()[0];
-      if (r) best = Math.max(best, BRAIN_ROLES.indexOf(r.role as BrainRole));
+      if (r && grantsMemberRole(r.state)) best = Math.max(best, BRAIN_ROLES.indexOf(r.role as BrainRole));
     }
     return best < 0 ? null : (BRAIN_ROLES[best] as BrainRole);
+  }
+
+  /**
+   * Read, decode, and claim the row before any other effect. A new member is a claimed placeholder.
+   * An existing member keeps its granted role and state, and the in-flight role is pending_role.
+   * It does not log. `brainMemberFinish` applies the stored pending role, or keeps the role the claim inserted.
+   * `brainMemberRelease` gives the row back when a later step fails.
+   */
+  brainMemberClaim(
+    principalId: string,
+    role: BrainRole,
+    actor: string,
+    now: number,
+  ): MemberHold {
+    this.ensureMemberClaimColumns();
+    const row = this.sql
+      .exec(
+        "SELECT role, state, at, claim_key FROM brain_members WHERE principal_id = ?",
+        principalId,
+      )
+      .toArray()[0];
+    const pending = row
+      ? this.sql
+          .exec(
+            "SELECT pending_role, pending_at FROM brain_members WHERE principal_id = ?",
+            principalId,
+          )
+          .toArray()[0]
+      : undefined;
+    const previousKey =
+      row?.claim_key === null || row?.claim_key === undefined ? null : String(row.claim_key);
+    const pendingRole =
+      pending?.pending_role === null || pending?.pending_role === undefined
+        ? null
+        : (String(pending.pending_role) as BrainRole);
+    const pendingAt =
+      pending?.pending_at === null || pending?.pending_at === undefined ? null : Number(pending.pending_at);
+    if (row && pendingRole && previousKey) {
+      if (pendingRole !== role) {
+        console.warn(
+          JSON.stringify({
+            at: "brain_member",
+            reason: "illegal_move",
+            principalId,
+            claimKey: previousKey,
+          }),
+        );
+        return { ok: false, code: "replay" };
+      }
+      const state = String(row.state);
+      return {
+        ok: true,
+        at: Number(row.at),
+        inserted: false,
+        previousAt: Number(row.at),
+        previousState: state,
+        key: previousKey,
+        previousKey,
+        previousRole: String(row.role) as BrainRole,
+        inflightState: state,
+        pendingRole,
+        pendingAt,
+      };
+    }
+    if (row && (String(row.state) === "claimed" || String(row.state) === "pending") && previousKey) {
+      if (String(row.role) !== role) {
+        console.warn(
+          JSON.stringify({
+            at: "brain_member",
+            reason: "illegal_move",
+            principalId,
+            claimKey: previousKey,
+          }),
+        );
+        return { ok: false, code: "replay" };
+      }
+      const state = String(row.state);
+      return {
+        ok: true,
+        at: Number(row.at),
+        inserted: false,
+        previousAt: Number(row.at),
+        previousState: state,
+        key: previousKey,
+        previousKey,
+        previousRole: role,
+        inflightState: state,
+        pendingRole: null,
+        pendingAt: null,
+      };
+    }
+    const key = `mem_${crypto.randomUUID().slice(0, 8)}`;
+    const from = row ? decodeMember(row.state) : { tag: "absent" as const };
+    const step = commitMember(from, { type: "set", state: "pending", now });
+    if (!step.ok) return { ok: false, code: step.reason };
+    if (from.tag === "absent") {
+      const matched = this.sql
+        .exec(
+          `INSERT INTO brain_members (principal_id, role, state, added_by, at, claim_key) VALUES (?, ?, 'claimed', ?, ?, ?)
+           ON CONFLICT(principal_id) DO NOTHING RETURNING principal_id`,
+          principalId,
+          role,
+          actor,
+          now,
+          key,
+        )
+        .toArray().length;
+      if (claimMember(matched).tag !== "applied") {
+        console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
+        return { ok: false, code: "replay" };
+      }
+      return {
+        ok: true,
+        at: now,
+        inserted: true,
+        previousAt: null,
+        previousState: "claimed",
+        key,
+        previousKey: null,
+        previousRole: null,
+        inflightState: "claimed",
+        pendingRole: null,
+        pendingAt: null,
+      };
+    }
+    const previousAt = Number(row?.at);
+    const matched = this.sql
+      .exec(
+        `UPDATE brain_members SET claim_key = ?, pending_role = ?, pending_at = ?
+         WHERE principal_id = ? AND state = ? AND at = ? AND pending_role IS NULL
+         RETURNING principal_id`,
+        key,
+        role,
+        now,
+        principalId,
+        from.tag,
+        previousAt,
+      )
+      .toArray().length;
+    if (claimMember(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
+      return { ok: false, code: "replay" };
+    }
+    return {
+      ok: true,
+      at: previousAt,
+      inserted: false,
+      previousAt,
+      previousState: from.tag,
+      key,
+      previousKey,
+      previousRole: (row?.role ?? null) as BrainRole | null,
+      inflightState: from.tag,
+      pendingRole: role,
+      pendingAt: now,
+    };
+  }
+
+  brainMemberRead(principalId: string): {
+    role: BrainRole;
+    state: string;
+    changeId: string | null;
+    claimKey: string | null;
+    addedBy: string;
+    at: number;
+    pendingRole: BrainRole | null;
+    pendingAt: number | null;
+  } | null {
+    this.ensureMemberClaimColumns();
+    const row = this.sql
+      .exec(
+        "SELECT role, state, change_id, claim_key, added_by FROM brain_members WHERE principal_id = ?",
+        principalId,
+      )
+      .toArray()[0];
+    if (!row) return null;
+    const pending = this.sql
+      .exec(
+        "SELECT at, pending_role, pending_at FROM brain_members WHERE principal_id = ?",
+        principalId,
+      )
+      .toArray()[0];
+    return {
+      role: row.role as BrainRole,
+      state: String(row.state),
+      changeId: row.change_id === null || row.change_id === undefined ? null : String(row.change_id),
+      claimKey: row.claim_key === null || row.claim_key === undefined ? null : String(row.claim_key),
+      addedBy: String(row.added_by),
+      at: Number(pending?.at),
+      pendingRole:
+        pending?.pending_role === null || pending?.pending_role === undefined
+          ? null
+          : (String(pending.pending_role) as BrainRole),
+      pendingAt:
+        pending?.pending_at === null || pending?.pending_at === undefined ? null : Number(pending.pending_at),
+    };
+  }
+
+  /**
+   * Remove one claim. A first-time row is deleted only while it is still claimed or pending.
+   * Any other row with no pending role is left as it is. A missing id deletes nothing.
+   */
+  brainMemberDropClaim(
+    principalId: string,
+    key: string | null,
+    previousState: string,
+  ): { ok: true } | { ok: false; code: "state_unreadable" } {
+    if (!key) return { ok: false, code: "state_unreadable" };
+    this.ensureMemberClaimColumns();
+    const cleared = this.sql
+      .exec(
+        `UPDATE brain_members SET pending_role = NULL, pending_at = NULL, claim_key = NULL
+         WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL
+         RETURNING principal_id`,
+        principalId,
+        key,
+      )
+      .toArray().length;
+    if (cleared === 1) return { ok: true };
+    const matched = this.sql
+      .exec(
+        `DELETE FROM brain_members
+         WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state IN ('claimed', 'pending')
+         RETURNING principal_id`,
+        principalId,
+        key,
+      )
+      .toArray().length;
+    if (matched === 1) return { ok: true };
+    const kept = this.sql
+      .exec(
+        `SELECT principal_id FROM brain_members
+         WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL`,
+        principalId,
+        key,
+      )
+      .toArray().length;
+    if (kept === 1) {
+      console.warn(JSON.stringify({ at: "brain_member", principalId, claimKey: key }));
+      return { ok: true };
+    }
+    void previousState;
+    return { ok: false, code: "state_unreadable" };
+  }
+
+  /**
+   * Write the finished role for one proposal. `at` keeps the in-flight finish on the claim that
+   * was just noted. A later read passes null and matches the proposal id alone. Already finished
+   * is a success and does not log again.
+   */
+  brainMemberFinishProposal(
+    principalId: string,
+    role: BrainRole,
+    state: "active" | "pending",
+    actor: string,
+    now: number,
+    changeId: string,
+    at: number | null,
+    key: string,
+    previousState: string,
+  ): { ok: true; state: "active" | "pending" } | { ok: false; code: "mismatch"; changeId: string } {
+    const row = this.brainMemberRead(principalId);
+    if (row && row.claimKey === key && row.role === role && row.state === state && row.pendingRole == null) {
+      return { ok: true, state };
+    }
+    // An existing grant stays put while the proposal is still pending. pending_role is the claim.
+    if (state === "pending" && row?.pendingRole && row.claimKey === key) {
+      return { ok: true, state: "pending" };
+    }
+    // Already applied. A later finish does not take the caller's role.
+    if (row && row.claimKey === key && row.pendingRole == null && row.state === state && state !== "pending") {
+      return { ok: true, state };
+    }
+    const stored = row?.pendingRole ?? null;
+    if (
+      row &&
+      row.pendingRole == null &&
+      row.claimKey == null &&
+      row.state === state &&
+      row.role === (stored ?? row.role)
+    ) {
+      console.warn(JSON.stringify({ at: "brain_member", principalId, claimKey: key, changeId }));
+      return { ok: true, state };
+    }
+    const matched = stored
+      ? at === null
+        ? this.sql
+            .exec(
+              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL, claim_key = NULL
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND state = ?
+               RETURNING principal_id`,
+              state,
+              actor,
+              now,
+              changeId,
+              principalId,
+              key,
+              previousState,
+            )
+            .toArray().length
+        : this.sql
+            .exec(
+              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL, claim_key = NULL
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND state = ? AND at = ?
+               RETURNING principal_id`,
+              state,
+              actor,
+              now,
+              changeId,
+              principalId,
+              key,
+              previousState,
+              at,
+            )
+            .toArray().length
+      : at === null
+        ? this.sql
+            .exec(
+              `UPDATE brain_members SET state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state = ? RETURNING principal_id`,
+              state,
+              actor,
+              now,
+              changeId,
+              principalId,
+              key,
+              previousState,
+            )
+            .toArray().length
+        : this.sql
+            .exec(
+              `UPDATE brain_members SET state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state = ? AND at = ? RETURNING principal_id`,
+              state,
+              actor,
+              now,
+              changeId,
+              principalId,
+              key,
+              previousState,
+              at,
+            )
+            .toArray().length;
+    if (matched !== 1) {
+      const again = this.brainMemberRead(principalId);
+      if (
+        again &&
+        again.pendingRole == null &&
+        again.claimKey == null &&
+        again.state === state &&
+        again.role === (stored ?? again.role)
+      ) {
+        console.warn(JSON.stringify({ at: "brain_member", principalId, claimKey: key, changeId }));
+        return { ok: true, state };
+      }
+      if (
+        again &&
+        again.claimKey === key &&
+        again.state === state &&
+        (again.role === role || again.role === stored)
+      ) {
+        return { ok: true, state };
+      }
+      console.warn(
+        JSON.stringify({
+          at: "brain_member",
+          reason: "mismatch",
+          principalId,
+          changeId,
+          from: row?.state ?? "absent",
+        }),
+      );
+      return { ok: false, code: "mismatch", changeId };
+    }
+    this.wikiLogAppend(actor, "brain.member", { principalId, role: stored ?? row?.role ?? role, state }, now);
+    return { ok: true, state };
+  }
+
+  brainMemberFinish(
+    principalId: string,
+    role: BrainRole,
+    state: "active" | "pending",
+    actor: string,
+    now: number,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true; state: "active" | "pending" } | { ok: false; code: string } {
+    this.ensureMemberClaimColumns();
+    const row = this.sql
+      .exec("SELECT role, pending_role FROM brain_members WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    const stored =
+      row?.pending_role === null || row?.pending_role === undefined ? null : String(row.pending_role);
+    const matched = stored
+      ? this.sql
+          .exec(
+            `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL, claim_key = NULL
+             WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND at = ?
+             RETURNING principal_id`,
+            state,
+            actor,
+            now,
+            principalId,
+            hold.key,
+            hold.at,
+          )
+          .toArray().length
+      : this.sql
+          .exec(
+            `UPDATE brain_members SET state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL${hold.inserted ? "" : ", claim_key = NULL"}
+             WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND at = ?
+             RETURNING principal_id`,
+            state,
+            actor,
+            now,
+            principalId,
+            hold.key,
+            hold.at,
+          )
+          .toArray().length;
+    if (claimMember(matched).tag !== "applied") {
+      console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
+      return { ok: false, code: "replay" };
+    }
+    this.wikiLogAppend(actor, "brain.member", { principalId, role: stored ?? row?.role ?? role, state }, now);
+    return { ok: true, state };
+  }
+
+  brainMemberNote(
+    principalId: string,
+    changeId: string,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true } | { ok: false; code: "state_unreadable" } {
+    const matched = this.sql
+      .exec(
+        `UPDATE brain_members SET change_id = ?
+         WHERE principal_id = ? AND at = ? AND claim_key = ? RETURNING principal_id`,
+        changeId,
+        principalId,
+        hold.at,
+        hold.key,
+      )
+      .toArray().length;
+    return matched === 1 ? { ok: true } : { ok: false, code: "state_unreadable" };
+  }
+
+  brainMemberRelease(
+    principalId: string,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true } | { ok: false; code: "state_unreadable" } {
+    if (!hold.key || !hold.previousState) return { ok: false, code: "state_unreadable" };
+    this.ensureMemberClaimColumns();
+    const matched = hold.inserted
+      ? this.sql
+          .exec(
+            `DELETE FROM brain_members
+             WHERE principal_id = ? AND claim_key = ? AND state = ? AND pending_role IS NULL
+             RETURNING principal_id`,
+            principalId,
+            hold.key,
+            hold.previousState,
+          )
+          .toArray().length
+      : this.sql
+          .exec(
+            `UPDATE brain_members SET claim_key = ?, pending_role = NULL, pending_at = NULL
+             WHERE principal_id = ? AND claim_key = ? AND state = ? AND at = ?
+               AND pending_role IS ? AND pending_at IS ?
+             RETURNING principal_id`,
+            hold.previousKey,
+            principalId,
+            hold.key,
+            hold.inflightState ?? hold.previousState,
+            hold.at,
+            hold.pendingRole ?? null,
+            hold.pendingAt ?? null,
+          )
+          .toArray().length;
+    return matched === 1 ? { ok: true } : { ok: false, code: "state_unreadable" };
   }
 
   brainMemberSet(
@@ -214,17 +738,10 @@ export abstract class BrainBase extends WikiBase {
     state: "active" | "pending",
     actor: string,
     now: number,
-  ): void {
-    this.sql.exec(
-      `INSERT INTO brain_members (principal_id, role, state, added_by, at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(principal_id) DO UPDATE SET role = excluded.role, state = excluded.state, added_by = excluded.added_by, at = excluded.at`,
-      principalId,
-      role,
-      state,
-      actor,
-      now,
-    );
-    this.wikiLogAppend(actor, "brain.member", { principalId, role, state }, now);
+  ): { ok: true; state: "active" | "pending" } | { ok: false; code: string } {
+    const hold = this.brainMemberClaim(principalId, role, actor, now);
+    if (!hold.ok) return { ok: false, code: hold.code };
+    return this.brainMemberFinish(principalId, role, state, actor, now, hold);
   }
 
   brainMemberRemove(principalId: string, actor: string, now: number): boolean {
@@ -470,8 +987,6 @@ export abstract class BrainBase extends WikiBase {
             now - f.retentionDays * DAY,
           )
           .toArray().length;
-    // A page that is gone keeps no values.
-    this.sql.exec("DELETE FROM brain_fields WHERE page_id NOT IN (SELECT id FROM wiki_pages)");
     return n;
   }
 
@@ -553,7 +1068,10 @@ export abstract class BrainBase extends WikiBase {
    * Writes the journal page of one UTC day. Counts and `[[page]]` links only: no titles, no text, no
    * actor. A day with nothing in the log has no page. Deterministic: the same log gives the same page.
    */
-  brainJournalRun(date: string, now: number): { pageId: string | null; created: boolean } {
+  brainJournalRun(
+    date: string,
+    now: number,
+  ): { pageId: string | null; created: boolean } | BrainFail {
     if (!isCalendarDay(date)) return { pageId: null, created: false };
     const start = Date.parse(`${date}T00:00:00Z`);
     const rows = this.sql
@@ -634,14 +1152,15 @@ export abstract class BrainBase extends WikiBase {
     if (linked.length) lines.push("", "## Pages changed", ...linked.map((id) => `- [[${id}]]`));
     const id = `journal-${date}`;
     const existed = this.pageById(id) !== null;
-    this.savePage(
+    const saved = this.savePage(
       { id, type: "journal", title: `Journal ${date}`, markdown: lines.join("\n") },
       SERVICE,
       null,
       now,
     );
-    if (!existed) this.wikiLogAppend(SERVICE, "journal.written", { date }, now);
-    return { pageId: id, created: !existed };
+    if (!saved.ok) return { ok: false, code: saved.code, message: saved.message };
+    if (!existed && saved.wrote) this.wikiLogAppend(SERVICE, "journal.written", { date }, now);
+    return { pageId: id, created: !existed && saved.wrote };
   }
 
   /** The nightly work: yesterday's journal (and any day missed in the last week) and field retention. */
@@ -651,11 +1170,33 @@ export abstract class BrainBase extends WikiBase {
     const through = this.metaGet("brain_journal_through");
     let day = through ? Date.parse(`${through}T00:00:00Z`) + DAY : now - DAY * MAX_LOOKBACK_DAYS;
     day = Math.max(day, now - DAY * MAX_LOOKBACK_DAYS);
-    while (isoDay(day) <= yesterday) {
-      this.brainJournalRun(isoDay(day), now);
-      day += DAY;
+    let cursor = through;
+    try {
+      while (isoDay(day) <= yesterday) {
+        const date = isoDay(day);
+        const ran = this.brainJournalRun(date, now);
+        if ("ok" in ran && !ran.ok) {
+          if (ran.code !== "archived") break;
+          this.wikiLogAppend(
+            SERVICE,
+            "journal.skipped",
+            {
+              reason: "archived",
+              brainId: this.metaGet("scope_id") ?? "",
+              pageId: `journal-${date}`,
+              day: date,
+            },
+            now,
+          );
+        }
+        cursor = date;
+        day += DAY;
+      }
+    } catch (err) {
+      if (cursor && cursor !== through) this.metaSet("brain_journal_through", cursor);
+      throw err;
     }
-    this.metaSet("brain_journal_through", yesterday);
+    if (cursor) this.metaSet("brain_journal_through", cursor);
     this.brainPurgeFields(now);
   }
 
@@ -711,6 +1252,217 @@ export abstract class BrainBase extends WikiBase {
     const p = this.pageById(pageId);
     return p ? citationsOf(p.markdown) : [];
   }
+}
+
+export type MemberProposal = {
+  kind: "member_add" | "member_remove";
+  payload: Record<string, unknown>;
+  scopeKey: string;
+  scope: {
+    type: "circle" | "department" | "account";
+    id: string;
+    dept: string | null;
+    label: string;
+    restricted: boolean;
+    nda: boolean;
+    subspace: string | null;
+  };
+  needsSecond: boolean;
+  proposedBy: string;
+  label: string;
+  /** Opaque correlation key minted by the claim. The same key proposes once. */
+  claimKey?: string;
+};
+
+type HttpStatus = 400 | 403 | 404 | 409 | 422;
+
+export type PlaceMember =
+  | { ok: true; status: "applied" | "pending"; changeId: string }
+  | { ok: false; status: HttpStatus; code: string; message?: string; changeId?: string };
+
+/**
+ * Claim the brain member, then propose, then finish the role.
+ * The tenant store and the brain store do not share SQLite, and `propose` already opens
+ * `transactionSync`, so the claim stays outside that transaction. A refused claim never proposes.
+ * A refused proposal releases the claim and does not log.
+ */
+type Proposed =
+  | { ok: true; change: { id: string }; applied: boolean }
+  | { ok: false; status: HttpStatus; code: string; message?: string };
+
+type GovView = { id: string; status: string };
+
+type MemberGov = {
+  propose(a: MemberProposal, now: number): Proposed | Promise<Proposed>;
+  changeByKey(key: string, now: number): GovView | null | Promise<GovView | null>;
+};
+
+type MemberBrain = {
+  brainMemberRead(principalId: string): {
+    role: BrainRole;
+    state: string;
+    changeId: string | null;
+    claimKey: string | null;
+    addedBy: string;
+    at?: number;
+    pendingRole?: BrainRole | null;
+    pendingAt?: number | null;
+  } | null | Promise<{
+    role: BrainRole;
+    state: string;
+    changeId: string | null;
+    claimKey: string | null;
+    addedBy: string;
+    at?: number;
+    pendingRole?: BrainRole | null;
+    pendingAt?: number | null;
+  } | null>;
+  brainMemberDropClaim(
+    principalId: string,
+    key: string | null,
+    previousState: string,
+  ): { ok: true } | { ok: false; code: "state_unreadable" } | Promise<{ ok: true } | { ok: false; code: "state_unreadable" }>;
+  brainMemberClaim(
+    principalId: string,
+    role: BrainRole,
+    actor: string,
+    now: number,
+  ): MemberHold | Promise<MemberHold>;
+  brainMemberFinishProposal(
+    principalId: string,
+    role: BrainRole,
+    state: "active" | "pending",
+    actor: string,
+    now: number,
+    changeId: string,
+    at: number | null,
+    key: string,
+    previousState: string,
+  ):
+    | { ok: true; state: "active" | "pending" }
+    | { ok: false; code: "mismatch"; changeId: string }
+    | Promise<
+        | { ok: true; state: "active" | "pending" }
+        | { ok: false; code: "mismatch"; changeId: string }
+      >;
+  brainMemberNote(
+    principalId: string,
+    changeId: string,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
+  brainMemberRelease(
+    principalId: string,
+    hold: Extract<MemberHold, { ok: true }>,
+  ): { ok: true } | { ok: false; code: string } | Promise<{ ok: true } | { ok: false; code: string }>;
+};
+
+/** Look up the claim key. Pending or not-yet-proposed leaves the row. Applied finishes it. */
+export async function reconcileBrainMember(
+  gov: { changeByKey(key: string, now: number): GovView | null | Promise<GovView | null> },
+  brain: MemberBrain,
+  principalId: string,
+  now: number,
+): Promise<void> {
+  const row = await Promise.resolve(brain.brainMemberRead(principalId));
+  if (!row || !row.claimKey) return;
+  const pendingRole = row.pendingRole ?? null;
+  const inFlightExisting = pendingRole != null;
+  const inFlightFirst = row.state === "claimed" && pendingRole == null;
+  const waiting = row.state === "pending" && pendingRole == null;
+  if (!inFlightExisting && !inFlightFirst && !waiting) return;
+  const change = await Promise.resolve(gov.changeByKey(row.claimKey, now));
+  if (!change) {
+    if (!inFlightExisting && !inFlightFirst) return;
+    const claimAt = inFlightExisting ? (row.pendingAt ?? null) : (row.at ?? null);
+    if (claimAt == null || !Number.isFinite(claimAt) || claimAt + CLAIM_LEASE_MS > now) return;
+    await Promise.resolve(brain.brainMemberDropClaim(principalId, row.claimKey, row.state));
+    return;
+  }
+  if (change.status === "pending") return;
+  if (change.status === "applied") {
+    await Promise.resolve(
+      brain.brainMemberFinishProposal(
+        principalId,
+        pendingRole ?? row.role,
+        "active",
+        row.addedBy,
+        now,
+        change.id,
+        null,
+        row.claimKey,
+        row.state,
+      ),
+    );
+    return;
+  }
+  if (change.status === "rejected" || change.status === "expired" || change.status === "withdrawn") {
+    await Promise.resolve(brain.brainMemberDropClaim(principalId, row.claimKey, row.state));
+  }
+}
+
+export async function placeScopedMember(
+  gov: MemberGov,
+  brain: MemberBrain,
+  proposal: MemberProposal,
+  principalId: string,
+  role: BrainRole,
+  actor: string,
+  now: number,
+): Promise<PlaceMember> {
+  await reconcileBrainMember(gov, brain, principalId, now);
+  const open = await Promise.resolve(brain.brainMemberRead(principalId));
+  if (open && grantsMemberRole(open.state) && open.role === role && open.claimKey) {
+    const done = await Promise.resolve(gov.changeByKey(open.claimKey, now));
+    if (done?.status === "applied") return { ok: true, status: "applied", changeId: done.id };
+  }
+  const hold = await Promise.resolve(brain.brainMemberClaim(principalId, role, actor, now));
+  if (!hold.ok) return { ok: false, status: 409, code: hold.code };
+  let made: Proposed;
+  try {
+    made = await Promise.resolve(gov.propose({ ...proposal, claimKey: hold.key }, now));
+  } catch (error) {
+    const lookup = gov.changeByKey;
+    const stored =
+      typeof lookup === "function" ? await Promise.resolve(lookup(hold.key, now)) : null;
+    if (!stored) await Promise.resolve(brain.brainMemberRelease(principalId, hold));
+    throw error;
+  }
+  if (!made.ok) {
+    const released = await Promise.resolve(brain.brainMemberRelease(principalId, hold));
+    if (!released.ok) return { ok: false, status: 409, code: released.code };
+    return { ok: false, status: made.status, code: made.code, message: made.message };
+  }
+  const current = await Promise.resolve(brain.brainMemberRead(principalId));
+  if (!current || current.claimKey !== hold.key) {
+    console.warn(
+      JSON.stringify({
+        at: "brain_member",
+        reason: "illegal_move",
+        principalId,
+        claimKey: hold.key,
+        changeId: made.change.id,
+      }),
+    );
+    return { ok: false, status: 409, code: "mismatch", changeId: made.change.id };
+  }
+  const noted = await Promise.resolve(brain.brainMemberNote(principalId, made.change.id, hold));
+  if (!noted.ok) return { ok: false, status: 409, code: noted.code };
+  const state = made.applied ? "active" : "pending";
+  const set = await Promise.resolve(
+    brain.brainMemberFinishProposal(
+      principalId,
+      role,
+      state,
+      actor,
+      now,
+      made.change.id,
+      hold.at,
+      hold.key,
+      hold.inflightState ?? hold.previousState,
+    ),
+  );
+  if (!set.ok) return { ok: false, status: 409, code: "mismatch", changeId: made.change.id };
+  return { ok: true, status: made.applied ? "applied" : "pending", changeId: made.change.id };
 }
 
 export { DEFAULT_SCHEMA };

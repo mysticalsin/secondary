@@ -2,6 +2,13 @@
 // request per call: no `tools`, no `tool_choice`, so a response can only ever be text. The key comes
 // from the ANTHROPIC_API_KEY secret and is never logged. Timeout and retries are bounded.
 
+import {
+  commitModelCall,
+  type ModelCallEvent,
+  type ModelCallReply,
+  startModelCall,
+} from "../../../../src/state/model-call.ts";
+
 export const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
@@ -9,9 +16,7 @@ export type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
 
 export type ModelUsage = { inputTokens: number; outputTokens: number };
 
-export type ModelReply =
-  | { ok: true; text: string; model: string; usage: ModelUsage }
-  | { ok: false; code: "upstream_error" | "timeout" | "refused" | "truncated" | "empty" };
+export type ModelReply = ModelCallReply;
 
 export interface ModelRequest {
   apiKey: string;
@@ -26,7 +31,6 @@ export interface ModelRequest {
   sleep?: (ms: number) => Promise<void>;
 }
 
-const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 type MessagesBody = {
@@ -48,11 +52,32 @@ export async function callModel(r: ModelRequest): Promise<ModelReply> {
     // Short, bounded answers: low effort keeps thinking from eating the output cap.
     output_config: { effort: "low" },
   });
-  let last: ModelReply = { ok: false, code: "upstream_error" };
-  for (let attempt = 0; attempt <= r.retries; attempt++) {
-    if (attempt > 0) await sleep(250 * 2 ** (attempt - 1));
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  const eventFrom = (data: MessagesBody): ModelCallEvent => {
+    if (data.stop_reason === "refusal") return { type: "refused" };
+    if (data.stop_reason === "max_tokens") return { type: "truncated" };
+    const text = Array.isArray(data.content)
+      ? (data.content as { type?: unknown; text?: unknown }[])
+          .flatMap((b) => (b.type === "text" && typeof b.text === "string" ? [b.text] : []))
+          .join("")
+      : "";
+    if (!text.trim()) return { type: "empty" };
+    return {
+      type: "success",
+      text,
+      model: typeof data.model === "string" ? data.model : r.model,
+      usage: {
+        inputTokens: num(data.usage?.input_tokens),
+        outputTokens: num(data.usage?.output_tokens),
+      },
+    };
+  };
+
+  let state = startModelCall(r.retries);
+  while (state.tag === "calling") {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), r.timeoutMs);
+    let event: ModelCallEvent;
     try {
       const res = await doFetch(ANTHROPIC_URL, {
         method: "POST",
@@ -64,40 +89,25 @@ export async function callModel(r: ModelRequest): Promise<ModelReply> {
         body,
         signal: ctl.signal,
       });
-      if (RETRYABLE.has(res.status)) {
-        last = { ok: false, code: "upstream_error" };
-        continue;
-      }
-      if (!res.ok) return { ok: false, code: "upstream_error" };
-      const data = (await res.json()) as MessagesBody;
-      if (data.stop_reason === "refusal") return { ok: false, code: "refused" };
-      if (data.stop_reason === "max_tokens") return { ok: false, code: "truncated" };
-      const text = Array.isArray(data.content)
-        ? (data.content as { type?: unknown; text?: unknown }[])
-            .flatMap((b) => (b.type === "text" && typeof b.text === "string" ? [b.text] : []))
-            .join("")
-        : "";
-      if (!text.trim()) return { ok: false, code: "empty" };
-      const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-      return {
-        ok: true,
-        text,
-        model: typeof data.model === "string" ? data.model : r.model,
-        usage: {
-          inputTokens: num(data.usage?.input_tokens),
-          outputTokens: num(data.usage?.output_tokens),
-        },
-      };
+      event = res.ok
+        ? eventFrom((await res.json()) as MessagesBody)
+        : { type: "http", status: res.status };
     } catch (e) {
-      last = {
-        ok: false,
-        code: e instanceof Error && e.name === "AbortError" ? "timeout" : "upstream_error",
+      event = {
+        type: e instanceof Error && e.name === "AbortError" ? "timeout" : "transport",
       };
     } finally {
       clearTimeout(timer);
     }
+    const next = commitModelCall(state, event);
+    if (!next.ok) return { ok: false, code: "upstream_error" };
+    if (next.state.tag === "done") return next.state.reply;
+    state = next.state;
+    for (const effect of next.effects) {
+      if (effect.type === "backoff") await sleep(effect.delayMs);
+    }
   }
-  return last;
+  return state.reply;
 }
 
 /** The first JSON object in a model reply, tolerating a code fence or a sentence around it. */

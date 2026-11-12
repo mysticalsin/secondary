@@ -2,6 +2,8 @@
 
 import { roleAllows } from "@secondary/policy";
 import { Hono } from "hono";
+import { publishMode } from "../../../../src/state/import-outcome.ts";
+import { quorumConfirmed } from "../../../../src/state/quorum.ts";
 import { IMPORT_BODY_BYTES } from "../security.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
@@ -84,12 +86,12 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
       const tenant = tenantStub(c.env, s.tenantId);
       const key = `brainfields:${b.scope}:${await sha256Hex(JSON.stringify(parsed.fields))}`;
       const step = await tenant.requestSecond(key, s.principal.id, s.ctx.now, s.principal.email);
-      if (step === "same")
+      if (step.tag === "same_actor")
         return c.json(
           { error: "same_person", reason: "A different person must confirm this change" },
           409,
         );
-      if (step === "first") {
+      if (!quorumConfirmed(step)) {
         await audit(c, {
           action: "brain.fields_request",
           nodeId: b.nodeId,
@@ -302,6 +304,7 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
     )
       return c.json({ error: "audit_unavailable" }, 503);
     const res = await b.stub.brainJournalRun(date, s.ctx.now);
+    if ("ok" in res) return c.json({ error: res.code, reason: res.message }, 409);
     return c.json({ ok: true, pageId: res.pageId, created: res.created });
   });
 
@@ -374,8 +377,8 @@ async function runImport(
       baseRevision: cur?.revision ?? null,
       markdown: verdict.kept,
     };
-    // Direct only in the Personal Brain, for a page the classifier is sure about and that replaces nothing.
-    const publishDirect = b.personal && verdict.verdict === "ingest" && !cur;
+    // Import stays a draft. Publishing is an explicit action, and this path does not take it.
+    const reported = publishMode(false);
     if (dry) {
       pages.push({
         path: d.path,
@@ -386,7 +389,7 @@ async function runImport(
         reason: verdict.reason,
         excluded: verdict.excluded,
         replaces: !!cur,
-        state: publishDirect ? "published" : "draft",
+        state: reported,
       });
       continue;
     }
@@ -407,7 +410,7 @@ async function runImport(
       } satisfies Omit<Proposal, "v" | "pages"> & { pages: PageDraft[] },
       s.principal.id,
       s.ctx.now,
-      { plane: b.plane, readable: [], ...(publishDirect ? { publishDirect: true } : {}) },
+      { plane: b.plane, readable: [] },
     );
     if (!res.ok || !res.created) {
       skipped.push({ path: d.path, reason: res.ok ? res.reason : res.message });
@@ -416,7 +419,7 @@ async function runImport(
     imported.push({
       pageId: d.pageId,
       title: draft.title,
-      state: res.autoAccepted ? "published" : "draft",
+      state: reported,
       proposalId: res.id,
     });
   }

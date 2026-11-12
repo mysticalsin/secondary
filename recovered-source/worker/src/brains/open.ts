@@ -16,15 +16,34 @@ import {
   roleAllows,
   type ViewNode,
 } from "@secondary/policy";
+import { govClient } from "../admin/client.ts";
 import { requireOrg, viewOf } from "../auth.ts";
 import { humanIdsOf } from "../human.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
+import { reconcileBrainMember } from "./store.ts";
 import type { FlagKey } from "../tenant-policy.ts";
 import { type C, NODE_ID, notFound, sess } from "../ux/util.ts";
 import { mayDecide } from "../wiki/review.ts";
 
 const WIKI_NODE_KINDS = new Set(["account", "circle", "department", "core"]);
+
+type RoleBrain = Parameters<typeof reconcileBrainMember>[1] & {
+  brainRoleOf(ids: string[]): BrainRole | null | Promise<BrainRole | null>;
+};
+
+/** Reconcile any open claim, then return the role only an active membership grants. */
+export async function storedBrainRole(c: C, stub: RoleBrain, ids: string[]): Promise<BrainRole | null> {
+  await reconcileStoredMembers(c, stub, ids);
+  return Promise.resolve(stub.brainRoleOf(ids));
+}
+
+/** Make each stored claim match its governance row before a membership read. */
+export async function reconcileStoredMembers(c: C, stub: RoleBrain, ids: string[]): Promise<void> {
+  const s = sess(c);
+  const gov = govClient(c.env, s.tenantId);
+  for (const id of ids.slice(0, 20)) await reconcileBrainMember(gov, stub, id, s.ctx.now);
+}
 
 export type Need = "read" | "contribute" | "edit" | "decide" | "manage";
 
@@ -113,7 +132,7 @@ export async function brainOf(c: C, param: string, humanIds?: string[]): Promise
     stub: workspaceStub(c.env, s.tenantId, scope),
   };
   const ids = humanIds ?? (await humanIdsOf(c.env, s));
-  const role = await b.stub.brainRoleOf(ids);
+  const role = await storedBrainRole(c, b.stub, ids);
   const may = (a: "contribute" | "edit" | "manage_members") =>
     canDoInView(view, s.principal, vn.id, a).allowed && roleAllows(role, a);
   return {
@@ -175,5 +194,5 @@ export async function directPublish(
   const facts: BrainFacts = { type, restricted: !!w.vn?.restricted, nda: !!w.vn?.nda };
   if (effectivePublication(facts, cfg.publication) !== "direct") return false;
   if (w.personal) return true;
-  return roleAllows(await w.stub.brainRoleOf(await humanIdsOf(c.env, sess(c))), "edit");
+  return roleAllows(await storedBrainRole(c, w.stub, await humanIdsOf(c.env, sess(c))), "edit");
 }
