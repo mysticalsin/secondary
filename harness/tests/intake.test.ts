@@ -71,6 +71,45 @@ function walk(dir: string): string[] {
   return out;
 }
 
+type ReconstructedEntry = {
+  path: string;
+  sourceCommit: string;
+  sourceBlob: string;
+  n: number;
+  sha256: string;
+  byteEdits: { before: string; after: string }[];
+};
+
+type ReconstructedManifest = { files: ReconstructedEntry[] };
+
+const UNLISTED_RECOVERED = "recovered-source/worker/src/__unlisted__.ts";
+
+function loadReconstructed(): ReconstructedManifest {
+  return JSON.parse(readFileSync(path.join(root, "reconstructed-manifest.json"), "utf8")) as ReconstructedManifest;
+}
+
+function recoveredWalk(): string[] {
+  return walk(path.join(root, "recovered-source")).map((full) =>
+    path.relative(root, full).split(path.sep).join("/"),
+  );
+}
+
+function assertRecoveredUnion(
+  present: readonly string[],
+  candidatePaths: readonly string[],
+  reconstructed: ReconstructedManifest,
+): void {
+  const reconstructedPaths = reconstructed.files.map((file) => file.path);
+  const candidate = new Set(candidatePaths);
+  const overlap = reconstructedPaths.filter((rel) => candidate.has(rel));
+  assert.deepEqual(overlap, []);
+  for (const file of reconstructed.files) {
+    assert.equal(sha256(path.join(root, file.path)), file.sha256, file.path);
+  }
+  const union = [...candidatePaths, ...reconstructedPaths];
+  assert.deepEqual([...present].sort(), union.sort());
+}
+
 test("the intake archive and provenance records match the reviewed bytes", () => {
   const archive = path.join(root, "intake/secondary-api-private-source-candidate.tar.gz");
   const archiveBytes = readFileSync(archive);
@@ -109,10 +148,8 @@ test("every recovered file matches the manifest, and nothing else is in recovere
   for (const rel of PATCHED_RECOVERED) assert.equal(expected.has(rel), true, rel);
   assert.equal(bytes, manifest.counts.source_bytes);
 
-  const present = walk(path.join(root, "recovered-source")).map((full) =>
-    path.relative(root, full).split(path.sep).join("/"),
-  );
-  assert.deepEqual(present.sort(), [...expected].sort());
+  const present = recoveredWalk();
+  assertRecoveredUnion(present, [...expected], loadReconstructed());
 });
 
 test("the packages symlink resolves unchanged Worker import paths onto recovered contracts", () => {
@@ -131,12 +168,41 @@ test("the packages symlink resolves unchanged Worker import paths onto recovered
   assert.equal(sha256(fromAudit), sha256(path.join(root, "recovered-source/shared/packages/contracts/src/audit-receipt.ts")));
   assert.equal(sha256(fromAgent), sha256(path.join(root, "recovered-source/shared/packages/contracts/src/agent-ui/schemas.ts")));
 
+  const reconstructed = loadReconstructed();
   const missing = [
-    "packages/contracts/src/agent-ui/index.ts",
-    "packages/contracts/src/view-plan.ts",
-    "recovered-source/worker/src/types.ts",
+    {
+      read: "packages/contracts/src/agent-ui/index.ts",
+      listed: "recovered-source/shared/packages/contracts/src/agent-ui/index.ts",
+    },
+    {
+      read: "packages/contracts/src/view-plan.ts",
+      listed: "recovered-source/shared/packages/contracts/src/view-plan.ts",
+    },
+    {
+      read: "recovered-source/worker/src/types.ts",
+      listed: "recovered-source/worker/src/types.ts",
+    },
   ];
-  for (const rel of missing) {
-    assert.throws(() => readFileSync(path.join(root, rel)), { code: "ENOENT" });
+  for (const item of missing) {
+    const entry = reconstructed.files.find((file) => file.path === item.listed);
+    if (entry) {
+      assert.equal(sha256(path.join(root, item.read)), entry.sha256, item.read);
+    } else {
+      assert.throws(() => readFileSync(path.join(root, item.read)), { code: "ENOENT" });
+    }
   }
+});
+
+test("an unlisted recovered path fails the manifest union", () => {
+  assert.throws(() => readFileSync(path.join(root, UNLISTED_RECOVERED)), { code: "ENOENT" });
+  const manifest = JSON.parse(readFileSync(path.join(root, "candidate-manifest.json"), "utf8")) as {
+    files: { path: string }[];
+  };
+  const reconstructed = loadReconstructed();
+  const present = recoveredWalk();
+  assert.equal(present.includes(UNLISTED_RECOVERED), false);
+  assert.throws(() =>
+    assertRecoveredUnion([...present, UNLISTED_RECOVERED], manifest.files.map((file) => file.path), reconstructed),
+  );
+  assert.throws(() => readFileSync(path.join(root, UNLISTED_RECOVERED)), { code: "ENOENT" });
 });
