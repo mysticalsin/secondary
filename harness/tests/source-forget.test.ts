@@ -95,3 +95,40 @@ test("source forget: a pseudonym that contains the name is written once", async 
   );
   db.close();
 });
+
+test("source forget: an unreadable fact list is removed only when it names the source", async () => {
+  const db = new DatabaseSync(":memory:");
+  const wiki = await openWiki(db);
+  fact(db, "cites", '["src_1"]');
+  fact(db, "keeps", '["src_1","src_9"]', "nope");
+  fact(db, "other", '["src_9"]');
+  fact(db, "quoted", 'not-json "src_1" more');
+  fact(db, "neighbour", 'not-json "src_10"');
+  fact(db, "blank", "{");
+  let thrown: string | null = null;
+  try {
+    wiki.wikiForgetSources(["src_1"], 5);
+    wiki.wikiForgetSources(["src_1"], 6);
+  } catch (e) {
+    thrown = e instanceof Error ? e.message : String(e);
+  }
+  const facts = db
+    .prepare("SELECT subject, source_ids, source_hashes FROM wiki_facts ORDER BY id")
+    .all()
+    .map((row) => ({ ...(row as { subject: string; source_ids: string; source_hashes: string }) }));
+  const logs = db.prepare("SELECT kind FROM wiki_log").all().map((row) => (row as { kind: string }).kind);
+  assert.deepEqual(
+    { thrown, facts, logs },
+    {
+      thrown: null,
+      facts: [
+        { subject: "keeps", source_ids: '["src_9"]', source_hashes: "{}" },
+        { subject: "other", source_ids: '["src_9"]', source_hashes: "{}" },
+        { subject: "neighbour", source_ids: 'not-json "src_10"', source_hashes: "{}" },
+        { subject: "blank", source_ids: "{", source_hashes: "{}" },
+      ],
+      logs: ["sources.forgotten"],
+    },
+  );
+  db.close();
+});
