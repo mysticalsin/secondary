@@ -497,6 +497,15 @@ test("proposal scrub: an invalid body that names the source still scrubs and the
   );
 });
 
+test("proposal scrub: a non-array citation that names only a longer id does not abort", async () => {
+  const body = citation({ titleSources: "src_10" });
+  const out = await scrubCitation(body);
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, body: out.body },
+    { completed: true, sourceDeleted: true, status: "candidate", body },
+  );
+});
+
 test("proposal scrub: a malformed body that names only a longer id stays", async () => {
   const body = `not-json "src_10" KEEP-OTHER`;
   const out = await scrubCitation(body);
