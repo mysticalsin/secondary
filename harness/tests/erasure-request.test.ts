@@ -12,7 +12,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { ROLES, type Org, type OrgNode, type Principal } from "../adapters/policy-entry.ts";
 import { requireFail, requireOk } from "./require-ok.ts";
-import { erasureCalls, installErasureTenant } from "../runtime/fake-erasure-stub.ts";
+import { erasureActors, erasureCalls, erasureTenantIds, installErasureTenant } from "../runtime/fake-erasure-stub.ts";
 import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 import {
   absentErasure,
@@ -1879,3 +1879,655 @@ test("erase route maps a missing or short key to 503 erase_disabled and writes n
     remove();
   }
 });
+
+const SUBJECT_EMAIL = "subject.person@example.invalid";
+const PLANTED_PAGE = "planted-erasure-page-body";
+const CONNECTOR_SECRET = "0123456789abcdef0123456789abcdef";
+
+function acmeOnlyOrg(): Org {
+  const nodes = new Map<string, OrgNode>();
+  nodes.set("acme", {
+    id: "acme",
+    label: "acme",
+    kind: "department",
+    plane: "TEAM_RESTRICTED",
+    parentId: null,
+    childIds: [],
+    dept: "acme",
+    facts: {},
+    leaf: null,
+  });
+  return {
+    tenantId: TENANT,
+    seed: 1,
+    nodes,
+    roots: ["acme"],
+    links: [],
+    roles: new Map(Object.values(ROLES).map((role) => [role.id, role])),
+  };
+}
+
+function directoryLedger(mark: "pending" | "done"): string {
+  return JSON.stringify({
+    order: ["directory"],
+    mark: { directory: mark },
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: ["directory"] },
+  });
+}
+
+function receiptsDoneLedger(): string {
+  return JSON.stringify({
+    order: ["receipts", "directory"],
+    mark: { receipts: "done", directory: "pending" },
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: ["receipts", "directory"] },
+  });
+}
+
+function armStepTrace(trace: string[]): void {
+  const slot = globalThis as { __erasureCalls?: string[] };
+  const calls = slot.__erasureCalls ?? [];
+  slot.__erasureCalls = calls;
+  calls.push = (...items: string[]) => {
+    for (const item of items) {
+      if (item.startsWith("pseudonymise:")) trace.push(`scope:${item.slice("pseudonymise:".length)}`);
+      else if (item.startsWith("wipe:")) trace.push("personal");
+    }
+    return Array.prototype.push.apply(calls, items);
+  };
+}
+
+function storedPlan(file: string): { status: string; order: string[]; mark: Record<string, string> } {
+  const row = readLedger(file);
+  const body = JSON.parse(row?.ledger ?? "{}") as { order?: string[]; mark?: Record<string, string> };
+  return { status: row?.status ?? "", order: body.order ?? [], mark: body.mark ?? {} };
+}
+
+async function openAppendCase(
+  file: string,
+  trace: string[],
+  mark: "pending" | "done" | "absent",
+): Promise<{ org: Org; plan: string[] }> {
+  await openPolicy(file, {
+    afterSql(query) {
+      if (query.includes("INSERT INTO erasure_tombstones")) trace.push("tombstone");
+      if (query.startsWith("DELETE FROM principals")) trace.push("directory");
+    },
+  });
+  armStepTrace(trace);
+  const db = openSqlite(file);
+  db.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, SUBJECT_EMAIL);
+  db.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'note', ?, '', ?, 1)").run(
+    SUBJECT,
+    PLANTED_PAGE,
+  );
+  db.close();
+  if (mark !== "absent") putLedger(file, "requested", directoryLedger(mark));
+  const org = acmeOnlyOrg();
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    companyScopes: (org: Org) => string[];
+  };
+  return { org, plan: erasurePlan(rights.companyScopes(org)) };
+}
+
+function recordPostedTenant(
+  posted: string[] | undefined,
+  body: unknown,
+  field: "tenant" | "tenantId",
+): void {
+  if (!posted || typeof body !== "string") return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== "object") return;
+  const value = (parsed as Record<string, unknown>)[field];
+  if (typeof value === "string") posted.push(value);
+}
+
+async function eraseRoute(
+  org: Org,
+  trace: string[],
+  posted?: string[],
+): Promise<{
+  post: (who: Principal, at: number, env: Record<string, unknown>) => Promise<Response>;
+}> {
+  const mod = (await import(workerModule("ops-admin.ts"))) as {
+    opsAdminRoutes: (deps: { now?: () => number }) => Hono;
+  };
+  let clock = NOW;
+  let who = admin("ada", "ada@example.invalid");
+  const app = new Hono<{ Variables: { requestId: string; session: unknown } }>();
+  app.use("*", async (c, next) => {
+    c.set("requestId", "r1");
+    c.set("session", { principal: who, ctx: { now: clock }, tenantId: TENANT, org });
+    await next();
+  });
+  app.route("/v1/admin", mod.opsAdminRoutes({ now: () => clock }));
+  return {
+    post: async (person, at, env) => {
+      who = person;
+      clock = at;
+      return app.request(
+        "https://api.invalid/v1/admin/rights/erase",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ principal: SUBJECT }),
+        },
+        {
+          ...env,
+          AUDIT: {
+            fetch: async (url: string, init?: { body?: unknown }) => {
+              if (String(url).includes("/pseudonymise")) trace.push("receipts");
+              if (String(url).includes("/pseudonymise")) {
+                recordPostedTenant(posted, init?.body, "tenant");
+                return new Response(JSON.stringify({ rewritten: 1 }), { status: 200 });
+              }
+              return new Response(null, { status: 202 });
+            },
+          },
+        },
+      );
+    },
+  };
+}
+
+function keyedEnv(connector: boolean, trace: string[], posted?: string[]): Record<string, unknown> {
+  if (!connector) return { PSEUDONYM_KEY };
+  return {
+    PSEUDONYM_KEY,
+    CONNECTOR_HMAC_KEY: CONNECTOR_SECRET,
+    CONNECTOR: {
+      fetch: async (_url: string, init?: { body?: unknown }) => {
+        trace.push("connector");
+        recordPostedTenant(posted, init?.body, "tenantId");
+        return new Response(null, { status: 200 });
+      },
+    },
+  };
+}
+
+test("erasure append T1: a refused no-key erase then a keyed erase stores the canonical plan", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "pending");
+    const before = readLedger(file);
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    const afterRefusal = readLedger(file);
+    assert.equal(refused.status, 503);
+    assert.deepEqual(await refused.json(), { error: "erase_disabled" });
+    assert.equal(afterRefusal?.status, before?.status);
+    assert.equal(afterRefusal?.ledger, before?.ledger);
+    const first = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false, trace));
+    assert.equal(first.status, 202);
+    trace.length = 0;
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false, trace));
+    const failed = storedPlan(file);
+    assert.equal(second.status, 502);
+    assert.deepEqual(failed.order, plan);
+    assert.equal(failed.status, "partial_failed");
+    assert.equal(plan[0], "receipts");
+    assert.equal(plan.at(-1), "directory");
+    trace.length = 0;
+    const retry = await post(admin("ada", "ada@example.invalid"), NOW + 3, keyedEnv(true, trace));
+    const done = storedPlan(file);
+    assert.equal(retry.status, 200);
+    assert.equal(done.status, "completed");
+    assert.deepEqual(done.order, plan);
+    assert.deepEqual(trace, ["connector", "directory"]);
+    for (const step of ["receipts", "tombstone", "scope:acme", "personal"] as const)
+      assert.equal(done.mark[step], "done");
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T1b: receipts is the first step that runs", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org } = await openAppendCase(file, trace, "pending");
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    assert.equal(refused.status, 503);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false, trace));
+    assert.equal(ran.status, 502);
+    assert.equal(trace[0], "receipts");
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T2: every step returning true stores the canonical plan and completes", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "pending");
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    assert.equal(refused.status, 503);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(true, trace));
+    assert.equal(pending.status, 202);
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    assert.deepEqual(stored.order, plan);
+    assert.equal(stored.status, "completed");
+    assert.equal(ran.status, 200);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T3: a done step is kept and is not run again", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "done");
+    const { post } = await eraseRoute(org, trace);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 1, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    const rest = plan.filter((id) => id !== "directory");
+    assert.equal(ran.status, 200);
+    assert.equal(stored.status, "completed");
+    assert.equal(stored.mark.directory, "done");
+    assert.equal(trace.includes("directory"), false);
+    assert.deepEqual(trace, rest);
+    assert.deepEqual(stored.order, ["directory", ...rest]);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T3b: a done receipts step stays first and directory runs last", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "absent");
+    putLedger(file, "requested", receiptsDoneLedger());
+    const { post } = await eraseRoute(org, trace);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 1, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    const rest = plan.filter((id) => id !== "receipts");
+    assert.equal(ran.status, 200);
+    assert.equal(stored.status, "completed");
+    assert.equal(stored.mark.receipts, "done");
+    assert.equal(trace.includes("receipts"), false);
+    assert.deepEqual(stored.order, ["receipts", ...rest]);
+    assert.equal(stored.order.at(-1), "directory");
+    assert.deepEqual(trace, rest);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T4: a re-plan log names steps and states and omits the key, email, and content", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const lines: string[] = [];
+  const warn = console.warn;
+  const log = console.log;
+  const error = console.error;
+  const take = (...args: unknown[]) => {
+    lines.push(args.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).join(" "));
+  };
+  console.warn = take;
+  console.log = take;
+  console.error = take;
+  try {
+    const { org } = await openAppendCase(file, trace, "pending");
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    assert.equal(refused.status, 503);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    lines.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false, trace));
+    assert.equal(ran.status, 502);
+    const text = `${lines.join("\n")}\n${trace.join("\n")}`;
+    assert.equal(text.includes(PSEUDONYM_KEY), false);
+    assert.equal(text.includes(SUBJECT_EMAIL), false);
+    assert.equal(text.includes(PLANTED_PAGE), false);
+    assert.equal(trace[0], "receipts");
+  } finally {
+    console.warn = warn;
+    console.log = log;
+    console.error = error;
+    remove();
+  }
+});
+
+test("erasure append T5: an absent subject stores the canonical plan with directory last", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "absent");
+    assert.equal(readLedger(file), undefined);
+    const { post } = await eraseRoute(org, trace);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(false, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 1, keyedEnv(false, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 502);
+    assert.equal(stored.status, "partial_failed");
+    assert.deepEqual(stored.order, plan);
+    assert.equal(stored.order.at(-1), "directory");
+    assert.equal(trace[0], "receipts");
+    assert.equal(trace.includes("directory"), false);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T010: a pending scope the current plan omits stays and runs, and directory is last", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const kept = erasurePlan(["acme", "beta"]);
+  try {
+    const { org } = await openAppendCase(file, trace, "absent");
+    const mark = Object.fromEntries(kept.map((id) => [id, "pending"]));
+    putLedger(
+      file,
+      "requested",
+      JSON.stringify({
+        order: kept,
+        mark,
+        grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: kept },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 200);
+    assert.equal(stored.status, "completed");
+    assert.deepEqual(stored.order, kept);
+    assert.deepEqual(trace, kept);
+    assert.equal(stored.order.at(-1), "directory");
+    assert.equal(trace.includes("scope:beta"), true);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T012: a kept step runs only for this principal and this tenant; this store cannot hold a second tenant", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const otherId = "other-subject";
+  const otherPage = "other-subject-page-body";
+  const otherTenantId = "tenant-b";
+  const kept = erasurePlan(["acme", "beta"]);
+  try {
+    const { org } = await openAppendCase(file, trace, "absent");
+    const session = openSqlite(file);
+    session.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(otherId, "other.person@example.invalid");
+    session.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (2, 'note', ?, '', ?, 1)").run(
+      otherId,
+      otherPage,
+    );
+    const otherOrder = ["personal", "scope:beta", "directory"];
+    session
+      .prepare(
+        "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 5)",
+      )
+      .run(
+        otherId,
+        JSON.stringify({
+          order: otherOrder,
+          mark: Object.fromEntries(otherOrder.map((id) => [id, "pending"])),
+          grant: {
+            subject: otherId,
+            requester: "ada",
+            confirmer: "bea",
+            steps: [...new Set([...erasurePlan(["acme"]), ...otherOrder])],
+          },
+        }),
+      );
+    session.close();
+    const beforeDb = openSqlite(file);
+    const otherLedgerBefore = beforeDb
+      .prepare("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?")
+      .get(otherId) as { status: string; ledger: string };
+    beforeDb.close();
+    putLedger(
+      file,
+      "requested",
+      JSON.stringify({
+        order: kept,
+        mark: Object.fromEntries(kept.map((id) => [id, "pending"])),
+        grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: kept },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    assert.equal(ran.status, 200);
+    const beta = erasureActors().filter((actor) => actor.op === "pseudonymise" && actor.scope === "beta");
+    assert.deepEqual(
+      beta.map((actor) => ({ tenantId: actor.tenantId, principalId: actor.principalId })),
+      [{ tenantId: TENANT, principalId: SUBJECT }],
+    );
+    assert.equal(
+      erasureActors().some((actor) => actor.principalId === otherId || actor.tenantId === otherTenantId),
+      false,
+    );
+    const left = openSqlite(file);
+    const otherPrincipal = left.prepare("SELECT id FROM principals WHERE id = ?").get(otherId);
+    const otherJournal = left.prepare("SELECT c FROM security_journal WHERE a = ?").get(otherId) as { c: string };
+    const otherLedger = left
+      .prepare("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?")
+      .get(otherId) as { status: string; ledger: string };
+    const otherStamp = left
+      .prepare("SELECT ledger, updated_at FROM erasure_requests WHERE principal_id = ?")
+      .get(otherId) as { ledger: string; updated_at: number };
+    left.close();
+    assert.equal((otherPrincipal as { id: string } | undefined)?.id, otherId);
+    assert.equal(otherJournal.c, otherPage);
+    assert.deepEqual(otherLedger, otherLedgerBefore);
+    assert.equal(otherStamp.updated_at, 5);
+    assert.equal(otherStamp.ledger, otherLedgerBefore.ledger);
+    assert.deepEqual(
+      (JSON.parse(otherStamp.ledger) as { order: string[] }).order,
+      (JSON.parse(otherLedgerBefore.ledger) as { order: string[] }).order,
+    );
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T013: a failed scope the current plan omits is retried before the erase completes", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const kept = erasurePlan(["acme", "beta"]);
+  const mark = Object.fromEntries(kept.map((id) => [id, "pending"]));
+  mark["scope:beta"] = "failed";
+  try {
+    const { org } = await openAppendCase(file, trace, "absent");
+    putLedger(
+      file,
+      "partial_failed",
+      JSON.stringify({
+        order: kept,
+        mark,
+        grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: kept },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 200);
+    assert.deepEqual(stored.order, kept);
+    assert.equal(trace.includes("scope:beta"), true);
+    assert.equal(stored.mark["scope:beta"], "done");
+    assert.equal(stored.status, "completed");
+    assert.equal(stored.order.at(-1), "directory");
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T016: a pending scope reshuffles before personal and the full order is pinned", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const storedOrder = ["personal", "scope:x", "directory"];
+  const expected = ["receipts", "tombstone", "scope:acme", "scope:x", "personal", "connector", "directory"];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "absent");
+    const mark = Object.fromEntries(storedOrder.map((id) => [id, "pending"]));
+    putLedger(
+      file,
+      "requested",
+      JSON.stringify({
+        order: storedOrder,
+        mark,
+        grant: {
+          subject: SUBJECT,
+          requester: "ada",
+          confirmer: "bea",
+          steps: [...new Set([...plan, ...storedOrder])],
+        },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 200);
+    assert.deepEqual(stored.order, expected);
+    assert.deepEqual(trace, expected);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T017: an erase of tenant-a leaves tenant-b's store unchanged and every resolver call names tenant-a", async () => {
+  const storeA = tempFile();
+  const storeB = tempFile();
+  const trace: string[] = [];
+  const otherTenant = "tenant-b";
+  const plan = erasurePlan(["acme"]);
+  const kept = JSON.stringify({
+    order: plan,
+    mark: Object.fromEntries(plan.map((id) => [id, "pending"])),
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: plan },
+  });
+  const otherLedger = JSON.stringify({
+    order: ["directory"],
+    mark: { directory: "pending" },
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: [...plan, "directory"] },
+  });
+  try {
+    const policyA = await openPolicy(storeA.file, {
+      afterSql(query) {
+        if (query.includes("INSERT INTO erasure_tombstones")) trace.push("tombstone");
+        if (query.startsWith("DELETE FROM principals")) trace.push("directory");
+      },
+    });
+    armStepTrace(trace);
+    const seedA = openSqlite(storeA.file);
+    seedA.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, SUBJECT_EMAIL);
+    seedA.close();
+    putLedger(storeA.file, "requested", kept);
+    const policyB = await openPolicy(storeB.file);
+    const seedB = openSqlite(storeB.file);
+    seedB.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, "b-only@example.invalid");
+    seedB
+      .prepare(
+        "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, 'b-stone', ?, 4, 8)",
+      )
+      .run(SUBJECT, JSON.stringify(["b-only@example.invalid"]));
+    seedB
+      .prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (3, 'note', ?, 'b-field', 'b-journal', 1)")
+      .run(SUBJECT);
+    seedB
+      .prepare(
+        "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 9)",
+      )
+      .run(SUBJECT, otherLedger);
+    seedB.close();
+    installErasureTenant(policyA, TENANT);
+    installErasureTenant(policyB, otherTenant);
+    const before = erasureTable(storeB.file);
+    const beforeStore = tenantStore(storeB.file);
+    const posted: string[] = [];
+    const { post } = await eraseRoute(acmeOnlyOrg(), trace, posted);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace, posted));
+    const after = erasureTable(storeB.file);
+    const afterStore = tenantStore(storeB.file);
+    assert.equal(ran.status, 200);
+    assert.deepEqual(after, before);
+    assert.equal(after[0]?.ledger, before[0]?.ledger);
+    assert.equal(after[0]?.updated_at, before[0]?.updated_at);
+    assert.equal(after[0]?.updated_at, 9);
+    assert.equal(beforeStore.principals.length, 1);
+    assert.equal(beforeStore.principals[0]?.email, "b-only@example.invalid");
+    assert.equal(beforeStore.tombstones.length, 1);
+    assert.equal(beforeStore.tombstones[0]?.pseudonym, "b-stone");
+    assert.equal(beforeStore.journal.length, 1);
+    assert.equal(beforeStore.journal[0]?.c, "b-journal");
+    assert.deepEqual(afterStore, beforeStore);
+    assert.equal(erasureTenantIds().length > 0, true);
+    assert.equal(
+      erasureTenantIds().every((id) => id === TENANT),
+      true,
+    );
+    assert.equal(posted.length >= 2, true);
+    assert.deepEqual(
+      posted,
+      posted.map(() => TENANT),
+    );
+  } finally {
+    storeA.remove();
+    storeB.remove();
+  }
+});
+
+function tenantStore(file: string): {
+  requests: Record<string, unknown>[];
+  principals: Record<string, unknown>[];
+  tombstones: Record<string, unknown>[];
+  journal: Record<string, unknown>[];
+} {
+  const db = openSqlite(file);
+  const snap = {
+    requests: rowsOf(
+      db,
+      "SELECT principal_id, status, ledger, updated_at FROM erasure_requests ORDER BY principal_id",
+    ),
+    principals: rowsOf(db, "SELECT id, email FROM principals ORDER BY id"),
+    tombstones: rowsOf(
+      db,
+      "SELECT principal_id, pseudonym, aliases, erased_at, expires_at FROM erasure_tombstones ORDER BY principal_id",
+    ),
+    journal: rowsOf(db, "SELECT seq, at, kind, a, b, c, v FROM security_journal ORDER BY seq"),
+  };
+  db.close();
+  return snap;
+}
+
+function erasureTable(file: string): { principal_id: string; status: string; ledger: string; updated_at: number }[] {
+  const db = openSqlite(file);
+  const rows = db
+    .prepare(
+      "SELECT principal_id, status, ledger, updated_at FROM erasure_requests ORDER BY principal_id",
+    )
+    .all() as { principal_id: string; status: string; ledger: string; updated_at: number }[];
+  db.close();
+  return rows.map((row) => ({
+    principal_id: row.principal_id,
+    status: row.status,
+    ledger: row.ledger,
+    updated_at: row.updated_at,
+  }));
+}
