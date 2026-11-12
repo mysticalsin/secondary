@@ -2353,3 +2353,36 @@ test("erasure append T013: a failed scope the current plan omits is retried befo
     remove();
   }
 });
+
+test("erasure append T016: a pending scope reshuffles before personal and the full order is pinned", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const storedOrder = ["personal", "scope:x", "directory"];
+  const expected = ["receipts", "tombstone", "scope:acme", "scope:x", "personal", "connector", "directory"];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "absent");
+    const mark = Object.fromEntries(storedOrder.map((id) => [id, "pending"]));
+    putLedger(
+      file,
+      "requested",
+      JSON.stringify({
+        order: storedOrder,
+        mark,
+        grant: {
+          subject: SUBJECT,
+          requester: "ada",
+          confirmer: "bea",
+          steps: [...new Set([...plan, ...storedOrder])],
+        },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 200);
+    assert.deepEqual(stored.order, expected);
+    assert.deepEqual(trace, expected);
+  } finally {
+    remove();
+  }
+});
