@@ -150,6 +150,18 @@ const SNAPSHOT_TABLES = [
 const requiredFor = (releaseTarget: string, plane: string): number =>
   releaseTarget === "global" || plane === "GLOBAL_NONPERSONAL" ? 2 : 1;
 
+function personalTags(raw: unknown): { tag: "ok"; tags: string[] } | { tag: "unreadable" } {
+  if (typeof raw !== "string") return { tag: "unreadable" };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed) || parsed.some((tag) => typeof tag !== "string"))
+      return { tag: "unreadable" };
+    return { tag: "ok", tags: parsed };
+  } catch {
+    return { tag: "unreadable" };
+  }
+}
+
 function storedValidation(raw: unknown): UserValidated | { tag: "unreadable" } | null {
   const read = readUserValidated(raw);
   if (read.tag === "ok") return read.value;
@@ -1110,6 +1122,7 @@ export class Workspace extends BrainBase {
   /**
    * Retention: delete Personal Brain items of the given kinds that were last changed before the
    * cutoff for their kind. `cutoffs` maps a kind (draft, brief) to a timestamp in ms.
+   * An unreadable tags cell is removed as well, and the other rows continue.
    */
   purgeExpired(cutoffs: Record<string, number>): number {
     let n = 0;
@@ -1119,9 +1132,12 @@ export class Workspace extends BrainBase {
         .exec("SELECT id, label, tags, updated_at FROM items WHERE kind = 'personalitem'")
         .toArray();
       for (const r of rows) {
-        const kind = personalKindOf(r.label as string, JSON.parse(r.tags as string) as string[]);
-        const cutoff = cutoffs[kind];
-        if (cutoff === undefined || (r.updated_at as number) >= cutoff) continue;
+        const tags = personalTags(r.tags);
+        if (tags.tag === "ok") {
+          const kind = personalKindOf(r.label as string, tags.tags);
+          const cutoff = cutoffs[kind];
+          if (cutoff === undefined || (r.updated_at as number) >= cutoff) continue;
+        }
         const id = r.id as string;
         purged.push(id);
         for (const [t, col] of [
