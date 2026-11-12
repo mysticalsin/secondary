@@ -1488,3 +1488,59 @@ test("erasure receipts: a legacy cursor starts again and does not skip", async (
     remove();
   }
 });
+
+test("erasure receipts: an empty or unknown cursor starts again", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, "partial_failed", await grantedLedger({ tag: "partial", rewritten: 3, cursor: "" }));
+    const empty = await postReceipts([{ rewritten: 1 }]);
+    putLedger(file, "partial_failed", await grantedLedger({ tag: "partial", rewritten: 3, cursor: "unknown" }));
+    const unknown = await postReceipts([{ rewritten: 1 }]);
+    assert.deepEqual(
+      {
+        emptyCursor: decodeReceiptCursor(""),
+        unknownCursor: decodeReceiptCursor("unknown"),
+        empty: empty.seen,
+        unknown: unknown.seen,
+      },
+      { emptyCursor: null, unknownCursor: null, empty: [null], unknown: [null] },
+    );
+  } finally {
+    remove();
+  }
+});
+
+test("erasure receipts: a partial result stays partial_failed and the retry continues", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, "partial_failed", await grantedLedger());
+    const pages: ReceiptPage[] = Array.from({ length: 2000 }, (_, i) => ({
+      rewritten: 1,
+      cursor: `c${i + 1}`,
+    }));
+    const first = await postReceipts(pages);
+    const row = readLedger(file);
+    const held = receiptsField(row?.ledger) as { tag?: string; cursor?: string; rewritten?: number } | null;
+    const second = await postReceipts([{ rewritten: 1 }]);
+    assert.deepEqual(
+      {
+        status: row?.status,
+        first: first.status,
+        held,
+        retry: second.seen,
+        resumed: second.status,
+      },
+      {
+        status: "partial_failed",
+        first: 502,
+        held: { tag: "partial", rewritten: first.seen.length, cursor: `c${first.seen.length}` },
+        retry: [`c${first.seen.length}`],
+        resumed: 200,
+      },
+    );
+  } finally {
+    remove();
+  }
+});
