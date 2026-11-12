@@ -40,12 +40,6 @@ type JobRow = {
 
 function schema(db: DatabaseSync): void {
   db.exec(`
-    CREATE TABLE wiki_facts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, source_ids TEXT NOT NULL, source_hashes TEXT NOT NULL);
-    CREATE TABLE wiki_pages (
-      id TEXT PRIMARY KEY, markdown TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
-      summary TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'published');
-    CREATE TABLE wiki_page_revisions (page_id TEXT, revision INTEGER, markdown TEXT);
     CREATE TABLE items (
       id TEXT PRIMARY KEY, label TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL,
       body TEXT, origin TEXT NOT NULL DEFAULT 'human', updated_at INTEGER NOT NULL);
@@ -54,9 +48,6 @@ function schema(db: DatabaseSync): void {
     CREATE TABLE wiki_jobs (
       id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL, run_at INTEGER NOT NULL,
       state TEXT NOT NULL, result TEXT, subject TEXT, attempts INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE wiki_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL,
-      kind TEXT NOT NULL, detail TEXT NOT NULL);
   `);
 }
 
@@ -123,9 +114,19 @@ function readJobs(db: DatabaseSync): JobRow[] {
 }
 
 async function openWiki(db: DatabaseSync): Promise<Wiki> {
-  const mod = (await import(storeSpecifier)) as { WikiBase: { prototype: Wiki } };
-  const wiki = Object.create(mod.WikiBase.prototype) as Wiki;
-  wiki.sql = sqliteStorage(db);
+  let ready: Promise<unknown> = Promise.resolve();
+  const ctx = {
+    storage: { sql: sqliteStorage(db) },
+    blockConcurrencyWhile(fn: () => Promise<unknown>) {
+      ready = fn();
+      return ready;
+    },
+  };
+  const mod = (await import(storeSpecifier)) as {
+    WikiBase: new (ctx: unknown, env: unknown) => Wiki;
+  };
+  const wiki = new mod.WikiBase(ctx, {});
+  await ready;
   wiki.get = (id: string) => {
     const row = db.prepare("SELECT id, label, kind, status, body, origin, updated_at FROM items WHERE id = ?").get(id) as
       | { id: string; label: string; kind: string; status: string; body: string; origin: string; updated_at: number }
