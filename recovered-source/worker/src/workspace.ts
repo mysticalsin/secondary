@@ -1236,8 +1236,9 @@ export class Workspace extends BrainBase {
   /**
    * Retention: delete Personal Brain items of the given kinds that were last changed before the
    * cutoff for their kind. `cutoffs` maps a kind (draft, brief, view) to a timestamp in ms.
-   * A note stays. An unreadable tags cell is deleted only when it is older than every cutoff.
-   * A newer unreadable cell stays, and the log records its id.
+   * A note stays. An unreadable tags cell is deleted only when updated_at is below the minimum
+   * cutoff, the oldest finite timestamp in `cutoffs`. A cell at or after that minimum stays,
+   * and the log records its id.
    */
   purgeExpired(cutoffs: Record<string, number>): number {
     let n = 0;
