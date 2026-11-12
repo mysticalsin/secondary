@@ -24,7 +24,7 @@ A pure run of `erasureWithGrant` then `runErasure` on a `requested` row whose or
 
 - After the grant helper, the order is still `["directory"]` and the grant steps are the full plan.
 - The request persists order `["directory","receipts","tombstone","scope:acme","personal","connector"]` while the status is still `requested`.
-- Resume runs those steps in that order.
+- The runner continues from the first step that is not done, in that appended order.
 - The connector step returning false ends `partial_failed` with `connector` marked `failed` and that appended order.
 - Every step returning true ends `completed` with that same appended order.
 - An absent start with the connector step returning false ends `partial_failed` with order `["receipts","tombstone","scope:acme","personal","connector","directory"]`.

@@ -12,7 +12,7 @@
 
 ### Session 2026-11-12
 
-- Q: Which terminal state and order are required when a no-key refusal leaves a stored non-completed order and a later keyed erase runs the full plan? The choice covers both ends: one performed step returns false, and every performed step returns true. → A: Not selected. Devin or Tony names one option before any behavior file changes. Option Accept: a false step ends `partial_failed` with the appended order, and every step returning true ends `completed` with that same appended order. Option Replace: the order becomes the canonical full plan, directory last; a false step ends `partial_failed` and every step returning true ends `completed`. Option Resume: the stored order is not extended; a false step ends `partial_failed` on that stored order, and every stored step returning true ends `completed` on that stored order.
+- Q: Which terminal state and order are required when a no-key refusal leaves a stored non-completed order and a later keyed erase runs the full plan? The choice covers both ends: one performed step returns false, and every performed step returns true. → A: Not selected. Devin or Tony names one option before any file under `src/`, `recovered-source/`, or `harness/` changes. Option Accept: a false step ends `partial_failed` with the appended order, and every step returning true ends `completed` with that same appended order. Option Replace: the order becomes the canonical full plan, directory last; a false step ends `partial_failed` and every step returning true ends `completed`. Option Resume: the stored order is not extended; a false step ends `partial_failed` on that stored order, and every stored step returning true ends `completed` on that stored order.
 - Q: Is an absent subject in this item? A no-key refusal writes nothing, and a later keyed erase creates the canonical plan rather than appending. A false step can still end `partial_failed`. → A: Not selected. Devin or Tony says whether that path is in scope. This draft keeps it outside the behavior change.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -23,12 +23,12 @@ A configure holder asks to erase a person while the pseudonym key is missing, em
 
 **Why this priority**: The backlog item is this one sequence. The terminal status and the order are a product decision.
 
-**Independent Test**: Drive the reproduced sequence. A missing key leaves the stored request byte-for-byte. The later keyed erase ends in the named option's status and order. Until an option is named, no behavior file changes.
+**Independent Test**: Drive the reproduced sequence. A missing key leaves the stored request byte-for-byte. The later keyed erase ends in the named option's status and order. Until an option is named, no file under `src/`, `recovered-source/`, or `harness/` changes.
 
 **Acceptance Scenarios**:
 
 1. **Given** a stored non-completed erasure whose order is non-empty and whose grant covers that order, **When** a no-key erase is refused, **Then** the stored status, order, marks, and grant are unchanged and nothing is deleted.
-2. **Given** that same stored request and a later keyed erase whose plan contains steps the stored order does not, **When** no option is named, **Then** no behavior file has changed. **When** an option is named and a performed step returns false, **Then** the terminal status and order equal that option's false-step pair.
+2. **Given** that same stored request and a later keyed erase whose plan contains steps the stored order does not, **When** no option is named, **Then** no file under `src/`, `recovered-source/`, or `harness/` has changed. **When** an option is named and a performed step returns false, **Then** the terminal status and order equal that option's false-step pair.
 3. **Given** the same stored request and the same keyed erase, **When** an option is named and every performed step returns true, **Then** the terminal status and order equal that option's success pair.
 
 ---
@@ -62,7 +62,7 @@ Resumes, restores, completed-row additions, unreadable rows, quorum, tombstones,
 - **FR-002**: The required terminal status and order are one of the three options in Clarifications. None is selected. No file under `src/`, `recovered-source/`, or `harness/` changes until Devin or Tony names one option there. The absent-subject path stays out of the behavior change until they say it is in scope.
 - **FR-003**: The named option applies to both ends of the same keyed erase: a performed step that returns false, and every performed step returning true.
 - **FR-004**: No other erasure transition changes. The completed-row rule, the unreadable fresh plan, quorum, tombstones, receipt scans, and restore re-apply stay as they are on `565bff6a2ba3153f11347482cdee3555b257f87f`.
-- **FR-005**: After an option is named, the first behavior change is one test of this sequence. If the named option is not today's outcome, that test fails before any production edit. If the named option is today's outcome, the test locks that outcome and no production file changes.
+- **FR-005**: After an option is named, the first change under `src/`, `recovered-source/`, or `harness/` is one test of this sequence. If the named option is not today's outcome, that test fails before any edit under `src/` or `recovered-source/`. If the named option is today's outcome, the test locks that outcome and those two trees stay unchanged.
 - **FR-006**: The spec phase adds no CI config, no deploy, and no package.
 
 ### Key Entities

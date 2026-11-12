@@ -16,7 +16,7 @@ The file:line path is the Observed path in `spec.md`.
 
 1. Add one test in `harness/tests/erasure-request.test.ts` for steps 1–5.
 2. If the named option is not today's pair, the test fails on `565bff6a2ba3153f11347482cdee3555b257f87f` before a production edit.
-3. If the named option is today's pair, the test passes there and no production file changes.
+3. If the named option is today's pair, the test passes there and `src/` and `recovered-source/` stay unchanged.
 4. Run `npm test`, `npm run typecheck`, and `npm run typecheck:worker`. Existing erasure tests still pass. Both typechecks report 0 errors.
 
 No CI config is added. No deploy.

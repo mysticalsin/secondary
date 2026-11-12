@@ -4,7 +4,7 @@
 
 **Input**: Feature specification from `/specs/erasure-partial-failed-append/spec.md`
 
-**Note**: Spec phase only. No behavior file changes until Clarifications names one option.
+**Note**: Spec phase only. No file under `src/`, `recovered-source/`, or `harness/` changes until Clarifications names one option.
 
 ## Summary
 
@@ -26,7 +26,7 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 
 **Performance Goals**: Not a throughput change. One request's terminal status and order are the outcome.
 
-**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: a behavior change starts with a failing test. Accept is not a behavior change, so its test locks today's outcome and no production file changes.
+**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: a behavior change starts with a failing test. Accept is not a behavior change, so its test locks today's outcome and `src/` and `recovered-source/` stay unchanged.
 
 **Scale/Scope**: One sequence, one new test, and at most the request-append branch of `transitionErasure` plus the grant helper that leaves the stored order in place. Absent-subject erasures stay out of the behavior change until Clarifications says otherwise.
 
