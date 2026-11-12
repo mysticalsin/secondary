@@ -685,3 +685,26 @@ test("proposal scrub: a padded subject stored before open is forgotten with the 
   assert.deepEqual({ claimed, jobs }, { claimed: [], jobs: [] });
   db.close();
 });
+
+test("proposal scrub: a padded source id debounces on the same ingest as the trimmed id", async () => {
+  const db = new DatabaseSync(":memory:");
+  const wiki = await openMigrated(db);
+  const now = Date.now();
+  db.prepare(
+    "INSERT INTO wiki_sources (source_id, hash, title, ingested_at) VALUES ('src_9', 'h', 'T', ?)",
+  ).run(now);
+  await wiki.wikiEnqueue("ingest", { sourceId: "src_9" }, now);
+  await wiki.wikiEnqueue("ingest", { sourceId: " src_9 " }, now);
+  const jobs = readJobs(db);
+  const exact = jobs.find((job) => job.payload === JSON.stringify({ sourceId: "src_9" }));
+  const padded = jobs.find((job) => job.payload === JSON.stringify({ sourceId: " src_9 " }));
+  assert.deepEqual(
+    {
+      same: padded?.run_at === exact?.run_at,
+      debounced: (exact?.run_at ?? 0) > now + 1000,
+      subject: padded?.subject,
+    },
+    { same: true, debounced: true, subject: "src_9" },
+  );
+  db.close();
+});
