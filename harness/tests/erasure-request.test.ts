@@ -2152,3 +2152,26 @@ test("erasure append T4: a re-plan log names steps and states and omits the key,
     remove();
   }
 });
+
+test("erasure append T5: an absent subject stores the canonical plan with directory last", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "absent");
+    assert.equal(readLedger(file), undefined);
+    const { post } = await eraseRoute(org, trace);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(false, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 1, keyedEnv(false, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 502);
+    assert.equal(stored.status, "partial_failed");
+    assert.deepEqual(stored.order, plan);
+    assert.equal(stored.order.at(-1), "directory");
+    assert.equal(trace[0], "receipts");
+    assert.equal(trace.includes("directory"), false);
+  } finally {
+    remove();
+  }
+});
