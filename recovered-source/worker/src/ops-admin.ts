@@ -15,7 +15,6 @@ import {
   companyScopes,
   eraseSubject,
   exportSubject,
-  pseudonymFor,
   pseudonymKey,
   resolveSubject,
   SUBJECT_PARAM,
@@ -149,8 +148,9 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     if (!SUBJECT_PARAM.test(raw)) return c.json({ error: "invalid_principal" }, 400);
     const org = requireOrg(s);
     const principalId = await resolveSubject(c.env, s.tenantId, raw);
-    const pseudonym = await pseudonymFor(c.env, s.tenantId, principalId);
-    if (!pseudonym) return c.json({ error: "export_disabled" }, 503);
+    const key = await pseudonymKey(c.env, s.tenantId, principalId);
+    if (key.tag === "refused") return c.json({ error: "export_disabled" }, 503);
+    const pseudonym = key.pseudonym;
     const step = await tenantStub(c.env, s.tenantId).requestSecond(
       `export:${principalId}`,
       s.principal.id,

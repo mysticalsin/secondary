@@ -188,7 +188,7 @@ async function runErasure(
         return summary.connectorCacheForgotten;
       }
       if (step === "directory") {
-        await tenant.erasePrincipal(principalId);
+        await tenant.erasePrincipal(principalId, pseudonym);
         return true;
       }
       if (step.startsWith("scope:")) {

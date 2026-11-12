@@ -240,7 +240,7 @@ type Policy = {
   erasureLoad(principalId: string): { status: string; ledger: string } | null;
   humanIds(principalId: string, email?: string): string[];
   emailOfPrincipal(principalId: string): string | null;
-  erasePrincipal(principalId: string): number;
+  erasePrincipal(principalId: string, pseudonym: string): number;
 };
 
 type PolicyConnection = {
@@ -1678,6 +1678,70 @@ test("reapplyErasures refuses an unusable pseudonym key and deletes nothing", as
     assert.deepEqual(
       { first, second, picture },
       { first: { applied: 0, skipped: ["user_1"] }, second: { applied: 0, skipped: ["user_1"] }, picture: before },
+    );
+  } finally {
+    remove();
+  }
+});
+
+test("export refuses through the same key decision when the key is missing or short", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const db = openSqlite(file);
+    db.prepare("INSERT INTO principals (id, email) VALUES ('user_1', 'ada@example.invalid')").run();
+    db.close();
+    const mod = (await import(workerModule("ops-admin.ts"))) as {
+      opsAdminRoutes: (deps: { now?: () => number }) => Hono;
+    };
+    const org = buildOrg(["acme"]);
+    const app = new Hono<{ Variables: { requestId: string; session: unknown } }>();
+    app.use("*", async (c, next) => {
+      c.set("requestId", "r1");
+      c.set("session", {
+        principal: admin("ada", "ada@example.invalid"),
+        ctx: { now: NOW },
+        tenantId: TENANT,
+        org,
+      });
+      await next();
+    });
+    app.route("/v1/admin", mod.opsAdminRoutes({ now: () => NOW }));
+    const post = (env: { PSEUDONYM_KEY?: string }) =>
+      app.request(
+        "https://api.invalid/v1/admin/rights/export",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ principal: "user_1" }),
+        },
+        env,
+      );
+    const missing = await post({});
+    const missingAgain = await post({});
+    const short = await post({ PSEUDONYM_KEY: "x".repeat(31) });
+    const shortAgain = await post({ PSEUDONYM_KEY: "x".repeat(31) });
+    const after = openSqlite(file);
+    const picture = {
+      person: rowsOf(after, "SELECT id, email FROM principals"),
+      pending: rowsOf(after, "SELECT key, requested_by FROM pending_ops"),
+    };
+    after.close();
+    assert.deepEqual(
+      {
+        missing: { status: missing.status, body: await missing.json() },
+        missingAgain: { status: missingAgain.status, body: await missingAgain.json() },
+        short: { status: short.status, body: await short.json() },
+        shortAgain: { status: shortAgain.status, body: await shortAgain.json() },
+        picture,
+      },
+      {
+        missing: { status: 503, body: { error: "export_disabled" } },
+        missingAgain: { status: 503, body: { error: "export_disabled" } },
+        short: { status: 503, body: { error: "export_disabled" } },
+        shortAgain: { status: 503, body: { error: "export_disabled" } },
+        picture: { person: [{ id: "user_1", email: "ada@example.invalid" }], pending: [] },
+      },
     );
   } finally {
     remove();

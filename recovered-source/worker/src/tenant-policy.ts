@@ -18,7 +18,6 @@ import {
   erasureWithGrant,
 } from "../../../src/state/erasure-request.ts";
 import { forgetPilotMember } from "../../../src/state/pilot-member.ts";
-import { pseudonymFor } from "./ops-rights.ts";
 import {
   commitQuorum,
   type QuorumResult,
@@ -1100,12 +1099,7 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   /** Right to erasure for the directory: identity, roles, memberships, grants, elevations, counters. */
-  async erasePrincipal(principalId: string): Promise<number> {
-    const pseudonym = await pseudonymFor(
-      this.env,
-      this.getConfig()?.tenantId ?? "",
-      principalId,
-    );
+  async erasePrincipal(principalId: string, pseudonym: string): Promise<number> {
     const erasedEmail =
       (this.sql
         .exec("SELECT lower(email) AS e FROM principals WHERE id = ?", principalId)
@@ -1142,7 +1136,7 @@ export class TenantPolicy extends DurableObject<Env> {
       this.sql.exec("DELETE FROM pending_ops WHERE requested_by = ?", principalId);
       this.sql.exec("DELETE FROM agent_grants WHERE principal_id = ?", principalId);
       if (erasedEmail) this.pilotForget(erasedEmail);
-      if (pseudonym !== null) this.journal.forget(principalId, pseudonym);
+      this.journal.forget(principalId, pseudonym);
     });
     return this.bump();
   }
