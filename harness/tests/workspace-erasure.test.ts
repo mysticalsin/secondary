@@ -154,3 +154,35 @@ test("an unreadable validation is left unreadable and a real one is rewritten", 
   );
   db.close();
 });
+
+test("a personal wipe removes revisions and source rows, and a second wipe returns 0", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, created_at, updated_at)
+     VALUES ('i', 'Ada note', 'personalitem', 'PERSONAL', 'personal', 'draft', 1, 'user_1', 1, 1)`,
+  ).run();
+  db.prepare(
+    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES ('i', 1, 'Ada note', 'Ada wrote it', 'user_1', 1)",
+  ).run();
+  db.prepare(
+    `INSERT INTO source_items (id, source_id, gate_node_id, plane, title, body, size, etag, synced_at)
+     VALUES ('s', 'src_1', 'g', 'PERSONAL', 'Ada file', 'secret', 1, 'e', 1)`,
+  ).run();
+  db.prepare("INSERT INTO source_fts (title, body, id) VALUES ('Ada file', 'secret', 's')").run();
+  const first = ws.wipe();
+  const second = ws.wipe();
+  const count = (table: string) => (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  assert.deepEqual(
+    {
+      first,
+      second,
+      items: count("items"),
+      revisions: count("revisions"),
+      sources: count("source_items"),
+      sourceSearch: count("source_fts"),
+    },
+    { first: 1, second: 0, items: 0, revisions: 0, sources: 0, sourceSearch: 0 },
+  );
+  db.close();
+});
