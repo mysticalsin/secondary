@@ -1091,7 +1091,7 @@ test("erasure request: a throw after the grant write keeps the ask and writes no
   }
 });
 
-type Tombstones = Policy & {
+type Tombstones = OpenedPolicy & {
   tombstoneAdd(
     principalId: string,
     pseudonym: string,
@@ -1119,24 +1119,33 @@ function readStone(file: string, principalId: string): StoneRow | undefined {
   return row ? { ...row } : undefined;
 }
 
+/** AFTER UPDATE fires only when the upsert WHERE matches. A live repeat stays at 0. */
+function armTombstoneWrites(file: string): void {
+  const side = openSqlite(file);
+  side.exec("CREATE TABLE tombstone_writes (n INTEGER)");
+  side.exec("INSERT INTO tombstone_writes VALUES (0)");
+  side.exec(
+    `CREATE TRIGGER count_tombstone AFTER UPDATE ON erasure_tombstones
+     BEGIN UPDATE tombstone_writes SET n = n + 1; END`,
+  );
+  side.close();
+}
+
+function tombstoneWrites(file: string): number {
+  const db = openSqlite(file);
+  const writes = db.prepare("SELECT n FROM tombstone_writes").get() as { n: number };
+  db.close();
+  return writes.n;
+}
+
 test("erasure tombstone: a repeat keeps the original expiry and does not write", async () => {
   const { file, remove } = tempFile();
   try {
     const policy = (await openPolicy(file)) as Tombstones;
     policy.tombstoneAdd("p", "pz", ["a@example.invalid"], 10, 100);
-    const side = openSqlite(file);
-    side.exec("CREATE TABLE tombstone_writes (n INTEGER)");
-    side.exec("INSERT INTO tombstone_writes VALUES (0)");
-    side.exec(
-      `CREATE TRIGGER count_tombstone AFTER UPDATE ON erasure_tombstones
-       BEGIN UPDATE tombstone_writes SET n = n + 1; END`,
-    );
-    side.close();
+    armTombstoneWrites(file);
     policy.tombstoneAdd("p", "pz", ["a@example.invalid"], 10, 100);
-    const db = openSqlite(file);
-    const writes = db.prepare("SELECT n FROM tombstone_writes").get() as { n: number };
-    db.close();
-    assert.equal(writes.n, 0);
+    assert.equal(tombstoneWrites(file), 0);
     assert.deepEqual(readStone(file, "p"), {
       pseudonym: "pz",
       aliases: JSON.stringify(["a@example.invalid"]),
@@ -1148,12 +1157,14 @@ test("erasure tombstone: a repeat keeps the original expiry and does not write",
   }
 });
 
-test("erasure tombstone: a shorter request leaves every original column", async () => {
+test("erasure tombstone: a shorter request leaves every original column and does not write", async () => {
   const { file, remove } = tempFile();
   try {
     const policy = (await openPolicy(file)) as Tombstones;
     policy.tombstoneAdd("p", "pz-first", ["a@example.invalid"], 10, 100);
+    armTombstoneWrites(file);
     policy.tombstoneAdd("p", "pz-second", ["b@example.invalid"], 20, 50);
+    assert.equal(tombstoneWrites(file), 0);
     assert.deepEqual(readStone(file, "p"), {
       pseudonym: "pz-first",
       aliases: JSON.stringify(["a@example.invalid"]),
@@ -1165,12 +1176,14 @@ test("erasure tombstone: a shorter request leaves every original column", async 
   }
 });
 
-test("erasure tombstone: a later longer expiry does not refresh the row", async () => {
+test("erasure tombstone: a later longer expiry does not refresh the row and does not write", async () => {
   const { file, remove } = tempFile();
   try {
     const policy = (await openPolicy(file)) as Tombstones;
     policy.tombstoneAdd("p", "pz", ["a@example.invalid"], 10, 100);
+    armTombstoneWrites(file);
     policy.tombstoneAdd("p", "pz-later", ["a@example.invalid"], 30, 400);
+    assert.equal(tombstoneWrites(file), 0);
     assert.deepEqual(readStone(file, "p"), {
       pseudonym: "pz",
       aliases: JSON.stringify(["a@example.invalid"]),
@@ -1182,20 +1195,44 @@ test("erasure tombstone: a later longer expiry does not refresh the row", async 
   }
 });
 
+test("erasure tombstone: an expired row takes the new expiry and keeps the other columns", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = (await openPolicy(file)) as Tombstones;
+    policy.tombstoneAdd("p", "pz-first", ["a@example.invalid"], 10, 50);
+    armTombstoneWrites(file);
+    policy.tombstoneAdd("p", "pz-second", ["b@example.invalid"], 80, 400);
+    assert.deepEqual(
+      { writes: tombstoneWrites(file), row: readStone(file, "p") },
+      {
+        writes: 1,
+        row: {
+          pseudonym: "pz-first",
+          aliases: JSON.stringify(["a@example.invalid"]),
+          erased_at: 10,
+          expires_at: 400,
+        },
+      },
+    );
+  } finally {
+    remove();
+  }
+});
+
 test("erasure tombstone: a row that appears before the insert is not clobbered", async () => {
   const { file, remove } = tempFile();
   try {
-    let arm = false;
-    const policy = (await openPolicy(file, {
-      afterSql(query, db) {
-        if (!arm || !query.includes("SELECT") || !query.includes("erasure_tombstones")) return;
-        db.prepare(
-          "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-        ).run("p", "raced", "[]", 1, 900);
-      },
-    })) as Tombstones;
-    arm = true;
+    const policy = (await openPolicy(file)) as Tombstones;
+    const planted = openSqlite(file);
+    planted
+      .prepare(
+        "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run("p", "raced", "[]", 1, 900);
+    planted.close();
+    armTombstoneWrites(file);
     policy.tombstoneAdd("p", "pz", ["a@example.invalid"], 10, 100);
+    assert.equal(tombstoneWrites(file), 0);
     assert.deepEqual(readStone(file, "p"), {
       pseudonym: "raced",
       aliases: "[]",
