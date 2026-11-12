@@ -668,3 +668,20 @@ test("proposal scrub: an enqueued source id is trimmed and a blank one is refuse
   );
   db.close();
 });
+
+test("proposal scrub: a padded subject stored before open is forgotten with the trimmed id", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE wiki_jobs (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL,
+    run_at INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending', result TEXT, subject TEXT)`);
+  const now = Date.now();
+  db.prepare(
+    "INSERT INTO wiki_jobs (id, kind, payload, run_at, subject) VALUES (1, 'ingest', ?, ?, ' src_1 ')",
+  ).run(JSON.stringify({ sourceId: " src_1 " }), now);
+  const wiki = await openMigrated(db);
+  wiki.wikiForgetSources(["src_1"], NOW);
+  const claimed = wiki.wikiJobsDue(now, 10).map((job) => job.id);
+  const jobs = readJobs(db).map((job) => ({ id: job.id, state: job.state, subject: job.subject }));
+  assert.deepEqual({ claimed, jobs }, { claimed: [], jobs: [] });
+  db.close();
+});
