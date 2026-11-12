@@ -225,3 +225,28 @@ test("a retention purge removes the personal note from its revisions", async () 
   );
   db.close();
 });
+
+test("deleting a cited page removes its brain fields without a later field purge", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const page = db.prepare(
+    `INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, created_at, updated_at)
+     VALUES (?, 'note', ?, ?, '', 1, 'published', 1, 1)`,
+  );
+  page.run("page_gone", "Gone", "{src:src_secret}");
+  page.run("page_kept", "Kept", "# Kept\n\nstill here");
+  const field = db.prepare(
+    "INSERT INTO brain_fields (page_id, field_key, value, written_by, written_at) VALUES (?, 'note', ?, 'ada', 1)",
+  );
+  field.run("page_gone", "SECRET_FIELD");
+  field.run("page_kept", "kept field");
+  ws.wikiForgetSources(["src_secret"], NOW);
+  ws.wikiForgetSources(["src_secret"], NOW + 1);
+  const fields = db
+    .prepare("SELECT page_id, value FROM brain_fields ORDER BY page_id")
+    .all()
+    .map((row) => ({ ...(row as { page_id: string; value: string }) }));
+  const gone = db.prepare("SELECT id FROM wiki_pages WHERE id = 'page_gone'").get() ?? null;
+  assert.deepEqual({ gone, fields }, { gone: null, fields: [{ page_id: "page_kept", value: "kept field" }] });
+  db.close();
+});
