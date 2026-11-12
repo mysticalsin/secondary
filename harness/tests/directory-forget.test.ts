@@ -17,7 +17,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
 
 type Policy = {
-  erasePrincipal(principalId: string): number;
+  erasePrincipal(principalId: string): Promise<number>;
 };
 
 async function openPolicy(db: DatabaseSync): Promise<Policy> {
@@ -54,8 +54,8 @@ test("directory erase removes a cohort member in any case, and an unreadable lis
   insert.run("bad", "Bad", '["kept@example.com", Ada@Example.com');
   let thrown: string | null = null;
   try {
-    policy.erasePrincipal("user_1");
-    policy.erasePrincipal("user_1");
+    await policy.erasePrincipal("user_1");
+    await policy.erasePrincipal("user_1");
   } catch (e) {
     thrown = e instanceof Error ? e.message : String(e);
   }

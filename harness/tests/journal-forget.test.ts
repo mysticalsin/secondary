@@ -1,7 +1,8 @@
 /**
  * Journal forget removes the person and leaves a switch row.
- * An NDA detail that names them is rewritten. An unknown row that names
- * them is deleted. A second call leaves the same rows.
+ * An NDA detail that names them is rewritten. An unknown row that quotes
+ * them is kept, with that value cleared when no pseudonym is passed.
+ * A second call leaves the same rows.
  */
 
 import assert from "node:assert/strict";
@@ -49,6 +50,7 @@ test("journal forget removes the person, keeps a switch, and redacts an NDA deta
       b: "acct",
       c: JSON.stringify({ reason: "r", expiresAt: null, grantedBy: "", approvedBy: "boss", grantedAt: 1 }),
     },
+    { kind: "legacy", a: "other", b: '""', c: "" },
     { kind: "legacy", a: "other", b: "handbook", c: "" },
   ]);
   db.close();
@@ -100,9 +102,10 @@ test("an NDA whose reason is the erased id survives, is pseudonymised, and repla
   book.forget("user_1", pz);
   const stored = db.prepare("SELECT c FROM security_journal").get() as { c: string } | undefined;
   book.replay();
-  const grant = db
+  const found = db
     .prepare("SELECT principal_id, account_id, reason, granted_by FROM nda_grants")
     .get() as { principal_id: string; account_id: string; reason: string; granted_by: string } | undefined;
+  const grant = found ? { ...found } : undefined;
   const parsed = stored ? (JSON.parse(stored.c) as { reason: string; grantedBy: string }) : null;
   assert.deepEqual(
     { reason: parsed?.reason, grantedBy: parsed?.grantedBy, grant },
@@ -129,11 +132,15 @@ test("a membership whose scope is the erased id survives and replays under the p
   ).run();
   book.forget("user_1", pz);
   book.forget("user_1", pz);
-  const row = db.prepare("SELECT a, b, c FROM security_journal").get() as { a: string; b: string; c: string } | undefined;
+  const foundRow = db.prepare("SELECT a, b, c FROM security_journal").get() as
+    | { a: string; b: string; c: string }
+    | undefined;
+  const row = foundRow ? { ...foundRow } : undefined;
   book.replay();
-  const member = db.prepare("SELECT principal_id, scope_type, scope_id FROM memberships").get() as
+  const foundMember = db.prepare("SELECT principal_id, scope_type, scope_id FROM memberships").get() as
     | { principal_id: string; scope_type: string; scope_id: string }
     | undefined;
+  const member = foundMember ? { ...foundMember } : undefined;
   assert.deepEqual(
     { row, member },
     {

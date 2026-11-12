@@ -1,44 +1,65 @@
 /**
  * One journal row during erasure.
  * A switch row stays: its `a` is the switch name, not the person.
- * A row keyed by the person is deleted. An NDA detail that names them is
- * rewritten. Any other row whose text quotes them is deleted. Unreadable
- * NDA detail that quotes them is cleared rather than replayed.
+ * A row whose principal (`a`) is the person is deleted.
+ * Anywhere else the id is an exact value, that value becomes the pseudonym
+ * and the row stays, so a replay still restores the other person.
+ * Prose that only contains the id is left as written.
+ * A missing pseudonym clears the exact value, which still keeps the row.
  */
 
 export type JournalRow = { kind: string; a: string; b: string; c: string };
 
-export type JournalDecision = { tag: "keep" } | { tag: "delete" } | { tag: "rewrite"; c: string };
+export type JournalDecision =
+  | { tag: "keep" }
+  | { tag: "delete" }
+  | { tag: "rewrite"; b: string; c: string };
 
-const names = (text: string, id: string): boolean => text === id || text.includes(`"${id}"`);
+function replaceExact(value: unknown, id: string, pseudonym: string): { value: unknown; changed: boolean } {
+  if (typeof value === "string")
+    return value === id ? { value: pseudonym, changed: true } : { value, changed: false };
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((item) => {
+      const replaced = replaceExact(item, id, pseudonym);
+      if (replaced.changed) changed = true;
+      return replaced.value;
+    });
+    return changed ? { value: next, changed } : { value, changed: false };
+  }
+  if (value && typeof value === "object") {
+    let changed = false;
+    const next: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      const replaced = replaceExact(item, id, pseudonym);
+      next[key] = replaced.value;
+      if (replaced.changed) changed = true;
+    }
+    return changed ? { value: next, changed } : { value, changed: false };
+  }
+  return { value, changed: false };
+}
 
-function redactDetail(raw: string, id: string): JournalDecision {
-  if (raw === "") return { tag: "keep" };
+function rewriteField(raw: string, id: string, pseudonym: string): { text: string; changed: boolean } {
+  if (raw === id) return { text: pseudonym, changed: true };
+  if (raw === "") return { text: raw, changed: false };
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return names(raw, id) ? { tag: "rewrite", c: "" } : { tag: "keep" };
+    return { text: raw, changed: false };
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    return names(raw, id) ? { tag: "rewrite", c: "" } : { tag: "keep" };
-  const detail = { ...(parsed as Record<string, unknown>) };
-  let changed = false;
-  for (const key of ["grantedBy", "approvedBy"]) {
-    if (detail[key] === id) {
-      detail[key] = "";
-      changed = true;
-    }
-  }
-  if (changed) return { tag: "rewrite", c: JSON.stringify(detail) };
-  return names(raw, id) ? { tag: "delete" } : { tag: "keep" };
+  const replaced = replaceExact(parsed, id, pseudonym);
+  if (!replaced.changed) return { text: raw, changed: false };
+  return { text: JSON.stringify(replaced.value), changed: true };
 }
 
-export function forgetJournalEntry(row: JournalRow, id: string): JournalDecision {
+export function forgetJournalEntry(row: JournalRow, id: string, pseudonym = ""): JournalDecision {
   if (id === "") return { tag: "keep" };
   if (row.kind === "switch") return { tag: "keep" };
   if (row.a === id) return { tag: "delete" };
-  if (row.kind === "nda") return redactDetail(row.c, id);
-  if (names(row.b, id) || names(row.c, id)) return { tag: "delete" };
-  return { tag: "keep" };
+  const b = rewriteField(row.b, id, pseudonym);
+  const c = rewriteField(row.c, id, pseudonym);
+  if (!b.changed && !c.changed) return { tag: "keep" };
+  return { tag: "rewrite", b: b.text, c: c.text };
 }

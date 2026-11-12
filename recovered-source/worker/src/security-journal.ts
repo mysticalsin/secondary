@@ -78,8 +78,12 @@ export class SecurityJournal {
     this.add(at, "revoke_all", principalId);
   }
 
-  /** An erased person leaves no entries behind (the tombstone covers a restore). */
-  forget(principalId: string): void {
+  /**
+   * An erased person leaves no entries behind where they are the principal.
+   * `pseudonym` is the value from `pseudonymFor`. Another person's row stays,
+   * and an exact copy of the id in another field becomes that pseudonym.
+   */
+  forget(principalId: string, pseudonym = ""): void {
     for (const row of this.sql.exec("SELECT seq, kind, a, b, c FROM security_journal").toArray()) {
       const decision = forgetJournalEntry(
         {
@@ -89,11 +93,18 @@ export class SecurityJournal {
           c: String(row.c ?? ""),
         },
         principalId,
+        pseudonym,
       );
       if (decision.tag === "keep") continue;
       if (decision.tag === "delete")
         this.sql.exec("DELETE FROM security_journal WHERE seq = ?", row.seq as number);
-      else this.sql.exec("UPDATE security_journal SET c = ? WHERE seq = ?", decision.c, row.seq as number);
+      else
+        this.sql.exec(
+          "UPDATE security_journal SET b = ?, c = ? WHERE seq = ?",
+          decision.b,
+          decision.c,
+          row.seq as number,
+        );
     }
   }
 
