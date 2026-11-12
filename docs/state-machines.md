@@ -12,7 +12,7 @@ Risk used here:
 - **Medium** — a real lifecycle whose failure is a duplicate dev seed, a double token settle, a wrong agent-round branch, or a bad stream frame. Decision: fix after this commit, one machine per commit.
 - **Low** — a retry decision with no privilege effect. Decision: fix after this commit.
 
-Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, #2, whose start writes only a pending row, and #3, whose reopen and decision write only the status the table allows, and #12, whose member write names the state it read, and #9, whose save of an archived page is refused. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
+Status in the table matches the code on this branch. Devin approved this inventory with changes at `b527a8de`. High-risk rows stay LATER, except #13, whose guard now refuses a seen key after expiry, #6, whose login record is now one-shot, #4, whose second-person check is now one typed result, #7, whose release status is now a guarded transition, #5, whose stored flag accepts only 0 and 1, #2, whose start writes only a pending row, and #3, whose reopen and decision write only the status the table allows, and #12, see the tables in section 12, and #9, whose save of an archived page is refused. The order and the right-sizing notes are in the review section below. Step 0 pinned the other High-risk behaviour in `harness/tests/characterization.test.ts` and did not change it.
 
 ## Inventory
 
@@ -30,7 +30,7 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 10 | Wiki finding | `transitionFinding` `src/state/proposal-review.ts`, insert `wiki/store.ts`, dismiss , resolve | FOLDED | High | part of #8 | `open` / `dismissed` / `resolved` are effects of proposal review. A write matches `status = 'open'`. |
 | — | Dev seed approval | `wikiPropose` in `wiki/store.ts` (`WHERE id = ?` only) | NOT A MACHINE | — | NOT A MACHINE | Dev seed. The approval write is not a review machine. |
 | 11 | Brain import outcome | `publishMode` `src/state/import-outcome.ts`, `transitionImport`, import `brains/data.ts`, compare-and-set `wiki/store.ts` | FIXED | High | FIX now | A personal auto-accept stays a draft. The dry run and the real import share `publishMode(false)`. Publishing is explicit and updates `WHERE status = 'candidate'`. An unknown word writes nothing. |
-| 12 | Brain member | `src/state/brain-member.ts`, `grantsMemberRole`, `brainRoleOf` `brains/store.ts`, claim key `brains/store.ts`, `brainMemberDropClaim`, `brainMemberFinishProposal`, `brainMemberRelease`, `reconcileBrainMember`, `placeScopedMember`, `propose` `admin/store.ts`, `claim_key` column, unique index, `changeByKey`, `reconcileStoredMembers` `brains/open.ts`, route 409 `brains/routes.ts` | FIXED | High | FIX now | A claim mints an opaque key before `gov.propose`. The same key returns the existing change. Only an active row grants a role. A read during propose changes nothing. An applied governance row calls finish with state `active`. A pending governance row leaves the claim. A missing governance row leaves an in-flight claim for 144 hours (2x CHANGE_TTL_MS), then the lease releases it. A pending row with no pending role is not leased. Rejected, expired, or withdrawn releases the claim by key, including that pending row. DropClaim clears the claim when `pending_role` is set, and deletes only a claimed or pending row. |
+| 12 | Brain member | `src/state/brain-member.ts`, `grantsMemberRole`, `brainRoleOf` `brains/store.ts`, claim key `brains/store.ts`, `brainMemberDropClaim`, `brainMemberFinishProposal`, `brainMemberRelease`, `reconcileBrainMember`, `placeScopedMember`, `propose` `admin/store.ts`, `claim_key` column, unique index, `changeByKey`, `reconcileStoredMembers` `brains/open.ts`, route 409 `brains/routes.ts` | FIXED | High | FIX now | See the tables in section 12. |
 | 13 | Replay nonce | `nonceFirst` in `tenant-policy.ts` | FIXED | High | FIX now | Named guard, not a reducer. Expiry does not reopen a key. `expires_at` is strictly after the last accepted millisecond. Prune is outside the guard, and only for `expires_at < now`. |
 | 14 | Model-call retry | `src/state/model-call.ts`, wired from `ai/anthropic.ts` | FIXED | Low | FIX now | Bounded retry. In-flight calls are not persisted. |
 | 15 | Stream-open retry | `src/state/stream-open.ts`, wired from `agent/stream.ts` | FIXED | Low | FIX now | One retry, and only before the body is read. |
@@ -78,7 +78,7 @@ Approved High order. Step 0 found that no API route can set `approved` through `
 5. #5 Kill switch (fixed: a value other than 0 or 1 stays off, and an unknown name is refused)
 6. #2 Elevation window (fixed: a start from any status but pending is refused, and two starts cannot both succeed)
 7. #3 Access request (fixed: reopen only from approved, and two decisions cannot both succeed)
-8. #12 Brain member (fixed: a set names the state it read, and two sets cannot both succeed)
+8. #12 Brain member (fixed: see the tables in section 12)
 9. #1 Governance change (fixed: a decision writes only a pending row, and an unknown word has no effect)
 10. #9 Wiki page visibility (fixed: a save of an archived page is refused, and unarchive is its own event)
 11. #11 Brain import outcome (fixed: a personal auto-accept stays a draft, and publishing compares the previous status)
@@ -92,7 +92,7 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#1.** Fixed. `transitionGovernance` approves, rejects, or withdraws only from pending. `decide` (`admin/store.ts`) and `withdraw` update `WHERE status = 'pending'`. `propose` applies only when that same predicate changes one row. A lost decision does not apply the directory change. An unknown stored word reads as unknown and is not echoed. A pending row past `expires_at` reads as expired in `toChange` and is not written back.
 - **#2.** Fixed. `transitionElevation` starts only from pending. `startElevation` (`admin/store.ts`) updates `WHERE status = 'pending'` and keeps the engine row only when one row changes. The approve route (`admin/routes.ts`) returns that refusal through `mutate`, which is 409.
 - **#3.** Fixed. `transitionAccessRequest` approves or denies only from pending, reopens only from approved, and grants or rejects only a pending or approved request. Each write checks that predicate on `RETURNING`. A lost decision is 409 and does not notify.
-- **#12.** Fixed. `transitionMember` sets `active` or `pending` from absent, pending, or active. An unknown stored word is refused. `brainMemberClaim` (`brains/store.ts`) stores an opaque key before `gov.propose`. `placeScopedMember` passes that key. `propose` (`admin/store.ts`) returns the change already stored for the key. `gov_changes.claim_key` is added and indexed. Legacy rows stay null. `brainMemberRelease` (`brains/store.ts`) matches the key and the previous state. `brainMemberDropClaim` matches the key, clears the claim when `pending_role` is set, and deletes only a claimed or pending row. Zero rows is `state_unreadable`. `brainMemberFinishProposal` writes on the key and the previous state, so one overlapping finish logs. A null-key retry returns ok when `pending_role` is null, `claim_key` is null, and state equals the requested state. The role term is always true then, so a different caller role also returns ok and writes nothing. `reconcileBrainMember` looks the key up with `changeByKey` (`admin/store.ts`). The route returns a refusal at `brains/routes.ts`. Membership reads go through `reconcileStoredMembers` (`brains/open.ts`).
+- **#12.** Fixed. See the tables in section 12.
 - **#8.** Fixed. `distinctApprovers` (`src/state/proposal-review.ts`) counts person ids. The same id twice adds nothing. `transitionProposal` approves, rejects, and edits only from candidate, and releases when that count reaches `required`. An unknown word is `state_unreadable`. `wikiDecide` (`wiki/store.ts`) passes the approver ids and does not call `commitQuorum`. A short approval returns `status: "pending"` and does not update the item. That insert and its log share one transaction. The last approval sets `approved` only while the row is still `candidate`. Reject does the same. `wikiEditProposal` matches `status = 'candidate' AND revision = ?`. An open finding is dismissed or resolved. The archive loop in `applyProposal` compares `status = 'published'`. Personal review forces `required = 1`.
 - **#9.** Fixed. `transitionPage` (`src/state/page-visibility.ts`) saves from absent or published, archives from published, and unarchives only from archived. An unknown word is refused. `savePage` (`wiki/store.ts`) updates `WHERE id = ? AND status = 'published'`. `unarchivePage` updates `WHERE status = 'archived'`. The archive loop keeps `WHERE status = 'published'`. `wikiDecide` returns the refusal, and the route (`wiki/routes.ts`) sends it through `failResponse` (`ux/util.ts`), which is 409.
 - **#11.** Fixed. `publishMode` (`src/state/import-outcome.ts`) is draft unless the caller passes true. `transitionImport` leaves a draft in place on `auto_accept` and publishes only from a draft. An unknown word is `state_unreadable`. `runImport` (`brains/data.ts`) reports `publishMode(false)` for the dry run and the real import. The draft markdown is built in `runImport`. `wikiPropose` (`wiki/store.ts`) publishes only for explicit `publishDirect`, and the update matches `status = 'candidate'`. A personal auto-accept returns `autoAccepted: false`.
@@ -705,62 +705,198 @@ The `imports` flag is checked before the handler body (`needFlag`). It does not 
 
 ## 12. Brain member
 
-- Purpose: A person has a stored brain role that is either already in force or waiting on a directory change.
-- Code: `src/state/brain-member.ts`. `brainMemberClaim` (`brains/store.ts`) mints the key and stores it before `gov.propose`. `brainMemberRelease` compares that key and the previous state. `brainMemberDropClaim` compares the key, clears the claim when `pending_role` is set, and deletes only a claimed or pending row. `brainMemberFinishProposal` writes on the key and the previous state. `reconcileBrainMember` looks the key up. `placeScopedMember` runs the claim first. `reconcileStoredMembers` (`brains/open.ts`) reconciles, then the read continues. The route returns the refusal at `brains/routes.ts`.
-- Persisted: yes, `brain_members.state` (`claimed`, `active`, or `pending`), `claim_key`, and `change_id`. `gov_changes.claim_key` is nullable. Unversioned. Remove deletes the row. A legacy governance row keeps a null key.
-- What changed: the claim stores an opaque key before propose, and `propose` (`admin/store.ts`) returns the existing change for that key. The column is added at `admin/store.ts` with a unique index. Existing rows are not rewritten. The two stores still do not share a transaction, and governance does not write `brain_members`. If propose throws and nothing was stored, a first-time (inserted) hold is deleted, and a reused hold is restored to its previous key. The claim otherwise stays only when the governance row was stored. A refused claim does not propose. A refused proposal runs that same release. A release or drop that matches zero rows is `state_unreadable`. A drop never deletes by person. After a missed update, a proposal finish returns ok and writes nothing when the key and the state still match and the role is the caller role or the stored pending role. It does not log mismatch. Any other lost compare-and-set is `mismatch` and logs the principal id, the change id, and the stored state. `placeScopedMember` returns 409 for that finish only when the call returns not ok. Overlapping finishes log once. The next read looks the key up. An applied governance row calls finish with state `active`. The matching update sets that state. A pending governance row leaves the claim and writes no log. A missing governance row leaves an in-flight claim, one with `pending_role` set or state `claimed`, for 144 hours (2x CHANGE_TTL_MS), then the lease releases it. A pending row with no pending role is not leased. Rejected, expired, or withdrawn releases the claim, including that pending row. `grantsMemberRole` (`src/state/brain-member.ts`) is the only grant check. `brainRoleOf` (`brains/store.ts`), the access-list role (`brains/routes.ts`), the extra stored rows, the member check, and the reader count (`brains/shared.ts`) call it. The access list reconciles at `brains/routes.ts`. The reader count reconciles at `brains/shared.ts`. A claimed or pending row grants nothing. The matching existing-member update clears claim_key in that write. A missed update that returns ok does not write. A first-time finish keeps claim_key on the row; neither apply nor DropClaim clears it, and DropClaim only deletes rows in state claimed or pending. An idempotent retry returns ok when `pending_role` is null, `claim_key` is null, and the state matches. The role comparison is always true then, so a different caller role also returns ok and writes nothing.
+The rows below are the returns and writes. A transition in the list or the diagram is a row whose write sets `state` or deletes the row.
+
+### `brainMemberClaim` (`brains/store.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| Row, `pending_role` set, `claim_key` set, `pending_role !== role` | none | `{ ok: false, code: "replay" }` | `console.warn` `illegal_move`, `principalId`, `claimKey` | 292-302 |
+| Row, `pending_role` set, `claim_key` set, `pending_role === role` | none | `{ ok: true, inserted: false, key: claim_key }` | no `wikiLogAppend` | 304-317 |
+| Row, `pending_role` null, state `claimed` or `pending`, `claim_key` set, `role !== row.role` | none | `{ ok: false, code: "replay" }` | `console.warn` `illegal_move`, `principalId`, `claimKey` | 319-329 |
+| Row, `pending_role` null, state `claimed` or `pending`, `claim_key` set, `role === row.role` | none | `{ ok: true, inserted: false, key: claim_key, pendingRole: null }` | no `wikiLogAppend` | 331-344 |
+| `commitMember` `now` is not a safe integer | none | `{ ok: false, code: "clock_unreadable" }` | `commit` warns `illegal_transition` (`src/state/illegal.ts:21-29`). No `wikiLogAppend` | 347-349, `src/state/brain-member.ts:40-41` |
+| `now` is a safe integer and `decodeMember` is `unknown`. `claimed` is unknown. A `claimed` row with no key takes this row | none | `{ ok: false, code: "state_unreadable" }` | `commit` warns `illegal_transition` (`src/state/illegal.ts:21-29`). No `wikiLogAppend` | 347-349, `src/state/brain-member.ts:29-31`, `src/state/brain-member.ts:43` |
+| No row, `commitMember` ok, `INSERT` returns 1 | `INSERT` `state = 'claimed'`, `role`, `claim_key` | `{ ok: true, inserted: true, previousState: "claimed" }` | no `wikiLogAppend` | 350-378, insert 353 |
+| No row, `commitMember` ok, `INSERT` returns not 1 | none (`ON CONFLICT DO NOTHING`) | `{ ok: false, code: "replay" }` | `console.warn` `{ at: "brain_member", reason: "replay" }` | 362-364 |
+| `decodeMember` is `pending` or `active`, `UPDATE` returns 1 | `SET claim_key, pending_role, pending_at`. `state` unchanged. `WHERE state = from.tag AND at AND pending_role IS NULL` | `{ ok: true, inserted: false, previousState: from.tag }` | no `wikiLogAppend` | 380-410, SQL 383-384 |
+| `decodeMember` is `pending` or `active`, `UPDATE` returns not 1 | none | `{ ok: false, code: "replay" }` | `console.warn` `{ at: "brain_member", reason: "replay" }` | 394-396 |
+
+### `brainMemberFinishProposal` (`brains/store.ts`)
+
+`stored` is `row.pendingRole` or null (`:528`). Rows are in source order. A later row is reached when the earlier rows did not return.
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `claimKey === key`, `role ===` caller role, `state ===` requested state, `pendingRole == null` | none | `{ ok: true, state }` | none | 517-518 |
+| Requested state is `pending`, `pendingRole` set, `claimKey === key`. Role is not compared | none | `{ ok: true, state: "pending" }` | none | 521-522 |
+| Not the `:517` row. `claimKey === key`, `pendingRole == null`, `state ===` requested state, requested state is not `pending`. Caller role differs from `row.role` | none | `{ ok: true, state }` | none | 525-526 |
+| `pendingRole == null`, `claimKey == null`, `state ===` requested state, `row.role === (stored ?? row.role)`. Here `stored` is null, so that comparison is `row.role === row.role` | none | `{ ok: true, state }` | `console.warn` `{ at: "brain_member", principalId, claimKey: key, changeId }` | 529-537 |
+| `stored` set, `at === null`, update returns 1 | `SET role = pending_role, state, claim_key = NULL, pending_role = NULL, pending_at = NULL`. `WHERE claim_key, pending_role IS NOT NULL, state = previousState` | `{ ok: true, state }` | `wikiLogAppend` `brain.member` | 540-554, 629-630 |
+| `stored` set, `at !== null`, update returns 1 | Same `SET`, and `WHERE at = ?` | `{ ok: true, state }` | `wikiLogAppend` `brain.member` | 556-568, 629-630 |
+| `stored` null, `at === null`, update returns 1 | `SET state, pending_role = NULL, pending_at = NULL`. `claim_key` not in the `SET`. `WHERE claim_key, pending_role IS NULL, state = previousState` | `{ ok: true, state }` | `wikiLogAppend` `brain.member` | 571-582, 629-630 |
+| `stored` null, `at !== null`, update returns 1 | Same `SET`, and `WHERE at = ?` | `{ ok: true, state }` | `wikiLogAppend` `brain.member` | 584-596, 629-630 |
+| Update returned not 1. `again.pendingRole == null`, `again.claimKey == null`, `again.state ===` requested state, `again.role === (stored ?? again.role)` | none | `{ ok: true, state }`. Not `mismatch` | `console.warn` `{ at: "brain_member", principalId, claimKey: key, changeId }` | 600-608 |
+| Update returned not 1 and the `:600` row did not return. `again.claimKey === key`, `again.state ===` requested state, and `again.role ===` caller role or `again.role === stored`. `pending_role` set, state already `active`, requested state `active`, and `at` not equal to the stored `at`: the `:557-568` update matches zero rows, `:517-526` and `:529` and `:600` do not return, and this row returns ok when `again.role` is the caller role or `stored` | none | `{ ok: true, state }` | none | 610-616 |
+| Update returned not 1 and the `:600` and `:610` rows did not return. The `at` miss in the previous row takes this row when `again.role` is neither the caller role nor `stored` | none | `{ ok: false, code: "mismatch", changeId }` | `console.warn` `{ at: "brain_member", reason: "mismatch", principalId, changeId, from: row?.state ?? "absent" }` | 618-627 |
+
+### `brainMemberFinish` (`brains/store.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `pending_role` set, update returns 1 | `SET role = pending_role, state, claim_key = NULL, pending_role = NULL, pending_at = NULL`. `WHERE claim_key, pending_role IS NOT NULL, at = hold.at` | `{ ok: true, state }` | `wikiLogAppend` `brain.member` | 647-659, 678-679 |
+| `pending_role` set, update returns not 1 | none | `{ ok: false, code: "replay" }` | `console.warn` `{ at: "brain_member", reason: "replay" }` | 647-659, 674-676 |
+| `pending_role` null, `hold.inserted`, update returns 1 | `SET state, pending_role = NULL, pending_at = NULL`. `claim_key` not in the `SET`. `WHERE claim_key, pending_role IS NULL, at = hold.at` | `{ ok: true, state }` | `wikiLogAppend` `brain.member` | 661-672, 678-679 |
+| `pending_role` null, `hold.inserted`, update returns not 1 | none | `{ ok: false, code: "replay" }` | `console.warn` `{ at: "brain_member", reason: "replay" }` | 661-672, 674-676 |
+| `pending_role` null, `hold.inserted` false, update returns 1 | `SET` also `claim_key = NULL`. Same `WHERE` | `{ ok: true, state }` | `wikiLogAppend` `brain.member` | 663, 678-679 |
+| `pending_role` null, `hold.inserted` false, update returns not 1 | none | `{ ok: false, code: "replay" }` | `console.warn` `{ at: "brain_member", reason: "replay" }` | 663, 674-676 |
+
+### `brainMemberSet` (`brains/store.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `brainMemberClaim` returns not ok | none | `{ ok: false, code: hold.code }` | that claim row | 742-743 |
+| `brainMemberClaim` returns ok | `brainMemberFinish` | that finish row | that finish row | 744 |
+
+### `brainMemberRelease` (`brains/store.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `!hold.key` or `!hold.previousState` | none | `{ ok: false, code: "state_unreadable" }` | none | 704 |
+| `hold.inserted`, `DELETE` returns 1 | `DELETE WHERE claim_key = hold.key AND state = hold.previousState AND pending_role IS NULL`. The insert return sets `previousState` to `claimed` | `{ ok: true }` | none | 706-716, 732 |
+| `hold.inserted`, `DELETE` returns not 1 | none. The row stays | `{ ok: false, code: "state_unreadable" }` | none | 706-716, 732 |
+| `hold.inserted` false, `UPDATE` returns 1 | `SET claim_key = hold.previousKey, pending_role = NULL, pending_at = NULL`. `WHERE claim_key = hold.key AND state = (hold.inflightState ?? hold.previousState) AND at = hold.at AND pending_role IS (hold.pendingRole ?? null) AND pending_at IS (hold.pendingAt ?? null)` | `{ ok: true }` | none | 717-732 |
+| `hold.inserted` false, `UPDATE` returns not 1 | none. The row stays | `{ ok: false, code: "state_unreadable" }` | none | 717-732 |
+
+### `brainMemberDropClaim` (`brains/store.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `!key` | none | `{ ok: false, code: "state_unreadable" }` | none | 462 |
+| `UPDATE` returns 1 | `SET pending_role = NULL, pending_at = NULL, claim_key = NULL WHERE claim_key AND pending_role IS NOT NULL` | `{ ok: true }` | none | 464-473 |
+| That update returned not 1, `DELETE` returns 1 | `DELETE WHERE claim_key AND pending_role IS NULL AND state IN ('claimed', 'pending')` | `{ ok: true }` | none | 474-483 |
+| Delete returned not 1, `SELECT` of `claim_key` and `pending_role IS NULL` returns 1 | none | `{ ok: true }` | `console.warn` `{ at: "brain_member", principalId, claimKey: key }` | 484-494 |
+| That select returned not 1 | none. `previousState` is not read | `{ ok: false, code: "state_unreadable" }` | none | 496-497 |
+
+### `reconcileBrainMember` (`brains/store.ts`)
+
+`inFlightExisting` is `pendingRole != null`. `inFlightFirst` is `state === "claimed"` and `pendingRole == null`. `waiting` is `state === "pending"` and `pendingRole == null`. `claimAt` is `pendingAt` when `inFlightExisting`, otherwise `at`. `CLAIM_LEASE_MS` is `2 * CHANGE_TTL_MS` (`:40`).
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| No row, or `claimKey` null | none | return | none | 1367 |
+| Not `inFlightExisting`, not `inFlightFirst`, not `waiting` | none | return | none | 1369-1372 |
+| No governance row, and not `inFlightExisting`, and not `inFlightFirst` | none | return | none | 1374-1375 |
+| No governance row, in-flight, and `claimAt == null` or `claimAt` is not finite or `claimAt + CLAIM_LEASE_MS > now` | none. That in-flight claim stays | return | none | 1376-1377 |
+| No governance row, in-flight, and the lease test above is false | `brainMemberDropClaim(claimKey, row.state)`. Return value not read | return | that drop row | 1378-1379 |
+| `change.status === "pending"` | none | return | none | 1381 |
+| `change.status === "applied"` | `brainMemberFinishProposal` with `pendingRole ?? row.role`, state `active`, `at` null, `row.claimKey`, `previousState` `row.state`. Return value not read | return | that finish row | 1382-1396 |
+| `change.status` is `rejected`, `expired`, or `withdrawn` | `brainMemberDropClaim(claimKey, row.state)`. Return value not read | return | that drop row | 1398-1399 |
+| Any other `change.status`, including `unknown` | none | return | none | 1400 |
+
+### `reconcileStoredMembers` (`brains/open.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `for (const id of ids.slice(0, 20))` | `reconcileBrainMember`. An id not in that slice is not a loop iteration | the reconcile rows | those rows | 45 |
+
+### `placeScopedMember` (`brains/store.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| Entry | `reconcileBrainMember` | continues | that reconcile row | 1412 |
+| `grantsMemberRole(open.state)` (`state === "active"`, `src/state/brain-member.ts:35-36`), `open.role === role`, `open.claimKey` set, `changeByKey` status `applied` | none | `{ ok: true, status: "applied", changeId }` | none | 1414-1416 |
+| `brainMemberClaim` returns not ok | none | `{ ok: false, status: 409, code: hold.code }` | that claim row | 1418-1419 |
+| `propose` throws, and `changeByKey` is not a function or it returns a falsy value | `brainMemberRelease(hold)`. Return value not read. The release row for `DELETE` or `UPDATE` returning not 1 is `state_unreadable` and no write, so the row stays | throws `error` | that release row | 1423-1428, release 732 |
+| `propose` throws, and `changeByKey` returns a stored change | none | throws `error` | none | 1426-1428 |
+| `made.ok` false, release returns not ok | `brainMemberRelease` | `{ ok: false, status: 409, code: released.code }` | that release row | 1430-1432 |
+| `made.ok` false, release returns ok | `brainMemberRelease` | `{ ok: false, status: made.status, code: made.code, message: made.message }` | that release row | 1430-1433 |
+| No current row, or `current.claimKey !== hold.key` | none | `{ ok: false, status: 409, code: "mismatch", changeId }` | `console.warn` `illegal_move`, `principalId`, `claimKey`, `changeId` | 1435-1446 |
+| `brainMemberNote` update returns not 1 | `UPDATE change_id WHERE principal_id, at = hold.at, claim_key = hold.key` matches not 1 | `{ ok: false, status: 409, code: "state_unreadable" }` | none | 1448-1449, note 687-697 |
+| Note returns ok, `brainMemberFinishProposal` returns not ok | note `UPDATE` returned 1, then finish | `{ ok: false, status: 409, code: "mismatch", changeId }` | that finish row | 1448-1464 |
+| Note returns ok, finish returns ok | note `UPDATE` returned 1, then finish | `{ ok: true, status: made.applied ? "applied" : "pending", changeId }` | that finish row | 1448-1465 |
+
+### `brainMemberRemove` (`brains/store.ts`)
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `DELETE` returns `n > 0` | `DELETE FROM brain_members WHERE principal_id = ?` | `true` | `wikiLogAppend` `brain.member_removed` `{ principalId }` | 747-752 |
+| `DELETE` returns `n === 0` | none | `false` | none | 747-752 |
+
+### `setMember` (`brains/routes.ts`)
+
+`scoped` is kind `circle`, `department`, or `account` (`:648`). `wantMember` is `role !== null` (`:699`). `status` starts as `"applied"` (`:689`). `govMember` is false when `scoped` is false (`:649-651`).
+
+| Condition | Write | Result | Log | Line |
+|---|---|---|---|---|
+| `pid` fails `/^[A-Za-z0-9_.:@-]{1,128}$/` | none | throws `notFound()` | none | 641 |
+| `pid === s.principal.id` | none | 422 `own_role` | none | 642-643 |
+| `emailOfPrincipal(pid)` is null | none | throws `notFound()` | none | 645 |
+| `needsSecond` and `step.tag === "same_actor"`. `needsSecond` is `role !== null` and `isMember` and (`restricted` or (`role` is `steward` or `owner` and `facts.type === "global"`)). `isMember` is `govMember` or a stored row with `grantsMemberRole` | none | 409 `same_person` | none | 652-666 |
+| `needsSecond` and `quorumConfirmed(step)` is false | `audit` `brain.role_request`. Return value not read | 202 `{ ok: true, status: "pending", member }` | none | 667-674 |
+| `audit` of `brain.member_set` or `brain.member_remove` returns falsy | none | 503 `audit_unavailable` | none | 677-685 |
+| `scoped` and `"ok" in scopeDesc` | none | 422 `invalid_scope` | none | 691-693 |
+| `scoped` and `manageAuthority` is false | none | 403 `forbidden` | none | 694-698 |
+| `scoped` and `wantMember !== govMember` and `role !== null` and `placeScopedMember` returns not ok | `placeScopedMember` | JSON `placed.status`, `placed.code` | that place row | 700-722 |
+| `scoped` and `wantMember !== govMember` and `role !== null` and place returns ok | `placeScopedMember` | `status = placed.status`. Continues | that place row | 724-725 |
+| `scoped` and `wantMember !== govMember` and `role === null` and `propose` `member_remove` returns not ok | `gov.propose` | JSON `made.status`, `made.code`, `made.message` | none | 726-739 |
+| `scoped` and `wantMember !== govMember` and `role === null` and propose returns ok | `gov.propose` | `status = made.applied ? "applied" : "pending"`. Continues | none | 740-741 |
+| Not `scoped`, or `scoped` and `wantMember === govMember`. On a delete, `wantMember` is false; if `govMember` is also false, both inner branches are skipped | none | `status` stays `"applied"`. Continues | none | 689-743 |
+| `role === null` and `status === "applied"` | `brainMemberRemove`. Return value not read | 200 `{ ok: true, status, changeId if set, member }` | that remove row | 744-745, 756-761 |
+| `role === null` and `status !== "applied"` | none | 200 `{ ok: true, status, changeId if set, member }` | none | 744, 756-761 |
+| `role !== null` and `scoped` and `!govMember` | none. `brainMemberSet` is not called | 200 `{ ok: true, status, changeId if set, member }` | none | 746, 756-761 |
+| `role !== null` and not (`scoped` and `!govMember`) and `brainMemberSet` returns not ok | `brainMemberSet` with state `active` when `status === "applied"`, otherwise `pending` | 409 `set.code` | that set row | 746-754 |
+| `role !== null` and not (`scoped` and `!govMember`) and `brainMemberSet` returns ok | `brainMemberSet` with state `active` when `status === "applied"`, otherwise `pending` | 200 `{ ok: true, status, changeId if set, member }` | that set row | 746-761 |
+
+`PUT` `:448` and `DELETE` `:459` call `setMember`.
 
 ### Accepted limits
 
 | | Limit | Where | Decision |
 |---|---|---|---|
-| i | List reconcile is bounded to 20 ids. A later claim grants nothing and converges on a direct per-person read. | `reconcileStoredMembers` (`brains/open.ts`), `ids.slice(0, 20)` | Accepted |
-| ii | Reconcile ignores a zero-row drop or finish. The row stays and the next read retries. | `reconcileBrainMember` (`brains/store.ts`) | Accepted, fail-safe |
-| iii | An unknown governance status, and any status other than pending, applied, rejected, expired, or withdrawn, leaves the row as stored. `reconcileBrainMember` writes nothing. An existing-member claim does not change state, so an active row stays active and still grants. A claimed row stays claimed and grants nothing. A pending row with no pending role stays pending and grants nothing. | `reconcileBrainMember` (`brains/store.ts`), after `changeByKey` | Accepted |
-| iv | `brainMemberRemove` deletes by `principal_id`. The route calls it when role is null and status is `applied`. Status starts as `applied`. For circle, department, and account it is replaced from governance only when the directory membership must change (`wantMember !== govMember`); otherwise it stays `applied`. Other shareable kinds, including global and core, reach the delete with no directory proposal. Make it a compare-and-set on the active state once the removal machine is done. | `brainMemberRemove` (`brains/store.ts`), caller `brains/routes.ts` | LATER |
-
-### States
-
-| State | Data carried | Meaning |
-|---|---|---|
-| absent | — | No row |
-| claimed | role, actor, claim key | First-time hold. Grants nothing |
-| pending | role, actor | Directory change not applied yet |
-| active | role, actor | In force |
-
-### Events
-
-| Event | Source |
-|---|---|
-| set | Member route |
-| remove | Member route when role is null and status is `applied`. Directory kinds replace that status from governance only when the directory membership must change; otherwise status stays `applied`. Other shareable kinds, including global and core, delete with no directory proposal |
+| i | See `reconcileStoredMembers`. | `brains/open.ts:45` | Accepted |
+| ii | See the `reconcileBrainMember` rows that call `brainMemberDropClaim` or `brainMemberFinishProposal`. | `brains/store.ts:1378`, `brains/store.ts:1383`, `brains/store.ts:1399` | Accepted |
+| iii | See the `reconcileBrainMember` row for any other status. | `brains/store.ts:1400` | Accepted |
+| iv | See `brainMemberRemove` and the `setMember` rows where `role === null`. | `brains/store.ts:747`, `brains/routes.ts:744` | LATER |
 
 ### Transitions
 
-| From | Event | Guard | To | Side effects |
-|---|---|---|---|---|
-| absent or any | set | caller passes `active` | active | upsert, wiki log |
-| absent or any | set | caller passes `pending` | pending | upsert, wiki log |
-| any stored row | remove | role is null and status is `applied`. Directory kinds replace status from governance only when the directory membership must change; otherwise status stays `applied`. Other shareable kinds, including global and core, have no directory proposal | absent | delete by `principal_id` |
-
-`brainMemberClaim` inserts with `ON CONFLICT DO NOTHING` (`brains/store.ts`) and updates with `WHERE principal_id = ? AND state = ? AND at = ? AND pending_role IS NULL`. The key is stored on that write. `brainMemberFinish` applies the stored pending role, or keeps the role the claim inserted, and logs only when that claim still matches. Zero rows is `replay`. `brainMemberFinishProposal` writes where `claim_key` and the previous state match. A missed update returns ok and writes nothing when the key and the state still match and the role is the caller role or the stored pending role. `pending_role` set, state already `active`, and `at` not equal to the stored `at` misses the update and the earlier returns, then returns ok. Any other lost compare-and-set is `mismatch` and logs the principal id, the change id, and the stored state. `placeScopedMember` returns 409 for that finish only when the call returns not ok. A row with `pending_role` null, `claim_key` null, and the same state returns ok and writes nothing, even when the caller role differs, and logs the principal id, the claim key, and the change id. One key-matching return, used when `pending_role` is null, checks the role and the state and does not log again. A later return for an active row with `pending_role` null matches the key and the state and does not check the role. When the finish state is `pending` and `pending_role` is set, the return checks the key only. A claim re-entry on a `claimed` or `pending` row that already holds a key returns that key and writes nothing when the role matches. A different role on that re-entry is `replay`. A stored word other than `pending` or `active` that reaches the transition is `state_unreadable` and is not rewritten. `placeScopedMember` returns 409 before `gov.propose` when the claim is refused. The route surfaces it at `brains/routes.ts`. `brainMemberRelease` and `brainMemberDropClaim` are `state_unreadable` when zero rows match. `reconcileBrainMember` is the next read. It does not share a transaction with governance. Governance stays the source of truth. A pending governance row leaves the claim. A missing governance row leaves an in-flight claim for 144 hours, then the lease releases it. A pending row with no pending role is not leased. Rejected, expired, or withdrawn releases the claim, including that pending row. Applied calls finish with state `active`. The matching first-time update does not clear `claim_key`.
+| From | To | Write | Line |
+|---|---|---|---|
+| no row | `claimed` | claim `INSERT` | `brains/store.ts:353` |
+| `claimed` | `active` | `brainMemberFinishProposal` one row, `previousState` `claimed`, requested `active` (`:543-568` or `:573-596`). `brainMemberFinish` one row (`:650` or `:663`) | those lines |
+| `claimed` | `pending` | same writes, requested `pending` | those lines |
+| `pending` | `active` | `brainMemberFinishProposal` one row, `previousState` `pending`, requested `active`. `brainMemberFinish` one row | `:543-568`, `:573-596`, `:650`, `:663` |
+| `pending` | `pending` | those writes, requested `pending` | those lines |
+| `active` | `active` | `brainMemberFinishProposal` one row, `previousState` `active`, requested `active`. `brainMemberFinish` one row | those lines |
+| `active` | `pending` | those writes, requested `pending` | those lines |
+| `claimed` | absent | `brainMemberDropClaim` `DELETE` (`:476`). `brainMemberRelease` `DELETE` when `hold.inserted` and `hold.previousState` is `claimed` (`:709`). `brainMemberRemove` (`:749`) | those lines |
+| `pending` | absent | `brainMemberDropClaim` `DELETE` (`:476`). `brainMemberRemove` (`:749`) | those lines |
+| `active` | absent | `brainMemberRemove` | `brains/store.ts:749` |
 
 ```mermaid
 stateDiagram-v2
  [*] --> Absent
- Absent --> Claimed: first-time claim
- Absent --> Active: set active
- Absent --> Pending: set pending
- Pending --> Active: set active
- Active --> Pending: set pending
- Active --> Absent: remove
- Pending --> Absent: remove
- Claimed --> Absent: remove
+ Absent --> Claimed: claim INSERT store.ts:353
+ Claimed --> Active: FinishProposal previousState claimed requested active store.ts:543 or store.ts:573
+ Claimed --> Pending: FinishProposal previousState claimed requested pending store.ts:543 or store.ts:573
+ Claimed --> Active: brainMemberFinish store.ts:650 or store.ts:663
+ Claimed --> Pending: brainMemberFinish store.ts:650 or store.ts:663
+ Claimed --> Absent: DropClaim DELETE store.ts:476
+ Claimed --> Absent: release DELETE inserted store.ts:709
+ Claimed --> Absent: remove store.ts:749
+ Pending --> Active: FinishProposal previousState pending requested active store.ts:543 or store.ts:573
+ Pending --> Pending: FinishProposal previousState pending requested pending store.ts:543 or store.ts:573
+ Pending --> Active: brainMemberFinish store.ts:650 or store.ts:663
+ Pending --> Pending: brainMemberFinish store.ts:650 or store.ts:663
+ Pending --> Absent: DropClaim DELETE store.ts:476
+ Pending --> Absent: remove store.ts:749
+ Active --> Active: FinishProposal previousState active requested active store.ts:543 or store.ts:573
+ Active --> Pending: FinishProposal previousState active requested pending store.ts:543 or store.ts:573
+ Active --> Active: brainMemberFinish store.ts:650 or store.ts:663
+ Active --> Pending: brainMemberFinish store.ts:650 or store.ts:663
+ Active --> Absent: remove store.ts:749
 ```
-
-### Platform / flag differences
-
-Restricted brains and heavy roles on a global brain set `needsSecond` before this write (`brains/routes.ts`). That uses machine 4.
 
 ## 13. Replay nonce
 
