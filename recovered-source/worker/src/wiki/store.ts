@@ -2172,10 +2172,10 @@ export abstract class WikiBase extends DurableObject<Env> {
                label = 'Erased source',
                body = json_object(
                  'v', 1,
-                 'kind', json_extract(body, '$.kind'),
+                 'kind', CASE WHEN json_valid(body) THEN json_extract(body, '$.kind') END,
                  'title', 'Erased source',
                  'rationale', '',
-                 'origin', json_extract(body, '$.origin'),
+                 'origin', CASE WHEN json_valid(body) THEN json_extract(body, '$.origin') END,
                  'pages', json('[]'),
                  'facts', json('[]'),
                  'invalidate', json('[]'),
@@ -2183,28 +2183,57 @@ export abstract class WikiBase extends DurableObject<Env> {
                  'archive', json('[]'),
                  'reingest', json('[]'),
                  'sources', json('[]'),
-                 'findingKey', json_extract(body, '$.findingKey'),
+                 'findingKey', CASE WHEN json_valid(body) THEN json_extract(body, '$.findingKey') END,
                  'titleSources', json('[]')
                ),
                status = CASE WHEN status IN ('approved', 'rejected') THEN status ELSE 'rejected' END,
                updated_at = ?
              WHERE id = ? AND status = ?
                AND (
-                 EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.titleSources')) WHERE value = ?)
-                 OR EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.reingest')) WHERE value = ?)
-                 OR EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.sources')) WHERE json_extract(value, '$.id') = ?)
-                 OR EXISTS (
-                   SELECT 1 FROM json_each(json_extract(body, '$.facts')) AS fact
-                   WHERE EXISTS (
-                     SELECT 1 FROM json_each(json_extract(fact.value, '$.sourceIds')) AS src
-                     WHERE src.value = ?
+                 CASE
+                   WHEN json_valid(body)
+                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.titleSources') END = 'array'
+                   THEN EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.titleSources')) WHERE value = ?)
+                   ELSE 0
+                 END
+                 OR CASE
+                   WHEN json_valid(body)
+                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.reingest') END = 'array'
+                   THEN EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.reingest')) WHERE value = ?)
+                   ELSE 0
+                 END
+                 OR CASE
+                   WHEN json_valid(body)
+                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.sources') END = 'array'
+                   THEN EXISTS (
+                     SELECT 1 FROM json_each(json_extract(body, '$.sources')) AS src
+                     WHERE CASE WHEN json_type(src.value) = 'object' THEN json_extract(src.value, '$.id') END = ?
                    )
-                 )
+                   ELSE 0
+                 END
+                 OR CASE
+                   WHEN json_valid(body)
+                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.facts') END = 'array'
+                   THEN EXISTS (
+                     SELECT 1 FROM json_each(json_extract(body, '$.facts')) AS fact
+                     WHERE CASE
+                       WHEN CASE WHEN json_valid(fact.value) THEN json_type(fact.value, '$.sourceIds') END = 'array'
+                       THEN EXISTS (
+                         SELECT 1 FROM json_each(json_extract(fact.value, '$.sourceIds')) AS src
+                         WHERE src.value = ?
+                       )
+                       ELSE 0
+                     END
+                   )
+                   ELSE 0
+                 END
+                 OR instr(body, '"' || ? || '"') > 0
                )
              RETURNING id`,
             now,
             row.id,
             row.status,
+            sourceId,
             sourceId,
             sourceId,
             sourceId,
