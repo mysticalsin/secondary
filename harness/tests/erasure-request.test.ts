@@ -293,15 +293,47 @@ function tempFile(): { file: string; remove: () => void } {
   };
 }
 
-async function openPolicy(file: string): Promise<Policy> {
+type SqlHookDb = { prepare(query: string): { run(...args: unknown[]): unknown } };
+
+async function openPolicy(
+  file: string,
+  options?: { afterSql?: (query: string, db: SqlHookDb) => void },
+): Promise<Policy> {
   const db = openSqlite(file);
   const sql = sqliteStorage(db);
+  let depth = 0;
   let ready: Promise<void> = Promise.resolve();
   const ctx = {
     storage: {
-      sql,
+      sql: {
+        exec(query: string, ...bindings: never[]) {
+          const result = sql.exec(query, ...bindings);
+          options?.afterSql?.(query, db);
+          return result;
+        },
+      },
       transactionSync<T>(fn: () => T): T {
-        return fn();
+        const nested = depth > 0;
+        const save = `erasure_tx_${depth}`;
+        if (nested) db.exec(`SAVEPOINT ${save}`);
+        else db.exec("BEGIN");
+        depth += 1;
+        try {
+          const result = fn();
+          depth -= 1;
+          if (nested) db.exec(`RELEASE ${save}`);
+          else db.exec("COMMIT");
+          return result;
+        } catch (error) {
+          depth -= 1;
+          try {
+            if (nested) db.exec(`ROLLBACK TO ${save}`);
+            else db.exec("ROLLBACK");
+          } catch {
+            // The driver may already have closed the transaction.
+          }
+          throw error;
+        }
       },
     },
     blockConcurrencyWhile(fn: () => Promise<void>) {
@@ -802,7 +834,11 @@ test("erasure request: a valid grant resumes without a second person", async () 
     );
     const { post } = await eraseApp(buildOrg(["acme"]));
     const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    const erased = (await res.json()) as { ok?: boolean; status?: string; step?: string | null };
     assert.equal(res.status, 200);
+    assert.equal(erased.ok, true);
+    assert.equal(erased.status, "erased");
+    assert.equal(erased.step, null);
     assert.equal(pendingErase(file), undefined);
     const body = JSON.parse(readLedger(file)?.ledger ?? "{}") as { grant?: { confirmer?: string } };
     assert.equal(body.grant?.confirmer, "bea");
@@ -894,6 +930,150 @@ test("erasure request: reapply skips a row without a grant and runs a granted ro
         grantedRemoved: true,
       },
     );
+  } finally {
+    remove();
+  }
+});
+
+function invalidGrantLedger(principalId: string, grant: object): string {
+  return JSON.stringify({
+    order: ["directory", "receipts"],
+    mark: { directory: "done", receipts: "done" },
+    grant,
+  });
+}
+
+async function reapplyPlanted(principalId: string, ledger: string): Promise<{
+  skipped: unknown;
+  present: boolean;
+  updatedAt: number | undefined;
+}> {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const db = openSqlite(file);
+    db.prepare(
+      "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'completed', ?, 5)",
+    ).run(principalId, ledger);
+    db.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(principalId, `${principalId}@example.invalid`);
+    db.prepare(
+      "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(principalId, "pz", "[]", NOW - 1_000, NOW + 86_400_000);
+    db.close();
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      reapplyErasures: (
+        env: { AUDIT: { fetch: (url: string) => Promise<Response> } },
+        tenantId: string,
+        kind: "tenant",
+        scope: string,
+        now: number,
+      ) => Promise<number | { applied: number; skipped: readonly string[] }>;
+    };
+    const result = await rights.reapplyErasures(
+      { AUDIT: { fetch: async () => new Response(JSON.stringify({ rewritten: 1 }), { status: 200 }) } },
+      TENANT,
+      "tenant",
+      "tenant",
+      NOW,
+    );
+    const left = openSqlite(file);
+    const person = left.prepare("SELECT id FROM principals WHERE id = ?").get(principalId);
+    const row = left.prepare("SELECT updated_at FROM erasure_requests WHERE principal_id = ?").get(principalId) as
+      | { updated_at: number }
+      | undefined;
+    left.close();
+    return {
+      skipped: typeof result === "object" && result !== null ? [...result.skipped] : result,
+      present: person !== undefined,
+      updatedAt: row?.updated_at,
+    };
+  } finally {
+    remove();
+  }
+}
+
+test("erasure request: reapply skips a one-approver grant and does not run it", async () => {
+  const id = "subject-same";
+  const seen = await reapplyPlanted(
+    id,
+    invalidGrantLedger(id, { subject: id, requester: "ada", confirmer: "ada", steps: ["directory", "receipts"] }),
+  );
+  assert.deepEqual(seen, { skipped: [id], present: true, updatedAt: 5 });
+});
+
+test("erasure request: reapply skips a grant that leaves a plan step out and does not run it", async () => {
+  const id = "subject-narrow";
+  const seen = await reapplyPlanted(
+    id,
+    invalidGrantLedger(id, { subject: id, requester: "ada", confirmer: "bea", steps: ["directory"] }),
+  );
+  assert.deepEqual(seen, { skipped: [id], present: true, updatedAt: 5 });
+});
+
+test("erasure request: a grant for another subject is unreadable and needs a fresh quorum", async () => {
+  const plan = await acmePlan();
+  const ledger = pendingLedger(plan, {
+    subject: "other-subject",
+    requester: "ada",
+    confirmer: "bea",
+    steps: plan,
+  });
+  const decoded = decodeErasureLedger({ status: "requested", ledger }, SUBJECT);
+  assert.equal(decoded.status.tag, "unreadable");
+  assert.deepEqual(decoded.order, []);
+  await damageStaysPending("requested", ledger);
+});
+
+test("erasure request: a replayed confirm writes no grant and leaves the erasure row", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const ledger = JSON.stringify({ order: ["directory"], mark: { directory: "pending" } });
+    let replay = false;
+    await openPolicy(file, {
+      afterSql(query, db) {
+        if (replay && query.includes("SELECT") && query.includes("pending_ops"))
+          db.prepare("DELETE FROM pending_ops WHERE key = ?").run(`erase:${SUBJECT}`);
+      },
+    });
+    putLedger(file, "legacy", ledger);
+    const { post } = await eraseApp(buildOrg(["acme"]));
+    const first = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(first.status, 202);
+    assert.equal(readLedger(file)?.ledger, ledger);
+    replay = true;
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 1_000);
+    assert.equal(second.status, 202);
+    const row = readLedger(file);
+    assert.equal(row?.status, "legacy");
+    assert.equal(row?.ledger, ledger);
+    assert.equal(row?.updated_at, 5);
+    assert.equal(row?.ledger.includes("grant"), false);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request: a throw after the grant write keeps the ask and writes no row", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const { post } = await eraseApp(buildOrg(["acme"]));
+    const first = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(first.status, 202);
+    assert.equal(pendingErase(file), "ada");
+    const side = openSqlite(file);
+    side.exec(
+      `CREATE TRIGGER erasure_grant_boom BEFORE INSERT ON erasure_requests
+       BEGIN SELECT RAISE(ABORT, 'grant_boom'); END`,
+    );
+    side.close();
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 1_000).then(
+      (res) => res.status,
+      () => 500,
+    );
+    assert.equal(second >= 500, true);
+    assert.equal(pendingErase(file), "ada");
+    assert.equal(readLedger(file), undefined);
   } finally {
     remove();
   }
