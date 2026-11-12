@@ -7,10 +7,11 @@ No database table, schema, or stored row changes. The entities are files and cou
 | Field | Rule |
 |---|---|
 | Destination | The git path in the contract. One path, one blob |
-| Blob | The git object id in the contract. `git hash-object` of that path equals the object, including the blob's existing `NEW RECONSTRUCTION` comment |
+| Blob | The source blob id in the contract. The committed file is that blob minus the first N lines |
+| N | 8, 7, 13, and 5. No blank line follows the comment in any of the four |
 | Order | types.ts, then the agent-ui barrel, then view-plan.ts, then view-plan.validator.d.ts |
 | Location count | One git path on the branch. A barrel re-export is not another path. The five siblings keep their current blobs |
-| Provenance | Commit message names `db3e8548` plus the blob id. The promotion adds no comment |
+| Provenance | Commit message records `db3e8548`, the full blob id, N, and the removed header verbatim. The committed file does not contain that comment |
 
 ## Env name check
 

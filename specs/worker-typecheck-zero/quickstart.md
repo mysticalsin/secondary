@@ -22,16 +22,17 @@ This spec commit does not change those counts.
 ## After each implementation commit
 
 1. `git rev-parse HEAD` and `git rev-parse HEAD^`.
-2. `npm run typecheck:worker` on that exact head. Record the SHA, the exit code, and the `error TS` breakdown. The count is lower than the parent. Until a separate CI commit extends main's CI, this QA run is the gate for every T004+ commit.
+2. `npm run typecheck:worker` on that exact head and on the parent. Record the SHA, the exit code, and the `error TS` breakdown. The count is lower than the parent. No `error TS` line (file, line, column, and TS code) appears that the parent does not report. Until a separate CI commit extends main's CI, this QA run is the gate for every T004+ commit.
 3. `npm test`. Expect 403 passed and 0 failed, unless the commit is the red test for a logged mismatch and that is the only failure.
 4. `npm run typecheck`. Expect exit 0.
-5. For a promotion commit, `git rev-parse HEAD:<git path>` and `git hash-object <git path>` both equal the blob in [contracts/promoted-modules.md](./contracts/promoted-modules.md). Use the git path, not `packages/...`. The `packages` symlink is unchanged. The five agent-ui sibling blobs are unchanged. The file still starts with the blob's `NEW RECONSTRUCTION` comment.
+5. For a promotion commit, use the git path in [contracts/promoted-modules.md](./contracts/promoted-modules.md), not `packages/...`. N is 8 for `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`, 7 for `ed80553761da2db13495c6eb250a438d7ef54327`, 13 for `d4b092167f4e1875d0254c98499a979cbd305dd6`, and 5 for `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`. `git cat-file -p <blob> | tail -n +<N+1> | git hash-object --stdin` equals `git rev-parse HEAD:<git path>`. `git cat-file -p <blob> | head -n <N>` contains only comment lines and blank lines. The commit message records `db3e8548`, the full blob id, N, and that header verbatim. The `packages` symlink is unchanged. The five agent-ui sibling blobs are unchanged.
 6. `git grep -n reconstruction tsconfig.json tsconfig.worker.json` finds no path, include, or `preserveSymlinks` entry.
 7. If `harness/runtime/whole-api-causes.test.ts` is in the tree, line 111 is unchanged. If the file is absent, skip this check.
 
 ## End state
 
-- Worker typecheck exits 0.
-- Each promoted path exists once.
+- `npm run typecheck:worker` reports 0 `error TS` lines. That is the lane's exit criterion.
+- Each promoted path exists once. The leading provenance comment is not in the committed file.
 - The Env finding list has names only. `env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth for member names. `recovered-source/worker/src/env.d.ts` imports `./tenant-policy.ts` and `./workspace.ts`, and it has no `reconstruction/` or `worker-root/` path. No wrangler or deploy config was added.
+- The closeout lists every one-sided Env finding. Each name still in the final name-set difference is printed with the word waived. Each name no longer in that difference is marked resolved. The head is not done until that list is complete.
 - No CI file was added. Main `190cd048` has no CI config. No merge until a later reviewed commit extends that system and enforces `npm run typecheck:worker` on the exact head.

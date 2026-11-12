@@ -37,7 +37,7 @@ Place four reconstructed modules at the import paths the Worker already uses, on
 | Principle | Result |
 |---|---|
 | I. Simplicity | Pass. One module per commit. No new package. |
-| II. No helper text | Pass. The promotion adds no comment. Provenance is the commit message, which names `db3e8548` and the blob id. Each named blob already starts with a `NEW RECONSTRUCTION` comment. The exact-blob commit keeps those bytes so `git hash-object` equals the blob id. This feature does not strip that comment. |
+| II. No helper text | Pass. II applies as written. Each promotion removes the leading provenance comment. Provenance is the commit message. No exception. |
 | III. Separation | Pass. One path per type is the contract table: one git path and one blob. Barrel re-exports are not a second path. The five siblings stay where they are. No reconstruction tsconfig entry. |
 | IV. No bolt-ons | Pass. A count that does not fall stops the commit. No `any` or `@ts-ignore`. |
 | V. Tests first | Pass. The standing red is the worker typecheck. A real mismatch is a diagnostic the parent does not report, and it gets its own red test first. A name finding does not. Line 111 is not edited. |
@@ -66,6 +66,8 @@ Recorded 2026-11-12. These replace the earlier "ask which CI file" and "ask whic
 - No merge until CI enforces the check on the exact head.
 - The line 111 rule is a conditional check. It applies only to a tree that contains `harness/runtime/whole-api-causes.test.ts`.
 - `env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth. No off-branch wrangler config is adopted. Any wrangler or deploy config is a separate change and is out of scope here.
+- Option B replaces the earlier ruling that a promoted file keeps the named blob's bytes, including its leading `NEW RECONSTRUCTION` comment. Remove only that leading comment and any blank lines directly after it. Every other byte stays identical.
+- Per-commit no regression means no new `error TS` line versus the parent. The lane's exit criterion is absolute: `npm run typecheck:worker` reports 0 errors at the final head. Every one-sided Env finding is resolved or explicitly waived in the closeout before that head is called done.
 
 ## How analyze was run
 
@@ -77,7 +79,7 @@ QA #54 found no `specify analyze` binary. That matches this install.
 - Output summary: commands are `init`, `check`, `version`, `mcp`, `self`, `extension`, `integration`, `event`, `preset`, `artifact`, `bundle`, and `workflow`. There is no `analyze` command. The project integration is `none`, so no agent command copy was installed.
 - The v1.4.0 analyze step is the template `templates/commands/analyze.md` in the package checkout of tag `v1.4.0` (git `0019fa14d12f45edabc2cc3176c9168a68bd0f97`). It is read-only. It does not write a file.
 - Its script, run from the repo root: `SPECIFY_FEATURE_DIRECTORY=specs/worker-typecheck-zero .specify/scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks`
-- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. The counts from the review after this docs commit are recorded in the writer report: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (status Draft).
+- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after option B: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (status Draft). Constitution II is not in conflict. The leading provenance comment is removed, and no exception is recorded.
 
 ## Project Structure
 
@@ -110,6 +112,4 @@ package.json
 
 ## Complexity Tracking
 
-| Exception | Why it stays | Simpler alternative rejected because |
-|---|---|---|
-| The `NEW RECONSTRUCTION` comment already in each of the four blobs | Constitution II is met by not adding a comment and by putting provenance in the commit message. The earlier spec sentence that the file has no such comment is the exception. `git hash-object` on the exact-blob commit must equal the blob id, so the comment stays in that commit. | Stripping it in the promotion commit would fail `git hash-object`. A later strip commit would not lower the worker error count, so it is not a task on this lane. |
+None. Constitution II is applied as written. No exception is recorded.

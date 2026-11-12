@@ -1,15 +1,20 @@
 # Contract: promoted modules
 
-One path per type means this table: one git path and one blob per module. QA runs `git rev-parse HEAD:<git path>` and `git hash-object <git path>`. Both equal the blob column. A name re-exported through the agent-ui barrel is not a second path.
+One path per type means this table: one git path and one source blob per module. A name re-exported through the agent-ui barrel is not a second path. The committed file is the source blob minus its leading provenance comment. N is the number of lines removed. None of these four blobs has a blank line after that comment.
+
+QA, for each row:
+
+- `git cat-file -p <blob> | tail -n +<N+1> | git hash-object --stdin` equals `git rev-parse HEAD:<git path>`.
+- `git cat-file -p <blob> | head -n <N>` contains only comment lines and blank lines.
 
 `packages` is the tracked symlink to `recovered-source/shared/packages` (blob `79a67f92b7f877ab356884d89c0d307bdf2a9e83`). `git rev-parse HEAD:packages/...` is not a check. The import path below is the same file as the git path.
 
-| Order | Git path | Import path, same file | Blob |
-|---|---|---|---|
-| 1 | `recovered-source/worker/src/types.ts` | `recovered-source/worker/src/types.ts` | `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e` |
-| 2 | `recovered-source/shared/packages/contracts/src/agent-ui/index.ts` | `packages/contracts/src/agent-ui/index.ts` | `ed80553761da2db13495c6eb250a438d7ef54327` |
-| 3 | `recovered-source/shared/packages/contracts/src/view-plan.ts` | `packages/contracts/src/view-plan.ts` | `d4b092167f4e1875d0254c98499a979cbd305dd6` |
-| 4 | `recovered-source/worker/src/generated/view-plan.validator.d.ts` | `recovered-source/worker/src/generated/view-plan.validator.d.ts` | `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c` |
+| Order | Git path | Import path, same file | Source blob | N |
+|---|---|---|---|---|
+| 1 | `recovered-source/worker/src/types.ts` | `recovered-source/worker/src/types.ts` | `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e` | 8 |
+| 2 | `recovered-source/shared/packages/contracts/src/agent-ui/index.ts` | `packages/contracts/src/agent-ui/index.ts` | `ed80553761da2db13495c6eb250a438d7ef54327` | 7 |
+| 3 | `recovered-source/shared/packages/contracts/src/view-plan.ts` | `packages/contracts/src/view-plan.ts` | `d4b092167f4e1875d0254c98499a979cbd305dd6` | 13 |
+| 4 | `recovered-source/worker/src/generated/view-plan.validator.d.ts` | `recovered-source/worker/src/generated/view-plan.validator.d.ts` | `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c` | 5 |
 
 The barrel re-exports `./schemas.ts`, `./library.ts`, `./view.ts`, `./lock.ts`, and `./planner.ts`. T005 does not promote them. They stay at these blobs:
 
@@ -30,7 +35,7 @@ Not promoted from `db3e8548` even though those paths exist there:
 
 The reconstruction sibling paths at `db3e8548` are symlinks to the recovered files above. Do not copy those symlink blobs.
 
-Each of the four promoted blobs starts with a `NEW RECONSTRUCTION` comment. The exact-blob commit keeps it. `git hash-object` applies to that commit and includes the comment.
+Constitution II applies as written. The committed file does not contain the leading comment. The commit message records `db3e8548`, the full source blob id, N, and the removed header verbatim. The verbatim headers are in T004–T007.
 
 ## Env
 
