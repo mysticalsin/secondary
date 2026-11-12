@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-12
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: User description: "worker-typecheck-zero. Tony chose option B: fix the worker typecheck step by step on this branch. Devin's plan (a)–(f) is the scope. This document is the spec phase. It does not add code or type files."
 

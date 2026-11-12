@@ -16,14 +16,23 @@ const manifest = JSON.parse(readFileSync("reconstructed-manifest.json", "utf8"))
   files: Entry[];
 };
 
+function git(args: string[]): string | null {
+  try {
+    return execFileSync("git", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch {
+    return null;
+  }
+}
+
 let failed = 0;
 
 for (const file of manifest.files) {
   const label = `${file.path}: sourceCommit ${file.sourceCommit} sourceBlob ${file.sourceBlob}`;
-  let listing = "";
-  try {
-    listing = execFileSync("git", ["ls-tree", "-r", file.sourceCommit], { encoding: "utf8" });
-  } catch {
+  const listing = git(["ls-tree", "-r", file.sourceCommit]);
+  if (listing === null) {
     console.error(`provenance mismatch: ${label}: sourceCommit is not a readable tree`);
     failed += 1;
     continue;
@@ -44,18 +53,15 @@ for (const file of manifest.files) {
     continue;
   }
   const sourcePath = paths[0];
-  let resolved = "";
-  try {
-    resolved = execFileSync("git", ["rev-parse", `${file.sourceCommit}:${sourcePath}`], {
-      encoding: "utf8",
-    }).trim();
-  } catch {
+  const resolvedRaw = git(["rev-parse", `${file.sourceCommit}:${sourcePath}`]);
+  if (resolvedRaw === null) {
     console.error(
       `provenance mismatch: ${label}: git rev-parse ${file.sourceCommit}:${sourcePath} failed`,
     );
     failed += 1;
     continue;
   }
+  const resolved = resolvedRaw.trim();
   if (resolved !== file.sourceBlob) {
     console.error(
       `provenance mismatch: ${label}: git rev-parse ${file.sourceCommit}:${sourcePath} is ${resolved}`,
