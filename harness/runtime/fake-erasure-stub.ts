@@ -11,14 +11,22 @@ type ErasureActor = { tenantId: string; principalId: string; scope: string; op: 
 
 const slot = globalThis as {
   __erasureTenant?: ErasureTenant;
+  __erasureTenants?: Record<string, ErasureTenant>;
+  __erasureTenantIds?: string[];
   __erasureCalls?: string[];
   __erasureActors?: ErasureActor[];
 };
 
-export function installErasureTenant(tenant: ErasureTenant): void {
+export function installErasureTenant(tenant: ErasureTenant, tenantId?: string): void {
   slot.__erasureTenant = tenant;
+  if (tenantId) {
+    const map = slot.__erasureTenants ?? {};
+    map[tenantId] = tenant;
+    slot.__erasureTenants = map;
+  } else slot.__erasureTenants = {};
   slot.__erasureCalls = [];
   slot.__erasureActors = [];
+  slot.__erasureTenantIds = [];
 }
 
 export function erasureCalls(): readonly string[] {
@@ -29,8 +37,18 @@ export function erasureActors(): readonly ErasureActor[] {
   return slot.__erasureActors ?? [];
 }
 
-export function tenantStub(): ErasureTenant {
-  const tenant = slot.__erasureTenant;
+export function erasureTenantIds(): readonly string[] {
+  return slot.__erasureTenantIds ?? [];
+}
+
+export function tenantStub(_env?: unknown, tenantId?: string): ErasureTenant {
+  if (typeof tenantId === "string") {
+    const seen = slot.__erasureTenantIds ?? [];
+    seen.push(tenantId);
+    slot.__erasureTenantIds = seen;
+  }
+  const named = typeof tenantId === "string" ? slot.__erasureTenants?.[tenantId] : undefined;
+  const tenant = named ?? slot.__erasureTenant;
   if (!tenant) throw new Error("erasure tenant was not installed");
   return tenant;
 }
