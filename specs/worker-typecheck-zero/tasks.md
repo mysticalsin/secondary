@@ -154,6 +154,15 @@ QA: `git cat-file -p 5a3b92e373e2ba7c38cc43e9b217719b0f8db13c | tail -n +6 | git
 - [ ] T019 Audit the three older `reconstructed-manifest.json` entries. For `recovered-source/worker/src/env.d.ts`, `git rev-parse db3e8548:reconstruction/env.d.ts` equals `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d`. For `recovered-source/worker/src/types.ts`, `git rev-parse db3e8548:reconstruction/worker-root/worker/src/types.ts` equals `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`. For `recovered-source/shared/packages/contracts/src/agent-ui/index.ts`, `git rev-parse db3e8548:reconstruction/packages/contracts/src/agent-ui/index.ts` equals `ed80553761da2db13495c6eb250a438d7ef54327`. If any does not, correct that entry's `sourceCommit` in the same metadata commit as T020. Do not change a blob, a sha256, or a recovered-source file. Covers FR-012.
 - [ ] T020 Add `harness/verify-provenance.ts` and `npm run verify:provenance`. The script is not part of `npm test`. For every reconstructed entry it finds the single path in `sourceCommit` whose blob is `sourceBlob` and requires `git rev-parse <sourceCommit>:<sourcePath>` to equal `sourceBlob`. A mismatch exits non-zero and prints one line naming that entry's `path`, `sourceCommit`, and `sourceBlob`. Exit 0 prints one line per entry. The same commit sets `view-plan.ts` `sourceCommit` to `be6eb37f31e62f0f04a610202cca120aa4d9302f` and `view-plan.validator.d.ts` `sourceCommit` to `4ba133b04e49cfb20abe0a22b5ca367284456356`. No second field. Recovered-source blobs stay unchanged. `npm test` stays 404/0 with the same test names. Root typecheck stays 0. `npm run typecheck:worker` stays 0. Covers FR-012, SC-008.
 
+## Phase 8: Closeout
+
+**Purpose**: Mark the spec implemented, keep git stderr inside the provenance script, record the runTool guard, and verify a fresh clone.
+
+- [ ] T021 Set `specs/worker-typecheck-zero/spec.md` status from Draft to Implemented. No recovered-source byte changes. Covers FR-013.
+- [ ] T022 `harness/verify-provenance.ts` captures git's stderr. It does not pass a raw `fatal:` line through. Each failing entry prints the script's own one-line reason. Exit 0 when every entry matches. Exit 1 when any entry does not. A missing commit and a shallow clone that lacks the source commit both exit 1 with those script lines only. The real manifest still prints 5 `ok` lines and exits 0. Covers FR-012, FR-013, SC-008.
+- [ ] T023 Write this closeout note line exactly: `runTool unknown-name path is guarded upstream at loop.ts:155 (isToolName, Object.hasOwn(AGENT_TOOLS)); only caller loop.ts:162 via turn.ts:188; no backlog item`. Covers FR-013.
+- [ ] T024 On a fresh full clone of the closeout head, run `npm ci`, `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance`. Record the head SHA and each exit code. `npm test` is 404 passed and 0 failed, with the same test names as `c865a7ec984727db92daaaae643033a59bfa3569`. Worker typecheck reports 0 `error TS` lines. Provenance exits 0. There is no wrangler config on the branch, so hands-on Worker smoke is N/A for that reason. The recovered-source tree stays `310531c5c2ea5e451099f626f8cf63f9dc1153ef`. Covers FR-013, SC-009.
+
 ## Dependencies
 
 Checked after adding T018 ahead of T011. No task needs a file that a later task creates.
@@ -169,6 +178,7 @@ Checked after adding T018 ahead of T011. No task needs a file that a later task 
 - T014 and T015 depend on T013. T015 does not attach a gate.
 - T016 and T017 depend on T013–T015.
 - T019 and T020 depend on T007. They are the ruling (b) metadata correction. T020's script is what T019's check reruns. The script and the `sourceCommit` corrections land in one commit after the spec amendment. Promotion commit messages are not rewritten.
+- T021, T022, T023, and T024 depend on T020. They are the closeout. They do not change `recovered-source` bytes.
 
 ## Parallel opportunities
 

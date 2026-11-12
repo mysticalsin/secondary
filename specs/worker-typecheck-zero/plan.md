@@ -85,6 +85,7 @@ T018 was added ahead of T011. T011 stays ahead of T004. Each later task was chec
 - T010 depends on T009. T012 depends on T010. T013 depends on T012.
 - T014 and T015 depend on T013. T016 and T017 depend on T013–T015.
 - T019 and T020 depend on T007. They correct `sourceCommit` and add `npm run verify:provenance`. That script is not part of `npm test`.
+- T021, T022, T023, and T024 depend on T020. Closeout does not change `recovered-source` bytes. The provenance script captures git stderr and prints its own one-line reason. Exit 0 is every entry matching. Exit 1 is any mismatch.
 
 No task requires a file that a later task creates. T018 creates the manifest file that T011 and T004 through T007 then edit. T020 reads that manifest after those entries exist.
 
@@ -98,7 +99,7 @@ QA #54 found no `specify analyze` binary. That matches this install.
 - Output summary: commands are `init`, `check`, `version`, `mcp`, `self`, `extension`, `integration`, `event`, `preset`, `artifact`, `bundle`, and `workflow`. There is no `analyze` command. The project integration is `none`, so no agent command copy was installed.
 - The v1.4.0 analyze step is the template `templates/commands/analyze.md` in the package checkout of tag `v1.4.0` (git `0019fa14d12f45edabc2cc3176c9168a68bd0f97`). It is read-only. It does not write a file.
 - Its script, run from the repo root: `SPECIFY_FEATURE_DIRECTORY=specs/worker-typecheck-zero .specify/scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks`
-- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after ruling C added T018 and `reconstructed-manifest.json`: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Rerun after ruling (b) corrected `sourceCommit` and added T019 and T020: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Constitution II is not in conflict. A new `error TS` line is not waived. Promotion commit messages already on the branch are not rewritten.
+- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after ruling C added T018 and `reconstructed-manifest.json`: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Rerun after ruling (b) corrected `sourceCommit` and added T019 and T020: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Rerun after closeout tasks T021–T024: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Constitution II is not in conflict. A new `error TS` line is not waived. Promotion commit messages already on the branch are not rewritten.
 
 ## Project Structure
 
