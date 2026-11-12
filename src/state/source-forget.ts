@@ -27,7 +27,7 @@ export function forgetFactSources(
 export function pageIndexMatches(
   status: unknown,
   expected: { title: string; summary: string; body: string },
-  indexed: readonly { title: unknown; summary: unknown; body: unknown }[],
+  indexed: readonly { title?: unknown; summary?: unknown; body?: unknown }[],
 ): boolean {
   if (status !== "published") return indexed.length === 0;
   if (indexed.length !== 1) return false;
