@@ -36,7 +36,7 @@ const JOURNAL_ID = /^journal-\d{4}-\d{2}-\d{2}$/;
 const SERVICE = "system:journal";
 const MAX_LOOKBACK_DAYS = 7;
 const SCHEMA_TYPE_KEY = /^[a-z][a-z0-9_]{0,40}$/;
-/** A claim with no governance row outlives one proposal, then it is released. */
+/** A claim with no governance row is released after two proposal lifetimes, 144 hours. */
 const CLAIM_LEASE_MS = 2 * CHANGE_TTL_MS;
 
 export interface BrainConfig {
