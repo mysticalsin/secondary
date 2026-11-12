@@ -1,9 +1,9 @@
 /**
  * One erasure request per subject. The ledger remembers each step.
  * Callers perform the effects and pass the clock in. This module does not read one.
- * A stored word other than the known states is partial_failed, so a resume continues.
- * Corrupt JSON, and a completed row whose marks are not all done, are unreadable.
- * Loading does not rewrite that row. A fresh plan replaces it only after a new request.
+ * Only a proven order resumes. Corrupt JSON, an unknown status word, a mark that is
+ * missing or not one of the three, an unknown step, and a completed row whose marks
+ * are not all done are unreadable. Loading does not rewrite that row.
  */
 
 import { commit, type IllegalTransition, reject } from "./illegal.ts";
@@ -39,7 +39,7 @@ export type ErasureStep =
 
 const MACHINE = "erasure_request";
 
-/** A known stored word. Anything else, including null and legacy, is partial_failed. */
+/** A known stored word. Anything else, including null and legacy, is unreadable. */
 export function decodeErasureStatus(status: unknown): Exclude<ErasureStatus, { tag: "absent" }> {
   if (
     status === "unreadable" ||
@@ -49,13 +49,20 @@ export function decodeErasureStatus(status: unknown): Exclude<ErasureStatus, { t
     status === "partial_failed"
   )
     return { tag: status };
-  return { tag: "partial_failed" };
+  return { tag: "unreadable" };
 }
 
-/** A known step mark. Anything else is failed, so the step runs again. */
-export function decodeStepMark(value: unknown): StepMark {
+/** A known step mark. Anything else is not a mark. */
+export function decodeStepMark(value: unknown): StepMark | null {
   if (value === "pending" || value === "done" || value === "failed") return value;
-  return "failed";
+  return null;
+}
+
+const FIXED_STEPS = new Set(["receipts", "tombstone", "personal", "connector", "directory"]);
+
+/** A step the erasure plan can name. Company scopes use the `scope:` prefix. */
+function knownErasureStep(id: string): boolean {
+  return FIXED_STEPS.has(id) || (id.startsWith("scope:") && id.length > "scope:".length);
 }
 
 export function absentErasure(): StoredErasure {
@@ -67,20 +74,30 @@ export function unreadableErasure(): StoredErasure {
   return { status: { tag: "unreadable" }, order: [], mark: {} };
 }
 
-/** No row is absent. A completed row that cannot prove every step is unreadable. */
+/**
+ * No row is absent. A row resumes only when every step is a plan step and every mark
+ * is pending, done, or failed. Anything else is unreadable and is not rewritten here.
+ */
 export function decodeErasure(row: { status: unknown; order: unknown; mark: unknown } | null): StoredErasure {
   if (!row) return absentErasure();
   if (row.status === "unreadable") return unreadableErasure();
-  const order = Array.isArray(row.order)
-    ? row.order.filter((id): id is string => typeof id === "string" && id !== "")
-    : [];
-  const raw =
-    row.mark !== null && typeof row.mark === "object" && !Array.isArray(row.mark)
-      ? (row.mark as Record<string, unknown>)
-      : {};
+  if (!Array.isArray(row.order) || row.order.length === 0) return unreadableErasure();
+  const order: string[] = [];
+  for (const id of row.order) {
+    if (typeof id !== "string" || !knownErasureStep(id)) return unreadableErasure();
+    order.push(id);
+  }
+  if (row.mark === null || typeof row.mark !== "object" || Array.isArray(row.mark))
+    return unreadableErasure();
+  const raw = row.mark as Record<string, unknown>;
   const mark: Record<string, StepMark> = {};
-  for (const id of order) mark[id] = decodeStepMark(raw[id]);
+  for (const id of order) {
+    const step = decodeStepMark(raw[id]);
+    if (!step) return unreadableErasure();
+    mark[id] = step;
+  }
   const decoded = decodeErasureStatus(row.status);
+  if (decoded.tag === "unreadable") return unreadableErasure();
   if (decoded.tag === "completed" && !allDone(order, mark)) return unreadableErasure();
   return { status: decoded, order, mark };
 }
