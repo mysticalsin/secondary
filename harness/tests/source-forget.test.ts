@@ -132,3 +132,47 @@ test("source forget: an unreadable fact list is removed only when it names the s
   );
   db.close();
 });
+
+test("source forget: a search row that survived the page write is rebuilt, and a legacy page stays out", async () => {
+  const db = new DatabaseSync(":memory:");
+  const wiki = await openWiki(db);
+  page(db, "old", "Old", "Old note", "legacy");
+  page(db, "pub", "Public", "Public line");
+  db.prepare(
+    "INSERT INTO wiki_page_revisions (page_id, revision, title, markdown, actor, at) VALUES ('pub', 1, 'Public', ?, 'a', 1)",
+  ).run("Keep\nSecret line {src:src_1}");
+  db.prepare("INSERT INTO wiki_fts (title, summary, body, id) VALUES ('Old', '', 'Old note', 'old')").run();
+  db.prepare("INSERT INTO wiki_fts (title, summary, body, id) VALUES ('Public', 'Secret line', 'Secret line', 'pub')").run();
+  let thrown: string | null = null;
+  try {
+    wiki.wikiForgetSources(["src_1"], 5);
+    wiki.wikiForgetSources(["src_1"], 6);
+  } catch (e) {
+    thrown = e instanceof Error ? e.message : String(e);
+  }
+  const pages = db
+    .prepare("SELECT id, title, markdown, status FROM wiki_pages ORDER BY id")
+    .all()
+    .map((row) => ({ ...(row as { id: string; title: string; markdown: string; status: string }) }));
+  const revisions = db
+    .prepare("SELECT page_id, revision, markdown FROM wiki_page_revisions ORDER BY page_id, revision")
+    .all()
+    .map((row) => ({ ...(row as { page_id: string; revision: number; markdown: string }) }));
+  const search = db
+    .prepare("SELECT id, title, summary, body FROM wiki_fts ORDER BY id")
+    .all()
+    .map((row) => ({ ...(row as { id: string; title: string; summary: string; body: string }) }));
+  assert.deepEqual(
+    { thrown, pages, revisions, search },
+    {
+      thrown: null,
+      pages: [
+        { id: "old", title: "Old", markdown: "Old note", status: "legacy" },
+        { id: "pub", title: "Public", markdown: "Public line", status: "published" },
+      ],
+      revisions: [{ page_id: "pub", revision: 1, markdown: "Keep" }],
+      search: [{ id: "pub", title: "Public", summary: "Public line", body: "Public line" }],
+    },
+  );
+  db.close();
+});
