@@ -4,11 +4,11 @@
 
 **Input**: Feature specification from `/specs/erasure-partial-failed-append/spec.md`
 
-**Note**: Spec phase only. No file under `src/`, `recovered-source/`, or `harness/` changes until Clarifications names one option.
+**Note**: This update is docs only. No file under `src/`, `recovered-source/`, or `harness/` changes until independent QA confirms the Observed path file:lines and the user says to start.
 
 ## Summary
 
-A no-key erase returns before the ledger runner and leaves a stored request unchanged. A later keyed erase widens the grant, appends the full plan onto that stored order, and can finish `partial_failed` when a step returns false. The same append finishes `completed` when every step returns true. Devin or Tony names Accept, Replace, or Resume before any edit under `src/`, `recovered-source/`, or `harness/`. The first behavior commit is one test of that sequence. No other erasure transition changes.
+A no-key erase returns before the ledger runner and leaves a stored request unchanged. A later keyed erase on a non-completed row currently appends the canonical plan, so directory runs before receipts. That breaks M-03. Devin's ruling is Replace with the done-step guard, in the single `transitionErasure` request decision at `src/state/erasure-request.ts:358` and `:370`. When no step is done, the stored order becomes the canonical plan from `erasurePlan` (`erasure-request.ts:260-268`): receipts first, directory last. A done step stays done, keeps its place relative to other done steps, stays ahead of the not-done steps, and is not run. Not-done steps are placed after the done steps, in canonical order. A false step ends `partial_failed`. Every performed step returning true ends `completed`. `addSteps` still only appends. Accept and Resume are rejected.
 
 ## Technical Context
 
@@ -16,19 +16,19 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 
 **Primary Dependencies**: None added. The erasure reducer is `src/state/erasure-request.ts`. The route and runner are the recovered Worker files named in the spec.
 
-**Storage**: The existing `erasure_requests` row. This plan does not add a table or a column.
+**Storage**: The existing `erasure_requests` row. This plan adds no table, no column, and no migration.
 
-**Testing**: `npm test` through the node test runner. The new test belongs in `harness/tests/erasure-request.test.ts`. Root gate `npm run typecheck`. Worker gate `npm run typecheck:worker`.
+**Testing**: `npm test` through the node test runner. The new tests belong in `harness/tests/erasure-request.test.ts`. Root gate `npm run typecheck`. Worker gate `npm run typecheck:worker`.
 
 **Target Platform**: The existing recovered API Worker harness. No deploy.
 
-**Project Type**: One reducer plus the erase route that already calls it.
+**Project Type**: One request decision in the existing erasure reducer, plus tests.
 
-**Performance Goals**: Not a throughput change. One request's terminal status and order are the outcome.
+**Performance Goals**: No latency budget. The outcome is one request's terminal status and order.
 
-**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: a behavior change starts with a failing test. Accept is not a behavior change, so its test locks today's outcome and `src/` and `recovered-source/` stay unchanged.
+**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: the behavior change starts with failing tests T1, T1b, T2, and T3, each in its own commit. T4 and T5 pass on the parent and stay passing. The green commit edits only the `:358`/`:370` decision.
 
-**Scale/Scope**: One sequence, one new test, and at most the request-append branch of `transitionErasure` plus the grant helper that leaves the stored order in place. Absent-subject erasures stay out of the behavior change until Clarifications says otherwise.
+**Scale/Scope**: The refused-then-keyed sequence, the done-step guard, the absent-subject pin, and the log constraint. The missing-email result and the connector-false result stay as they are.
 
 ## Constitution Check
 
@@ -36,26 +36,30 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 
 | Principle | Result |
 |---|---|
-| I. Simplicity | Pass. No new package. One test, and a production edit only if the named option is not today's outcome. |
+| I. Simplicity | Pass. No new package. One decision, one test file, one concern per commit. |
 | II. No helper text | Pass. No new label on a layout or a type. The decision lives in the spec. |
 | III. Separation | Pass. The request stays the one erasure reducer. No second ledger. |
-| IV. No bolt-ons | Pass. No `any`, no `@ts-ignore`, no shim. An unnamed option stops the edit. |
-| V. Tests first | Pass. The test is the first behavior commit. It fails before a production edit when the named option differs from today. |
+| IV. No bolt-ons | Pass. No `any`, no `@ts-ignore`, no shim. `addSteps` is not given a second ordering pass. |
+| V. Tests first | Pass. T1, T1b, T2, and T3 fail on the parent before the green commit. |
 | VI. Security & data | Pass. Section below. |
 | VII. Isolated branch | Pass. This branch only. No push to `main`. |
-| VIII. QA separate | Pass. This phase records the path and the options. QA is a later non-writer session. |
+| VIII. QA separate | Pass. Code waits until a non-writer confirms the Observed path and the user says to start. |
 | IX. Exact-head CI | Pass as a stop. This feature adds no CI config. |
 | X. Merge and deploy | Pass. No merge and no deploy in this phase. |
 
-Post-design re-check: the same ten rows. Research did not select an option, add a package, or add a workflow file.
+Post-design re-check: the same ten rows. Research records Replace. It adds no package and no workflow file.
 
 ## Security & data
 
 The no-key path reads the pseudonym key only to refuse. This plan does not copy a key, a token, or a connector secret. The spec names the key as missing, empty, short, or usable.
 
-A keyed erase can delete a person, rewrite receipts, write a tombstone, and call the connector. That already happens on `565bff6a2ba3153f11347482cdee3555b257f87f`. This feature does not add a new delete. Replace or Resume, once named, changes which steps run. Accept runs the steps that already run. None of the three options logs the key or the erased content.
+A keyed erase can delete a person, rewrite receipts, write a tombstone, and call the connector. That already happens on `565bff6a2ba3153f11347482cdee3555b257f87f`. This feature does not add a new delete. Replace changes the stored order and which not-done steps run. It does not add a step implementation.
 
-The harness test uses the fixture key already in `harness/tests/erasure-request.test.ts`. The spec does not repeat it.
+A log line emitted by the re-plan contains a principal id, step names, and states only. It does not contain the pseudonym key, an email address, or erased content. No such line is required. The existing route audit that names the pseudonym stays as it is.
+
+The harness tests use the fixture key already in `harness/tests/erasure-request.test.ts`. The spec does not repeat it.
+
+No migration reads or rewrites stored ledgers. If a directory-before-receipts row is already stored, the same request decision re-plans it.
 
 ## Project Structure
 
@@ -83,7 +87,7 @@ recovered-source/worker/src/connector.ts
 harness/tests/erasure-request.test.ts
 ```
 
-**Structure Decision**: The reproduction cites those files. A later behavior commit may edit `src/state/erasure-request.ts` and the one test. It does not edit the route's no-key refusal, which FR-001 keeps.
+**Structure Decision**: The reproduction cites those files. The green commit edits the request decision in `src/state/erasure-request.ts` only. The tests edit `harness/tests/erasure-request.test.ts` only. The no-key refusal, the connector-false rule, and the missing-email return stay unedited.
 
 ## Complexity Tracking
 

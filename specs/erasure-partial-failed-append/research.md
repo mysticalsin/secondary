@@ -1,20 +1,39 @@
 # Research: Erasure partial-failed append
 
-## Decision: the required end state is not chosen here
+## Decision: Replace with the done-step guard
 
-**Decision**: Record Accept, Replace, and Resume. Select none.
+**Decision**: Rewrite a non-completed request in the single `transitionErasure` decision at `src/state/erasure-request.ts:358` and `:370`. When no step is done, the order is the canonical plan. A step that is already done stays done, is not run, and keeps its place relative to other done steps. Done steps stay ahead of the not-done steps. Not-done steps are placed after them, in canonical order. `addSteps` keeps its one job of appending. The completed-row path may still call it.
 
-**Rationale**: The backlog says the path is fixed or explicitly accepted. The reducer today appends. Choosing a replacement would guess a product outcome.
+**Rationale**: M-03. In parent `e268e6e2f0145579e50c89bc8dda0bab4e71b617` of `e9d50e61fd40887e9195ac62e71c98a327cf17dd`, `recovered-source/worker/src/ops-rights.ts:124-125` says the audit pass goes first, so a failed erase changes nothing else and can be asked for again, and every later step is idempotent. The canonical order is `erasurePlan` at `src/state/erasure-request.ts:260-268`. The appended order runs directory before receipts, which breaks M-03. Devin withdrew the resume-lookup reason.
 
-**Alternatives considered**: Selecting Accept because the code already does it. Selecting Replace because a fresh plan is what an absent row gets. Selecting Resume because an in-progress grant was only for the stored order. Each alternative is a product choice. None is taken.
+**Alternatives considered**:
 
-## Decision: the absent-subject path stays outside the behavior change
+- Accept is rejected. It keeps directory before receipts and breaks M-03.
+- Resume is rejected. It can end `completed` while data remains, which is a false erasure receipt.
 
-**Decision**: Document it. Do not include it in the behavior change until Devin or Tony says it is in scope.
+## Decision: the absent subject is an unchanged pin
 
-**Rationale**: That path creates the canonical plan. It does not append onto a stored order. The backlog wording is "the full plan appended."
+**Decision**: An absent subject gets the canonical plan, directory last, and no append. Both that path and Replace end in the same order when no step is already done. The pin is T5. It passes on the parent and stays passing.
 
-**Alternatives considered**: Treating every `partial_failed` after a refused key as this item. That would include a path the reproduction showed is not an append.
+**Rationale**: The backlog wording is the appended order. The absent path does not append. It is in scope only as a regression pin.
+
+**Alternatives considered**: Editing the absent path. That path already matches the canonical plan.
+
+## Decision: no data migration
+
+**Decision**: Do not add a migration. If a directory-before-receipts row is already stored, the same `:358`/`:370` decision re-plans it.
+
+**Rationale**: No migration inserts or rewrites an `erasure_requests` ledger. The table is created at `recovered-source/worker/src/tenant-policy.ts:207-209`. `seed` deletes those rows and does not insert a ledger. The production writers are `recordErasureGrant` (`tenant-policy.ts:1163-1178`) and the `runErasure` persist at `ops-rights.ts:210-218`. A first grant on an absent, unreadable, or uncovered row uses `requestedFrom` with the route's `erasurePlan`, so that stored order is the canonical plan. A directory-before-receipts order is persisted only when `runErasure` saves the `addSteps` result for a stored non-completed order that already lacked `receipts`. The predecessor in the reproduction is the test insert at `harness/tests/erasure-request.test.ts:1627`. No production writer and no migration creates that predecessor from an absent subject. A direct database write is outside the threat model in `docs/state-machines.md`. No live data was read.
+
+**Alternatives considered**: A migration that rewrites stored orders. Out of scope.
+
+## Decision: the connector difference stays
+
+**Decision**: Write the difference. Change no behavior. It needs its own backlog row.
+
+**Rationale**: The removed machine table said a missing email skips the connector and still erases the directory. Today a missing email at `ops-rights.ts:188` returns true, so directory still runs. A connector step that returns false is `step_failed` at `erasure-request.ts:389`, the status is `partial_failed`, and directory does not run in that attempt.
+
+**Alternatives considered**: Restoring the old table's "still erase the directory" result after a false connector. That is a different item.
 
 ## Findings
 
@@ -22,9 +41,9 @@ Parent commit `565bff6a2ba3153f11347482cdee3555b257f87f`.
 
 A pure run of `erasureWithGrant` then `runErasure` on a `requested` row whose order is `directory` and whose grant covers `directory`:
 
-- After the grant helper, the order is still `["directory"]` and the grant steps are the full plan.
+- After the grant helper, the order is still `["directory"]` and the grant steps are the canonical plan.
 - The request persists order `["directory","receipts","tombstone","scope:acme","personal","connector"]` while the status is still `requested`.
-- The runner continues from the first step that is not done, in that appended order.
+- The runner continues from the first step that is not done, in that appended order. The first step that runs is `directory`.
 - The connector step returning false ends `partial_failed` with `connector` marked `failed` and that appended order.
 - Every step returning true ends `completed` with that same appended order.
 - An absent start with the connector step returning false ends `partial_failed` with order `["receipts","tombstone","scope:acme","personal","connector","directory"]`.
