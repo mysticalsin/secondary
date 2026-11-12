@@ -74,9 +74,11 @@ test("source forget: a pseudonym that contains the name is written once", async 
     .prepare("SELECT id, title, body FROM wiki_fts ORDER BY id")
     .all()
     .map((row) => ({ ...(row as { id: string; title: string; body: string }) }));
-  const verified = db.prepare("SELECT subject, verified_by FROM wiki_facts").get() as {
-    subject: string;
-    verified_by: string;
+  const verified = {
+    ...(db.prepare("SELECT subject, verified_by FROM wiki_facts").get() as {
+      subject: string;
+      verified_by: string;
+    }),
   };
   assert.deepEqual(
     { first: first > 0, second, pages, search, verified },

@@ -3,7 +3,6 @@
 // lint findings live in wiki_* tables beside the items they cite. Review items are ordinary
 // workspace items (kinds wiki_ingest, wiki_lint, wiki_dream), so they ride the existing review queue.
 // Nothing here knows who the caller is: the API checks policy first and passes the actor.
-
 import { DurableObject } from "cloudflare:workers";
 import {
   claimImport,
@@ -19,6 +18,7 @@ import {
   type FindingStatus,
 } from "../../../../src/state/proposal-review.ts";
 import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
+import { replaceName } from "../../../../src/state/pseudonym-text.ts";
 import { decodeWikiJobStatus, forgetWikiJob, sourceSubject } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
@@ -2049,12 +2049,22 @@ export abstract class WikiBase extends DurableObject<Env> {
     const touched = new Set<string>();
     for (const a of names) {
       const hit = (t: string, cols: string[], extra = "") => {
-        const set = cols.map((c) => `${c} = replace(${c}, ?, ?)`).join(", ");
         const any = cols.map((c) => `instr(${c}, ?) > 0`).join(" OR ");
-        const args: string[] = [...cols.flatMap(() => [a, to]), ...cols.map(() => a)];
-        return this.sql
-          .exec(`UPDATE ${t} SET ${set} WHERE (${any})${extra} RETURNING 1`, ...args)
-          .toArray().length;
+        const rows = this.sql
+          .exec(`SELECT rowid AS __k, ${cols.join(", ")} FROM ${t} WHERE (${any})${extra}`, ...cols.map(() => a))
+          .toArray();
+        let changed = 0;
+        for (const row of rows) {
+          const next = cols.map((c) => replaceName(String(row[c] ?? ""), a, to));
+          if (next.every((value, i) => value === String(row[cols[i]!] ?? ""))) continue;
+          this.sql.exec(
+            `UPDATE ${t} SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE rowid = ?`,
+            ...next,
+            row.__k as number,
+          );
+          changed++;
+        }
+        return changed;
       };
       for (const r of this.sql
         .exec("SELECT id FROM wiki_pages WHERE instr(markdown, ?) > 0 OR instr(title, ?) > 0", a, a)
