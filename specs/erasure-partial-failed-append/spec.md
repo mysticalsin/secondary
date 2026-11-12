@@ -98,7 +98,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 ## Assumptions
 
 - The reproduced predecessor is a `requested` row with order `directory`, mark `pending`, and a grant that covers that step. The no-key refusal does not write that row. The test inserts it.
-- A connector step returns false when the person has an email and the connector is not configured (`ops-rights.ts:187-190`, `connector.ts:222`). Any other step that returns false uses the same `partial_failed` rule.
+- A connector step returns false when the person has an email and the connector is not configured (`ops-rights.ts:187-190`, `connector.ts:223`). Any other step that returns false uses the same `partial_failed` rule.
 - Secret values are not copied into this spec. The pseudonym key is described only as missing, empty, short, or usable.
 - The behavior commits are on this branch. T3 is a lock. T4 is a lock of the log constraint. The receipts-first assertion in T4 is the check T1b owns, and the test stays as written.
 
@@ -111,9 +111,9 @@ This is the behavior on `565bff6a2ba3153f11347482cdee3555b257f87f`. Replace chan
 3. The later keyed erase builds the plan at `ops-admin.ts:186`. The stored grant does not cover that plan, so `ops-admin.ts:189` does not take the already-granted path. Quorum runs at lines 193–203. The confirming write is `tenant-policy.ts:1172`, which calls `erasureWithGrant`.
 4. `src/state/erasure-request.ts:252` keeps a grant that already covers the stored order. Lines 256–257 widen the grant's step list and leave the order as `directory`.
 5. `eraseSubject` at `ops-rights.ts:235` sends a `request` whose steps are the canonical plan.
-6. `transitionErasure` at `erasure-request.ts:358` does not replace a `requested` row with a non-empty order. Line 370 appends through `addSteps` at lines 325–333. The persisted order is `directory`, then `receipts`, `tombstone`, `scope:acme`, `personal`, `connector`.
-7. `runErasure` at `erasure-request.ts:425` continues from the first step that is not done. The first step that runs is `directory`, which breaks M-03.
-8. `ops-rights.ts:187` asks the connector when `tenant-policy.ts:1085` has an email. `connector.ts:222` returns false when the connector is absent. `erasure-request.ts:413` is `step_failed` and line 414 sets `partial_failed`.
+6. On `565bff6`, the request branch is `erasure-request.ts:358` and line 370 is `return allow(addSteps(state, event.steps), [])`. `addSteps` is lines 325–333 on `565bff6` and on this branch. That append stores `directory`, then `receipts`, `tombstone`, `scope:acme`, `personal`, `connector`. On this branch, line 370 is the not-done predicate and that decision runs through line 394.
+7. On `565bff6`, `runErasure` is `erasure-request.ts:401`. It continues from the first step that is not done, and that step is `directory`, which breaks M-03. On this branch, `runErasure` is `erasure-request.ts:425`.
+8. On `565bff6` and on this branch, `ops-rights.ts:187` asks the connector when `tenant-policy.ts:1085` has an email, and `connector.ts:223` returns false when the connector is absent. On `565bff6`, `erasure-request.ts:389` is `step_failed` and line 390 sets `partial_failed`. On this branch, `erasure-request.ts:413` is `step_failed` and line 414 sets `partial_failed`.
 9. A run of those functions with the connector step returning false ended `partial_failed` and order `["directory","receipts","tombstone","scope:acme","personal","connector"]`. Every step returning true ended `completed` with that same order. An absent start ended `partial_failed` with the canonical plan, directory last.
 
 ## Persisted rows

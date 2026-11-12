@@ -91,8 +91,8 @@ Kind placement of an omitted scope is already asserted at `harness/tests/erasure
 
 **Independent Test**: T015 rewrites T012. T016 runs a keyed erase of the acme plan over that stored order.
 
-- [ ] T015 [US1] In its own commit, fix the T012 check that reads a sqlite file the route never opens. The route cannot take a second tenant in one store, so remove only that unread-file check and say so in the test name. Keep the actor list and the other subject in the same store. Assert that subject's row and its steps stay byte-identical. The assertion count does not drop. A scratch run, not committed, points the erase at that other subject and the new assertion fails. Covers FR-012.
-- [ ] T016 [US1] Lock, in its own commit. Stored order `personal`, `scope:x`, `directory`, with `scope:x` pending. A keyed erase of the acme plan stores the full order `receipts`, `tombstone`, `scope:acme`, `scope:x`, `personal`, `connector`, `directory`. Pin that full order. This passes on the current source. Covers FR-013.
+- [x] T015 [US1] In its own commit, fix the T012 check that reads a sqlite file the route never opens. The route cannot take a second tenant in one store, so remove only that unread-file check and say so in the test name. Keep the actor list and the other subject in the same store. Assert that subject's row and its steps stay byte-identical. The assertion count does not drop. A scratch run, not committed, points the erase at that other subject and the new assertion fails. Covers FR-012.
+- [x] T016 [US1] Lock, in its own commit. Stored order `personal`, `scope:x`, `directory`, with `scope:x` pending. A keyed erase of the acme plan stores the full order `receipts`, `tombstone`, `scope:acme`, `scope:x`, `personal`, `connector`, `directory`. Pin that full order. This passes on the current source. Covers FR-013.
 
 ## Dependencies for the tenant check and the reshuffle
 

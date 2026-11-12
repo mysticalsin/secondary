@@ -50,4 +50,4 @@ A pure run of `erasureWithGrant` then `runErasure` on a `requested` row whose or
 
 The no-key refusal does not call the runner. `ops-admin.ts:180` returns before quorum. `ops-rights.ts:153` returns before `applyLedger`. The stored step stays `pending`.
 
-The false connector step is `ops-rights.ts:187` when `emailOfPrincipal` (`tenant-policy.ts:1085`) returns an email and `forgetSourceAccess` (`connector.ts:222`) returns false because the connector is absent. Any other step that returns false uses the same `step_failed` rule at `erasure-request.ts:413`, which sets `partial_failed` at line 414.
+The false connector step is `ops-rights.ts:187` when `emailOfPrincipal` (`tenant-policy.ts:1085`) returns an email and `forgetSourceAccess` (`connector.ts:223`) returns false because the connector is absent. Any other step that returns false uses the same `step_failed` rule at `erasure-request.ts:413`, which sets `partial_failed` at line 414.
