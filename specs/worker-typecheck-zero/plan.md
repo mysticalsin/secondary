@@ -8,7 +8,7 @@
 
 ## Summary
 
-Write `recovered-source/worker/src/env.d.ts` from blob `841f0dbc97ac` first, then place four reconstructed modules at the import paths the Worker already uses, one blob per commit. The worker typecheck count falls on every commit and ends at 0. No `reconstruction/` tsconfig entry, no merge, no second copy. After T011, T004 is expected to add no `error TS` line. The types.ts trial at `a4a721a7` removed 37 lines from the 119 baseline, which is about 82 once the added `Env` diagnostic is absent. `ux/notify.ts:45` is TS7006 at that parent, not TS7053. T004's gate is the T011 head, not a second copy of the 119 count.
+Write `recovered-source/worker/src/env.d.ts` from blob `841f0dbc97ac` first, then place four reconstructed modules at the import paths the Worker already uses, one blob per commit. The worker typecheck count falls on every commit and ends at 0. No `reconstruction/` tsconfig entry, no merge, no second copy. The types.ts trial at `a4a721a7` removed 37 lines from the 119 baseline, which is about 82 once the added `Env` diagnostic is absent. `ux/notify.ts:45` is TS7006 at `a4a721a7`, not TS7053. T004's parent is the T011 head (48 `error TS` lines expected from the T011 dry run at `f21513b9`). T004 lowers that count and adds no new `error TS` line versus that head.
 
 ## Technical Context
 
@@ -93,7 +93,7 @@ QA #54 found no `specify analyze` binary. That matches this install.
 - Output summary: commands are `init`, `check`, `version`, `mcp`, `self`, `extension`, `integration`, `event`, `preset`, `artifact`, `bundle`, and `workflow`. There is no `analyze` command. The project integration is `none`, so no agent command copy was installed.
 - The v1.4.0 analyze step is the template `templates/commands/analyze.md` in the package checkout of tag `v1.4.0` (git `0019fa14d12f45edabc2cc3176c9168a68bd0f97`). It is read-only. It does not write a file.
 - Its script, run from the repo root: `SPECIFY_FEATURE_DIRECTORY=specs/worker-typecheck-zero .specify/scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks`
-- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after T011 was moved ahead of T004: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (`spec.md` status Draft). Constitution II is not in conflict. A new `error TS` line is not waived.
+- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after T004's parent was stated as the T011 head (48 `error TS` lines): 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (`spec.md` status Draft). Constitution II is not in conflict. A new `error TS` line is not waived.
 
 ## Project Structure
 
