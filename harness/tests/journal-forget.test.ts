@@ -1,7 +1,7 @@
 /**
  * Journal forget removes the person and leaves a switch row.
  * An NDA detail that names them is rewritten. An unknown row that quotes
- * them is kept, with that value cleared when no pseudonym is passed.
+ * them is kept, and that exact value becomes the pseudonym.
  * A second call leaves the same rows.
  */
 
@@ -9,6 +9,9 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
+import { canDo } from "../../recovered-source/shared/packages/policy/src/engine.ts";
+import { buildOrg } from "../../recovered-source/shared/packages/policy/src/org.ts";
+import { TENANT_ID } from "../../recovered-source/shared/packages/policy/src/personas.ts";
 import { SecurityJournal } from "../../recovered-source/worker/src/security-journal.ts";
 import { sqliteStorage } from "../runtime/sqlite-storage.ts";
 
@@ -24,7 +27,8 @@ const detail = JSON.stringify({
   grantedAt: 1,
 });
 
-test("journal forget removes the person, keeps a switch, and redacts an NDA detail", () => {
+test("journal forget removes the person, keeps a switch, and redacts an NDA detail", async () => {
+  const pz = await pseudonym("user_1");
   const db = new DatabaseSync(":memory:");
   const journal = new SecurityJournal(sqliteStorage(db));
   journal.init();
@@ -48,9 +52,9 @@ test("journal forget removes the person, keeps a switch, and redacts an NDA deta
       kind: "nda",
       a: "other",
       b: "acct",
-      c: JSON.stringify({ reason: "r", expiresAt: null, grantedBy: "", approvedBy: "boss", grantedAt: 1 }),
+      c: JSON.stringify({ reason: "r", expiresAt: null, grantedBy: pz, approvedBy: "boss", grantedAt: 1 }),
     },
-    { kind: "legacy", a: "other", b: '""', c: "" },
+    { kind: "legacy", a: "other", b: JSON.stringify(pz), c: "" },
     { kind: "legacy", a: "other", b: "handbook", c: "" },
   ]);
   db.close();
@@ -147,6 +151,46 @@ test("a membership whose scope is the erased id survives and replays under the p
       row: { a: "other", b: "account", c: pz },
       member: { principal_id: "other", scope_type: "account", scope_id: pz },
     },
+  );
+  db.close();
+});
+
+test("a membership whose scope is the erased id replays as the pseudonym and grants nothing", async () => {
+  const pz = await pseudonym("user_1");
+  const db = new DatabaseSync(":memory:");
+  db.exec(`
+    CREATE TABLE memberships (
+      principal_id TEXT NOT NULL, scope_type TEXT NOT NULL, scope_id TEXT NOT NULL,
+      PRIMARY KEY (principal_id, scope_type, scope_id));
+  `);
+  const book = new SecurityJournal(sqliteStorage(db));
+  book.init();
+  db.prepare(
+    "INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'member', 'other', 'account', 'user_1', 1)",
+  ).run();
+  book.forget("user_1");
+  book.forget("user_1");
+  book.replay();
+  const found = db.prepare("SELECT scope_id FROM memberships").get() as { scope_id: string } | undefined;
+  const scopeId = found ? { ...found }.scope_id : "";
+  const org = buildOrg();
+  const decision = canDo(
+    {
+      id: "other",
+      email: "other@example.com",
+      tenantId: TENANT_ID,
+      roleIds: ["consultant"],
+      memberships: [{ scope_type: "account", scope_id: scopeId }],
+    },
+    org,
+    "a_ember",
+    "view_content",
+    { now: 0 },
+  );
+  const original = db.prepare("SELECT scope_id FROM memberships WHERE scope_id = ?").get("user_1");
+  assert.deepEqual(
+    { scopeId, allowed: decision.allowed, original: original ?? null },
+    { scopeId: pz, allowed: false, original: null },
   );
   db.close();
 });
