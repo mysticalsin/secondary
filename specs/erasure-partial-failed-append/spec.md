@@ -8,6 +8,13 @@
 
 **Input**: Backlog SB-ERASURE-PARTIAL-FAILED-APPEND. After a no-key erasure is refused and a later keyed erase runs, the erasure request can end as `partial_failed` with the full plan appended. That path is fixed or explicitly accepted. No other erasure transition changes.
 
+## Clarifications
+
+### Session 2026-11-12
+
+- Q: Which terminal state and order are required when a no-key refusal leaves a stored non-completed order and a later keyed erase runs the full plan? The choice covers both ends: one performed step returns false, and every performed step returns true. → A: Not selected. Devin or Tony names one option before any behavior file changes. Option Accept: a false step ends `partial_failed` with the appended order, and every step returning true ends `completed` with that same appended order. Option Replace: the order becomes the canonical full plan, directory last; a false step ends `partial_failed` and every step returning true ends `completed`. Option Resume: the stored order is not extended; a false step ends `partial_failed` on that stored order, and every stored step returning true ends `completed` on that stored order.
+- Q: Is an absent subject in this item? A no-key refusal writes nothing, and a later keyed erase creates the canonical plan rather than appending. A false step can still end `partial_failed`. → A: Not selected. Devin or Tony says whether that path is in scope. This draft keeps it outside the behavior change.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Lock the refused-then-keyed outcome (Priority: P1)
@@ -52,7 +59,7 @@ Resumes, restores, completed-row additions, unreadable rows, quorum, tombstones,
 ### Functional Requirements
 
 - **FR-001**: A no-key erase is refused before any delete and before any erasure-ledger write. A stored request stays as it was. An absent subject stays absent.
-- **FR-002**: The required terminal status and order for the later keyed erase are [NEEDS CLARIFICATION: which option — Accept the appended order, Replace with the canonical plan, or Resume the stored order only]. No behavior file changes while that option is unnamed.
+- **FR-002**: The required terminal status and order are one of the three options in Clarifications. None is selected. No behavior file changes until Devin or Tony names one option there. The absent-subject path stays out of the behavior change until they say it is in scope.
 - **FR-003**: The named option applies to both ends of the same keyed erase: a performed step that returns false, and every performed step returning true.
 - **FR-004**: No other erasure transition changes. The completed-row rule, the unreadable fresh plan, quorum, tombstones, receipt scans, and restore re-apply stay as they are on `565bff6a2ba3153f11347482cdee3555b257f87f`.
 - **FR-005**: After an option is named, the first behavior change is one test of this sequence. If the named option is not today's outcome, that test fails before any production edit. If the named option is today's outcome, the test locks that outcome and no production file changes.
