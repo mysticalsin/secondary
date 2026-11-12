@@ -162,6 +162,38 @@ function personalTags(raw: unknown): { tag: "ok"; tags: string[] } | { tag: "unr
   }
 }
 
+function wholeWord(text: string, at: number, token: string): boolean {
+  if (token === "" || !text.startsWith(token, at)) return false;
+  const before = at === 0 || !/[A-Za-z0-9_]/.test(text[at - 1] ?? "");
+  const end = at + token.length;
+  const after = end >= text.length || !/[A-Za-z0-9_]/.test(text[end] ?? "");
+  return before && after;
+}
+
+/** Replace a name of any length when it stands as its own word. A second pass finds it gone. */
+function boundedName(text: string, from: string, to: string): string {
+  if (from === "" || from === to) return text;
+  const first = from.length >= to.length ? from : to;
+  const second = first === from ? to : from;
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    if (wholeWord(text, i, first)) {
+      out += first === from ? to : first;
+      i += first.length;
+      continue;
+    }
+    if (second !== "" && wholeWord(text, i, second)) {
+      out += second === from ? to : second;
+      i += second.length;
+      continue;
+    }
+    out += text[i];
+    i += 1;
+  }
+  return out;
+}
+
 function storedValidation(raw: unknown): UserValidated | { tag: "unreadable" } | null {
   const read = readUserValidated(raw);
   if (read.tag === "ok") return read.value;
@@ -1076,14 +1108,14 @@ export class Workspace extends BrainBase {
       return;
     }
     const names = [
-      ...new Set([op.from, ...op.aliases].map((name) => name.trim()).filter((name) => name.length >= 3)),
+      ...new Set([op.from, ...op.aliases].map((name) => name.trim()).filter((name) => name.length > 0)),
     ];
     const sources = new Set<string>();
     for (const name of names) {
       for (const row of this.sql
         .exec("SELECT id, text FROM comments WHERE instr(text, ?) > 0", name)
         .toArray()) {
-        const text = replaceName(String(row.text ?? ""), name, op.to);
+        const text = boundedName(String(row.text ?? ""), name, op.to);
         if (text === String(row.text ?? "")) continue;
         this.sql.exec("UPDATE comments SET text = ? WHERE id = ?", text, row.id as number);
       }
@@ -1094,9 +1126,9 @@ export class Workspace extends BrainBase {
           name,
         )
         .toArray()) {
-        const label = replaceName(String(row.label ?? ""), name, op.to);
+        const label = boundedName(String(row.label ?? ""), name, op.to);
         const current = row.body === null || row.body === undefined ? null : String(row.body);
-        const body = current === null ? null : replaceName(current, name, op.to);
+        const body = current === null ? null : boundedName(current, name, op.to);
         if (label === String(row.label ?? "") && body === current) continue;
         const id = row.id as string;
         this.sql.exec("UPDATE items SET label = ?, body = ? WHERE id = ?", label, body, id);
@@ -1110,9 +1142,9 @@ export class Workspace extends BrainBase {
           name,
         )
         .toArray()) {
-        const title = replaceName(String(row.title ?? ""), name, op.to);
+        const title = boundedName(String(row.title ?? ""), name, op.to);
         const current = row.body === null || row.body === undefined ? null : String(row.body);
-        const body = current === null ? null : replaceName(current, name, op.to);
+        const body = current === null ? null : boundedName(current, name, op.to);
         if (title === String(row.title ?? "") && body === current) continue;
         this.sql.exec(
           "UPDATE source_items SET title = ?, body = ? WHERE id = ?",
@@ -1125,7 +1157,7 @@ export class Workspace extends BrainBase {
       for (const row of this.sql
         .exec("SELECT page_id, field_key, value FROM brain_fields WHERE instr(value, ?) > 0", name)
         .toArray()) {
-        const value = replaceName(String(row.value ?? ""), name, op.to);
+        const value = boundedName(String(row.value ?? ""), name, op.to);
         if (value === String(row.value ?? "")) continue;
         this.sql.exec(
           "UPDATE brain_fields SET value = ? WHERE page_id = ? AND field_key = ?",
