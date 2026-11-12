@@ -12,7 +12,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { ROLES, type Org, type OrgNode, type Principal } from "../adapters/policy-entry.ts";
 import { requireFail, requireOk } from "./require-ok.ts";
-import { erasureActors, erasureCalls, installErasureTenant } from "../runtime/fake-erasure-stub.ts";
+import { erasureActors, erasureCalls, erasureTenantIds, installErasureTenant } from "../runtime/fake-erasure-stub.ts";
 import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 import {
   absentErasure,
@@ -2386,3 +2386,78 @@ test("erasure append T016: a pending scope reshuffles before personal and the fu
     remove();
   }
 });
+
+test("erasure append T017: an erase of tenant-a leaves tenant-b's store unchanged and every resolver call names tenant-a", async () => {
+  const storeA = tempFile();
+  const storeB = tempFile();
+  const trace: string[] = [];
+  const otherTenant = "tenant-b";
+  const plan = erasurePlan(["acme"]);
+  const kept = JSON.stringify({
+    order: plan,
+    mark: Object.fromEntries(plan.map((id) => [id, "pending"])),
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: plan },
+  });
+  const otherLedger = JSON.stringify({
+    order: ["directory"],
+    mark: { directory: "pending" },
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: [...plan, "directory"] },
+  });
+  try {
+    const policyA = await openPolicy(storeA.file, {
+      afterSql(query) {
+        if (query.includes("INSERT INTO erasure_tombstones")) trace.push("tombstone");
+        if (query.startsWith("DELETE FROM principals")) trace.push("directory");
+      },
+    });
+    armStepTrace(trace);
+    const seedA = openSqlite(storeA.file);
+    seedA.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, SUBJECT_EMAIL);
+    seedA.close();
+    putLedger(storeA.file, "requested", kept);
+    const policyB = await openPolicy(storeB.file);
+    const seedB = openSqlite(storeB.file);
+    seedB.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, SUBJECT_EMAIL);
+    seedB
+      .prepare(
+        "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 9)",
+      )
+      .run(SUBJECT, otherLedger);
+    seedB.close();
+    installErasureTenant(policyA, TENANT);
+    installErasureTenant(policyB, otherTenant);
+    const before = erasureTable(storeB.file);
+    const { post } = await eraseRoute(acmeOnlyOrg(), trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const after = erasureTable(storeB.file);
+    assert.equal(ran.status, 200);
+    assert.deepEqual(after, before);
+    assert.equal(after[0]?.ledger, before[0]?.ledger);
+    assert.equal(after[0]?.updated_at, before[0]?.updated_at);
+    assert.equal(after[0]?.updated_at, 9);
+    assert.equal(erasureTenantIds().length > 0, true);
+    assert.equal(
+      erasureTenantIds().every((id) => id === TENANT),
+      true,
+    );
+  } finally {
+    storeA.remove();
+    storeB.remove();
+  }
+});
+
+function erasureTable(file: string): { principal_id: string; status: string; ledger: string; updated_at: number }[] {
+  const db = openSqlite(file);
+  const rows = db
+    .prepare(
+      "SELECT principal_id, status, ledger, updated_at FROM erasure_requests ORDER BY principal_id",
+    )
+    .all() as { principal_id: string; status: string; ledger: string; updated_at: number }[];
+  db.close();
+  return rows.map((row) => ({
+    principal_id: row.principal_id,
+    status: row.status,
+    ledger: row.ledger,
+    updated_at: row.updated_at,
+  }));
+}
