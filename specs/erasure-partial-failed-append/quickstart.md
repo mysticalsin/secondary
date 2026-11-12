@@ -12,7 +12,7 @@ The behavior commits are on this branch.
 
 ## Commits on this branch
 
-1. Add T1, T1b, T2, T3, T3b, T4, and T5 in `harness/tests/erasure-request.test.ts`, one test concern per commit. T1, T1b, T2, T4, and T3b fail before the green commit. T3 and T5 pass there.
+1. Add T1, T1b, T2, T3, T3b, T4, and T5 in `harness/tests/erasure-request.test.ts`, one test concern per commit. T1, T1b, T2, and T3b fail before the green commit. T3 and T5 pass there. T4 is a lock of the log constraint. The receipts-first assertion in that test is the check T1b owns, and the test stays as written.
 2. In one commit, edit only the `transitionErasure` request decision at `src/state/erasure-request.ts:358` and `:370` so the red tests pass. Leave `addSteps` as an append. T3b is the later test of that decision.
 3. Run `npm test`, `npm run typecheck`, and `npm run typecheck:worker`. Existing erasure tests still pass. Both typechecks report 0 errors.
 

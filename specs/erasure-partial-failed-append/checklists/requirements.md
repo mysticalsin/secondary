@@ -31,5 +31,5 @@
 
 ## Notes
 
-- Clarifications names Replace. Accept and Resume are rejected. The behavior commits are on this branch. T3 is a lock. T4 is red before the green commit. T3b locks a done receipts step that was not already the prefix.
+- Clarifications names Replace. Accept and Resume are rejected. The behavior commits are on this branch. T3 is a lock. T4 is a lock of the log constraint. The receipts-first assertion in T4 is the check T1b owns, and the test stays as written. T3b locks a done receipts step that was not already the prefix.
 - Each open item that stays open has its reason on the same line.

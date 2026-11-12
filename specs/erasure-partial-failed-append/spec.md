@@ -69,7 +69,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 - **FR-010**: A pending stored step that the current plan omits stays in the order, placed with its kind, so a `scope:*` step sits among the scope steps, receipts stay first, and directory stays last. The grant widen at `erasure-request.ts:252-257` is unchanged, so that step remains authorised. Done steps and the completed-row `addSteps` path stay unchanged.
 - **FR-003**: A performed step that returns false ends `partial_failed`. Every performed step returning true ends `completed`. Those two outcomes stay as they are.
 - **FR-004**: No other erasure transition changes. The completed-row rule, a `request` on an unreadable row or an empty order, quorum, tombstones, receipt scans, restore re-apply, and the missing-email and connector-false results in the edge case stay as they are on `565bff6a2ba3153f11347482cdee3555b257f87f`.
-- **FR-005**: The behavior commits are red tests first, one test concern per commit, then one green commit that edits only the `:358`/`:370` decision. The tests are T1, T1b, T2, T3, T3b, T4, and T5 in `tasks.md`. T1, T1b, T2, T4, and T3b fail before that green commit. T3 and T5 pass before it and still pass after it. T4 fails before the green commit because the first recorded step is `directory`.
+- **FR-005**: The behavior commits are red tests first, one test concern per commit, then one green commit that edits only the `:358`/`:370` decision. The tests are T1, T1b, T2, T3, T3b, T4, and T5 in `tasks.md`. T1, T1b, T2, and T3b fail before that green commit. T3 and T5 pass before it and still pass after it. T4 is a lock. Its log assertions pass before and after that commit. The receipts-first assertion in T4 is the check T1b owns, and the test stays as written.
 - **FR-006**: This feature adds no CI config, no deploy, and no package.
 - **FR-007**: An absent subject is a regression pin. The keyed erase stores the canonical plan, directory last, and does not append. When no step is already done, that order and the Replace order are the same.
 - **FR-008**: No data migration. A directory-before-receipts row is not created by a migration or by the first keyed erase of an absent subject. If such a row is already stored, the same `:358`/`:370` decision re-plans it.
@@ -89,7 +89,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 
 - **SC-001**: A reader can follow the observed path and see the appended order run directory before receipts. The M-03 citation is the parent of `e9d50e61` at `ops-rights.ts:124-125`. The canonical order citation is `erasure-request.ts:260-268`.
 - **SC-002**: Clarifications names Replace and records the Accept and Resume rejections in the words above.
-- **SC-003**: T1, T1b, T2, T4, and T3b fail before the green commit and pass after it. T3 and T5 pass before that commit and on the green head. T3b fails on `eaa6bc525dbf53aa441d21ea876e767414d2f1d0` and passes once the `:370` decision is present. Existing erasure tests still pass. Root typecheck and worker typecheck report 0 errors.
+- **SC-003**: T1, T1b, T2, and T3b fail before the green commit and pass after it. T3 and T5 pass before that commit and on the green head. T4 is a lock: its log assertions pass before and after, and the receipts-first assertion in that test is the check T1b owns. T3b fails on `eaa6bc525dbf53aa441d21ea876e767414d2f1d0` and passes once the `:370` decision is present. Existing erasure tests still pass. Root typecheck and worker typecheck report 0 errors.
 - **SC-004**: The spec states the persisted-row finding below. No migration file is added.
 
 ## Assumptions
@@ -97,7 +97,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 - The reproduced predecessor is a `requested` row with order `directory`, mark `pending`, and a grant that covers that step. The no-key refusal does not write that row. The test inserts it.
 - A connector step returns false when the person has an email and the connector is not configured (`ops-rights.ts:187-190`, `connector.ts:222`). Any other step that returns false uses the same `partial_failed` rule.
 - Secret values are not copied into this spec. The pseudonym key is described only as missing, empty, short, or usable.
-- The behavior commits are on this branch. T3 is a lock. T4 is red before the green commit.
+- The behavior commits are on this branch. T3 is a lock. T4 is a lock of the log constraint. The receipts-first assertion in T4 is the check T1b owns, and the test stays as written.
 
 ## Observed path
 

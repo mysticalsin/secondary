@@ -26,7 +26,7 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 
 **Performance Goals**: No latency budget. The outcome is one request's terminal status and order.
 
-**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: the behavior change starts with failing tests T1, T1b, T2, T4, and T3b, each in its own commit. T3 and T5 pass on the parent and stay passing. The green commit edits only the `:358`/`:370` decision.
+**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: the behavior change starts with failing tests T1, T1b, T2, and T3b, each in its own commit. T3, T4, and T5 are locks. T4's log assertions pass before and after the green commit. The receipts-first assertion in T4 is the check T1b owns, and the test stays as written. The green commit edits only the `:358`/`:370` decision.
 
 **Scale/Scope**: The refused-then-keyed sequence, the done-step guard, a pending step the current plan omits, the absent-subject pin, and the log constraint. The missing-email result and the connector-false result stay as they are. The completed-row path and `addSteps` stay as they are.
 
@@ -40,10 +40,10 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 | II. No helper text | Pass. No new label on a layout or a type. The decision lives in the spec. |
 | III. Separation | Pass. The request stays the one erasure reducer. No second ledger. |
 | IV. No bolt-ons | Pass. No `any`, no `@ts-ignore`, no shim. `addSteps` is not given a second ordering pass. |
-| V. Tests first | Pass. T1, T1b, T2, T4, and T3b fail before the green commit. T3 passes before it. |
+| V. Tests first | Pass. T1, T1b, T2, and T3b fail before the green commit. T3 and T4 are locks. |
 | VI. Security & data | Pass. Section below. |
 | VII. Isolated branch | Pass. This branch only. No push to `main`. |
-| VIII. QA separate | Pass. Code waits until a non-writer confirms the Observed path and the user says to start. |
+| VIII. QA separate | Pass. Independent QA confirmed the Observed path and the user said to start. The writer does not grade that confirmation. |
 | IX. Exact-head CI | Pass as a stop. This feature adds no CI config. |
 | X. Merge and deploy | Pass. No merge and no deploy in this phase. |
 
