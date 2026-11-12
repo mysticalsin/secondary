@@ -1458,6 +1458,59 @@ test("erasure receipts: a page that fails to save keeps the previous cursor", as
   }
 });
 
+test("erasure receipts: a slow page write finishes before the ledger moves on", async () => {
+  const { file, remove } = tempFile();
+  const order: string[] = [];
+  let inflight = 0;
+  try {
+    const policy = await openPolicy(file);
+    const target = policy as unknown as {
+      erasureSaveAtomic(
+        principalId: string,
+        status: string,
+        ledger: string,
+        updatedAt: number,
+      ): void | Promise<void>;
+    };
+    const save = target.erasureSaveAtomic.bind(target);
+    target.erasureSaveAtomic = (principalId, status, ledger, updatedAt) => {
+      const page = ledger.includes('"cursor":"page-1"');
+      const label = status === "partial_failed" ? "partial_failed" : page ? "page-1" : status;
+      const delay = label === "page-1" ? 40 : label === "partial_failed" ? 5 : 0;
+      inflight += 1;
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          order.push(label);
+          void Promise.resolve(save(principalId, status, ledger, updatedAt)).then(() => {
+            inflight -= 1;
+            resolve();
+          });
+        }, delay);
+      });
+    };
+    putLedger(file, "partial_failed", await grantedLedger());
+    const run = await postReceipts([{ rewritten: 1, cursor: "page-1" }]);
+    assert.deepEqual(
+      {
+        status: run.status,
+        inflight,
+        order: order.filter((label) => label === "page-1" || label === "partial_failed"),
+        stored: readLedger(file)?.status ?? null,
+        receipts: receiptsField(readLedger(file)?.ledger),
+      },
+      {
+        status: 502,
+        inflight: 0,
+        order: ["page-1", "partial_failed"],
+        stored: "partial_failed",
+        receipts: { tag: "partial", rewritten: 1, cursor: "page-1" },
+      },
+    );
+  } finally {
+    remove();
+  }
+});
+
 test("erasure receipts: a finished scan is not run again", async () => {
   const { file, remove } = tempFile();
   try {
