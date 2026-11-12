@@ -33,6 +33,7 @@ type Workspace = {
   };
   sourceGet(id: string): { title: string; body: string | null } | null;
   sourceSearch(match: string, limit: number): SourceHit[];
+  purgeExpired(cutoffs: Record<string, number>): number;
 };
 
 function proposal(title: string): string {
@@ -135,6 +136,36 @@ test("person erasure removes the email from served source text and source search
       other: { title: "Notes for bea@example.com", body: "bea@example.com kept this" },
       found: [],
       second: { items: 0, comments: 0, approvals: 0, edits: 0 },
+    },
+  );
+  db.close();
+});
+
+test("a retention purge removes the personal note from its revisions", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const item = db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, tags, body, created_at, updated_at)
+     VALUES (?, ?, 'personalitem', 'PERSONAL', 'human', 'published', 1, 'user_1', ?, ?, 1, ?)`,
+  );
+  item.run("old", "Private note", '["note"]', "SECRET-NOTE", 1);
+  item.run("fresh", "Fresh", '["note"]', "kept fresh", NOW);
+  const revision = db.prepare(
+    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES (?, 1, ?, ?, 'user_1', 1)",
+  );
+  revision.run("old", "Private note", "SECRET-NOTE");
+  revision.run("fresh", "Fresh", "kept fresh");
+  ws.purgeExpired({ note: 1_000, brief: 1_000, draft: 1_000, view: 1_000 });
+  const second = ws.purgeExpired({ note: 1_000, brief: 1_000, draft: 1_000, view: 1_000 });
+  const oldItem = db.prepare("SELECT id FROM items WHERE id = 'old'").get() ?? null;
+  const text = (rows: Revision[]) => rows.map((row) => ({ label: row.label, body: row.body }));
+  assert.deepEqual(
+    { oldItem, oldHistory: text(ws.history("old")), freshHistory: text(ws.history("fresh")), second },
+    {
+      oldItem: null,
+      oldHistory: [],
+      freshHistory: [{ label: "Fresh", body: "kept fresh" }],
+      second: 0,
     },
   );
   db.close();
