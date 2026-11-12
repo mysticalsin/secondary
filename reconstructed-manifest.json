@@ -16,6 +16,14 @@
           "after": "import type { Workspace } from \"./workspace.ts\";"
         }
       ]
+    },
+    {
+      "path": "recovered-source/worker/src/types.ts",
+      "sourceCommit": "db3e8548",
+      "sourceBlob": "e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e",
+      "n": 8,
+      "sha256": "f228c68d1cab935ee52553f1f6e8f1a82120a25987259ab6811ba9780a401780",
+      "byteEdits": []
     }
   ]
 }
