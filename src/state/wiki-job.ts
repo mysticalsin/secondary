@@ -28,3 +28,10 @@ export function forgetWikiJob(state: WikiJobStatus): WikiJobForget {
   if (state.tag === "running") return { tag: "cancel" };
   return { tag: "keep" };
 }
+
+/** The source a job is about. Blank and whitespace are not a source. */
+export function sourceSubject(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}

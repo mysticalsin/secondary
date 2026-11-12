@@ -19,7 +19,7 @@ import {
   type FindingStatus,
 } from "../../../../src/state/proposal-review.ts";
 import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
-import { decodeWikiJobStatus, forgetWikiJob } from "../../../../src/state/wiki-job.ts";
+import { decodeWikiJobStatus, forgetWikiJob, sourceSubject } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import {
@@ -286,16 +286,16 @@ export abstract class WikiBase extends DurableObject<Env> {
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
       if (!cols.some((c) => c.name === "subject"))
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN subject TEXT");
-      this.sql.exec("UPDATE wiki_jobs SET subject = NULL WHERE subject IS NOT NULL AND trim(subject) = ''");
-      this.sql.exec(
-        `UPDATE wiki_jobs SET subject = trim(json_extract(payload, '$.sourceId'))
-         WHERE subject IS NULL
-           AND CASE
-             WHEN json_valid(payload) THEN CASE
-               WHEN json_type(payload, '$.sourceId') = 'text' THEN trim(json_extract(payload, '$.sourceId'))
-               ELSE '' END
-             ELSE '' END != ''`,
-      );
+      for (const row of this.sql.exec("SELECT id, payload, subject FROM wiki_jobs").toArray()) {
+        const current = typeof row.subject === "string" ? row.subject : null;
+        if (sourceSubject(current) !== null) continue;
+        let raw: unknown = null;
+        try { raw = (JSON.parse(String(row.payload)) as { sourceId?: unknown }).sourceId; }
+        catch { raw = null; }
+        const next = sourceSubject(raw);
+        if (next !== current)
+          this.sql.exec("UPDATE wiki_jobs SET subject = ? WHERE id = ? AND subject IS ?", next, row.id as number, current);
+      }
       // Pages made by the dev seed say so ("seed"); everything else is "human".
       if (
         !this.sql
@@ -667,7 +667,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     runAt?: number,
   ): Promise<void> {
     const body = JSON.stringify(payload);
-    const subject = typeof payload.sourceId === "string" && payload.sourceId !== "" ? payload.sourceId : null;
+    const subject = sourceSubject(payload.sourceId);
     // A source read again soon after its last ingest waits for the debounce window: saving a record
     // in a loop makes one job per window, not one per save (M-05).
     if (kind === "ingest" && runAt === undefined && payload.force !== true) {
