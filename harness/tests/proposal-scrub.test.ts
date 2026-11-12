@@ -505,3 +505,39 @@ test("proposal scrub: a malformed body that names only a longer id stays", async
     { completed: true, sourceDeleted: true, status: "candidate", body },
   );
 });
+
+async function forgetJob(state: string): Promise<{ left: JobRow[]; claimed: string[] }> {
+  const db = new DatabaseSync(":memory:");
+  schema(db);
+  const now = Date.now();
+  db.prepare(
+    "INSERT INTO wiki_jobs (id, kind, payload, run_at, state, result, subject) VALUES (1, 'ingest', ?, ?, ?, NULL, ?)",
+  ).run(JSON.stringify({ sourceId: SOURCE }), now, state, SOURCE);
+  const wiki = await openWiki(db);
+  wiki.wikiForgetSources([SOURCE], NOW);
+  const claimed = wiki.wikiJobsDue(now, 10).map((job) => job.kind);
+  const left = readJobs(db);
+  db.close();
+  return { left, claimed };
+}
+
+test("proposal scrub: a queued job for a forgotten source is deleted and not claimed", async () => {
+  const out = await forgetJob("queued");
+  assert.deepEqual(out, { left: [], claimed: [] });
+});
+
+test("proposal scrub: a cancelled job stays and is not claimed", async () => {
+  const out = await forgetJob("cancelled");
+  assert.deepEqual(
+    { state: out.left.map((job) => job.state), claimed: out.claimed },
+    { state: ["cancelled"], claimed: [] },
+  );
+});
+
+test("proposal scrub: an unknown job word stays and is not claimed", async () => {
+  const out = await forgetJob("unknown");
+  assert.deepEqual(
+    { state: out.left.map((job) => job.state), claimed: out.claimed },
+    { state: ["unknown"], claimed: [] },
+  );
+});
