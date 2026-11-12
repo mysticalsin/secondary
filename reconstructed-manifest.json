@@ -24,6 +24,14 @@
       "n": 8,
       "sha256": "f228c68d1cab935ee52553f1f6e8f1a82120a25987259ab6811ba9780a401780",
       "byteEdits": []
+    },
+    {
+      "path": "recovered-source/shared/packages/contracts/src/agent-ui/index.ts",
+      "sourceCommit": "db3e8548",
+      "sourceBlob": "ed80553761da2db13495c6eb250a438d7ef54327",
+      "n": 7,
+      "sha256": "8a14fe9709426880d937495fda805c8f8f58ef2f1ea222d36c98b6bd2988f1e5",
+      "byteEdits": []
     }
   ]
 }
