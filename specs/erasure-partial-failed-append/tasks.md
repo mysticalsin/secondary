@@ -47,7 +47,7 @@
 
 **Independent Test**: T5 passes on the parent and on the green head. Existing erasure tests still pass.
 
-- [x] T008 [US2] Do not edit `recovered-source/worker/src/ops-rights.ts:188` or the `step_failed` result at `src/state/erasure-request.ts:412`, which returns `partial_failed` at line 413. The known difference stays the edge case in `spec.md` and needs its own backlog row. Do not add a migration. The persisted-row finding in `spec.md` stays the record: a stored directory-before-receipts row, if one exists outside tests, is re-planned by T6. Covers FR-004, FR-008, SC-004.
+- [x] T008 [US2] Do not edit `recovered-source/worker/src/ops-rights.ts:188` or the `step_failed` result at `src/state/erasure-request.ts:413`, which returns `partial_failed` at line 414. The known difference stays the edge case in `spec.md` and needs its own backlog row. Do not add a migration. The persisted-row finding in `spec.md` stays the record: a stored directory-before-receipts row, if one exists outside tests, is re-planned by T6. Covers FR-004, FR-008, SC-004.
 - [x] T009 [US2] Re-run the existing no-key tests in `harness/tests/erasure-request.test.ts` (the unusable-key ledger test and the `erase_disabled` route test). Both still pass. Diff the green commit against the unchanged transitions in `data-model.md`. No other erasure transition is in that diff. Covers FR-001, FR-004.
 
 **Checkpoint**: The suite's previous erasure tests pass.
@@ -63,7 +63,7 @@
 **Independent Test**: T010 stores the canonical plan for `acme` and `beta`, then runs a keyed erase whose plan names only `acme`.
 
 - [x] T010 [US1] In its own commit, add one test in `harness/tests/erasure-request.test.ts`. The stored row is `requested`, its order is `erasurePlan(["acme", "beta"])`, every mark is `pending`, and the grant covers that order. The keyed erase uses the plan for `acme` only, and every performed step returns true. Assert `scope:beta` stays in the stored order among the scope steps, the run includes `scope:beta`, and `directory` is last. This test fails before T011 with an assertion. Covers FR-010.
-- [x] T011 [US1] After T010 is red, one commit edits only the non-completed request decision at `src/state/erasure-request.ts:370-393`. Keep a pending stored step the current plan omits, placed with its kind. Do not edit `addSteps` or the completed-row path. T010 passes. Existing erasure tests still pass. Covers FR-010.
+- [x] T011 [US1] After T010 is red, one commit edits only the non-completed request decision at `src/state/erasure-request.ts:370-394`. Keep a pending stored step the current plan omits, placed with its kind. Do not edit `addSteps` or the completed-row path. T010 passes. Existing erasure tests still pass. Covers FR-010.
 
 ## Dependencies for N-1
 
@@ -75,9 +75,9 @@
 
 **Independent Test**: T013 stores `scope:beta` as `failed` on the two-scope plan, then runs a keyed erase whose plan names only `acme`.
 
-- [ ] T012 [US1] Lock, in its own commit, before the green edit. One test in `harness/tests/erasure-request.test.ts`. A kept `scope:beta` step runs only for this principal and this session tenant. A row for another subject, and a row for another tenant, are unchanged. This test passes on the current head. Covers FR-011.
-- [ ] T013 [US1] In its own commit, one test. The stored row is `partial_failed`, its order is `erasurePlan(["acme", "beta"])`, `scope:beta` is `failed`, the other marks are `pending`, and the grant covers that order. The keyed erase uses the plan for `acme` only. Assert `scope:beta` is retried and the stored status is `completed` only once that step has succeeded. This test fails before T014 with an assertion. Covers FR-011.
-- [ ] T014 [US1] After T013 is red, one commit edits only the non-completed request decision. One not-done predicate keeps every stored step that is not done and is missing from the current plan. No separate failed branch. Do not edit `addSteps` or the completed-row path. T013 passes. Existing erasure tests still pass. Covers FR-011.
+- [x] T012 [US1] Lock, in its own commit, before the green edit. One test in `harness/tests/erasure-request.test.ts`. A kept `scope:beta` step runs only for this principal and this session tenant. A row for another subject, and a row for another tenant, are unchanged. This test passes on the current head. Covers FR-011.
+- [x] T013 [US1] In its own commit, one test. The stored row is `partial_failed`, its order is `erasurePlan(["acme", "beta"])`, `scope:beta` is `failed`, the other marks are `pending`, and the grant covers that order. The keyed erase uses the plan for `acme` only. Assert `scope:beta` is retried and the stored status is `completed` only once that step has succeeded. This test fails before T014 with an assertion. Covers FR-011.
+- [x] T014 [US1] After T013 is red, one commit edits only the non-completed request decision at `src/state/erasure-request.ts:370-394`. One not-done predicate keeps every stored step that is not done and is missing from the current plan. No separate failed branch. Do not edit `addSteps` or the completed-row path. T013 passes. Existing erasure tests still pass. Covers FR-011.
 
 Kind placement of an omitted scope is already asserted at `harness/tests/erasure-request.test.ts:2233`. No second placement test.
 

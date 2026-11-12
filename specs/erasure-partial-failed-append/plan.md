@@ -4,7 +4,7 @@
 
 **Input**: Feature specification from `/specs/erasure-partial-failed-append/spec.md`
 
-**Note**: The behavior commits are on this branch. The request decision is `src/state/erasure-request.ts:370-393`.
+**Note**: The behavior commits are on this branch. The request decision is `src/state/erasure-request.ts:370-394`.
 
 ## Summary
 

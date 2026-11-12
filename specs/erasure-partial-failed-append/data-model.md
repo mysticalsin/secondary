@@ -44,7 +44,7 @@ In the single request decision at `erasure-request.ts:358` and `:370`:
 - `request` on `completed`.
 - `resume`, `restore`, `step_done`, and `step_failed` for a step already in the order.
 - A missing email at `ops-rights.ts:188` returns true, so directory still runs.
-- A connector step that returns false is `step_failed` at `erasure-request.ts:412` and the return at line 413 sets `partial_failed`.
+- A connector step that returns false is `step_failed` at `erasure-request.ts:413` and the return at line 414 sets `partial_failed`.
 - Tombstone rows, receipt cursors, and restore re-apply.
 - No migration rewrites a stored ledger.
 
