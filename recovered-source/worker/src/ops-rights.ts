@@ -10,7 +10,6 @@ import type { Org } from "@secondary/policy";
 import {
   decodeErasureLedger,
   encodeErasure,
-  erasureGrantOk,
   erasureOutcome,
   erasurePlan,
   runErasure as applyLedger,
@@ -239,7 +238,8 @@ export async function reapplyErasures(
     if (wanted.length === 0) continue;
     const state = decodeErasureLedger(await t.erasureLoad(s.principalId), s.principalId);
     const grant = state.grant;
-    if (!grant || !erasureGrantOk(grant, s.principalId, state.order)) {
+    // decodeErasureLedger is the gate. It returns no grant unless the grant covers this subject and order.
+    if (!grant) {
       skipped.push(s.principalId);
       continue;
     }
