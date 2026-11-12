@@ -299,7 +299,9 @@ function tempFile(): { file: string; remove: () => void } {
   };
 }
 
-type SqlHookDb = { prepare(query: string): { run(...args: unknown[]): unknown } };
+type SqlHookDb = {
+  prepare(query: string): { get(...args: unknown[]): unknown; run(...args: unknown[]): unknown };
+};
 
 async function openPolicy(
   file: string,
@@ -1239,6 +1241,174 @@ test("erasure tombstone: a row that appears before the insert is not clobbered",
       erased_at: 1,
       expires_at: 900,
     });
+  } finally {
+    remove();
+  }
+});
+
+type ReceiptPage = { rewritten: number; cursor?: string } | "throw";
+
+function receiptsField(ledger: string | undefined): unknown {
+  if (!ledger) return null;
+  try {
+    const body = JSON.parse(ledger) as { receipts?: unknown };
+    return body.receipts ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function grantedLedger(receipts?: unknown): Promise<string> {
+  const plan = await acmePlan();
+  const mark: Record<string, string> = {};
+  for (const id of plan) mark[id] = "pending";
+  return JSON.stringify({
+    order: plan,
+    mark,
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: plan },
+    ...(receipts === undefined ? {} : { receipts }),
+  });
+}
+
+async function postReceipts(pages: ReceiptPage[]): Promise<{ status: number; seen: Array<string | null> }> {
+  const seen: Array<string | null> = [];
+  let page = 0;
+  const mod = (await import(workerModule("ops-admin.ts"))) as {
+    opsAdminRoutes: (deps: { now?: () => number }) => Hono;
+  };
+  const who = admin("ada", "ada@example.invalid");
+  const app = new Hono<{ Variables: { requestId: string; session: unknown } }>();
+  app.use("*", async (c, next) => {
+    c.set("requestId", "r1");
+    c.set("session", { principal: who, ctx: { now: NOW }, tenantId: TENANT, org: buildOrg(["acme"]) });
+    await next();
+  });
+  app.route("/v1/admin", mod.opsAdminRoutes({ now: () => NOW }));
+  const res = await app.request(
+    "https://api.invalid/v1/admin/rights/erase",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ principal: SUBJECT }),
+    },
+    {
+      PSEUDONYM_KEY,
+      AUDIT: {
+        fetch: async (url: string, init?: { body?: string }) => {
+          if (!String(url).includes("pseudonymise")) return new Response(null, { status: 202 });
+          const sent = JSON.parse(init?.body ?? "{}") as { cursor?: string };
+          seen.push(sent.cursor ?? null);
+          const next = pages[page];
+          page += 1;
+          if (next === undefined || next === "throw") throw new Error("audit down");
+          return new Response(JSON.stringify(next), { status: 200, headers: { "content-type": "application/json" } });
+        },
+      },
+    },
+  );
+  return { status: res.status, seen };
+}
+
+test("erasure receipts: a crash after a page resumes at the next page", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, "partial_failed", await grantedLedger());
+    const pages: ReceiptPage[] = [
+      { rewritten: 1, cursor: "p2" },
+      "throw",
+      { rewritten: 1, cursor: "p3" },
+      { rewritten: 4 },
+    ];
+    const first = await postReceipts(pages);
+    const mid = receiptsField(readLedger(file)?.ledger);
+    const second = await postReceipts(pages.slice(first.seen.length));
+    assert.deepEqual(
+      { mid, seen: [...first.seen, ...second.seen], second: second.status },
+      {
+        mid: { tag: "partial", rewritten: 1, cursor: "p2" },
+        seen: [null, "p2", "p2", "p3"],
+        second: 200,
+      },
+    );
+  } finally {
+    remove();
+  }
+});
+
+test("erasure receipts: a page that fails to save keeps the previous cursor", async () => {
+  const { file, remove } = tempFile();
+  try {
+    let otherSaw = false;
+    await openPolicy(file, {
+      afterSql(query, db) {
+        if (!query.includes("erasure_requests")) return;
+        const row = db.prepare("SELECT ledger FROM erasure_requests WHERE principal_id = ?").get(SUBJECT) as
+          | { ledger: string }
+          | undefined;
+        if (!row?.ledger.includes('"cursor":"p3"')) return;
+        const other = openSqlite(file);
+        const outside = other.prepare("SELECT ledger FROM erasure_requests WHERE principal_id = ?").get(SUBJECT) as
+          | { ledger: string }
+          | undefined;
+        other.close();
+        otherSaw = outside?.ledger.includes('"cursor":"p3"') === true;
+        throw new Error("page_boom");
+      },
+    });
+    putLedger(file, "partial_failed", await grantedLedger());
+    const first = await postReceipts([
+      { rewritten: 1, cursor: "p2" },
+      { rewritten: 1, cursor: "p3" },
+      { rewritten: 4 },
+    ]);
+    assert.deepEqual(
+      { status: first.status, otherSaw, receipts: receiptsField(readLedger(file)?.ledger), seen: first.seen },
+      {
+        status: 502,
+        otherSaw: false,
+        receipts: { tag: "partial", rewritten: 1, cursor: "p2" },
+        seen: [null, "p2"],
+      },
+    );
+  } finally {
+    remove();
+  }
+});
+
+test("erasure receipts: a finished scan is not run again", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, "partial_failed", await grantedLedger({ tag: "done", rewritten: 2 }));
+    const run = await postReceipts([{ rewritten: 1 }]);
+    assert.deepEqual({ status: run.status, seen: run.seen }, { status: 200, seen: [] });
+  } finally {
+    remove();
+  }
+});
+
+test("erasure receipts: a malformed done result is not treated as finished", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, "partial_failed", await grantedLedger({ tag: "done" }));
+    const run = await postReceipts([{ rewritten: 1 }]);
+    assert.deepEqual(run.seen, [null]);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure receipts: a legacy cursor starts again and does not skip", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, "partial_failed", await grantedLedger({ tag: "partial", rewritten: 3, cursor: "legacy" }));
+    const legacy = await postReceipts([{ rewritten: 1 }]);
+    putLedger(file, "partial_failed", await grantedLedger({ tag: "partial", rewritten: 3, cursor: 2 }));
+    const numeric = await postReceipts([{ rewritten: 1 }]);
+    assert.deepEqual({ legacy: legacy.seen, numeric: numeric.seen }, { legacy: [null], numeric: [null] });
   } finally {
     remove();
   }
