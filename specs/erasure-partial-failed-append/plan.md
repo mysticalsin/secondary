@@ -4,11 +4,11 @@
 
 **Input**: Feature specification from `/specs/erasure-partial-failed-append/spec.md`
 
-**Note**: This update is docs only. No file under `src/`, `recovered-source/`, or `harness/` changes until independent QA confirms the Observed path file:lines and the user says to start.
+**Note**: The behavior commits are on this branch. The request decision is `src/state/erasure-request.ts:370-380`.
 
 ## Summary
 
-A no-key erase returns before the ledger runner and leaves a stored request unchanged. A later keyed erase on a non-completed row currently appends the canonical plan, so directory runs before receipts. That breaks M-03. Devin's ruling is Replace with the done-step guard, in the single `transitionErasure` request decision at `src/state/erasure-request.ts:358` and `:370`. When no step is done, the stored order becomes the canonical plan from `erasurePlan` (`erasure-request.ts:260-268`): receipts first, directory last. A done step stays done, keeps its place relative to other done steps, stays ahead of the not-done steps, and is not run. Not-done steps are placed after the done steps, in canonical order. A false step ends `partial_failed`. Every performed step returning true ends `completed`. `addSteps` still only appends. Accept and Resume are rejected.
+A no-key erase returns before the ledger runner and leaves a stored request unchanged. A later keyed erase on a non-completed row, before the green commit, appends the canonical plan, so directory runs before receipts. That breaks M-03. Devin's ruling is Replace with the done-step guard, in the single `transitionErasure` request decision at `src/state/erasure-request.ts:358` and `:370`. When no step is done, the stored order becomes the canonical plan from `erasurePlan` (`erasure-request.ts:260-268`): receipts first, directory last. A done step stays done, keeps its place relative to other done steps, stays ahead of the not-done steps, and is not run. Not-done steps are placed after the done steps, in canonical order. A false step ends `partial_failed`. Every performed step returning true ends `completed`. `addSteps` still only appends. Accept and Resume are rejected.
 
 ## Technical Context
 
@@ -26,7 +26,7 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 
 **Performance Goals**: No latency budget. The outcome is one request's terminal status and order.
 
-**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: the behavior change starts with failing tests T1, T1b, T2, and T3, each in its own commit. T4 and T5 pass on the parent and stay passing. The green commit edits only the `:358`/`:370` decision.
+**Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: the behavior change starts with failing tests T1, T1b, T2, T4, and T3b, each in its own commit. T3 and T5 pass on the parent and stay passing. The green commit edits only the `:358`/`:370` decision.
 
 **Scale/Scope**: The refused-then-keyed sequence, the done-step guard, the absent-subject pin, and the log constraint. The missing-email result and the connector-false result stay as they are.
 
@@ -40,7 +40,7 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 | II. No helper text | Pass. No new label on a layout or a type. The decision lives in the spec. |
 | III. Separation | Pass. The request stays the one erasure reducer. No second ledger. |
 | IV. No bolt-ons | Pass. No `any`, no `@ts-ignore`, no shim. `addSteps` is not given a second ordering pass. |
-| V. Tests first | Pass. T1, T1b, T2, and T3 fail on the parent before the green commit. |
+| V. Tests first | Pass. T1, T1b, T2, T4, and T3b fail before the green commit. T3 passes before it. |
 | VI. Security & data | Pass. Section below. |
 | VII. Isolated branch | Pass. This branch only. No push to `main`. |
 | VIII. QA separate | Pass. Code waits until a non-writer confirms the Observed path and the user says to start. |

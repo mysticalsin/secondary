@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-12
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: Backlog SB-ERASURE-PARTIAL-FAILED-APPEND. After a no-key erasure is refused and a later keyed erase runs, the erasure request can end as `partial_failed` with the canonical plan appended. Devin's ruling is Replace with a done-step guard. It rests on M-03.
 
@@ -31,7 +31,8 @@ A configure holder asks to erase a person while the pseudonym key is missing, em
 2. **Given** that same row, **When** a keyed erase runs and the connector step returns false, **Then** the stored order is the canonical plan, `receipts` is the first step that runs, directory is last, and the status is `partial_failed`.
 3. **Given** that `partial_failed` row, **When** the same erase is retried and the connector step returns true, **Then** the status is `completed`, the order is still the canonical plan, the steps that run are `connector` then `directory`, and `receipts`, `tombstone`, `scope:acme`, and `personal` stay done.
 4. **Given** that same starting row, **When** every performed step returns true, **Then** the order is the canonical plan and the status is `completed`.
-5. **Given** a `requested` row whose only step is `directory` and that step is marked done, **When** a keyed erase of the canonical plan runs, **Then** `directory` is not run and stays done, the steps that run are `receipts`, `tombstone`, `scope:acme`, `personal`, `connector`, and the stored order is `directory` followed by those five steps.
+5. **Given** a `requested` row whose only step is `directory` and that step is marked done, **When** a keyed erase of the canonical plan runs, **Then** `directory` is not run and stays done, the steps that run are `receipts`, `tombstone`, `scope:acme`, `personal`, `connector`, and the stored order is `directory` followed by those five steps. This case already held before the green commit.
+6. **Given** a `requested` row whose order is `receipts` then `directory`, with `receipts` done and `directory` pending, **When** a keyed erase of the canonical plan runs and every performed step returns true, **Then** `receipts` stays done and is not run, the stored order is `receipts`, `tombstone`, `scope:acme`, `personal`, `connector`, `directory`, and the steps that run are those five not-done steps in that order.
 
 ---
 
@@ -55,8 +56,8 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 - No step is done in the refused-no-key case, so Replace stores exactly the canonical plan.
 - A done step keeps its mark. Done steps keep their relative order and stay ahead of the not-done steps. A done step is not run. Not-done steps are placed after the done steps, in canonical order.
 - `addSteps` still only appends. The completed-row path may still call it. The non-completed request path does not use it to build this plan.
-- The removed machine table said a missing email skips the connector and still erases the directory. Today a missing email at `recovered-source/worker/src/ops-rights.ts:188` returns true, so directory still runs. A connector step that returns false is `step_failed` at `src/state/erasure-request.ts:389`, the status is `partial_failed`, and directory does not run in that attempt. That difference is unchanged and out of scope. It needs its own backlog row.
-- Code commits wait until independent QA confirms the reproduction file:lines and the user says to start. This spec update does not start them.
+- The removed machine table said a missing email skips the connector and still erases the directory. Today a missing email at `recovered-source/worker/src/ops-rights.ts:188` returns true, so directory still runs. A connector step that returns false is `step_failed` at `src/state/erasure-request.ts:399`, the status is `partial_failed`, and directory does not run in that attempt. That difference is unchanged and out of scope. It needs its own backlog row.
+- Independent QA confirmed the reproduction, and the behavior commits are on this branch.
 
 ## Requirements *(mandatory)*
 
@@ -66,7 +67,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 - **FR-002**: A keyed erase of the canonical plan on a non-completed row rewrites the order in the single `transitionErasure` request decision at `src/state/erasure-request.ts:358` and `:370`. When no step is done, the order becomes the canonical plan at `erasurePlan` (`src/state/erasure-request.ts:260-268`), receipts first and directory last. The grant widen at `erasure-request.ts:252-257` stays as it is. A step already marked done stays done and is not run. Done steps keep their relative order and stay ahead of the not-done steps. Not-done steps are placed after them, in canonical order. `addSteps` keeps the one job of appending and is not given a second ordering pass.
 - **FR-003**: A performed step that returns false ends `partial_failed`. Every performed step returning true ends `completed`. Those two outcomes stay as they are.
 - **FR-004**: No other erasure transition changes. The completed-row rule, a `request` on an unreadable row or an empty order, quorum, tombstones, receipt scans, restore re-apply, and the missing-email and connector-false results in the edge case stay as they are on `565bff6a2ba3153f11347482cdee3555b257f87f`.
-- **FR-005**: The behavior commits are red tests first, one test concern per commit, then one green commit that edits only the `:358`/`:370` decision. The tests are T1, T1b, T2, T3, T4, and T5 in `tasks.md`. T1, T1b, T2, and T3 fail on the parent. T4 and T5 pass on the parent and still pass after the green commit. No behavior commit starts until QA confirms the reproduction file:lines and the user says to start.
+- **FR-005**: The behavior commits are red tests first, one test concern per commit, then one green commit that edits only the `:358`/`:370` decision. The tests are T1, T1b, T2, T3, T3b, T4, and T5 in `tasks.md`. T1, T1b, T2, T4, and T3b fail before that green commit. T3 and T5 pass before it and still pass after it. T4 fails before the green commit because the first recorded step is `directory`.
 - **FR-006**: This feature adds no CI config, no deploy, and no package.
 - **FR-007**: An absent subject is a regression pin. The keyed erase stores the canonical plan, directory last, and does not append. When no step is already done, that order and the Replace order are the same.
 - **FR-008**: No data migration. A directory-before-receipts row is not created by a migration or by the first keyed erase of an absent subject. If such a row is already stored, the same `:358`/`:370` decision re-plans it.
@@ -86,7 +87,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 
 - **SC-001**: A reader can follow the observed path and see the appended order run directory before receipts. The M-03 citation is the parent of `e9d50e61` at `ops-rights.ts:124-125`. The canonical order citation is `erasure-request.ts:260-268`.
 - **SC-002**: Clarifications names Replace and records the Accept and Resume rejections in the words above.
-- **SC-003**: T1, T1b, T2, and T3 fail on `565bff6a2ba3153f11347482cdee3555b257f87f` and pass after the one green commit. T4 and T5 pass on that parent and on the green head. Existing erasure tests still pass. Root typecheck and worker typecheck report 0 errors.
+- **SC-003**: T1, T1b, T2, T4, and T3b fail before the green commit and pass after it. T3 and T5 pass before that commit and on the green head. T3b fails on `eaa6bc525dbf53aa441d21ea876e767414d2f1d0` and passes once the `:370` decision is present. Existing erasure tests still pass. Root typecheck and worker typecheck report 0 errors.
 - **SC-004**: The spec states the persisted-row finding below. No migration file is added.
 
 ## Assumptions
@@ -94,7 +95,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 - The reproduced predecessor is a `requested` row with order `directory`, mark `pending`, and a grant that covers that step. The no-key refusal does not write that row. The test inserts it.
 - A connector step returns false when the person has an email and the connector is not configured (`ops-rights.ts:187-190`, `connector.ts:222`). Any other step that returns false uses the same `partial_failed` rule.
 - Secret values are not copied into this spec. The pseudonym key is described only as missing, empty, short, or usable.
-- Behavior commits wait for QA and for the user's start instruction. This document does not authorize them.
+- The behavior commits are on this branch. T3 is a lock. T4 is red before the green commit.
 
 ## Observed path
 
@@ -107,7 +108,7 @@ This is the behavior on `565bff6a2ba3153f11347482cdee3555b257f87f`. Replace chan
 5. `eraseSubject` at `ops-rights.ts:235` sends a `request` whose steps are the canonical plan.
 6. `transitionErasure` at `erasure-request.ts:358` does not replace a `requested` row with a non-empty order. Line 370 appends through `addSteps` at lines 325–333. The persisted order is `directory`, then `receipts`, `tombstone`, `scope:acme`, `personal`, `connector`.
 7. `runErasure` at `erasure-request.ts:411` continues from the first step that is not done. The first step that runs is `directory`, which breaks M-03.
-8. `ops-rights.ts:187` asks the connector when `tenant-policy.ts:1085` has an email. `connector.ts:222` returns false when the connector is absent. `erasure-request.ts:389` sets `partial_failed`.
+8. `ops-rights.ts:187` asks the connector when `tenant-policy.ts:1085` has an email. `connector.ts:222` returns false when the connector is absent. `erasure-request.ts:399` sets `partial_failed`.
 9. A run of those functions with the connector step returning false ended `partial_failed` and order `["directory","receipts","tombstone","scope:acme","personal","connector"]`. Every step returning true ended `completed` with that same order. An absent start ended `partial_failed` with the canonical plan, directory last.
 
 ## Persisted rows
