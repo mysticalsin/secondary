@@ -2239,31 +2239,14 @@ test("erasure append T010: a pending scope the current plan omits stays and runs
   }
 });
 
-test("erasure append T012: a kept step runs only for this principal and this session tenant", async () => {
+test("erasure append T012: a kept step runs only for this principal and this tenant; this store cannot hold a second tenant", async () => {
   const { file, remove } = tempFile();
-  const otherTenant = tempFile();
   const trace: string[] = [];
   const otherId = "other-subject";
   const otherPage = "other-subject-page-body";
   const otherTenantId = "tenant-b";
   const kept = erasurePlan(["acme", "beta"]);
   try {
-    await openPolicy(otherTenant.file);
-    const otherDb = openSqlite(otherTenant.file);
-    otherDb.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(otherId, "other.tenant@example.invalid");
-    otherDb.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'note', ?, '', ?, 1)").run(
-      otherId,
-      otherPage,
-    );
-    otherDb
-      .prepare(
-        "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 5)",
-      )
-      .run(otherId, JSON.stringify({ order: ["scope:beta"], mark: { "scope:beta": "pending" } }));
-    otherDb.close();
-    const otherRead = openSqlite(otherTenant.file);
-    const otherBefore = otherRead.prepare("SELECT principal_id, status, ledger FROM erasure_requests").all();
-    otherRead.close();
     const { org } = await openAppendCase(file, trace, "absent");
     const session = openSqlite(file);
     session.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(otherId, "other.person@example.invalid");
@@ -2271,6 +2254,7 @@ test("erasure append T012: a kept step runs only for this principal and this ses
       otherId,
       otherPage,
     );
+    const otherOrder = ["personal", "scope:beta", "directory"];
     session
       .prepare(
         "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 5)",
@@ -2278,15 +2262,22 @@ test("erasure append T012: a kept step runs only for this principal and this ses
       .run(
         otherId,
         JSON.stringify({
-          order: kept,
-          mark: Object.fromEntries(kept.map((id) => [id, "pending"])),
-          grant: { subject: otherId, requester: "ada", confirmer: "bea", steps: kept },
+          order: otherOrder,
+          mark: Object.fromEntries(otherOrder.map((id) => [id, "pending"])),
+          grant: {
+            subject: otherId,
+            requester: "ada",
+            confirmer: "bea",
+            steps: [...new Set([...erasurePlan(["acme"]), ...otherOrder])],
+          },
         }),
       );
     session.close();
-    const otherLedgerBefore = openSqlite(file)
+    const beforeDb = openSqlite(file);
+    const otherLedgerBefore = beforeDb
       .prepare("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?")
-      .get(otherId);
+      .get(otherId) as { status: string; ledger: string };
+    beforeDb.close();
     putLedger(
       file,
       "requested",
@@ -2311,18 +2302,24 @@ test("erasure append T012: a kept step runs only for this principal and this ses
     const left = openSqlite(file);
     const otherPrincipal = left.prepare("SELECT id FROM principals WHERE id = ?").get(otherId);
     const otherJournal = left.prepare("SELECT c FROM security_journal WHERE a = ?").get(otherId) as { c: string };
-    const otherLedger = left.prepare("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?").get(otherId);
+    const otherLedger = left
+      .prepare("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?")
+      .get(otherId) as { status: string; ledger: string };
+    const otherStamp = left
+      .prepare("SELECT ledger, updated_at FROM erasure_requests WHERE principal_id = ?")
+      .get(otherId) as { ledger: string; updated_at: number };
     left.close();
     assert.equal((otherPrincipal as { id: string } | undefined)?.id, otherId);
     assert.equal(otherJournal.c, otherPage);
     assert.deepEqual(otherLedger, otherLedgerBefore);
-    const otherReadAgain = openSqlite(otherTenant.file);
-    const otherAfter = otherReadAgain.prepare("SELECT principal_id, status, ledger FROM erasure_requests").all();
-    otherReadAgain.close();
-    assert.deepEqual(otherAfter, otherBefore);
+    assert.equal(otherStamp.updated_at, 5);
+    assert.equal(otherStamp.ledger, otherLedgerBefore.ledger);
+    assert.deepEqual(
+      (JSON.parse(otherStamp.ledger) as { order: string[] }).order,
+      (JSON.parse(otherLedgerBefore.ledger) as { order: string[] }).order,
+    );
   } finally {
     remove();
-    otherTenant.remove();
   }
 });
 
