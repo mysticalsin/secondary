@@ -20,9 +20,19 @@ const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
 
 type Revision = { revision: number; label: string; body: string | null };
 
+type SourceHit = { id: string; title: string };
+
 type Workspace = {
   wikiForgetSources(ids: string[], now: number): { facts: number; pages: number; proposals: number };
   history(id: string): Revision[];
+  pseudonymise(from: string, to: string, aliases?: string[]): {
+    items: number;
+    comments: number;
+    approvals: number;
+    edits: number;
+  };
+  sourceGet(id: string): { title: string; body: string | null } | null;
+  sourceSearch(match: string, limit: number): SourceHit[];
 };
 
 function proposal(title: string): string {
@@ -94,6 +104,38 @@ test("a source scrub removes the proposal snapshot review serves", async () => {
   assert.deepEqual(
     { served, other },
     { served: [{ label: item.label, body: item.body }], other: [{ label: "Kept", body: "kept note" }] },
+  );
+  db.close();
+});
+
+test("person erasure removes the email from served source text and source search", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const email = "ada.lovelace@example.invalid";
+  const insert = db.prepare(
+    `INSERT INTO source_items (id, source_id, gate_node_id, plane, title, body, size, etag, synced_at)
+     VALUES (?, ?, 'gate', 'INTERNAL', ?, ?, 1, 'e', 1)`,
+  );
+  insert.run("mail", "src_mail", `Mail from ${email}`, `${email} wrote the note`);
+  insert.run("other", "src_other", "Notes for bea@example.com", "bea@example.com kept this");
+  const index = db.prepare("INSERT INTO source_fts (title, body, id) VALUES (?, ?, ?)");
+  index.run(`Mail from ${email}`, `${email} wrote the note`, "mail");
+  index.run("Notes for bea@example.com", "bea@example.com kept this", "other");
+  ws.pseudonymise("user_1", "pz_user", [email]);
+  const second = ws.pseudonymise("user_1", "pz_user", [email]);
+  const text = (row: { title: string; body: string | null } | null) =>
+    row === null ? null : { title: row.title, body: row.body };
+  const mail = text(ws.sourceGet("mail"));
+  const other = text(ws.sourceGet("other"));
+  const found = ws.sourceSearch("lovelace", 10).map((row) => ({ id: row.id, title: row.title }));
+  assert.deepEqual(
+    { mail, other, found, second },
+    {
+      mail: { title: "Mail from pz_user", body: "pz_user wrote the note" },
+      other: { title: "Notes for bea@example.com", body: "bea@example.com kept this" },
+      found: [],
+      second: { items: 0, comments: 0, approvals: 0, edits: 0 },
+    },
   );
   db.close();
 });
