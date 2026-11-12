@@ -240,6 +240,12 @@ type Policy = {
   erasePrincipal(principalId: string): number;
 };
 
+type PolicyConnection = {
+  prepare(query: string): { get(...args: unknown[]): unknown };
+};
+
+type OpenedPolicy = Policy & { connection: PolicyConnection };
+
 type LedgerRow = { status: string; ledger: string; updated_at: number };
 
 function workerModule(name: string): string {
@@ -298,7 +304,7 @@ type SqlHookDb = { prepare(query: string): { run(...args: unknown[]): unknown } 
 async function openPolicy(
   file: string,
   options?: { afterSql?: (query: string, db: SqlHookDb) => void },
-): Promise<Policy> {
+): Promise<OpenedPolicy> {
   const db = openSqlite(file);
   const sql = sqliteStorage(db);
   let depth = 0;
@@ -347,7 +353,7 @@ async function openPolicy(
   const policy = new mod.TenantPolicy(ctx, {});
   await ready;
   installErasureTenant(policy);
-  return policy;
+  return Object.assign(policy, { connection: db });
 }
 
 function putLedger(file: string, status: string, ledger: string, updatedAt = 5): void {
@@ -1056,7 +1062,7 @@ test("erasure request: a replayed confirm writes no grant and leaves the erasure
 test("erasure request: a throw after the grant write keeps the ask and writes no row", async () => {
   const { file, remove } = tempFile();
   try {
-    await openPolicy(file);
+    const policy = await openPolicy(file);
     const { post } = await eraseApp(buildOrg(["acme"]));
     const first = await post(admin("ada", "ada@example.invalid"), NOW);
     assert.equal(first.status, 202);
@@ -1072,8 +1078,14 @@ test("erasure request: a throw after the grant write keeps the ask and writes no
       () => 500,
     );
     assert.equal(second >= 500, true);
-    assert.equal(pendingErase(file), "ada");
-    assert.equal(readLedger(file), undefined);
+    const pending = policy.connection
+      .prepare("SELECT requested_by FROM pending_ops WHERE key = ?")
+      .get(`erase:${SUBJECT}`) as { requested_by: string } | undefined;
+    const ledger = policy.connection
+      .prepare("SELECT principal_id FROM erasure_requests WHERE principal_id = ?")
+      .get(SUBJECT);
+    assert.equal(pending?.requested_by, "ada");
+    assert.equal(ledger, undefined);
   } finally {
     remove();
   }
