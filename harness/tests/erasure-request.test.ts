@@ -1879,3 +1879,181 @@ test("erase route maps a missing or short key to 503 erase_disabled and writes n
     remove();
   }
 });
+
+const SUBJECT_EMAIL = "subject.person@example.invalid";
+const PLANTED_PAGE = "planted-erasure-page-body";
+const CONNECTOR_SECRET = "0123456789abcdef0123456789abcdef";
+
+function acmeOnlyOrg(): Org {
+  const nodes = new Map<string, OrgNode>();
+  nodes.set("acme", {
+    id: "acme",
+    label: "acme",
+    kind: "department",
+    plane: "TEAM_RESTRICTED",
+    parentId: null,
+    childIds: [],
+    dept: "acme",
+    facts: {},
+    leaf: null,
+  });
+  return {
+    tenantId: TENANT,
+    seed: 1,
+    nodes,
+    roots: ["acme"],
+    links: [],
+    roles: new Map(Object.values(ROLES).map((role) => [role.id, role])),
+  };
+}
+
+function directoryLedger(mark: "pending" | "done"): string {
+  return JSON.stringify({
+    order: ["directory"],
+    mark: { directory: mark },
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: ["directory"] },
+  });
+}
+
+function armStepTrace(trace: string[]): void {
+  const slot = globalThis as { __erasureCalls?: string[] };
+  const calls = slot.__erasureCalls ?? [];
+  slot.__erasureCalls = calls;
+  calls.push = (...items: string[]) => {
+    for (const item of items) {
+      if (item.startsWith("pseudonymise:")) trace.push(`scope:${item.slice("pseudonymise:".length)}`);
+      else if (item.startsWith("wipe:")) trace.push("personal");
+    }
+    return Array.prototype.push.apply(calls, items);
+  };
+}
+
+function storedPlan(file: string): { status: string; order: string[]; mark: Record<string, string> } {
+  const row = readLedger(file);
+  const body = JSON.parse(row?.ledger ?? "{}") as { order?: string[]; mark?: Record<string, string> };
+  return { status: row?.status ?? "", order: body.order ?? [], mark: body.mark ?? {} };
+}
+
+async function openAppendCase(
+  file: string,
+  trace: string[],
+  mark: "pending" | "done" | "absent",
+): Promise<{ org: Org; plan: string[] }> {
+  await openPolicy(file, {
+    afterSql(query) {
+      if (query.includes("INSERT INTO erasure_tombstones")) trace.push("tombstone");
+      if (query.startsWith("DELETE FROM principals")) trace.push("directory");
+    },
+  });
+  armStepTrace(trace);
+  const db = openSqlite(file);
+  db.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, SUBJECT_EMAIL);
+  db.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'note', ?, '', ?, 1)").run(
+    SUBJECT,
+    PLANTED_PAGE,
+  );
+  db.close();
+  if (mark !== "absent") putLedger(file, "requested", directoryLedger(mark));
+  const org = acmeOnlyOrg();
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    companyScopes: (org: Org) => string[];
+  };
+  return { org, plan: erasurePlan(rights.companyScopes(org)) };
+}
+
+async function eraseRoute(org: Org, trace: string[]): Promise<{
+  post: (who: Principal, at: number, env: Record<string, unknown>) => Promise<Response>;
+}> {
+  const mod = (await import(workerModule("ops-admin.ts"))) as {
+    opsAdminRoutes: (deps: { now?: () => number }) => Hono;
+  };
+  let clock = NOW;
+  let who = admin("ada", "ada@example.invalid");
+  const app = new Hono<{ Variables: { requestId: string; session: unknown } }>();
+  app.use("*", async (c, next) => {
+    c.set("requestId", "r1");
+    c.set("session", { principal: who, ctx: { now: clock }, tenantId: TENANT, org });
+    await next();
+  });
+  app.route("/v1/admin", mod.opsAdminRoutes({ now: () => clock }));
+  return {
+    post: async (person, at, env) => {
+      who = person;
+      clock = at;
+      return app.request(
+        "https://api.invalid/v1/admin/rights/erase",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ principal: SUBJECT }),
+        },
+        {
+          ...env,
+          AUDIT: {
+            fetch: async (url: string) => {
+              if (String(url).includes("/pseudonymise")) trace.push("receipts");
+              if (String(url).includes("/pseudonymise"))
+                return new Response(JSON.stringify({ rewritten: 1 }), { status: 200 });
+              return new Response(null, { status: 202 });
+            },
+          },
+        },
+      );
+    },
+  };
+}
+
+function keyedEnv(connector: boolean): Record<string, unknown> {
+  if (!connector) return { PSEUDONYM_KEY };
+  return {
+    PSEUDONYM_KEY,
+    CONNECTOR_HMAC_KEY: CONNECTOR_SECRET,
+    CONNECTOR: {
+      fetch: async () => new Response(null, { status: 200 }),
+    },
+  };
+}
+
+test("erasure append T1: a refused no-key erase then a keyed erase stores the canonical plan", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "pending");
+    const before = readLedger(file);
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    const afterRefusal = readLedger(file);
+    assert.equal(refused.status, 503);
+    assert.deepEqual(await refused.json(), { error: "erase_disabled" });
+    assert.equal(afterRefusal?.status, before?.status);
+    assert.equal(afterRefusal?.ledger, before?.ledger);
+    const first = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false));
+    assert.equal(first.status, 202);
+    trace.length = 0;
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false));
+    const failed = storedPlan(file);
+    assert.equal(second.status, 502);
+    assert.deepEqual(failed.order, plan);
+    assert.equal(failed.status, "partial_failed");
+    assert.equal(plan[0], "receipts");
+    assert.equal(plan.at(-1), "directory");
+    trace.length = 0;
+    const connector = keyedEnv(true);
+    connector.CONNECTOR = {
+      fetch: async () => {
+        trace.push("connector");
+        return new Response(null, { status: 200 });
+      },
+    };
+    const retry = await post(admin("ada", "ada@example.invalid"), NOW + 3, connector);
+    const done = storedPlan(file);
+    assert.equal(retry.status, 200);
+    assert.equal(done.status, "completed");
+    assert.deepEqual(done.order, plan);
+    assert.deepEqual(trace, ["connector", "directory"]);
+    for (const step of ["receipts", "tombstone", "scope:acme", "personal"] as const)
+      assert.equal(done.mark[step], "done");
+  } finally {
+    remove();
+  }
+});
