@@ -6,6 +6,7 @@
 // that belong to the data: exact revision, one approval per person, no self-approval.
 
 import { claimRelease, commitItem } from "../../../src/state/item-release.ts";
+import { replaceName } from "../../../src/state/pseudonym-text.ts";
 import { commitQuorum } from "../../../src/state/quorum.ts";
 import { BrainBase } from "./brains/store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
@@ -1029,6 +1030,30 @@ export class Workspace extends BrainBase {
       this.sql.exec("UPDATE comments SET author_id = ? WHERE author_id = ?", to, from);
       this.sql.exec("UPDATE approvals SET actor_id = ? WHERE actor_id = ?", to, from);
       this.sql.exec("UPDATE edits SET actor_id = ? WHERE actor_id = ?", to, from);
+      this.sql.exec("UPDATE revisions SET actor_id = ? WHERE actor_id = ?", to, from);
+      const names = [
+        ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length >= 3)),
+      ];
+      for (const name of names) {
+        for (const row of this.sql
+          .exec(
+            "SELECT item_id, revision, label, body FROM revisions WHERE instr(label, ?) > 0 OR instr(COALESCE(body, ''), ?) > 0",
+            name,
+            name,
+          )
+          .toArray()) {
+          const label = replaceName(String(row.label ?? ""), name, to);
+          const body = row.body === null ? null : replaceName(String(row.body), name, to);
+          if (label === String(row.label ?? "") && body === row.body) continue;
+          this.sql.exec(
+            "UPDATE revisions SET label = ?, body = ? WHERE item_id = ? AND revision = ?",
+            label,
+            body,
+            row.item_id as string,
+            row.revision as number,
+          );
+        }
+      }
       this.wikiPseudonymise(from, to, aliases);
       for (const r of this.sql
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")

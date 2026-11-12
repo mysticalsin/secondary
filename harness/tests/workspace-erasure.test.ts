@@ -66,7 +66,7 @@ test("a revision actor and its text are pseudonymised once", async () => {
     { rows: revisions(db), second },
     {
       rows: [
-        { item_id: "named", label: "Notes on pz_Ada", body: "pz_Ada wrote it", actor_id: "pz_user" },
+        { item_id: "named", label: "Notes on pz_user", body: "pz_user wrote it", actor_id: "pz_user" },
         { item_id: "other", label: "Steady", body: "Steady note", actor_id: "other" },
       ],
       second: { items: 0, comments: 0, approvals: 0, edits: 0 },
