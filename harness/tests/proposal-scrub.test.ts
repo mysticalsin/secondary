@@ -314,3 +314,65 @@ test("proposal scrub: a status that changes before the write is not clobbered", 
   assert.equal(row.body, raced);
   db.close();
 });
+
+async function openMigrated(db: DatabaseSync): Promise<Wiki> {
+  let ready: Promise<unknown> = Promise.resolve();
+  const ctx = {
+    storage: { sql: sqliteStorage(db) },
+    blockConcurrencyWhile(fn: () => Promise<unknown>) {
+      ready = fn();
+      return ready;
+    },
+  };
+  const mod = (await import(storeSpecifier)) as {
+    WikiBase: new (ctx: unknown, env: unknown) => Wiki;
+  };
+  const wiki = new mod.WikiBase(ctx, {});
+  await ready;
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS items (
+      id TEXT PRIMARY KEY, label TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL,
+      body TEXT, origin TEXT NOT NULL DEFAULT 'human', updated_at INTEGER NOT NULL);
+    CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(label, id UNINDEXED);
+  `);
+  return wiki;
+}
+
+function plantLegacyJobs(db: DatabaseSync, withSubject: boolean): void {
+  const subject = withSubject ? ", subject TEXT" : "";
+  db.exec(`
+    CREATE TABLE wiki_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, payload TEXT NOT NULL,
+      run_at INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending', result TEXT${subject});
+  `);
+  const insert = db.prepare(
+    "INSERT INTO wiki_jobs (kind, payload, run_at, state) VALUES ('ingest', ?, 1, ?)",
+  );
+  insert.run(JSON.stringify({ sourceId: SOURCE }), "pending");
+  insert.run(JSON.stringify({ sourceId: SOURCE }), "failed");
+  insert.run(JSON.stringify({ sourceId: "" }), "pending");
+}
+
+test("proposal scrub: a job stored before the subject column is still forgotten", async () => {
+  const db = new DatabaseSync(":memory:");
+  plantLegacyJobs(db, false);
+  const wiki = await openMigrated(db);
+  wiki.wikiForgetSources([SOURCE], NOW);
+  assert.deepEqual(
+    readJobs(db).map((job) => ({ state: job.state, subject: job.subject, payload: job.payload })),
+    [{ state: "pending", subject: null, payload: JSON.stringify({ sourceId: "" }) }],
+  );
+  db.close();
+});
+
+test("proposal scrub: a null subject is filled when the column is already there", async () => {
+  const db = new DatabaseSync(":memory:");
+  plantLegacyJobs(db, true);
+  const wiki = await openMigrated(db);
+  wiki.wikiForgetSources([SOURCE], NOW);
+  assert.deepEqual(
+    readJobs(db).map((job) => ({ state: job.state, subject: job.subject, payload: job.payload })),
+    [{ state: "pending", subject: null, payload: JSON.stringify({ sourceId: "" }) }],
+  );
+  db.close();
+});
