@@ -2325,3 +2325,34 @@ test("erasure append T012: a kept step runs only for this principal and this ses
     otherTenant.remove();
   }
 });
+
+test("erasure append T013: a failed scope the current plan omits is retried before the erase completes", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const kept = erasurePlan(["acme", "beta"]);
+  const mark = Object.fromEntries(kept.map((id) => [id, "pending"]));
+  mark["scope:beta"] = "failed";
+  try {
+    const { org } = await openAppendCase(file, trace, "absent");
+    putLedger(
+      file,
+      "partial_failed",
+      JSON.stringify({
+        order: kept,
+        mark,
+        grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: kept },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 200);
+    assert.deepEqual(stored.order, kept);
+    assert.equal(trace.includes("scope:beta"), true);
+    assert.equal(stored.mark["scope:beta"], "done");
+    assert.equal(stored.status, "completed");
+    assert.equal(stored.order.at(-1), "directory");
+  } finally {
+    remove();
+  }
+});
