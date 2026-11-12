@@ -1,17 +1,22 @@
-/** Replace `from` with `to`, leaving a span that is already `to`. */
+/**
+ * Replace `from` with `to`. The longer string is matched first at each position.
+ * A second pass finds the name gone, or already covered by the longer pseudonym.
+ */
 export function replaceName(text: string, from: string, to: string): string {
   if (from === "" || from === to || !text.includes(from)) return text;
+  const first = from.length >= to.length ? from : to;
+  const second = first === from ? to : from;
   let out = "";
   let i = 0;
   while (i < text.length) {
-    if (to !== "" && text.startsWith(to, i)) {
-      out += to;
-      i += to.length;
+    if (text.startsWith(first, i)) {
+      out += first === from ? to : first;
+      i += first.length;
       continue;
     }
-    if (text.startsWith(from, i)) {
-      out += to;
-      i += from.length;
+    if (second !== "" && text.startsWith(second, i)) {
+      out += second === from ? to : second;
+      i += second.length;
       continue;
     }
     out += text[i];
