@@ -1915,6 +1915,14 @@ function directoryLedger(mark: "pending" | "done"): string {
   });
 }
 
+function receiptsDoneLedger(): string {
+  return JSON.stringify({
+    order: ["receipts", "directory"],
+    mark: { receipts: "done", directory: "pending" },
+    grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: ["receipts", "directory"] },
+  });
+}
+
 function armStepTrace(trace: string[]): void {
   const slot = globalThis as { __erasureCalls?: string[] };
   const calls = slot.__erasureCalls ?? [];
@@ -2111,6 +2119,31 @@ test("erasure append T3: a done step is kept and is not run again", async () => 
     assert.equal(trace.includes("directory"), false);
     assert.deepEqual(trace, rest);
     assert.deepEqual(stored.order, ["directory", ...rest]);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure append T3b: a done receipts step stays first and directory runs last", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "absent");
+    putLedger(file, "requested", receiptsDoneLedger());
+    const { post } = await eraseRoute(org, trace);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 1, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    const rest = plan.filter((id) => id !== "receipts");
+    assert.equal(ran.status, 200);
+    assert.equal(stored.status, "completed");
+    assert.equal(stored.mark.receipts, "done");
+    assert.equal(trace.includes("receipts"), false);
+    assert.deepEqual(stored.order, ["receipts", ...rest]);
+    assert.equal(stored.order.at(-1), "directory");
+    assert.deepEqual(trace, rest);
   } finally {
     remove();
   }
