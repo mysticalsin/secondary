@@ -176,3 +176,37 @@ test("source forget: a search row that survived the page write is rebuilt, and a
   );
   db.close();
 });
+
+test("source forget: an orphan search row does not survive, and a live page's row stays", async () => {
+  const db = new DatabaseSync(":memory:");
+  const wiki = await openWiki(db);
+  page(db, "live", "Steady", "Steady note");
+  db.prepare(
+    "INSERT INTO wiki_fts (title, summary, body, id) VALUES ('Steady', 'Steady note', 'Steady note', 'live')",
+  ).run();
+  db.prepare(
+    "INSERT INTO wiki_fts (title, summary, body, id) VALUES ('Gone', '', 'secret {src:src_1}', 'gone')",
+  ).run();
+  db.prepare(
+    "INSERT INTO wiki_fts (title, summary, body, id) VALUES ('Other', '', 'unrelated', 'other')",
+  ).run();
+  let thrown: string | null = null;
+  try {
+    wiki.wikiForgetSources(["src_1"], 5);
+    wiki.wikiForgetSources(["src_1"], 6);
+  } catch (e) {
+    thrown = e instanceof Error ? e.message : String(e);
+  }
+  const search = db
+    .prepare("SELECT id, title, summary, body FROM wiki_fts ORDER BY id")
+    .all()
+    .map((row) => ({ ...(row as { id: string; title: string; summary: string; body: string }) }));
+  assert.deepEqual(
+    { thrown, search },
+    {
+      thrown: null,
+      search: [{ id: "live", title: "Steady", summary: "Steady note", body: "Steady note" }],
+    },
+  );
+  db.close();
+});
