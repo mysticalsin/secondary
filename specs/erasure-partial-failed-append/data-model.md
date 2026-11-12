@@ -7,7 +7,7 @@ One row per person. The fields this sequence reads and writes:
 | Field | Meaning |
 |---|---|
 | status | `requested`, `running`, `completed`, or `partial_failed` on this path. `absent` and `unreadable` are the other stored readings. An absent start uses the canonical plan and is not an append. |
-| order | Step ids. The reproduced start is `directory`. The appended order is that list plus each missing canonical step. Replace stores the canonical plan when no step is done. |
+| order | Step ids. The reproduced start is `directory`. The appended order is that list plus each missing canonical step. Replace stores the canonical plan when no step is done and every pending stored step is already in the plan. A pending step the plan omits stays. |
 | mark | `pending`, `done`, or `failed` for each id in the order. A `done` mark stays `done`. |
 | grant | Subject, requester, confirmer, and the approved step ids. The helper widens the step ids and leaves the order. Replace does not edit that helper. |
 | receipts | Unchanged by the order decision. The receipt scan stays as it is. |
@@ -27,7 +27,8 @@ In the single request decision at `erasure-request.ts:358` and `:370`:
 - A step marked `done` stays `done` and is not run.
 - Done steps keep their relative order.
 - Not-done steps are placed after the done steps, in canonical order, once each.
-- When no step is done, the stored order is exactly the canonical plan.
+- When no step is done and every pending stored step is already in the plan, the stored order is exactly the canonical plan.
+- A pending stored step the current plan omits stays. A `scope:*` step sits among the scope steps. Receipts stay first and directory stays last.
 - A performed step that returns false ends `partial_failed`. Every performed step returning true ends `completed`.
 
 `addSteps` still only appends. The completed-row path may still call it. The non-completed request path does not use it for this plan.

@@ -8,7 +8,7 @@
 
 ## Summary
 
-A no-key erase returns before the ledger runner and leaves a stored request unchanged. A later keyed erase on a non-completed row, before the green commit, appends the canonical plan, so directory runs before receipts. That breaks M-03. Devin's ruling is Replace with the done-step guard, in the single `transitionErasure` request decision at `src/state/erasure-request.ts:358` and `:370`. When no step is done, the stored order becomes the canonical plan from `erasurePlan` (`erasure-request.ts:260-268`): receipts first, directory last. A done step stays done, keeps its place relative to other done steps, stays ahead of the not-done steps, and is not run. Not-done steps are placed after the done steps, in canonical order. A false step ends `partial_failed`. Every performed step returning true ends `completed`. `addSteps` still only appends. Accept and Resume are rejected.
+A no-key erase returns before the ledger runner and leaves a stored request unchanged. A later keyed erase on a non-completed row, before the green commit, appends the canonical plan, so directory runs before receipts. That breaks M-03. Devin's ruling is Replace with the done-step guard, in the single `transitionErasure` request decision at `src/state/erasure-request.ts:358` and `:370`. When no step is done and every pending stored step is already in the plan, the stored order becomes the canonical plan from `erasurePlan` (`erasure-request.ts:260-268`): receipts first, directory last. A pending stored step the current plan omits stays, a `scope:*` step among the scope steps. A done step stays done, keeps its place relative to other done steps, stays ahead of the not-done steps, and is not run. Not-done steps are placed after the done steps, in canonical order. A false step ends `partial_failed`. Every performed step returning true ends `completed`. `addSteps` still only appends. Accept and Resume are rejected.
 
 ## Technical Context
 
@@ -28,7 +28,7 @@ A no-key erase returns before the ledger runner and leaves a stored request unch
 
 **Constraints**: Isolated branch `cursor/erasure-partial-failed-append-7e21`. No force, no hook bypass, not `main`, no merge, no deploy, no CI file, no new package. No `any` and no `@ts-ignore`. Constitution V: the behavior change starts with failing tests T1, T1b, T2, T4, and T3b, each in its own commit. T3 and T5 pass on the parent and stay passing. The green commit edits only the `:358`/`:370` decision.
 
-**Scale/Scope**: The refused-then-keyed sequence, the done-step guard, the absent-subject pin, and the log constraint. The missing-email result and the connector-false result stay as they are.
+**Scale/Scope**: The refused-then-keyed sequence, the done-step guard, a pending step the current plan omits, the absent-subject pin, and the log constraint. The missing-email result and the connector-false result stay as they are. The completed-row path and `addSteps` stay as they are.
 
 ## Constitution Check
 

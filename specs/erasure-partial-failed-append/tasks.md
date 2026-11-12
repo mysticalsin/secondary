@@ -56,6 +56,19 @@
 
 - [x] T007 Run `npm test`, `npm run typecheck`, and `npm run typecheck:worker` on the behavior head. `npm test` passes, including T1, T1b, T2, T3, T3b, T4, and T5. Both typechecks report 0 errors. No CI file is added. Covers FR-006, SC-003.
 
+## Phase 5: Keep an authorised pending step the current plan omits
+
+**Goal**: A pending `scope:*` step that the second plan does not name stays in the order, runs, and directory stays last.
+
+**Independent Test**: T010 stores the canonical plan for `acme` and `beta`, then runs a keyed erase whose plan names only `acme`.
+
+- [ ] T010 [US1] In its own commit, add one test in `harness/tests/erasure-request.test.ts`. The stored row is `requested`, its order is `erasurePlan(["acme", "beta"])`, every mark is `pending`, and the grant covers that order. The keyed erase uses the plan for `acme` only, and every performed step returns true. Assert `scope:beta` stays in the stored order among the scope steps, the run includes `scope:beta`, and `directory` is last. This test fails before T011 with an assertion. Covers FR-010.
+- [ ] T011 [US1] After T010 is red, one commit edits only the non-completed request decision at `src/state/erasure-request.ts:370-380`. Keep a pending stored step the current plan omits, placed with its kind. Do not edit `addSteps` or the completed-row path. T010 passes. Existing erasure tests still pass. Covers FR-010.
+
+## Dependencies for N-1
+
+- T011 depends on T010 being red. T010 depends on the head `6e9900e519ac4ed4725a6d2d2534cf01d4d4e882`.
+
 ## Dependencies
 
 - T1, T1b, T2, T3, T3b, T4, and T5 depend on T000. Each test is its own commit. T3 and T5 pass on the parent.
