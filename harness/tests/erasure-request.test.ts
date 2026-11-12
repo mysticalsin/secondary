@@ -355,7 +355,12 @@ async function openPolicy(
   const mod = (await import(workerModule("tenant-policy.ts"))) as {
     TenantPolicy: new (ctx: unknown, env: unknown) => Policy;
   };
-  const policy = new mod.TenantPolicy(ctx, {});
+  const policy = new mod.TenantPolicy(ctx, {
+    PSEUDONYM_KEY,
+    AUDIT: {
+      fetch: async () => new Response(JSON.stringify({ rewritten: 1 }), { status: 200 }),
+    },
+  });
   await ready;
   installErasureTenant(policy);
   return Object.assign(policy, { connection: db });
