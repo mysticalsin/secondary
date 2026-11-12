@@ -1969,7 +1969,28 @@ async function openAppendCase(
   return { org, plan: erasurePlan(rights.companyScopes(org)) };
 }
 
-async function eraseRoute(org: Org, trace: string[]): Promise<{
+function recordPostedTenant(
+  posted: string[] | undefined,
+  body: unknown,
+  field: "tenant" | "tenantId",
+): void {
+  if (!posted || typeof body !== "string") return;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== "object") return;
+  const value = (parsed as Record<string, unknown>)[field];
+  if (typeof value === "string") posted.push(value);
+}
+
+async function eraseRoute(
+  org: Org,
+  trace: string[],
+  posted?: string[],
+): Promise<{
   post: (who: Principal, at: number, env: Record<string, unknown>) => Promise<Response>;
 }> {
   const mod = (await import(workerModule("ops-admin.ts"))) as {
@@ -1998,10 +2019,12 @@ async function eraseRoute(org: Org, trace: string[]): Promise<{
         {
           ...env,
           AUDIT: {
-            fetch: async (url: string) => {
+            fetch: async (url: string, init?: { body?: unknown }) => {
               if (String(url).includes("/pseudonymise")) trace.push("receipts");
-              if (String(url).includes("/pseudonymise"))
+              if (String(url).includes("/pseudonymise")) {
+                recordPostedTenant(posted, init?.body, "tenant");
                 return new Response(JSON.stringify({ rewritten: 1 }), { status: 200 });
+              }
               return new Response(null, { status: 202 });
             },
           },
@@ -2011,14 +2034,15 @@ async function eraseRoute(org: Org, trace: string[]): Promise<{
   };
 }
 
-function keyedEnv(connector: boolean, trace: string[]): Record<string, unknown> {
+function keyedEnv(connector: boolean, trace: string[], posted?: string[]): Record<string, unknown> {
   if (!connector) return { PSEUDONYM_KEY };
   return {
     PSEUDONYM_KEY,
     CONNECTOR_HMAC_KEY: CONNECTOR_SECRET,
     CONNECTOR: {
-      fetch: async () => {
+      fetch: async (_url: string, init?: { body?: unknown }) => {
         trace.push("connector");
+        recordPostedTenant(posted, init?.body, "tenantId");
         return new Response(null, { status: 200 });
       },
     },
@@ -2417,7 +2441,15 @@ test("erasure append T017: an erase of tenant-a leaves tenant-b's store unchange
     putLedger(storeA.file, "requested", kept);
     const policyB = await openPolicy(storeB.file);
     const seedB = openSqlite(storeB.file);
-    seedB.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, SUBJECT_EMAIL);
+    seedB.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, "b-only@example.invalid");
+    seedB
+      .prepare(
+        "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, 'b-stone', ?, 4, 8)",
+      )
+      .run(SUBJECT, JSON.stringify(["b-only@example.invalid"]));
+    seedB
+      .prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (3, 'note', ?, 'b-field', 'b-journal', 1)")
+      .run(SUBJECT);
     seedB
       .prepare(
         "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 9)",
@@ -2427,24 +2459,62 @@ test("erasure append T017: an erase of tenant-a leaves tenant-b's store unchange
     installErasureTenant(policyA, TENANT);
     installErasureTenant(policyB, otherTenant);
     const before = erasureTable(storeB.file);
-    const { post } = await eraseRoute(acmeOnlyOrg(), trace);
-    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const beforeStore = tenantStore(storeB.file);
+    const posted: string[] = [];
+    const { post } = await eraseRoute(acmeOnlyOrg(), trace, posted);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace, posted));
     const after = erasureTable(storeB.file);
+    const afterStore = tenantStore(storeB.file);
     assert.equal(ran.status, 200);
     assert.deepEqual(after, before);
     assert.equal(after[0]?.ledger, before[0]?.ledger);
     assert.equal(after[0]?.updated_at, before[0]?.updated_at);
     assert.equal(after[0]?.updated_at, 9);
+    assert.equal(beforeStore.principals.length, 1);
+    assert.equal(beforeStore.principals[0]?.email, "b-only@example.invalid");
+    assert.equal(beforeStore.tombstones.length, 1);
+    assert.equal(beforeStore.tombstones[0]?.pseudonym, "b-stone");
+    assert.equal(beforeStore.journal.length, 1);
+    assert.equal(beforeStore.journal[0]?.c, "b-journal");
+    assert.deepEqual(afterStore, beforeStore);
     assert.equal(erasureTenantIds().length > 0, true);
     assert.equal(
       erasureTenantIds().every((id) => id === TENANT),
       true,
+    );
+    assert.equal(posted.length >= 2, true);
+    assert.deepEqual(
+      posted,
+      posted.map(() => TENANT),
     );
   } finally {
     storeA.remove();
     storeB.remove();
   }
 });
+
+function tenantStore(file: string): {
+  requests: Record<string, unknown>[];
+  principals: Record<string, unknown>[];
+  tombstones: Record<string, unknown>[];
+  journal: Record<string, unknown>[];
+} {
+  const db = openSqlite(file);
+  const snap = {
+    requests: rowsOf(
+      db,
+      "SELECT principal_id, status, ledger, updated_at FROM erasure_requests ORDER BY principal_id",
+    ),
+    principals: rowsOf(db, "SELECT id, email FROM principals ORDER BY id"),
+    tombstones: rowsOf(
+      db,
+      "SELECT principal_id, pseudonym, aliases, erased_at, expires_at FROM erasure_tombstones ORDER BY principal_id",
+    ),
+    journal: rowsOf(db, "SELECT seq, at, kind, a, b, c, v FROM security_journal ORDER BY seq"),
+  };
+  db.close();
+  return snap;
+}
 
 function erasureTable(file: string): { principal_id: string; status: string; ledger: string; updated_at: number }[] {
   const db = openSqlite(file);
