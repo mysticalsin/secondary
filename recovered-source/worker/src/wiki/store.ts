@@ -288,11 +288,13 @@ export abstract class WikiBase extends DurableObject<Env> {
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN subject TEXT");
       for (const row of this.sql.exec("SELECT id, payload, subject FROM wiki_jobs").toArray()) {
         const current = typeof row.subject === "string" ? row.subject : null;
-        if (sourceSubject(current) !== null) continue;
-        let raw: unknown = null;
-        try { raw = (JSON.parse(String(row.payload)) as { sourceId?: unknown }).sourceId; }
-        catch { raw = null; }
-        const next = sourceSubject(raw);
+        let next = sourceSubject(current);
+        if (next === null && current === null) {
+          let raw: unknown = null;
+          try { raw = (JSON.parse(String(row.payload)) as { sourceId?: unknown }).sourceId; }
+          catch { raw = null; }
+          next = sourceSubject(raw);
+        }
         if (next !== current)
           this.sql.exec("UPDATE wiki_jobs SET subject = ? WHERE id = ? AND subject IS ?", next, row.id as number, current);
       }
