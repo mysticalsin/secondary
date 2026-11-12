@@ -18,6 +18,7 @@ import {
   decodeProposalStatus,
   type FindingStatus,
 } from "../../../../src/state/proposal-review.ts";
+import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
 import { decodeWikiJobStatus, forgetWikiJob } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
@@ -2160,12 +2161,20 @@ export abstract class WikiBase extends DurableObject<Env> {
     }
     const scrubbed: string[] = [];
     // Status is read before any proposal write, so a later change misses the compare-and-set.
+    // The citation decision is in code. This statement only writes the row that decision named.
     const proposals = this.sql
-      .exec("SELECT id, status FROM items WHERE kind LIKE 'wiki\\_%' ESCAPE '\\' ORDER BY id")
+      .exec("SELECT id, status, body FROM items WHERE kind LIKE 'wiki\\_%' ESCAPE '\\' ORDER BY id")
       .toArray()
-      .map((r) => ({ id: r.id as string, status: r.status as string }));
+      .map((r) => ({
+        id: r.id as string,
+        status: r.status as string,
+        body: typeof r.body === "string" ? r.body : "",
+      }));
     for (const row of proposals) {
+      const cited = citedSourceIds(row.body);
       for (const sourceId of gone) {
+        const quoted = cited.malformed && row.body.includes(`"${sourceId}"`);
+        if (!cited.ids.has(sourceId) && !quoted) continue;
         const changed = this.sql
           .exec(
             `UPDATE items SET
@@ -2189,55 +2198,10 @@ export abstract class WikiBase extends DurableObject<Env> {
                status = CASE WHEN status IN ('approved', 'rejected') THEN status ELSE 'rejected' END,
                updated_at = ?
              WHERE id = ? AND status = ?
-               AND (
-                 CASE
-                   WHEN json_valid(body)
-                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.titleSources') END = 'array'
-                   THEN EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.titleSources')) WHERE value = ?)
-                   ELSE 0
-                 END
-                 OR CASE
-                   WHEN json_valid(body)
-                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.reingest') END = 'array'
-                   THEN EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.reingest')) WHERE value = ?)
-                   ELSE 0
-                 END
-                 OR CASE
-                   WHEN json_valid(body)
-                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.sources') END = 'array'
-                   THEN EXISTS (
-                     SELECT 1 FROM json_each(json_extract(body, '$.sources')) AS src
-                     WHERE CASE WHEN json_type(src.value) = 'object' THEN json_extract(src.value, '$.id') END = ?
-                   )
-                   ELSE 0
-                 END
-                 OR CASE
-                   WHEN json_valid(body)
-                    AND CASE WHEN json_valid(body) THEN json_type(body, '$.facts') END = 'array'
-                   THEN EXISTS (
-                     SELECT 1 FROM json_each(json_extract(body, '$.facts')) AS fact
-                     WHERE CASE
-                       WHEN CASE WHEN json_valid(fact.value) THEN json_type(fact.value, '$.sourceIds') END = 'array'
-                       THEN EXISTS (
-                         SELECT 1 FROM json_each(json_extract(fact.value, '$.sourceIds')) AS src
-                         WHERE src.value = ?
-                       )
-                       ELSE 0
-                     END
-                   )
-                   ELSE 0
-                 END
-                 OR instr(body, '"' || ? || '"') > 0
-               )
              RETURNING id`,
             now,
             row.id,
             row.status,
-            sourceId,
-            sourceId,
-            sourceId,
-            sourceId,
-            sourceId,
           )
           .toArray();
         if (changed.length !== 1) continue;
