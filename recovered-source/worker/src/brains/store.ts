@@ -608,23 +608,43 @@ export abstract class BrainBase extends WikiBase {
     hold: Extract<MemberHold, { ok: true }>,
   ): { ok: true; state: "active" | "pending" } | { ok: false; code: string } {
     this.ensureMemberClaimColumns();
-    const matched = this.sql
-      .exec(
-        `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL
-         WHERE principal_id = ? AND at = ? RETURNING principal_id`,
-        role,
-        state,
-        actor,
-        now,
-        principalId,
-        hold.at,
-      )
-      .toArray().length;
+    const row = this.sql
+      .exec("SELECT role, pending_role FROM brain_members WHERE principal_id = ?", principalId)
+      .toArray()[0];
+    const stored =
+      row?.pending_role === null || row?.pending_role === undefined ? null : String(row.pending_role);
+    const matched = stored
+      ? this.sql
+          .exec(
+            `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL
+             WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND at = ?
+             RETURNING principal_id`,
+            state,
+            actor,
+            now,
+            principalId,
+            hold.key,
+            hold.at,
+          )
+          .toArray().length
+      : this.sql
+          .exec(
+            `UPDATE brain_members SET state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL
+             WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND at = ?
+             RETURNING principal_id`,
+            state,
+            actor,
+            now,
+            principalId,
+            hold.key,
+            hold.at,
+          )
+          .toArray().length;
     if (claimMember(matched).tag !== "applied") {
       console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
       return { ok: false, code: "replay" };
     }
-    this.wikiLogAppend(actor, "brain.member", { principalId, role, state }, now);
+    this.wikiLogAppend(actor, "brain.member", { principalId, role: stored ?? row?.role ?? role, state }, now);
     return { ok: true, state };
   }
 
