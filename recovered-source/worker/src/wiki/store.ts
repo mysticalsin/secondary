@@ -18,6 +18,7 @@ import {
   decodeProposalStatus,
   type FindingStatus,
 } from "../../../../src/state/proposal-review.ts";
+import { decodeWikiJobStatus, forgetWikiJob } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
 import {
@@ -282,6 +283,8 @@ export abstract class WikiBase extends DurableObject<Env> {
       const cols = this.sql.exec("PRAGMA table_info(wiki_jobs)").toArray();
       if (!cols.some((c) => c.name === "attempts"))
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
+      if (!cols.some((c) => c.name === "subject"))
+        this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN subject TEXT");
       // Pages made by the dev seed say so ("seed"); everything else is "human".
       if (
         !this.sql
@@ -653,6 +656,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     runAt?: number,
   ): Promise<void> {
     const body = JSON.stringify(payload);
+    const subject = typeof payload.sourceId === "string" && payload.sourceId !== "" ? payload.sourceId : null;
     // A source read again soon after its last ingest waits for the debounce window: saving a record
     // in a loop makes one job per window, not one per save (M-05).
     if (kind === "ingest" && runAt === undefined && payload.force !== true) {
@@ -673,10 +677,11 @@ export abstract class WikiBase extends DurableObject<Env> {
       .toArray().length;
     if (!dup)
       this.sql.exec(
-        "INSERT INTO wiki_jobs (kind, payload, run_at) VALUES (?, ?, ?)",
+        "INSERT INTO wiki_jobs (kind, payload, run_at, subject) VALUES (?, ?, ?, ?)",
         kind,
         body,
         runAt ?? now + 1_000,
+        subject,
       );
     await this.wikiSchedule(now);
   }
@@ -2140,43 +2145,85 @@ export abstract class WikiBase extends DurableObject<Env> {
         );
     }
     const scrubbed: string[] = [];
-    for (const r of this.sql
-      .exec("SELECT id FROM items WHERE kind LIKE 'wiki\\_%' ESCAPE '\\'")
-      .toArray()) {
-      const it = this.get(r.id as string);
-      const p = it ? this.parse(it) : null;
-      if (!it || !p) continue;
-      if (!hit([...(p.titleSources ?? []), ...sourcesOfLegacy(p), ...p.reingest])) continue;
-      const empty: Proposal = {
-        v: 1,
-        kind: p.kind,
-        title: "Erased source",
-        rationale: "",
-        origin: p.origin,
-        pages: [],
-        facts: [],
-        invalidate: [],
-        confirm: [],
-        archive: [],
-        reingest: [],
-        sources: [],
-        findingKey: p.findingKey,
-        titleSources: [],
-      };
-      this.sql.exec(
-        "UPDATE items SET label = ?, body = ?, status = CASE WHEN status = 'candidate' THEN 'rejected' ELSE status END, updated_at = ? WHERE id = ?",
-        empty.title,
-        JSON.stringify(empty),
-        now,
-        it.id,
-      );
-      this.sql.exec("DELETE FROM items_fts WHERE id = ?", it.id);
-      scrubbed.push(it.id);
-      out.proposals++;
+    // Status is read before any proposal write, so a later change misses the compare-and-set.
+    const proposals = this.sql
+      .exec("SELECT id, status FROM items WHERE kind LIKE 'wiki\\_%' ESCAPE '\\' ORDER BY id")
+      .toArray()
+      .map((r) => ({ id: r.id as string, status: r.status as string }));
+    for (const row of proposals) {
+      for (const sourceId of gone) {
+        const changed = this.sql
+          .exec(
+            `UPDATE items SET
+               label = 'Erased source',
+               body = json_object(
+                 'v', 1,
+                 'kind', json_extract(body, '$.kind'),
+                 'title', 'Erased source',
+                 'rationale', '',
+                 'origin', json_extract(body, '$.origin'),
+                 'pages', json('[]'),
+                 'facts', json('[]'),
+                 'invalidate', json('[]'),
+                 'confirm', json('[]'),
+                 'archive', json('[]'),
+                 'reingest', json('[]'),
+                 'sources', json('[]'),
+                 'findingKey', json_extract(body, '$.findingKey'),
+                 'titleSources', json('[]')
+               ),
+               status = CASE WHEN status IN ('approved', 'rejected') THEN status ELSE 'rejected' END,
+               updated_at = ?
+             WHERE id = ? AND status = ?
+               AND (
+                 EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.titleSources')) WHERE value = ?)
+                 OR EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.reingest')) WHERE value = ?)
+                 OR EXISTS (SELECT 1 FROM json_each(json_extract(body, '$.sources')) WHERE json_extract(value, '$.id') = ?)
+                 OR EXISTS (
+                   SELECT 1 FROM json_each(json_extract(body, '$.facts')) AS fact
+                   WHERE EXISTS (
+                     SELECT 1 FROM json_each(json_extract(fact.value, '$.sourceIds')) AS src
+                     WHERE src.value = ?
+                   )
+                 )
+               )
+             RETURNING id`,
+            now,
+            row.id,
+            row.status,
+            sourceId,
+            sourceId,
+            sourceId,
+            sourceId,
+          )
+          .toArray();
+        if (changed.length !== 1) continue;
+        this.sql.exec("DELETE FROM items_fts WHERE id = ?", row.id);
+        scrubbed.push(row.id);
+        out.proposals++;
+        break;
+      }
     }
     for (const x of gone) {
       this.sql.exec("DELETE FROM wiki_sources WHERE source_id = ?", x);
-      this.sql.exec("DELETE FROM wiki_jobs WHERE instr(payload, ?) > 0", x);
+      for (const job of this.sql
+        .exec("SELECT id, state FROM wiki_jobs WHERE subject = ?", x)
+        .toArray()) {
+        const effect = forgetWikiJob(decodeWikiJobStatus(job.state));
+        if (effect.tag === "delete")
+          this.sql.exec(
+            "DELETE FROM wiki_jobs WHERE id = ? AND state = ? AND subject = ?",
+            job.id as number,
+            job.state as string,
+            x,
+          );
+        else if (effect.tag === "cancel")
+          this.sql.exec(
+            "UPDATE wiki_jobs SET state = 'cancelled' WHERE id = ? AND state = 'running' AND subject = ?",
+            job.id as number,
+            x,
+          );
+      }
     }
     for (const x of scrubbed)
       this.sql.exec(
