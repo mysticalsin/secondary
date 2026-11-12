@@ -104,7 +104,7 @@ Kind placement of an omitted scope is already asserted at `harness/tests/erasure
 
 **Independent Test**: T017 installs two stores and erases through the route for `tenant-a`.
 
-- [ ] T017 [US1] In its own commit, add one test in `harness/tests/erasure-request.test.ts`. Install store A for `tenant-a` and store B for `tenant-b`, each with its own erasure row. Erase `tenant-a` through the route. Assert store B's row, `updated_at`, and ledger bytes are unchanged, and every store-resolver call named `tenant-a`. A scratch fake that returns the wrong store fails that assertion and is not committed. The harness may learn keyed stores in an earlier commit. A single installed store stays the fallback. No file under `src/` or `recovered-source/` changes. Covers FR-014.
+- [x] T017 [US1] In its own commit, add one test in `harness/tests/erasure-request.test.ts`. Install store A for `tenant-a` and store B for `tenant-b`, each with its own erasure row. Erase `tenant-a` through the route. Assert store B's row, `updated_at`, and ledger bytes are unchanged, and every store-resolver call named `tenant-a`. A scratch fake that returns the wrong store fails that assertion and is not committed. The harness may learn keyed stores in an earlier commit. A single installed store stays the fallback. No file under `src/` or `recovered-source/` changes. Covers FR-014.
 
 ## Dependencies for the store pin
 
