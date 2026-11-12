@@ -96,6 +96,27 @@ test("source forget: a pseudonym that contains the name is written once", async 
   db.close();
 });
 
+test("source forget: a shorter pseudonym replaces the name once", async () => {
+  const db = new DatabaseSync(":memory:");
+  const wiki = await openWiki(db);
+  page(db, "pub", "Jonathan", "Jonathan wrote it");
+  const first = wiki.wikiPseudonymise("Jonathan", "Jon");
+  const second = wiki.wikiPseudonymise("Jonathan", "Jon");
+  const stored = db
+    .prepare("SELECT id, title, markdown FROM wiki_pages")
+    .all()
+    .map((row) => ({ ...(row as { id: string; title: string; markdown: string }) }));
+  assert.deepEqual(
+    { first: first > 0, second, stored },
+    {
+      first: true,
+      second: 0,
+      stored: [{ id: "pub", title: "Jon", markdown: "Jon wrote it" }],
+    },
+  );
+  db.close();
+});
+
 test("source forget: an unreadable fact list is removed only when it names the source", async () => {
   const db = new DatabaseSync(":memory:");
   const wiki = await openWiki(db);
