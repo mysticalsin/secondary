@@ -501,7 +501,7 @@ export abstract class BrainBase extends WikiBase {
     previousState: string,
   ): { ok: true; state: "active" | "pending" } | { ok: false; code: "mismatch"; changeId: string } {
     const row = this.brainMemberRead(principalId);
-    if (row && row.claimKey === key && row.role === role && row.state === state) {
+    if (row && row.claimKey === key && row.role === role && row.state === state && row.pendingRole == null) {
       return { ok: true, state };
     }
     // An existing grant stays put while the proposal is still pending. pending_role is the claim.
@@ -636,10 +636,11 @@ export abstract class BrainBase extends WikiBase {
     const matched = this.sql
       .exec(
         `UPDATE brain_members SET change_id = ?
-         WHERE principal_id = ? AND at = ? AND change_id IS NULL RETURNING principal_id`,
+         WHERE principal_id = ? AND at = ? AND claim_key = ? RETURNING principal_id`,
         changeId,
         principalId,
         hold.at,
+        hold.key,
       )
       .toArray().length;
     return matched === 1 ? { ok: true } : { ok: false, code: "state_unreadable" };
