@@ -1096,7 +1096,8 @@ export class Workspace extends BrainBase {
     let n = 0;
     this.ctx.storage.transactionSync(() => {
       n = this.sql.exec("SELECT COUNT(*) AS n FROM items").one().n as number;
-      for (const t of SNAPSHOT_TABLES) this.sql.exec(`DELETE FROM ${t}`);
+      for (const t of [...SNAPSHOT_TABLES, "revisions", "source_items", "source_fts"] as const)
+        this.sql.exec(`DELETE FROM ${t}`);
     });
     return n;
   }
