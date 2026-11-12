@@ -36,11 +36,23 @@ register(new URL("../runtime/erasure-stub-hook.mjs", import.meta.url).href, {
 
 const NOW = 1_700_000_000_000;
 
-test("erasure request: legacy and unknown words decode to partial_failed, and a missing row is absent", () => {
-  assert.deepEqual(decodeErasureStatus("legacy"), { tag: "partial_failed" });
-  assert.deepEqual(decodeErasureStatus("unknown"), { tag: "partial_failed" });
-  assert.deepEqual(decodeErasureStatus(null), { tag: "partial_failed" });
-  assert.equal(decodeStepMark("legacy"), "failed");
+test("erasure request: a legacy status word is unreadable", () => {
+  assert.deepEqual(decodeErasureStatus("legacy"), { tag: "unreadable" });
+});
+
+test("erasure request: an unknown status word is unreadable", () => {
+  assert.deepEqual(decodeErasureStatus("unknown"), { tag: "unreadable" });
+});
+
+test("erasure request: a null status word is unreadable", () => {
+  assert.deepEqual(decodeErasureStatus(null), { tag: "unreadable" });
+});
+
+test("erasure request: an unknown mark word is not stored as failed", () => {
+  assert.equal(decodeStepMark("legacy"), null);
+});
+
+test("erasure request: a missing row is absent", () => {
   assert.deepEqual(decodeErasureLedger(null), absentErasure());
 });
 
@@ -73,6 +85,46 @@ test("erasure request: a proven partial failure stays partial_failed", () => {
   });
   assert.equal(proven.status.tag, "partial_failed");
   assert.deepEqual(proven.order, ["receipts"]);
+  const explicit = decodeErasureLedger({
+    status: "partial_failed",
+    ledger: JSON.stringify({ order: ["directory"], mark: { directory: "failed" } }),
+  });
+  assert.equal(explicit.status.tag, "partial_failed");
+  assert.equal(explicit.mark.directory, "failed");
+});
+
+test("erasure request: a mark map that is not an object is unreadable", () => {
+  const row = decodeErasureLedger({
+    status: "partial_failed",
+    ledger: JSON.stringify({ order: ["directory"], mark: ["nope"] }),
+  });
+  assert.equal(row.status.tag, "unreadable");
+  assert.deepEqual(row.order, []);
+});
+
+test("erasure request: a missing mark is unreadable", () => {
+  const missing = decodeErasureLedger({
+    status: "partial_failed",
+    ledger: JSON.stringify({ order: ["directory"], mark: {} }),
+  });
+  assert.equal(missing.status.tag, "unreadable");
+});
+
+test("erasure request: an unknown mark word is unreadable", () => {
+  const unknown = decodeErasureLedger({
+    status: "partial_failed",
+    ledger: JSON.stringify({ order: ["directory"], mark: { directory: "nope" } }),
+  });
+  assert.equal(unknown.status.tag, "unreadable");
+});
+
+test("erasure request: an order with an unknown step is unreadable", () => {
+  const row = decodeErasureLedger({
+    status: "partial_failed",
+    ledger: JSON.stringify({ order: ["not-a-step"], mark: { "not-a-step": "pending" } }),
+  });
+  assert.equal(row.status.tag, "unreadable");
+  assert.deepEqual(row.order, []);
 });
 
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {
@@ -557,11 +609,95 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
     assert.equal(person, undefined);
     assert.deepEqual(erasureCalls(), []);
     assert.equal(audits.some((url) => url.includes("pseudonymise")), false);
-    const stored = decodeErasureLedger(readLedger(file) ?? null);
+    const row = readLedger(file);
+    const stored = decodeErasureLedger(row ?? null);
     assert.equal(stored.status.tag, "completed");
     assert.equal(stored.mark.receipts, "done");
     assert.equal(stored.mark.directory, "done");
+    assert.equal(row?.updated_at, NOW);
+    assert.notEqual(row?.updated_at, 5);
   } finally {
     remove();
   }
+});
+
+async function damageStaysPending(status: string, ledger: string): Promise<void> {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, status, ledger);
+    const { post, audits } = await eraseApp(buildOrg(["acme"]));
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(res.status, 202);
+    const body = (await res.json()) as { status?: string; needs?: string };
+    assert.equal(body.status, "pending");
+    assert.equal(body.needs, "second_person");
+    const row = readLedger(file);
+    assert.equal(row?.status, status);
+    assert.equal(row?.ledger, ledger);
+    assert.equal(row?.updated_at, 5);
+    assert.equal(tombstones(file), 0);
+    assert.deepEqual(erasureCalls(), []);
+    assert.equal(audits.some((url) => url.includes("pseudonymise")), false);
+    assert.equal(pendingErase(file), "ada");
+  } finally {
+    remove();
+  }
+}
+
+async function damagePlansInFull(status: string, ledger: string): Promise<void> {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    putLedger(file, status, ledger);
+    const org = buildOrg(["acme"]);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+    };
+    const plan = erasurePlan(rights.companyScopes(org));
+    const { post } = await eraseApp(org);
+    const first = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(first.status, 202);
+    const second = await post(admin("bea", "bea@example.invalid"), NOW + 1_000);
+    assert.equal(second.status, 200);
+    const body = (await second.json()) as { status?: string };
+    assert.equal(body.status, "erased");
+    const stored = decodeErasureLedger(readLedger(file) ?? null);
+    assert.deepEqual(stored.order, plan);
+    assert.equal(stored.status.tag, "completed");
+    assert.equal(stored.order.every((id) => stored.mark[id] === "done"), true);
+  } finally {
+    remove();
+  }
+}
+
+const LEGACY_LEDGER = JSON.stringify({ order: ["directory"], mark: { directory: "pending" } });
+const CORRUPT_MARK_LEDGER = JSON.stringify({ order: ["directory"], mark: ["nope"] });
+const UNKNOWN_STEP_LEDGER = JSON.stringify({
+  order: ["not-a-step"],
+  mark: { "not-a-step": "pending" },
+});
+
+test("erasure request: a legacy status needs a second person and is not rewritten", async () => {
+  await damageStaysPending("legacy", LEGACY_LEDGER);
+});
+
+test("erasure request: a second person replaces a legacy status with the full plan", async () => {
+  await damagePlansInFull("legacy", LEGACY_LEDGER);
+});
+
+test("erasure request: a corrupt mark map needs a second person and is not rewritten", async () => {
+  await damageStaysPending("partial_failed", CORRUPT_MARK_LEDGER);
+});
+
+test("erasure request: a second person replaces a corrupt mark map with the full plan", async () => {
+  await damagePlansInFull("partial_failed", CORRUPT_MARK_LEDGER);
+});
+
+test("erasure request: an unknown step needs a second person and is not rewritten", async () => {
+  await damageStaysPending("partial_failed", UNKNOWN_STEP_LEDGER);
+});
+
+test("erasure request: a second person replaces an unknown step with the full plan", async () => {
+  await damagePlansInFull("partial_failed", UNKNOWN_STEP_LEDGER);
 });
