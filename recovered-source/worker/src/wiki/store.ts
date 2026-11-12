@@ -286,10 +286,15 @@ export abstract class WikiBase extends DurableObject<Env> {
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0");
       if (!cols.some((c) => c.name === "subject"))
         this.sql.exec("ALTER TABLE wiki_jobs ADD COLUMN subject TEXT");
+      this.sql.exec("UPDATE wiki_jobs SET subject = NULL WHERE subject IS NOT NULL AND trim(subject) = ''");
       this.sql.exec(
-        `UPDATE wiki_jobs SET subject = json_extract(payload, '$.sourceId')
-         WHERE subject IS NULL AND json_valid(payload) AND json_type(payload, '$.sourceId') = 'text'
-           AND json_extract(payload, '$.sourceId') != ''`,
+        `UPDATE wiki_jobs SET subject = trim(json_extract(payload, '$.sourceId'))
+         WHERE subject IS NULL
+           AND CASE
+             WHEN json_valid(payload) THEN CASE
+               WHEN json_type(payload, '$.sourceId') = 'text' THEN trim(json_extract(payload, '$.sourceId'))
+               ELSE '' END
+             ELSE '' END != ''`,
       );
       // Pages made by the dev seed say so ("seed"); everything else is "human".
       if (
