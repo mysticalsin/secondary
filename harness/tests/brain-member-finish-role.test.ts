@@ -118,7 +118,7 @@ test("brain finish: the stored pending role wins over the caller's role", async 
           state: "active",
           pending_role: null,
           pending_at: null,
-          claim_key: hold.key,
+          claim_key: null,
           at: NOW + 1,
           change_id: "chg_1",
         },

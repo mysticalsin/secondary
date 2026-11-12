@@ -1,6 +1,6 @@
 /**
- * A member who already existed can be finished pending with the claim key left set.
- * DropClaim must leave that row alone.
+ * A member who already existed is finished pending and the claim key is cleared.
+ * DropClaim of the old key matches nothing and leaves the row alone.
  */
 
 import assert from "node:assert/strict";
@@ -28,14 +28,18 @@ type MemberRow = {
   at: number;
 };
 
+type Hold = { ok: true; key: string; at: number; inserted: boolean } | { ok: false; code: string };
+
 type Brain = {
   sql: SqlStorage;
-  brainMemberSet(
+  brainMemberClaim(principalId: string, role: "reader", actor: string, now: number): Hold;
+  brainMemberFinish(
     principalId: string,
     role: "reader",
     state: "active" | "pending",
     actor: string,
     now: number,
+    hold: Extract<Hold, { ok: true }>,
   ): { ok: true; state: "active" | "pending" } | { ok: false; code: string };
   brainMemberDropClaim(
     principalId: string,
@@ -73,7 +77,10 @@ test("brain drop: a pre-existing member finished pending keeps the row", async (
     const mod = (await import(storeSpecifier)) as { BrainBase: { prototype: Brain } };
     const brain = Object.create(mod.BrainBase.prototype) as Brain;
     brain.sql = sql;
-    const set = brain.brainMemberSet("ada", "reader", "pending", "cy", NOW);
+    const hold = brain.brainMemberClaim("ada", "reader", "cy", NOW);
+    assert.equal(hold.ok, true);
+    if (!hold.ok) return;
+    const set = brain.brainMemberFinish("ada", "reader", "pending", "cy", NOW, hold);
     assert.equal(set.ok, true);
     const before = db
       .prepare(
@@ -83,8 +90,8 @@ test("brain drop: a pre-existing member finished pending keeps the row", async (
       .get() as MemberRow;
     assert.equal(before.state, "pending");
     assert.equal(before.pending_role, null);
-    assert.equal(before.claim_key === null, false);
-    const dropped = brain.brainMemberDropClaim("ada", before.claim_key, before.state);
+    assert.equal(before.claim_key === null, true);
+    const dropped = brain.brainMemberDropClaim("ada", hold.key, before.state);
     const after = db
       .prepare(
         `SELECT role, state, claim_key, pending_role, pending_at, added_by, at
@@ -93,7 +100,7 @@ test("brain drop: a pre-existing member finished pending keeps the row", async (
       .get() as MemberRow | undefined;
     assert.deepEqual(
       { dropped: dropped.ok ? "ok" : dropped.code, row: after ?? null },
-      { dropped: "ok", row: before },
+      { dropped: "state_unreadable", row: before },
     );
     db.close();
   } finally {

@@ -244,7 +244,7 @@ test("brain claim: pending role is set once, hidden from reads, and cleared on f
     assert.deepEqual(pendingRow(db, "ada"), {
       role: "owner",
       state: "active",
-      claim_key: hold.key,
+      claim_key: null,
       pending_role: null,
       pending_at: null,
       at: NOW + 2,

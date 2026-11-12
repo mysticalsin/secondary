@@ -526,11 +526,21 @@ export abstract class BrainBase extends WikiBase {
       return { ok: true, state };
     }
     const stored = row?.pendingRole ?? null;
+    if (
+      row &&
+      row.pendingRole == null &&
+      row.claimKey == null &&
+      row.state === state &&
+      row.role === (stored ?? row.role)
+    ) {
+      console.warn(JSON.stringify({ at: "brain_member", principalId, claimKey: key, changeId }));
+      return { ok: true, state };
+    }
     const matched = stored
       ? at === null
         ? this.sql
             .exec(
-              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL, claim_key = NULL
                WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND state = ?
                RETURNING principal_id`,
               state,
@@ -544,7 +554,7 @@ export abstract class BrainBase extends WikiBase {
             .toArray().length
         : this.sql
             .exec(
-              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL, claim_key = NULL
                WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND state = ? AND at = ?
                RETURNING principal_id`,
               state,
@@ -589,6 +599,16 @@ export abstract class BrainBase extends WikiBase {
       const again = this.brainMemberRead(principalId);
       if (
         again &&
+        again.pendingRole == null &&
+        again.claimKey == null &&
+        again.state === state &&
+        again.role === (stored ?? again.role)
+      ) {
+        console.warn(JSON.stringify({ at: "brain_member", principalId, claimKey: key, changeId }));
+        return { ok: true, state };
+      }
+      if (
+        again &&
         again.claimKey === key &&
         again.state === state &&
         (again.role === role || again.role === stored)
@@ -627,7 +647,7 @@ export abstract class BrainBase extends WikiBase {
     const matched = stored
       ? this.sql
           .exec(
-            `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL
+            `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL, claim_key = NULL
              WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND at = ?
              RETURNING principal_id`,
             state,
@@ -640,7 +660,7 @@ export abstract class BrainBase extends WikiBase {
           .toArray().length
       : this.sql
           .exec(
-            `UPDATE brain_members SET state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL
+            `UPDATE brain_members SET state = ?, added_by = ?, at = ?, pending_role = NULL, pending_at = NULL${hold.inserted ? "" : ", claim_key = NULL"}
              WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND at = ?
              RETURNING principal_id`,
             state,
