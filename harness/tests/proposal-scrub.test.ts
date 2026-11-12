@@ -24,6 +24,7 @@ type Wiki = {
   get(id: string): unknown;
   wikiForgetSources(ids: string[], now: number): { facts: number; pages: number; proposals: number };
   wikiJobsDue(now: number, limit: number): { id: number; kind: string; payload: Record<string, unknown>; runAt: number }[];
+  wikiEnqueue(kind: "ingest" | "lint" | "dream", payload: Record<string, unknown>, now: number, runAt?: number): Promise<void>;
 };
 
 type ItemRow = { id: string; label: string; status: string; body: string };
@@ -640,4 +641,30 @@ test("proposal scrub: an unknown job word stays and is not claimed", async () =>
     { state: out.left.map((job) => job.state), claimed: out.claimed },
     { state: ["unknown"], claimed: [] },
   );
+});
+
+test("proposal scrub: an enqueued source id is trimmed and a blank one is refused", async () => {
+  const db = new DatabaseSync(":memory:");
+  const wiki = await openMigrated(db);
+  const now = Date.now();
+  await wiki.wikiEnqueue("ingest", { sourceId: " src_1 " }, now, now);
+  await wiki.wikiEnqueue("ingest", { sourceId: "   " }, now, now);
+  const claimed = wiki.wikiJobsDue(now, 10).map((job) => job.id);
+  const left = readJobs(db).map((job) => ({
+    id: job.id,
+    subject: job.subject,
+    state: job.state,
+    result: job.state === "running" ? "claimed" : job.result,
+  }));
+  assert.deepEqual(
+    { claimed, left },
+    {
+      claimed: [1],
+      left: [
+        { id: 1, subject: "src_1", state: "running", result: "claimed" },
+        { id: 2, subject: null, state: "failed", result: "unattributed" },
+      ],
+    },
+  );
+  db.close();
 });
