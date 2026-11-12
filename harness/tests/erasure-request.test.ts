@@ -2208,3 +2208,33 @@ test("erasure append T5: an absent subject stores the canonical plan with direct
     remove();
   }
 });
+
+test("erasure append T010: a pending scope the current plan omits stays and runs, and directory is last", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const kept = erasurePlan(["acme", "beta"]);
+  try {
+    const { org } = await openAppendCase(file, trace, "absent");
+    const mark = Object.fromEntries(kept.map((id) => [id, "pending"]));
+    putLedger(
+      file,
+      "requested",
+      JSON.stringify({
+        order: kept,
+        mark,
+        grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: kept },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    const stored = storedPlan(file);
+    assert.equal(ran.status, 200);
+    assert.equal(stored.status, "completed");
+    assert.deepEqual(stored.order, kept);
+    assert.deepEqual(trace, kept);
+    assert.equal(stored.order.at(-1), "directory");
+    assert.equal(trace.includes("scope:beta"), true);
+  } finally {
+    remove();
+  }
+});
