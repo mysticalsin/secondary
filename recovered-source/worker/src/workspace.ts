@@ -8,6 +8,7 @@
 import { claimRelease, commitItem } from "../../../src/state/item-release.ts";
 import { replaceName } from "../../../src/state/pseudonym-text.ts";
 import { commitQuorum } from "../../../src/state/quorum.ts";
+import { readUserValidated } from "../../../src/state/user-validated.ts";
 import { BrainBase } from "./brains/store.ts";
 import { exportTables, replaceTables, type Snapshot } from "./ops-snapshot.ts";
 import { personalKindOf } from "./personal-kind.ts";
@@ -44,7 +45,7 @@ export type ItemRecord = {
   body: string | null;
   targetNode: string | null;
   releaseTarget: ReleaseTarget;
-  userValidated: UserValidated | null;
+  userValidated: UserValidated | { tag: "unreadable" } | null;
   sensitivityFlags: SensitivityFlag[];
   reviewedBy2: boolean;
   /** Distinct approvers of the current revision, and how many the release needs. */
@@ -148,6 +149,13 @@ const SNAPSHOT_TABLES = [
 
 const requiredFor = (releaseTarget: string, plane: string): number =>
   releaseTarget === "global" || plane === "GLOBAL_NONPERSONAL" ? 2 : 1;
+
+function storedValidation(raw: unknown): UserValidated | { tag: "unreadable" } | null {
+  const read = readUserValidated(raw);
+  if (read.tag === "ok") return read.value;
+  if (read.tag === "unreadable") return { tag: "unreadable" };
+  return null;
+}
 
 export class Workspace extends BrainBase {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -397,9 +405,7 @@ export class Workspace extends BrainBase {
       body: (r.body as string | null) ?? null,
       targetNode: (r.target_node as string | null) ?? null,
       releaseTarget,
-      userValidated: r.user_validated
-        ? (JSON.parse(r.user_validated as string) as UserValidated)
-        : null,
+      userValidated: storedValidation(r.user_validated),
       sensitivityFlags: JSON.parse(r.sensitivity_flags as string) as SensitivityFlag[],
       reviewedBy2: r.reviewed_by_2 === 1,
       approvals,
@@ -1005,7 +1011,8 @@ export class Workspace extends BrainBase {
 
   /**
    * Replace a person's id with a pseudonym everywhere this workspace stores it, and drop the search
-   * index entries of the items they authored (seeded items stay indexed: they are not personal data).
+   * index entries of the items they authored. A seeded item stays indexed, and the name in that
+   * label is rewritten. Any other authored row is dropped from search.
    */
   pseudonymise(
     from: string,
@@ -1014,10 +1021,27 @@ export class Workspace extends BrainBase {
   ): { items: number; comments: number; approvals: number; edits: number } {
     let out = { items: 0, comments: 0, approvals: 0, edits: 0 };
     this.ctx.storage.transactionSync(() => {
+      const names = [
+        ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length >= 3)),
+      ];
       for (const r of this.sql
         .exec("SELECT id FROM items WHERE author_id = ? AND origin != 'seed'", from)
         .toArray())
         this.sql.exec("DELETE FROM items_fts WHERE id = ?", r.id as string);
+      for (const name of names) {
+        for (const row of this.sql
+          .exec(
+            `SELECT f.id AS id, f.label AS label FROM items_fts f
+             JOIN items i ON i.id = f.id
+             WHERE i.origin = 'seed' AND instr(f.label, ?) > 0`,
+            name,
+          )
+          .toArray()) {
+          const label = replaceName(String(row.label ?? ""), name, to);
+          if (label === String(row.label ?? "")) continue;
+          this.reindex(row.id as string, label);
+        }
+      }
       const count = (t: string, col: string) =>
         this.sql.exec(`SELECT COUNT(*) AS n FROM ${t} WHERE ${col} = ?`, from).one().n as number;
       out = {
@@ -1031,9 +1055,6 @@ export class Workspace extends BrainBase {
       this.sql.exec("UPDATE approvals SET actor_id = ? WHERE actor_id = ?", to, from);
       this.sql.exec("UPDATE edits SET actor_id = ? WHERE actor_id = ?", to, from);
       this.sql.exec("UPDATE revisions SET actor_id = ? WHERE actor_id = ?", to, from);
-      const names = [
-        ...new Set([from, ...aliases].map((x) => x.trim()).filter((x) => x.length >= 3)),
-      ];
       for (const name of names) {
         for (const row of this.sql
           .exec(
@@ -1058,13 +1079,13 @@ export class Workspace extends BrainBase {
       for (const r of this.sql
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
         .toArray()) {
-        const uv = JSON.parse(r.user_validated as string) as UserValidated;
-        if (uv.by === from)
-          this.sql.exec(
-            "UPDATE items SET user_validated = ? WHERE id = ?",
-            JSON.stringify({ ...uv, by: to }),
-            r.id as string,
-          );
+        const read = readUserValidated(r.user_validated);
+        if (read.tag !== "ok" || read.value.by !== from) continue;
+        this.sql.exec(
+          "UPDATE items SET user_validated = ? WHERE id = ?",
+          JSON.stringify({ ...read.value, by: to }),
+          r.id as string,
+        );
       }
     });
     return out;
