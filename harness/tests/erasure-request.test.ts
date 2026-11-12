@@ -2057,3 +2057,22 @@ test("erasure append T1: a refused no-key erase then a keyed erase stores the ca
     remove();
   }
 });
+
+test("erasure append T1b: receipts is the first step that runs", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org } = await openAppendCase(file, trace, "pending");
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    assert.equal(refused.status, 503);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false));
+    assert.equal(ran.status, 502);
+    assert.equal(trace[0], "receipts");
+  } finally {
+    remove();
+  }
+});
