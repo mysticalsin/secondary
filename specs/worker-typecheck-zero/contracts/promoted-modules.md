@@ -30,12 +30,12 @@ Not promoted from `db3e8548` even though those paths exist there:
 
 | Path at `db3e8548` | Blob there | Do not use |
 |---|---|---|
-| `reconstruction/packages/contracts/src/view-plan.ts` | `82bac154e813b9fa59c2f93e871127e0c37c3b8e` | Use `d4b092167f4e1875d0254c98499a979cbd305dd6` |
-| `reconstruction/worker-root/worker/src/generated/view-plan.validator.d.ts` | `a403845f6cd562a3b2488e0e736aa57aaf57cbd2` | Use `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c` |
+| `reconstruction/packages/contracts/src/view-plan.ts` | `82bac154e813b9fa59c2f93e871127e0c37c3b8e` | Use `d4b092167f4e1875d0254c98499a979cbd305dd6` from `be6eb37f31e62f0f04a610202cca120aa4d9302f` at that same path |
+| `reconstruction/worker-root/worker/src/generated/view-plan.validator.d.ts` | `a403845f6cd562a3b2488e0e736aa57aaf57cbd2` | Use `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c` from `4ba133b04e49cfb20abe0a22b5ca367284456356` at that same path |
 
 The reconstruction sibling paths at `db3e8548` are symlinks to the recovered files above. Do not copy those symlink blobs.
 
-Constitution II applies as written. The committed file does not contain the leading comment. The commit message records `db3e8548`, the full source blob id, N, and the removed header verbatim. The verbatim headers are in T004–T007.
+Constitution II applies as written. The committed file does not contain the leading comment. The commit message records a source commit, the full source blob id, N, and the removed header verbatim. The manifest `sourceCommit` is the commit that contains the blob. The verbatim headers are in T004–T007. A promotion message already on the branch is not rewritten.
 
 ## Env
 
@@ -61,10 +61,10 @@ T018 writes `{ "files": [] }`. T011 and T004 through T007 each append one entry 
 | T011 | `recovered-source/worker/src/env.d.ts` | `db3e8548` | `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` | 9 | `bdc26d8aa6b926d01eda5b0db807105a9be071f424a375243fca799152521f24` | FR-007: `import type { TenantPolicy } from "./worker-root/worker/src/tenant-policy.ts";` becomes `import type { TenantPolicy } from "./tenant-policy.ts";`. `import type { Workspace } from "./worker-root/worker/src/workspace.ts";` becomes `import type { Workspace } from "./workspace.ts";` |
 | T004 | `recovered-source/worker/src/types.ts` | `db3e8548` | `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e` | 8 | `f228c68d1cab935ee52553f1f6e8f1a82120a25987259ab6811ba9780a401780` | none |
 | T005 | `recovered-source/shared/packages/contracts/src/agent-ui/index.ts` | `db3e8548` | `ed80553761da2db13495c6eb250a438d7ef54327` | 7 | `8a14fe9709426880d937495fda805c8f8f58ef2f1ea222d36c98b6bd2988f1e5` | none |
-| T006 | `recovered-source/shared/packages/contracts/src/view-plan.ts` | `db3e8548` | `d4b092167f4e1875d0254c98499a979cbd305dd6` | 13 | `48ed77b571d3a6ec2946f967ce1045012d10e2641aa9eced8e8c53c2287171bd` | none |
-| T007 | `recovered-source/worker/src/generated/view-plan.validator.d.ts` | `db3e8548` | `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c` | 5 | `0513896be9395d9263661cb846388067d5f7fff021056ed6e844c2adcff652bf` | none |
+| T006 | `recovered-source/shared/packages/contracts/src/view-plan.ts` | `be6eb37f31e62f0f04a610202cca120aa4d9302f` | `d4b092167f4e1875d0254c98499a979cbd305dd6` | 13 | `48ed77b571d3a6ec2946f967ce1045012d10e2641aa9eced8e8c53c2287171bd` | none |
+| T007 | `recovered-source/worker/src/generated/view-plan.validator.d.ts` | `4ba133b04e49cfb20abe0a22b5ca367284456356` | `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c` | 5 | `0513896be9395d9263661cb846388067d5f7fff021056ed6e844c2adcff652bf` | none |
 
-`sourceBlob` is the promoted blob. For T006 and T007 it is not the blob at that path on `db3e8548`. `byteEdits` is empty when the tail has no spec-named replacement. Header removal is `n`.
+`sourceBlob` is the promoted blob. `sourceCommit` is the commit that contains that blob. For T006 and T007 it is not `db3e8548`, and the blob is not the blob at that path on `db3e8548`. There is no second commit field. `byteEdits` is empty when the tail has no spec-named replacement. Header removal is `n`. `npm run verify:provenance` checks `git rev-parse <sourceCommit>:<sourcePath>` against `sourceBlob` and is not part of `npm test`.
 
 The recovered-source walk equals the union of the two manifest path sets. The sets are disjoint. A reconstructed sha256 equals the file. Candidate hash rules stay, including the patched-file inequality. One test rejects the walk plus `recovered-source/worker/src/__unlisted__.ts`.
 

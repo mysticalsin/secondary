@@ -11,8 +11,8 @@ No database table, schema, or stored row changes. The entities are files and cou
 | N | 8, 7, 13, and 5. No blank line follows the comment in any of the four |
 | Order | `env.d.ts` first (N=9, tail hash `a8e2ea493e635421b1acfb0ad5e7557ed39c4d73`, then the two import replacements), then types.ts, then the agent-ui barrel, then view-plan.ts, then view-plan.validator.d.ts |
 | Location count | One git path on the branch. A barrel re-export is not another path. The five siblings keep their current blobs |
-| Provenance | Commit message records `db3e8548`, the full blob id, N, and the removed header verbatim. The committed file does not contain that comment |
-| Manifest | One entry in `reconstructed-manifest.json` in the same commit. Fields are path, `db3e8548`, the full source blob, N, the sha256 of the committed file, and spec-named byte edits |
+| Provenance | Commit message records a source commit, the full blob id, N, and the removed header verbatim. The manifest `sourceCommit` is the commit that contains the blob. The committed file does not contain that comment. A promotion message already on the branch is not rewritten |
+| Manifest | One entry in `reconstructed-manifest.json` in the same commit. Fields are path, the source commit that contains the blob, the full source blob, N, the sha256 of the committed file, and spec-named byte edits |
 
 ## Env name check
 
@@ -44,7 +44,7 @@ No database table, schema, or stored row changes. The entities are files and cou
 | File | `reconstructed-manifest.json` at the repository root. `candidate-manifest.json` is not edited |
 | List | `files`. Empty on T018. One new object on T011 and on T004 through T007 |
 | path | The git path of the promoted file |
-| sourceCommit | `db3e8548` |
+| sourceCommit | The commit that contains `sourceBlob`. `db3e8548` for `env.d.ts`, `types.ts`, and the agent-ui barrel. `be6eb37f31e62f0f04a610202cca120aa4d9302f` for `view-plan.ts`. `4ba133b04e49cfb20abe0a22b5ca367284456356` for `view-plan.validator.d.ts`. No second commit field |
 | sourceBlob | The full promoted blob id |
 | n | The header length for that blob |
 | sha256 | SHA-256 hex of the committed file bytes. The contract table names each digest |

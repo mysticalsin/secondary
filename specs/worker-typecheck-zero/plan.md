@@ -55,7 +55,7 @@ The repo rule that the worker count goes down on every implementation commit sti
 
 No runtime behavior change. No database schema change. No stored data change. No deploy and no spend.
 
-Env work reads binding and variable names. The source blob states that secret fields are optional strings and contains no secret values. The finding log records names and mismatches only. It does not record key material, tokens, or `.dev.vars` contents. The spec and this plan do not copy those names into a values file. `reconstructed-manifest.json` stores paths, the commit id `db3e8548`, blob ids, N, sha256 digests, and the two `env.d.ts` import lines. It stores no secret values.
+Env work reads binding and variable names. The source blob states that secret fields are optional strings and contains no secret values. The finding log records names and mismatches only. It does not record key material, tokens, or `.dev.vars` contents. The spec and this plan do not copy those names into a values file. `reconstructed-manifest.json` stores paths, one `sourceCommit` per entry, blob ids, N, sha256 digests, and the two `env.d.ts` import lines. `sourceCommit` is `be6eb37f31e62f0f04a610202cca120aa4d9302f` for `view-plan.ts` and `4ba133b04e49cfb20abe0a22b5ca367284456356` for the validator `.d.ts`. The other three entries stay `db3e8548` when T019 confirms those blobs. It stores no secret values. `npm run verify:provenance` is not part of `npm test`.
 
 Promoted files are type modules and one declaration file beside an existing generated validator. They are not executed as a new service. The declaration file does not change `view-plan.validator.js`.
 
@@ -84,8 +84,9 @@ T018 was added ahead of T011. T011 stays ahead of T004. Each later task was chec
 - T009 depends on T004–T007, so it is after T011 and T018.
 - T010 depends on T009. T012 depends on T010. T013 depends on T012.
 - T014 and T015 depend on T013. T016 and T017 depend on T013–T015.
+- T019 and T020 depend on T007. They correct `sourceCommit` and add `npm run verify:provenance`. That script is not part of `npm test`.
 
-No task requires a file that a later task creates. T018 creates the manifest file that T011 and T004 through T007 then edit.
+No task requires a file that a later task creates. T018 creates the manifest file that T011 and T004 through T007 then edit. T020 reads that manifest after those entries exist.
 
 ## How analyze was run
 
@@ -97,7 +98,7 @@ QA #54 found no `specify analyze` binary. That matches this install.
 - Output summary: commands are `init`, `check`, `version`, `mcp`, `self`, `extension`, `integration`, `event`, `preset`, `artifact`, `bundle`, and `workflow`. There is no `analyze` command. The project integration is `none`, so no agent command copy was installed.
 - The v1.4.0 analyze step is the template `templates/commands/analyze.md` in the package checkout of tag `v1.4.0` (git `0019fa14d12f45edabc2cc3176c9168a68bd0f97`). It is read-only. It does not write a file.
 - Its script, run from the repo root: `SPECIFY_FEATURE_DIRECTORY=specs/worker-typecheck-zero .specify/scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks`
-- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after ruling C added T018 and `reconstructed-manifest.json`: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Constitution II is not in conflict. A new `error TS` line is not waived.
+- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after ruling C added T018 and `reconstructed-manifest.json`: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Rerun after ruling (b) corrected `sourceCommit` and added T019 and T020: 0 CRITICAL, 0 HIGH, 0 MEDIUM. Constitution II is not in conflict. A new `error TS` line is not waived. Promotion commit messages already on the branch are not rewritten.
 
 ## Project Structure
 
@@ -126,6 +127,7 @@ reconstructed-manifest.json
 harness/tests/intake.test.ts
 tsconfig.worker.json
 package.json
+harness/verify-provenance.ts
 ```
 
 **Structure Decision**: The four git paths are the contract table. `packages` stays a symlink to `recovered-source/shared/packages`, so the worker import strings and the git paths are one file each. The five agent-ui siblings stay in that directory and are not copied. `tsconfig.worker.json` already includes `recovered-source/worker/src/**/*.ts` and `recovered-source/shared/packages/**/*.ts`. Root `tsconfig.json` does not gain a `reconstruction/` include. No new project directory.
