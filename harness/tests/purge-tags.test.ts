@@ -137,3 +137,59 @@ test("retention keeps a recent unreadable cell, deletes an old one, and keeps no
   );
   db.close();
 });
+
+test("retention deletes an unreadable cell only when it is older than every cutoff", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const day = 86_400_000;
+  const item = db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, tags, body, created_at, updated_at)
+     VALUES (?, ?, 'personalitem', 'PERSONAL', 'human', 'published', 1, 'user_1', 'not-json', ?, 1, ?)`,
+  );
+  item.run("d100", "Broken hundred", "SECRET-100", NOW - 100 * day);
+  item.run("d60", "Broken sixty", "SECRET-60", NOW - 60 * day);
+  item.run("d10", "Broken ten", "SECRET-10", NOW - 10 * day);
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map((part) => String(part)).join(" "));
+  };
+  let purged = 0;
+  let second = 0;
+  try {
+    const cutoffs = { draft: NOW - 90 * day, brief: NOW - 30 * day };
+    purged = ws.purgeExpired(cutoffs);
+    second = ws.purgeExpired(cutoffs);
+  } finally {
+    console.warn = original;
+  }
+  const ids = db
+    .prepare("SELECT id FROM items ORDER BY id")
+    .all()
+    .map((row) => (row as { id: string }).id);
+  const logged = warnings
+    .map((line) => JSON.parse(line) as { at?: string; id?: string })
+    .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  assert.deepEqual(
+    {
+      purged,
+      second,
+      ids,
+      logged,
+      leaked: warnings.some((line) => line.includes("SECRET") || line.includes("Broken") || line.includes("not-json")),
+    },
+    {
+      purged: 1,
+      second: 0,
+      ids: ["d10", "d60"],
+      logged: [
+        { at: "retention", id: "d10" },
+        { at: "retention", id: "d10" },
+        { at: "retention", id: "d60" },
+        { at: "retention", id: "d60" },
+      ],
+      leaked: false,
+    },
+  );
+  db.close();
+});
