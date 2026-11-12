@@ -74,3 +74,36 @@ test("a revision actor and its text are pseudonymised once", async () => {
   );
   db.close();
 });
+
+test("seed search text is pseudonymised and other search rows are forgotten", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const item = db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, created_at, updated_at)
+     VALUES (?, ?, 'record', 'INTERNAL', ?, 'published', 1, 'user_1', 1, 1)`,
+  );
+  item.run("seed1", "Notes on Ada", "seed");
+  item.run("plain", "Handbook", "seed");
+  item.run("mine", "Ada draft", "human");
+  const index = db.prepare("INSERT INTO items_fts (label, id) VALUES (?, ?)");
+  index.run("Notes on Ada", "seed1");
+  index.run("Handbook", "plain");
+  index.run("Ada draft", "mine");
+  ws.pseudonymise("user_1", "pz_user", ["Ada"]);
+  const second = ws.pseudonymise("user_1", "pz_user", ["Ada"]);
+  const search = db
+    .prepare("SELECT id, label FROM items_fts ORDER BY id")
+    .all()
+    .map((row) => ({ ...(row as { id: string; label: string }) }));
+  assert.deepEqual(
+    { search, second },
+    {
+      search: [
+        { id: "plain", label: "Handbook" },
+        { id: "seed1", label: "Notes on pz_user" },
+      ],
+      second: { items: 0, comments: 0, approvals: 0, edits: 0 },
+    },
+  );
+  db.close();
+});
