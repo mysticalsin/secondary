@@ -45,6 +45,19 @@ export function companyScopes(org: Org): string[] {
 const toHex = (b: ArrayBuffer) =>
   [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
 
+export type PseudonymRefusal = { tag: "refused"; reason: "pseudonym_key" };
+
+/** The pseudonym for a person, or a refusal when the key is missing, empty, or shorter than 32 characters. */
+export async function pseudonymKey(
+  env: Parameters<typeof pseudonymFor>[0],
+  tenantId: string,
+  principalId: string,
+): Promise<{ tag: "ok"; pseudonym: string } | PseudonymRefusal> {
+  const pseudonym = await pseudonymFor(env, tenantId, principalId);
+  if (!pseudonym) return { tag: "refused", reason: "pseudonym_key" };
+  return { tag: "ok", pseudonym };
+}
+
 /** The pseudonym for a person, or null when PSEUDONYM_KEY is not configured. */
 export async function pseudonymFor(
   env: Env,
@@ -133,7 +146,9 @@ async function runErasure(
   aliases: string[],
   email: string | null,
   event: ErasureEvent,
-): Promise<ErasureRun> {
+): Promise<ErasureRun | PseudonymRefusal> {
+  const key = await pseudonymKey(env, tenantId, principalId);
+  if (key.tag === "refused") return key;
   const tenant = tenantStub(env, tenantId);
   const summary: EraseSummary = {
     pseudonym,
@@ -208,7 +223,7 @@ export async function eraseSubject(
   principalId: string,
   pseudonym: string,
   now: number,
-): Promise<ErasureRun> {
+): Promise<ErasureRun | PseudonymRefusal> {
   const email = await tenantStub(env, tenantId).emailOfPrincipal(principalId);
   const aliases = email ? [email, email.toLowerCase()] : [];
   return runErasure(env, tenantId, principalId, pseudonym, aliases, email, {
@@ -249,11 +264,15 @@ export async function reapplyErasures(
     const steps = wanted.filter((step) => grant.steps.includes(step));
     if (steps.length === 0) continue;
     const email = await t.emailOfPrincipal(s.principalId);
-    await runErasure(env, tenantId, s.principalId, s.pseudonym, s.aliases, email, {
+    const outcome = await runErasure(env, tenantId, s.principalId, s.pseudonym, s.aliases, email, {
       type: "restore",
       now,
       steps,
     });
+    if ("reason" in outcome) {
+      skipped.push(s.principalId);
+      continue;
+    }
     applied++;
   }
   return { applied, skipped };

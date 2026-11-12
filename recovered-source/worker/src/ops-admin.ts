@@ -16,6 +16,7 @@ import {
   eraseSubject,
   exportSubject,
   pseudonymFor,
+  pseudonymKey,
   resolveSubject,
   SUBJECT_PARAM,
 } from "./ops-rights.ts";
@@ -175,8 +176,9 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     const raw = typeof body?.principal === "string" ? body.principal : "";
     if (!SUBJECT_PARAM.test(raw)) return c.json({ error: "invalid_principal" }, 400);
     const principalId = await resolveSubject(c.env, s.tenantId, raw);
-    const pseudonym = await pseudonymFor(c.env, s.tenantId, principalId);
-    if (!pseudonym) return c.json({ error: "erase_disabled" }, 503);
+    const key = await pseudonymKey(c.env, s.tenantId, principalId);
+    if (key.tag === "refused") return c.json({ error: "erase_disabled" }, 503);
+    const pseudonym = key.pseudonym;
     if ((await humanIdsOf(c.env, s)).includes(principalId))
       return c.json({ error: "cannot_erase_self" }, 409);
 
@@ -201,6 +203,7 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       }
     }
     const outcome = await eraseSubject(c.env, s.tenantId, org, principalId, pseudonym, now());
+    if ("reason" in outcome) return c.json({ error: "erase_disabled" }, 503);
     if (outcome.status !== "completed")
       return c.json({ error: "erase_incomplete", status: outcome.status, step: outcome.step }, 502);
     await audit(c, s, "rights_erase", `erased ${pseudonym}`);

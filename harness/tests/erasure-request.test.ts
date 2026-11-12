@@ -649,7 +649,7 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
     const rights = (await import(workerModule("ops-rights.ts"))) as {
       companyScopes: (org: Org) => string[];
       reapplyErasures: (
-        env: { AUDIT: { fetch: (url: string) => Promise<Response> } },
+        env: { PSEUDONYM_KEY?: string; AUDIT: { fetch: (url: string) => Promise<Response> } },
         tenantId: string,
         kind: "tenant",
         scope: string,
@@ -667,6 +667,7 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
     const audits: string[] = [];
     const applied = await rights.reapplyErasures(
       {
+        PSEUDONYM_KEY,
         AUDIT: {
           fetch: async (url: string) => {
             audits.push(String(url));
@@ -904,7 +905,7 @@ test("erasure request: reapply skips a row without a grant and runs a granted ro
     db.close();
     const rights = (await import(workerModule("ops-rights.ts"))) as {
       reapplyErasures: (
-        env: { AUDIT: { fetch: (url: string) => Promise<Response> } },
+        env: { PSEUDONYM_KEY?: string; AUDIT: { fetch: (url: string) => Promise<Response> } },
         tenantId: string,
         kind: "tenant",
         scope: string,
@@ -913,6 +914,7 @@ test("erasure request: reapply skips a row without a grant and runs a granted ro
     };
     const result = await rights.reapplyErasures(
       {
+        PSEUDONYM_KEY,
         AUDIT: {
           fetch: async () => new Response(JSON.stringify({ rewritten: 1 }), { status: 200 }),
         },
