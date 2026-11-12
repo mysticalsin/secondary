@@ -110,6 +110,19 @@ Kind placement of an omitted scope is already asserted at `harness/tests/erasure
 
 - T017 depends on the head `7b141881fdc495e15c4d1a8d9240ab0bb2899506`. It does not edit `src/` or `recovered-source/`.
 
+## Phase 9: A keyed map does not fall back, and T017 sees the posted tenant
+
+**Goal**: A keyed store resolver throws when the tenant id is missing or unknown. T017 also pins store B's other rows and the tenant posted to audit and the connector.
+
+**Independent Test**: T018 is the harness rule. T019 extends T017 and does not add a unit test of the fake.
+
+- [ ] T018 [US1] Harness only, in its own commit. When a keyed map is installed, `tenantStub` throws if `tenantId` is missing or unknown, and it does not return the last installed store. An install with no tenant id keeps the single-store fallback, so existing tests stay untouched. No new test of the fake. The masking scratch (stores installed with A last, a call that omits `tenantId`, B unchanged) is not committed. No file under `src/` or `recovered-source/` changes. Covers FR-014.
+- [ ] T019 [US1] Test only, in its own commit, in the same T017. Widen store B's snapshot to `principals`, `erasure_tombstones`, and `security_journal`, and seed B with a real row in each so unchanged is meaningful. The audit double in `eraseRoute` records `tenant` from the posted body, and the connector double in `keyedEnv` records `tenantId` from the posted body. Keep their existing trace behaviour. Assert every recorded value is `tenant-a`. A scratch that feeds a wrong tenant fails that assertion and is not committed. Do not edit, remove, or weaken any other test. No file under `src/` or `recovered-source/` changes. Covers FR-014.
+
+## Dependencies for the keyed throw and the posted tenant
+
+- T018 and T019 depend on the head `4a76573be246e3f16188c50a4c3fc5d6a88f06f6`. Neither edits `src/` or `recovered-source/`. T019 does not turn T017 into a unit test of the fake.
+
 ## Dependencies
 
 - T1, T1b, T2, T3, T3b, T4, and T5 depend on T000. Each test is its own commit. T3, T4, and T5 are locks. T4's log assertions pass on the parent. The receipts-first assertion in T4 is the check T1b owns.
