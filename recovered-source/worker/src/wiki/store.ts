@@ -2181,6 +2181,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       };
       if (!pageIndexMatches(r.status, expected, indexed)) this.reindexPage(r.id as string);
     }
+    this.sql.exec("DELETE FROM wiki_fts WHERE id NOT IN (SELECT id FROM wiki_pages)");
     const scrubbed: string[] = [];
     // Status is read before any proposal write, so a later change misses the compare-and-set.
     // The citation decision is in code. This statement only writes the row that decision named.
