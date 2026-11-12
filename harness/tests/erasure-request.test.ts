@@ -2076,3 +2076,23 @@ test("erasure append T1b: receipts is the first step that runs", async () => {
     remove();
   }
 });
+
+test("erasure append T2: every step returning true stores the canonical plan and completes", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  try {
+    const { org, plan } = await openAppendCase(file, trace, "pending");
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    assert.equal(refused.status, 503);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(true));
+    assert.equal(pending.status, 202);
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(true));
+    const stored = storedPlan(file);
+    assert.deepEqual(stored.order, plan);
+    assert.equal(stored.status, "completed");
+    assert.equal(ran.status, 200);
+  } finally {
+    remove();
+  }
+});
