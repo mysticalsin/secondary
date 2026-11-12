@@ -231,3 +231,28 @@ test("source forget: an orphan search row does not survive, and a live page's ro
   );
   db.close();
 });
+
+test("the production pseudonym is not a strict prefix of the id", async () => {
+  const id = "Jonathan";
+  const spec = "../../recovered-source/worker/src/ops-rights.ts";
+  const { pseudonymFor } = (await import(spec)) as {
+    pseudonymFor: (
+      env: { PSEUDONYM_KEY?: string },
+      tenantId: string,
+      principalId: string,
+    ) => Promise<string | null>;
+  };
+  const env = { PSEUDONYM_KEY: "0123456789abcdef0123456789abcdef" };
+  const first = await pseudonymFor(env, "acme", id);
+  const second = await pseudonymFor(env, "acme", id);
+  const prefix = first !== null && id.startsWith(first) && first.length < id.length;
+  assert.deepEqual(
+    {
+      same: first === second,
+      longer: first !== null && first.length > id.length,
+      prefix,
+      form: first !== null && /^pz_[0-9a-f]{32}$/.test(first),
+    },
+    { same: true, longer: true, prefix: false, form: true },
+  );
+});
