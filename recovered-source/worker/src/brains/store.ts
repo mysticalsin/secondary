@@ -507,6 +507,10 @@ export abstract class BrainBase extends WikiBase {
     if (row && row.claimKey === key && row.role === role && row.state === state) {
       return { ok: true, state };
     }
+    // An existing grant stays put while the proposal is still pending. pending_role is the claim.
+    if (state === "pending" && row?.pendingRole && row.claimKey === key) {
+      return { ok: true, state: "pending" };
+    }
     const matched =
       at === null
         ? this.sql
