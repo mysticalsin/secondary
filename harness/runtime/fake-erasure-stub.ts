@@ -42,13 +42,22 @@ export function erasureTenantIds(): readonly string[] {
 }
 
 export function tenantStub(_env?: unknown, tenantId?: string): ErasureTenant {
+  const keyed = slot.__erasureTenants ?? {};
+  if (Object.keys(keyed).length > 0) {
+    if (typeof tenantId !== "string" || keyed[tenantId] === undefined) {
+      throw new Error("erasure tenant id is missing or unknown");
+    }
+    const seen = slot.__erasureTenantIds ?? [];
+    seen.push(tenantId);
+    slot.__erasureTenantIds = seen;
+    return keyed[tenantId];
+  }
   if (typeof tenantId === "string") {
     const seen = slot.__erasureTenantIds ?? [];
     seen.push(tenantId);
     slot.__erasureTenantIds = seen;
   }
-  const named = typeof tenantId === "string" ? slot.__erasureTenants?.[tenantId] : undefined;
-  const tenant = named ?? slot.__erasureTenant;
+  const tenant = slot.__erasureTenant;
   if (!tenant) throw new Error("erasure tenant was not installed");
   return tenant;
 }
