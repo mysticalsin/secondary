@@ -150,10 +150,7 @@ export abstract class BrainBase extends WikiBase {
         this.sql.exec("ALTER TABLE brain_members ADD COLUMN change_id TEXT");
       if (!memberCols.some((c) => c.name === "claim_key"))
         this.sql.exec("ALTER TABLE brain_members ADD COLUMN claim_key TEXT");
-      if (!memberCols.some((c) => c.name === "pending_role"))
-        this.sql.exec("ALTER TABLE brain_members ADD COLUMN pending_role TEXT");
-      if (!memberCols.some((c) => c.name === "pending_at"))
-        this.sql.exec("ALTER TABLE brain_members ADD COLUMN pending_at INTEGER");
+      this.ensureMemberClaimColumns();
     });
   }
 
