@@ -85,6 +85,19 @@ Kind placement of an omitted scope is already asserted at `harness/tests/erasure
 
 - T012 and T013 depend on the head `3207815819d57f75907b11cd99b035926615c8ff`. T014 depends on T013 being red. T012 passes before T014.
 
+## Phase 7: Make the tenant check real, and pin a reshuffle
+
+**Goal**: T012 no longer reads a sqlite file the route never opens. A stored `personal`, `scope:x`, `directory` order is pinned in full.
+
+**Independent Test**: T015 rewrites T012. T016 runs a keyed erase of the acme plan over that stored order.
+
+- [ ] T015 [US1] In its own commit, fix the T012 check that reads a sqlite file the route never opens. The route cannot take a second tenant in one store, so remove only that unread-file check and say so in the test name. Keep the actor list and the other subject in the same store. Assert that subject's row and its steps stay byte-identical. The assertion count does not drop. A scratch run, not committed, points the erase at that other subject and the new assertion fails. Covers FR-012.
+- [ ] T016 [US1] Lock, in its own commit. Stored order `personal`, `scope:x`, `directory`, with `scope:x` pending. A keyed erase of the acme plan stores the full order `receipts`, `tombstone`, `scope:acme`, `scope:x`, `personal`, `connector`, `directory`. Pin that full order. This passes on the current source. Covers FR-013.
+
+## Dependencies for the tenant check and the reshuffle
+
+- T015 and T016 depend on the head `962dfc093df66f2367476af95bb8da549652998e`. Neither edits `src/`.
+
 ## Dependencies
 
 - T1, T1b, T2, T3, T3b, T4, and T5 depend on T000. Each test is its own commit. T3, T4, and T5 are locks. T4's log assertions pass on the parent. The receipts-first assertion in T4 is the check T1b owns.
