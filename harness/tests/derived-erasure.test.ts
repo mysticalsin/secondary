@@ -36,23 +36,33 @@ type Workspace = {
   purgeExpired(cutoffs: Record<string, number>): number;
 };
 
-function proposal(title: string): string {
+function proposal(title: string, sourceId: string): string {
   return JSON.stringify({
     v: 1,
     kind: "wiki_ingest",
     title,
-    rationale: "SECRET-SNAPSHOT",
+    rationale: "SECRET_SOURCE_BODY",
     origin: "human",
-    pages: [{ pageId: "p1", type: "note", title, markdown: "SECRET-SNAPSHOT", baseRevision: 1 }],
+    pages: [{ pageId: "p1", type: "note", title, markdown: "SECRET_SOURCE_BODY", baseRevision: 1 }],
     facts: [],
     invalidate: [],
     confirm: [],
     archive: [],
     reingest: [],
-    sources: [{ id: "src_1", hash: "h", title: "T" }],
+    sources: [{ id: sourceId, hash: "h", title: "T" }],
     findingKey: null,
-    titleSources: ["src_1"],
+    titleSources: [sourceId],
   });
+}
+
+function reviewCurrent(
+  revision: number,
+  history: Revision[],
+  item: { label: string; body: string | null },
+): { label: string; body: string | null } {
+  const byRev = new Map(history.map((row) => [row.revision, row]));
+  const snap = byRev.get(revision);
+  return snap ? { label: snap.label, body: snap.body } : { label: item.label, body: item.body };
 }
 
 async function openWorkspace(db: DatabaseSync): Promise<Workspace> {
@@ -81,30 +91,35 @@ async function openWorkspace(db: DatabaseSync): Promise<Workspace> {
 test("a source scrub removes the proposal snapshot review serves", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
-  const body = proposal("SECRET-SNAPSHOT");
+  const body = proposal("Quote", "src_secret");
   db.prepare(
     `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, body, created_at, updated_at)
-     VALUES ('prop_1', 'SECRET-SNAPSHOT', 'wiki_ingest', 'INTERNAL', 'human', 'candidate', 1, 'ada', ?, 1, 1)`,
+     VALUES ('cand:core:abcd1234', 'Quote', 'wiki_ingest', 'INTERNAL', 'human', 'candidate', 1, 'ada', ?, 1, 1)`,
   ).run(body);
   db.prepare(
-    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES ('prop_1', 1, 'SECRET-SNAPSHOT', ?, 'ada', 1)",
+    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES ('cand:core:abcd1234', 1, 'Quote', ?, 'ada', 1)",
   ).run(body);
-  db.prepare(
-    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES ('other', 1, 'Kept', 'kept note', 'bea', 1)",
-  ).run();
-  ws.wikiForgetSources(["src_1"], NOW);
-  ws.wikiForgetSources(["src_1"], NOW + 1);
-  const item = db.prepare("SELECT label, body FROM items WHERE id = 'prop_1'").get() as {
+  const forgotten = ws.wikiForgetSources(["src_secret"], NOW);
+  const again = ws.wikiForgetSources(["src_secret"], NOW + 1);
+  const item = db.prepare("SELECT revision, label, body FROM items WHERE id = 'cand:core:abcd1234'").get() as {
+    revision: number;
     label: string;
     body: string;
   };
-  const served = ws.history("prop_1").map((row) => ({ label: row.label, body: row.body }));
-  const other = ws.history("other").map((row) => ({ label: row.label, body: row.body }));
-  assert.equal(item.label, "Erased source");
-  assert.equal(String(item.body).includes("SECRET-SNAPSHOT"), false);
+  const served = reviewCurrent(item.revision, ws.history("cand:core:abcd1234"), item);
   assert.deepEqual(
-    { served, other },
-    { served: [{ label: item.label, body: item.body }], other: [{ label: "Kept", body: "kept note" }] },
+    {
+      proposals: forgotten.proposals,
+      again: again.proposals,
+      live: String(item.body).includes("SECRET_SOURCE_BODY"),
+      served,
+    },
+    {
+      proposals: 1,
+      again: 0,
+      live: false,
+      served: { label: "Erased source", body: item.body },
+    },
   );
   db.close();
 });
