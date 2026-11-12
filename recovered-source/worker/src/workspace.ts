@@ -1271,9 +1271,10 @@ export class Workspace extends BrainBase {
   /**
    * Retention: delete Personal Brain items of the given kinds that were last changed before the
    * cutoff for their kind. `cutoffs` maps a kind (draft, brief, view) to a timestamp in ms.
-   * A note stays. An unreadable tags cell is deleted only when updated_at is below the minimum
-   * cutoff, the oldest finite timestamp in `cutoffs`. A cell at or after that minimum stays,
-   * and the log records its id.
+   * A note stays. A non-finite cutoff for a kind counts as no cutoff, and that row stays.
+   * An unreadable tags cell is deleted only when updated_at is below the minimum cutoff, the
+   * oldest finite timestamp in `cutoffs`. A cell at or after that minimum stays, and the log
+   * records its id.
    */
   purgeExpired(cutoffs: Record<string, number>): number {
     let n = 0;
@@ -1298,7 +1299,7 @@ export class Workspace extends BrainBase {
           const kind = personalKindOf(r.label as string, tags.tags);
           if (kind === "note") continue;
           const cutoff = cutoffs[kind];
-          if (cutoff === undefined || updated >= cutoff) continue;
+          if (cutoff === undefined || !Number.isFinite(cutoff) || updated >= cutoff) continue;
         }
         const id = r.id as string;
         purged.push(id);
