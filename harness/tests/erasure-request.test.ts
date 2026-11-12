@@ -1544,3 +1544,140 @@ test("erasure receipts: a partial result stays partial_failed and the retry cont
     remove();
   }
 });
+
+function rowsOf(db: ReturnType<typeof openSqlite>, query: string): Record<string, unknown>[] {
+  return db
+    .prepare(query)
+    .all()
+    .map((row) => ({ ...(row as Record<string, unknown>) }));
+}
+
+test("an unusable pseudonym key leaves the person, the journal, and the step, and import does not resurrect them", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = (await openPolicy(file)) as OpenedPolicy & {
+      exportAll(): unknown;
+      importAll(data: unknown): number;
+    };
+    const db = openSqlite(file);
+    db.prepare("INSERT INTO principals (id, email) VALUES ('user_1', 'ada@example.invalid')").run();
+    db.prepare("INSERT INTO principal_status (principal_id, active, changed_at) VALUES ('user_1', 1, 1)").run();
+    db.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'status', 'user_1', '', '', 1)").run();
+    db.prepare(
+      "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES ('user_1', 'requested', ?, 5)",
+    ).run(
+      JSON.stringify({
+        order: ["directory"],
+        mark: { directory: "pending" },
+        grant: { subject: "user_1", requester: "ada", confirmer: "bea", steps: ["directory"] },
+      }),
+    );
+    const journalBefore = rowsOf(db, "SELECT kind, a, b, c, v FROM security_journal");
+    db.close();
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      eraseSubject: (
+        env: { AUDIT: { fetch: (url: string) => Promise<Response> } },
+        tenantId: string,
+        org: Org,
+        principalId: string,
+        pseudonym: string,
+        now: number,
+      ) => Promise<{ tag?: string; reason?: string }>;
+    };
+    const env = {
+      AUDIT: { fetch: async () => new Response(JSON.stringify({ rewritten: 1 }), { status: 200 }) },
+    };
+    const first = await rights.eraseSubject(env, TENANT, buildOrg(["acme"]), "user_1", "", NOW);
+    const second = await rights.eraseSubject(env, TENANT, buildOrg(["acme"]), "user_1", "", NOW + 1);
+    policy.importAll(policy.exportAll());
+    const after = openSqlite(file);
+    const person = after.prepare("SELECT id FROM principals WHERE id = 'user_1'").get() as { id: string } | undefined;
+    const status = after.prepare("SELECT principal_id FROM principal_status WHERE principal_id = 'user_1'").get();
+    const journal = rowsOf(after, "SELECT kind, a, b, c, v FROM security_journal");
+    const stored = after
+      .prepare("SELECT ledger FROM erasure_requests WHERE principal_id = 'user_1'")
+      .get() as { ledger: string } | undefined;
+    after.close();
+    const step = stored ? (JSON.parse(stored.ledger) as { mark?: { directory?: string } }).mark?.directory ?? null : null;
+    assert.deepEqual(
+      {
+        first: first.tag ?? null,
+        firstReason: first.reason ?? null,
+        second: second.tag ?? null,
+        person: person?.id ?? null,
+        resurrected: person == null && status != null,
+        journal,
+        step,
+      },
+      {
+        first: "refused",
+        firstReason: "pseudonym_key",
+        second: "refused",
+        person: "user_1",
+        resurrected: false,
+        journal: journalBefore,
+        step: "pending",
+      },
+    );
+  } finally {
+    remove();
+  }
+});
+
+test("reapplyErasures refuses an unusable pseudonym key and deletes nothing", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const db = openSqlite(file);
+    db.prepare("INSERT INTO principals (id, email) VALUES ('user_1', 'ada@example.invalid')").run();
+    db.prepare(
+      "INSERT INTO memberships (principal_id, scope_type, scope_id) VALUES ('user_1', 'account', 'a_ember')",
+    ).run();
+    db.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'status', 'user_1', '', '', 1)").run();
+    db.prepare(
+      "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES ('user_1', 'completed', ?, 5)",
+    ).run(
+      JSON.stringify({
+        order: ["directory"],
+        mark: { directory: "done" },
+        grant: { subject: "user_1", requester: "ada", confirmer: "bea", steps: ["directory"] },
+      }),
+    );
+    db.prepare(
+      "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES ('user_1', 'pz_user', '[]', ?, ?)",
+    ).run(NOW - 1_000, NOW + 86_400_000);
+    const before = {
+      person: rowsOf(db, "SELECT id, email FROM principals"),
+      memberships: rowsOf(db, "SELECT principal_id, scope_type, scope_id FROM memberships"),
+      journal: rowsOf(db, "SELECT kind, a, b, c, v FROM security_journal"),
+      tombstones: rowsOf(db, "SELECT principal_id, pseudonym FROM erasure_tombstones"),
+    };
+    db.close();
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      reapplyErasures: (
+        env: { AUDIT: { fetch: (url: string) => Promise<Response> } },
+        tenantId: string,
+        kind: "tenant",
+        scope: string,
+        now: number,
+      ) => Promise<{ applied: number; skipped: string[] }>;
+    };
+    const env = { AUDIT: { fetch: async () => new Response(JSON.stringify({ rewritten: 1 }), { status: 200 }) } };
+    const first = await rights.reapplyErasures(env, TENANT, "tenant", "tenant", NOW);
+    const second = await rights.reapplyErasures(env, TENANT, "tenant", "tenant", NOW + 1);
+    const after = openSqlite(file);
+    const picture = {
+      person: rowsOf(after, "SELECT id, email FROM principals"),
+      memberships: rowsOf(after, "SELECT principal_id, scope_type, scope_id FROM memberships"),
+      journal: rowsOf(after, "SELECT kind, a, b, c, v FROM security_journal"),
+      tombstones: rowsOf(after, "SELECT principal_id, pseudonym FROM erasure_tombstones"),
+    };
+    after.close();
+    assert.deepEqual(
+      { first, second, picture },
+      { first: { applied: 0, skipped: ["user_1"] }, second: { applied: 0, skipped: ["user_1"] }, picture: before },
+    );
+  } finally {
+    remove();
+  }
+});

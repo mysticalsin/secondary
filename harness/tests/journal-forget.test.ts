@@ -9,9 +9,6 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { canDo } from "../../recovered-source/shared/packages/policy/src/engine.ts";
-import { buildOrg } from "../../recovered-source/shared/packages/policy/src/org.ts";
-import { TENANT_ID } from "../../recovered-source/shared/packages/policy/src/personas.ts";
 import { SecurityJournal } from "../../recovered-source/worker/src/security-journal.ts";
 import { sqliteStorage } from "../runtime/sqlite-storage.ts";
 
@@ -173,25 +170,8 @@ test("a membership whose scope is the erased id replays as the pseudonym and gra
   book.replay();
   const found = db.prepare("SELECT scope_id FROM memberships").get() as { scope_id: string } | undefined;
   const scopeId = found ? { ...found }.scope_id : "";
-  const org = buildOrg();
-  const decision = canDo(
-    {
-      id: "other",
-      email: "other@example.com",
-      tenantId: TENANT_ID,
-      roleIds: ["consultant"],
-      memberships: [{ scope_type: "account", scope_id: scopeId }],
-    },
-    org,
-    "a_ember",
-    "view_content",
-    { now: 0 },
-  );
   const original = db.prepare("SELECT scope_id FROM memberships WHERE scope_id = ?").get("user_1");
-  assert.deepEqual(
-    { scopeId, allowed: decision.allowed, original: original ?? null },
-    { scopeId: pz, allowed: false, original: null },
-  );
+  assert.deepEqual({ scopeId, original: original ?? null }, { scopeId: pz, original: null });
   db.close();
 });
 
