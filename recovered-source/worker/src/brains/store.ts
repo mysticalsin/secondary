@@ -257,7 +257,7 @@ export abstract class BrainBase extends WikiBase {
   /**
    * Read, decode, and claim the row before any other effect. A new member is a claimed placeholder.
    * An existing member keeps its granted role and state, and the in-flight role is pending_role.
-   * It does not log. `brainMemberFinish` writes an unscoped destination.
+   * It does not log. `brainMemberFinish` applies the stored pending role, or keeps the role the claim inserted.
    * `brainMemberRelease` gives the row back when a later step fails.
    */
   brainMemberClaim(
