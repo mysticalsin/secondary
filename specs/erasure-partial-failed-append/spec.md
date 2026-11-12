@@ -28,8 +28,8 @@ A configure holder asks to erase a person while the pseudonym key is missing, em
 **Acceptance Scenarios**:
 
 1. **Given** a stored non-completed erasure whose order is non-empty and whose grant covers that order, **When** a no-key erase is refused, **Then** the stored status, order, marks, and grant are unchanged and nothing is deleted.
-2. **Given** that same stored request and a later keyed erase whose plan contains steps the stored order does not, **When** a performed step returns false, **Then** the terminal status and order equal the named option. The option is not named in this draft.
-3. **Given** the same stored request and the same keyed erase, **When** every performed step returns true, **Then** the terminal status and order equal the same named option's success pair.
+2. **Given** that same stored request and a later keyed erase whose plan contains steps the stored order does not, **When** no option is named, **Then** no behavior file has changed. **When** an option is named and a performed step returns false, **Then** the terminal status and order equal that option's false-step pair.
+3. **Given** the same stored request and the same keyed erase, **When** an option is named and every performed step returns true, **Then** the terminal status and order equal that option's success pair.
 
 ---
 
@@ -59,7 +59,7 @@ Resumes, restores, completed-row additions, unreadable rows, quorum, tombstones,
 ### Functional Requirements
 
 - **FR-001**: A no-key erase is refused before any delete and before any erasure-ledger write. A stored request stays as it was. An absent subject stays absent.
-- **FR-002**: The required terminal status and order are one of the three options in Clarifications. None is selected. No behavior file changes until Devin or Tony names one option there. The absent-subject path stays out of the behavior change until they say it is in scope.
+- **FR-002**: The required terminal status and order are one of the three options in Clarifications. None is selected. No file under `src/`, `recovered-source/`, or `harness/` changes until Devin or Tony names one option there. The absent-subject path stays out of the behavior change until they say it is in scope.
 - **FR-003**: The named option applies to both ends of the same keyed erase: a performed step that returns false, and every performed step returning true.
 - **FR-004**: No other erasure transition changes. The completed-row rule, the unreadable fresh plan, quorum, tombstones, receipt scans, and restore re-apply stay as they are on `565bff6a2ba3153f11347482cdee3555b257f87f`.
 - **FR-005**: After an option is named, the first behavior change is one test of this sequence. If the named option is not today's outcome, that test fails before any production edit. If the named option is today's outcome, the test locks that outcome and no production file changes.
@@ -68,7 +68,7 @@ Resumes, restores, completed-row additions, unreadable rows, quorum, tombstones,
 ### Key Entities
 
 - **Erasure request**: One stored request per person. It has a status, an ordered step list, a mark per step, and a grant. Status words include `requested`, `running`, `completed`, and `partial_failed`.
-- **Full plan**: Receipts, the tombstone, each company scope, the personal brain, the connector, then the directory.
+- **Full plan**: Receipts, the tombstone, each company scope, the personal brain, the connector, then the directory. That order, with the directory last, is the canonical plan.
 - **Appended order**: The stored order, followed by each full-plan step that was not already in it.
 - **No-key erase**: The pseudonym key is missing, empty, or shorter than 32 characters. The ask is refused.
 - **Keyed erase**: The pseudonym key is present and at least 32 characters, and the erase runs.
