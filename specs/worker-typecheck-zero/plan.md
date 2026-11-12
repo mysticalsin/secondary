@@ -79,7 +79,7 @@ QA #54 found no `specify analyze` binary. That matches this install.
 - Output summary: commands are `init`, `check`, `version`, `mcp`, `self`, `extension`, `integration`, `event`, `preset`, `artifact`, `bundle`, and `workflow`. There is no `analyze` command. The project integration is `none`, so no agent command copy was installed.
 - The v1.4.0 analyze step is the template `templates/commands/analyze.md` in the package checkout of tag `v1.4.0` (git `0019fa14d12f45edabc2cc3176c9168a68bd0f97`). It is read-only. It does not write a file.
 - Its script, run from the repo root: `SPECIFY_FEATURE_DIRECTORY=specs/worker-typecheck-zero .specify/scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks`
-- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after option B: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (status Draft). Constitution II is not in conflict. The leading provenance comment is removed, and no exception is recorded.
+- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after the barrel wording fix: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (`spec.md` status Draft). Constitution II is not in conflict. The barrel follows the same N=7 comment removal as the other promotions.
 
 ## Project Structure
 
