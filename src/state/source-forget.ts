@@ -23,6 +23,18 @@ export function forgetFactSources(
   return { tag: "update", sourceIds: rest, hashes };
 }
 
+/** A published page has one search row of this text. Any other status has none. */
+export function pageIndexMatches(
+  status: unknown,
+  expected: { title: string; summary: string; body: string },
+  indexed: readonly { title: unknown; summary: unknown; body: unknown }[],
+): boolean {
+  if (status !== "published") return indexed.length === 0;
+  if (indexed.length !== 1) return false;
+  const row = indexed[0]!;
+  return row.title === expected.title && row.summary === expected.summary && row.body === expected.body;
+}
+
 function stringArray(text: string): string[] | null {
   try {
     const parsed = JSON.parse(text) as unknown;

@@ -19,7 +19,7 @@ import {
 } from "../../../../src/state/proposal-review.ts";
 import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
 import { replaceName } from "../../../../src/state/pseudonym-text.ts";
-import { forgetFactSources } from "../../../../src/state/source-forget.ts";
+import { forgetFactSources, pageIndexMatches } from "../../../../src/state/source-forget.ts";
 import { decodeWikiJobStatus, forgetWikiJob, sourceSubject } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
@@ -2169,6 +2169,18 @@ export abstract class WikiBase extends DurableObject<Env> {
           r.page_id as string,
           r.revision as number,
         );
+    }
+    for (const r of this.sql.exec("SELECT id, title, markdown, status FROM wiki_pages").toArray()) {
+      const markdown = String(r.markdown ?? "");
+      const indexed = this.sql
+        .exec("SELECT title, summary, body FROM wiki_fts WHERE id = ?", r.id as string)
+        .toArray();
+      const expected = {
+        title: String(r.title ?? ""),
+        summary: summaryOf(markdown),
+        body: markdown.replace(/\{src:[^}]*\}/g, ""),
+      };
+      if (!pageIndexMatches(r.status, expected, indexed)) this.reindexPage(r.id as string);
     }
     const scrubbed: string[] = [];
     // Status is read before any proposal write, so a later change misses the compare-and-set.
