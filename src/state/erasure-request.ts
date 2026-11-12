@@ -373,6 +373,19 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
       if (!id || done.includes(id) || rest.includes(id)) continue;
       rest.push(id);
     }
+    for (const id of state.order) {
+      if (!id || state.mark[id] !== "pending" || done.includes(id) || rest.includes(id)) continue;
+      rest.push(id);
+    }
+    const place = (id: string) =>
+      id === "receipts" ? 0
+      : id === "tombstone" ? 1
+      : id.startsWith("scope:") ? 2
+      : id === "personal" ? 3
+      : id === "connector" ? 4
+      : id === "directory" ? 5
+      : 2;
+    rest.sort((a, b) => place(a) - place(b));
     const order = [...done, ...rest];
     const mark: Record<string, StepMark> = {};
     for (const id of done) mark[id] = "done";
