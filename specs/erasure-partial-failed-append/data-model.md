@@ -28,7 +28,7 @@ In the single request decision at `erasure-request.ts:358` and `:370`:
 - Done steps keep their relative order.
 - Not-done steps are placed after the done steps, in canonical order, once each.
 - When no step is done and every pending stored step is already in the plan, the stored order is exactly the canonical plan.
-- A pending stored step the current plan omits stays. A `scope:*` step sits among the scope steps. Receipts stay first and directory stays last.
+- A stored step that is not done, pending or failed, and that the current plan omits stays. A `scope:*` step sits among the scope steps. Receipts stay first and directory stays last. One not-done predicate does that keep.
 - A performed step that returns false ends `partial_failed`. Every performed step returning true ends `completed`.
 
 `addSteps` still only appends. The completed-row path may still call it. The non-completed request path does not use it for this plan.

@@ -69,6 +69,22 @@
 
 - T011 depends on T010 being red. T010 depends on the head `6e9900e519ac4ed4725a6d2d2534cf01d4d4e882`.
 
+## Phase 6: Keep every not-done step the current plan omits
+
+**Goal**: A failed stored step the current plan omits is retried. The erase does not end `completed` until that step succeeds. A kept step runs only for this principal and this session tenant.
+
+**Independent Test**: T013 stores `scope:beta` as `failed` on the two-scope plan, then runs a keyed erase whose plan names only `acme`.
+
+- [ ] T012 [US1] Lock, in its own commit, before the green edit. One test in `harness/tests/erasure-request.test.ts`. A kept `scope:beta` step runs only for this principal and this session tenant. A row for another subject, and a row for another tenant, are unchanged. This test passes on the current head. Covers FR-011.
+- [ ] T013 [US1] In its own commit, one test. The stored row is `partial_failed`, its order is `erasurePlan(["acme", "beta"])`, `scope:beta` is `failed`, the other marks are `pending`, and the grant covers that order. The keyed erase uses the plan for `acme` only. Assert `scope:beta` is retried and the stored status is `completed` only once that step has succeeded. This test fails before T014 with an assertion. Covers FR-011.
+- [ ] T014 [US1] After T013 is red, one commit edits only the non-completed request decision. One not-done predicate keeps every stored step that is not done and is missing from the current plan. No separate failed branch. Do not edit `addSteps` or the completed-row path. T013 passes. Existing erasure tests still pass. Covers FR-011.
+
+Kind placement of an omitted scope is already asserted at `harness/tests/erasure-request.test.ts:2233`. No second placement test.
+
+## Dependencies for F-2
+
+- T012 and T013 depend on the head `3207815819d57f75907b11cd99b035926615c8ff`. T014 depends on T013 being red. T012 passes before T014.
+
 ## Dependencies
 
 - T1, T1b, T2, T3, T3b, T4, and T5 depend on T000. Each test is its own commit. T3, T4, and T5 are locks. T4's log assertions pass on the parent. The receipts-first assertion in T4 is the check T1b owns.
