@@ -547,9 +547,8 @@ export abstract class BrainBase extends WikiBase {
       : at === null
         ? this.sql
             .exec(
-              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+              `UPDATE brain_members SET state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
                WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state = ? RETURNING principal_id`,
-              role,
               state,
               actor,
               now,
@@ -561,9 +560,8 @@ export abstract class BrainBase extends WikiBase {
             .toArray().length
         : this.sql
             .exec(
-              `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+              `UPDATE brain_members SET state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
                WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state = ? AND at = ? RETURNING principal_id`,
-              role,
               state,
               actor,
               now,
@@ -595,7 +593,7 @@ export abstract class BrainBase extends WikiBase {
       );
       return { ok: false, code: "mismatch", changeId };
     }
-    this.wikiLogAppend(actor, "brain.member", { principalId, role: stored ?? role, state }, now);
+    this.wikiLogAppend(actor, "brain.member", { principalId, role: stored ?? row?.role ?? role, state }, now);
     return { ok: true, state };
   }
 
