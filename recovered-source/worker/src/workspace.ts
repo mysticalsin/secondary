@@ -1028,7 +1028,7 @@ export class Workspace extends BrainBase {
   override wikiForgetSources(
     ids: string[],
     now: number,
-  ): { facts: number; pages: number; proposals: number } {
+  ): { facts: number; pages: number; proposals: number; ids: string[] } {
     const before = this.sql
       .exec("SELECT id FROM wiki_pages")
       .toArray()
@@ -1037,13 +1037,13 @@ export class Workspace extends BrainBase {
     const removed = before.filter(
       (id) => this.sql.exec("SELECT id FROM wiki_pages WHERE id = ?", id).toArray().length === 0,
     );
-    this.forgetDerived({ type: "source", removedPages: removed });
+    this.forgetDerived({ type: "source", ids: out.ids, removedPages: removed });
     return out;
   }
 
   private forgetDerived(
     op:
-      | { type: "source"; removedPages: string[] }
+      | { type: "source"; ids: string[]; removedPages: string[] }
       | { type: "items"; ids: string[] }
       | { type: "person"; from: string; to: string; aliases: string[] },
   ): void {
@@ -1052,15 +1052,13 @@ export class Workspace extends BrainBase {
       return;
     }
     if (op.type === "source") {
-      for (const item of this.sql
-        .exec(
-          "SELECT id, label, body FROM items WHERE label = 'Erased source' AND kind LIKE 'wiki\\_%' ESCAPE '\\'",
-        )
-        .toArray()) {
+      for (const id of op.ids) {
+        const item = this.sql.exec("SELECT label, body FROM items WHERE id = ?", id).toArray()[0];
+        if (!item) continue;
         const label = String(item.label);
         const body = item.body === null || item.body === undefined ? null : String(item.body);
         for (const rev of this.sql
-          .exec("SELECT revision, label, body FROM revisions WHERE item_id = ?", item.id as string)
+          .exec("SELECT revision, label, body FROM revisions WHERE item_id = ?", id)
           .toArray()) {
           const revBody = rev.body === null || rev.body === undefined ? null : String(rev.body);
           if (String(rev.label) === label && revBody === body) continue;
@@ -1068,7 +1066,7 @@ export class Workspace extends BrainBase {
             "UPDATE revisions SET label = ?, body = ? WHERE item_id = ? AND revision = ?",
             label,
             body,
-            item.id as string,
+            id,
             rev.revision as number,
           );
         }

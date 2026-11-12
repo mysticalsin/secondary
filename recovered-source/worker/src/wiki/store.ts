@@ -2109,9 +2109,9 @@ export abstract class WikiBase extends DurableObject<Env> {
   wikiForgetSources(
     ids: string[],
     now: number,
-  ): { facts: number; pages: number; proposals: number } {
+  ): { facts: number; pages: number; proposals: number; ids: string[] } {
     const gone = new Set(ids);
-    const out = { facts: 0, pages: 0, proposals: 0 };
+    const out = { facts: 0, pages: 0, proposals: 0, ids: [] as string[] };
     if (!gone.size) return out;
     const hit = (cites: string[]) => cites.some((x) => gone.has(x));
     for (const r of this.sql
@@ -2182,7 +2182,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       if (!pageIndexMatches(r.status, expected, indexed)) this.reindexPage(r.id as string);
     }
     this.sql.exec("DELETE FROM wiki_fts WHERE id NOT IN (SELECT id FROM wiki_pages)");
-    const scrubbed: string[] = [];
+    const scrubbed = out.ids;
     // Status is read before any proposal write, so a later change misses the compare-and-set.
     // The citation decision is in code. This statement only writes the row that decision named.
     const proposals = this.sql
