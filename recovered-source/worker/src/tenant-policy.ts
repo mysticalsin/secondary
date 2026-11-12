@@ -17,6 +17,7 @@ import {
   encodeErasure,
   erasureWithGrant,
 } from "../../../src/state/erasure-request.ts";
+import { forgetPilotMember } from "../../../src/state/pilot-member.ts";
 import {
   commitQuorum,
   type QuorumResult,
@@ -662,13 +663,12 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** A person's name leaves every invite list (erasure). */
   private pilotForget(email: string): void {
-    for (const c of this.pilotList())
-      if (c.members.includes(email))
-        this.sql.exec(
-          "UPDATE pilot_cohorts SET members = ? WHERE id = ?",
-          JSON.stringify(c.members.filter((m) => m !== email)),
-          c.id,
-        );
+    for (const row of this.sql.exec("SELECT id, members FROM pilot_cohorts").toArray()) {
+      const decision = forgetPilotMember(row.members, email);
+      if (decision.tag === "keep") continue;
+      const members = decision.tag === "write" ? JSON.stringify(decision.members) : "[]";
+      this.sql.exec("UPDATE pilot_cohorts SET members = ? WHERE id = ?", members, row.id as string);
+    }
   }
 
   /** Flags for one address: a key is managed once any cohort sets it, and is then on only for its members. */
