@@ -77,3 +77,21 @@ test("an older erasure ledger version does not replace a newer one", async () =>
   );
   db.close();
 });
+
+test("an unversioned erasure ledger cannot replace a versioned row", async () => {
+  const db = new DatabaseSync(":memory:");
+  const policy = await openPolicy(db);
+  const versioned = ledger(2, "c2");
+  const bare = JSON.stringify({ order: ["receipts"], mark: { receipts: "done" } });
+  policy.erasureSave("user_1", "running", versioned, 20);
+  policy.erasureSave("user_1", "completed", bare, 30);
+  policy.erasureSave("user_1", "completed", bare, 31);
+  const row = db
+    .prepare("SELECT status, ledger, updated_at FROM erasure_requests WHERE principal_id = 'user_1'")
+    .get() as { status: string; ledger: string; updated_at: number };
+  assert.deepEqual(
+    { ...(row as { status: string; ledger: string; updated_at: number }) },
+    { status: "running", ledger: versioned, updated_at: 20 },
+  );
+  db.close();
+});
