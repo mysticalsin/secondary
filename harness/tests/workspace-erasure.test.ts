@@ -20,6 +20,7 @@ type Counts = { items: number; comments: number; approvals: number; edits: numbe
 type Workspace = {
   pseudonymise(from: string, to: string, aliases?: string[]): Counts;
   wipe(): number;
+  get(id: string): { userValidated: unknown } | null;
 };
 
 async function openWorkspace(db: DatabaseSync): Promise<Workspace> {
@@ -103,6 +104,52 @@ test("seed search text is pseudonymised and other search rows are forgotten", as
         { id: "seed1", label: "Notes on pz_user" },
       ],
       second: { items: 0, comments: 0, approvals: 0, edits: 0 },
+    },
+  );
+  db.close();
+});
+
+test("an unreadable validation is left unreadable and a real one is rewritten", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const item = db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, user_validated, created_at, updated_at)
+     VALUES (?, 'Item', 'record', 'INTERNAL', 'human', 'published', 1, 'user_1', ?, 1, 1)`,
+  );
+  const valid = JSON.stringify({ by: "user_1", at: "2020-01-01T00:00:00.000Z", revision: 1 });
+  item.run("valid", valid);
+  item.run("bad", "not-json");
+  item.run("odd", JSON.stringify({ by: 1 }));
+  let thrown: string | null = null;
+  try {
+    ws.pseudonymise("user_1", "pz_user", []);
+    ws.pseudonymise("user_1", "pz_user", []);
+  } catch (e) {
+    thrown = e instanceof Error ? e.message : String(e);
+  }
+  let read: unknown = null;
+  try {
+    read = ws.get("bad")?.userValidated ?? null;
+  } catch (e) {
+    read = e instanceof Error ? e.name : "threw";
+  }
+  const stored = db
+    .prepare("SELECT id, user_validated FROM items ORDER BY id")
+    .all()
+    .map((row) => ({ ...(row as { id: string; user_validated: string }) }));
+  assert.deepEqual(
+    { thrown, read, stored },
+    {
+      thrown: null,
+      read: { tag: "unreadable" },
+      stored: [
+        { id: "bad", user_validated: "not-json" },
+        { id: "odd", user_validated: JSON.stringify({ by: 1 }) },
+        {
+          id: "valid",
+          user_validated: JSON.stringify({ by: "pz_user", at: "2020-01-01T00:00:00.000Z", revision: 1 }),
+        },
+      ],
     },
   );
   db.close();
