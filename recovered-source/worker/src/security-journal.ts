@@ -4,6 +4,8 @@
 // and `replay` applies it again afterwards. Entries hold ids and names only. They expire after
 // JOURNAL_DAYS, which must stay above the backup retention (the oldest snapshot a restore can use).
 
+import { forgetJournalEntry } from "../../../src/state/journal-forget.ts";
+
 export const JOURNAL_DAYS = 90;
 const DAY_MS = 86_400_000;
 
@@ -78,7 +80,21 @@ export class SecurityJournal {
 
   /** An erased person leaves no entries behind (the tombstone covers a restore). */
   forget(principalId: string): void {
-    this.sql.exec("DELETE FROM security_journal WHERE a = ?", principalId);
+    for (const row of this.sql.exec("SELECT seq, kind, a, b, c FROM security_journal").toArray()) {
+      const decision = forgetJournalEntry(
+        {
+          kind: String(row.kind ?? ""),
+          a: String(row.a ?? ""),
+          b: String(row.b ?? ""),
+          c: String(row.c ?? ""),
+        },
+        principalId,
+      );
+      if (decision.tag === "keep") continue;
+      if (decision.tag === "delete")
+        this.sql.exec("DELETE FROM security_journal WHERE seq = ?", row.seq as number);
+      else this.sql.exec("UPDATE security_journal SET c = ? WHERE seq = ?", decision.c, row.seq as number);
+    }
   }
 
   clear(): void {
