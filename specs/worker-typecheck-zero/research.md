@@ -2,21 +2,21 @@
 
 ## Decision: Promote the four named blobs, not the `db3e8548` tree
 
-- Decision: Copy blob bytes for the four destinations Devin named. Do not merge `db3e8548`.
+- Decision: Copy blob bytes for the four destinations Devin named. Do not merge or cherry-pick `db3e8548`. For `view-plan.ts` and `view-plan.validator.d.ts`, `git hash-object` of the copied file must equal the named blob.
 - Rationale: `types.ts` (`e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`) and `agent-ui/index.ts` (`ed80553761da2db13495c6eb250a438d7ef54327`) are the `db3e8548` blobs. `view-plan.ts` at `db3e8548` is `82bac154e813b9fa59c2f93e871127e0c37c3b8e`. The named blob is `d4b092167f4e1875d0254c98499a979cbd305dd6`. `view-plan.validator.d.ts` at `db3e8548` is `a403845f6cd562a3b2488e0e736aa57aaf57cbd2`. The named blob is `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`. `db3e8548` is not an ancestor of `387f2c8b`.
 - Alternatives considered: Checking out `db3e8548` paths. Rejected because two of the four blobs would be the wrong bytes, and the checkout would be a merge-sized import of `reconstruction/`.
 
-## Decision: Do not run `wrangler types` on this branch
+## Decision: `env.d.ts` blob `841f0dbc97ac` is the Env source of truth
 
-- Decision: Env uses blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d`, checked line by line against names the code reads.
-- Rationale: No wrangler config is on `387f2c8b`. Three configs exist only off this branch (`reconstruction/wrangler.jsonc`, `reconstruction/release/wrangler.jsonc`, `reconstruction/mcp/wrangler.jsonc`). The Env blob's own header says it was written because no recovered wrangler config could regenerate the interface, and that secret fields are optional strings with no values.
-- Alternatives considered: Picking one off-branch wrangler config and running `wrangler types`. Rejected. That chooses a config Tony did not name.
+- Decision: Check blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` line by line against names the code reads. Do not adopt an off-branch wrangler config. A wrangler or deploy config is a separate change and is out of scope.
+- Rationale: Devin ruled this blob is the source of truth. The blob's header says secret fields are optional strings with no values.
+- Alternatives considered: Running `wrangler types` against `reconstruction/wrangler.jsonc`, `reconstruction/release/wrangler.jsonc`, or `reconstruction/mcp/wrangler.jsonc`. Rejected. Those files are off this branch, and adopting one is out of scope.
 
-## Decision: Do not add or edit the line-111 test
+## Decision: Line 111 is conditional
 
-- Decision: Leave `harness/runtime/whole-api-causes.test.ts` absent. If it appears and line 111 would change, stop and ask.
-- Rationale: The file is not on this branch. At `1e8f67c` (not an ancestor) line 111 is the TS2304 cause sentence inside a recorded report. Devin said the line stays green and unchanged.
-- Alternatives considered: Bringing the test onto this branch so the "green" check can run. Rejected. That adds a file the spec phase was told not to change, and the line's counts would move once types are promoted.
+- Decision: Apply the line 111 rule only when the tree contains `harness/runtime/whole-api-causes.test.ts`. This branch does not. If a tree contains the file and the work would change line 111, stop and ask.
+- Rationale: Devin ruled the check is conditional on the file being present. The file is absent here, so there is no line to edit and the file is not added.
+- Alternatives considered: Copying the test from `1e8f67c` onto this branch. Rejected. That would create the file the conditional check is not asking this tree to carry.
 
 ## Decision: The standing red is the worker typecheck
 
@@ -24,8 +24,8 @@
 - Rationale: The baseline failure is already 119 errors. A test that only repeats that count is a second copy of the same gate. A real mismatch still needs its own red test before a fix, and that test is not line 111.
 - Alternatives considered: Writing a new failing test before each blob copy. Rejected. The copy is the module the imports already name. The typecheck is the red.
 
-## Decision: CI attachment waits for a file name
+## Decision: Do not add CI while main has none
 
-- Decision: Do not create a workflow file. Stop and ask Tony which file gets `npm run typecheck:worker` as an exact-head required check.
-- Rationale: This branch has no CI configuration. Inventing `.github/workflows/` would guess the provider.
-- Alternatives considered: Treating `package.json`'s `typecheck:worker` script as the CI gate. Rejected. The script exists and is not a CI check on an exact head.
+- Decision: Stop and report. CI is a separate reviewed commit that extends main's existing CI system, with no new infrastructure. Main `190cd04877812c1d238c4468e98a8714086b457f` has no CI config. Until that commit exists, QA gates each T004+ head by running `npm run typecheck:worker` and recording the SHA and exit code. No merge until CI enforces the check on the exact head.
+- Rationale: Devin ruled that a missing main CI system is a stop, not a prompt to invent one.
+- Alternatives considered: Adding `.github/workflows` on this branch. Rejected. That is new infrastructure, and main has no CI system to extend.

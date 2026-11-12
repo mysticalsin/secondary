@@ -6,9 +6,9 @@
 
 ## Content Quality
 
-- [ ] No implementation details (languages, frameworks, APIs)
+- [ ] No implementation details (languages, frameworks, APIs). Stays open: QA checks named paths, blob ids, and `npm run typecheck:worker`.
 - [x] Focused on user value and business needs
-- [ ] Written for non-technical stakeholders
+- [ ] Written for non-technical stakeholders. Stays open: the reader is QA checking those paths and gates.
 - [x] All mandatory sections completed
 
 ## Requirement Completeness
@@ -16,7 +16,7 @@
 - [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
-- [ ] Success criteria are technology-agnostic (no implementation details)
+- [ ] Success criteria are technology-agnostic (no implementation details). Stays open: SC-001 through SC-006 name the commands and counts QA records.
 - [x] All acceptance scenarios are defined
 - [x] Edge cases are identified
 - [x] Scope is clearly bounded
@@ -27,10 +27,9 @@
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
-- [ ] No implementation details leak into specification
+- [ ] No implementation details leak into specification. Stays open: those same paths and gates are the acceptance checks.
 
 ## Notes
 
-- The unchecked items stay unchecked on purpose. Tony's acceptance criteria name paths, blobs, and the three gates. Hiding those names would make QA unable to check the spec. The spec was not rewritten to satisfy the template's non-technical wording.
-- Clarifications are recorded from the object store and this branch. Open stops (CI file, absent line-111 test, off-branch wrangler configs) are procedures, not guessed answers.
+- Each open item has its reason on the same line. The names stay because they are the acceptance checks.
 - Mark items `[x]` only after review confirms the requirement-quality criterion is satisfied.

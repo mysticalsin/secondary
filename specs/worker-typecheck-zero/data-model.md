@@ -10,7 +10,7 @@ No database table, schema, or stored row changes. The entities are files and cou
 | Blob | The git object id in the contract. The file bytes match that object |
 | Order | types.ts, then agent-ui/index.ts, then view-plan.ts, then view-plan.validator.d.ts |
 | Location count | One path on the branch after the commit that adds it |
-| Provenance | Commit message only. Not a comment in the file |
+| Provenance | Commit message names `db3e8548` plus the blob id. Not a comment in the file |
 
 ## Env name check
 

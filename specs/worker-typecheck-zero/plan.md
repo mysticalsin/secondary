@@ -26,7 +26,7 @@ Place four reconstructed modules at the import paths the Worker already uses, on
 
 **Performance Goals**: Not a runtime change. The worker typecheck error count decreases on each implementation commit and ends at 0.
 
-**Constraints**: Isolated branch. No force, no hook bypass, not `main`, no merge, no deploy, no spend. No `any`, no `@ts-ignore`, no new packages, no stubs, no shims. No `tsconfig` path or `preserveSymlinks` into `reconstruction/`. `harness/runtime/whole-api-causes.test.ts` line 111 stays unchanged. `npm test` stays 403/0 and root typecheck stays 0.
+**Constraints**: Isolated branch. No force, no hook bypass, not `main`, no deploy, no spend. No merge until CI enforces `npm run typecheck:worker` on the exact head. No `any`, no `@ts-ignore`, no new packages, no stubs, no shims. No `tsconfig` path or `preserveSymlinks` into `reconstruction/`. The line 111 rule applies only when `harness/runtime/whole-api-causes.test.ts` is in the tree. `npm test` stays 403/0 and root typecheck stays 0.
 
 **Scale/Scope**: Four file promotions, one Env name check, one CI-attachment stop. Baseline worker errors: 119 (TS2304 68, TS2307 43, TS7006 3, TS2322 2, TS7053 1, TS7016 1, TS2366 1).
 
@@ -44,8 +44,8 @@ Place four reconstructed modules at the import paths the Worker already uses, on
 | VI. Security & data | Pass. Section below. |
 | VII. Isolated branch | Pass. `cursor/state-machines-c94c` only. No merge of `db3e8548`. |
 | VIII. QA separate | Pass. Writer reports counts. QA is a non-writer session on the exact head. |
-| IX. Exact-head CI | Pass as a stop. No CI file exists, so none is invented. Tony names the file before a gate is attached. |
-| X. Merge and deploy | Pass. Not in this work. |
+| IX. Exact-head CI | Pass as a stop. Main `190cd048` has no CI. Nothing is added. Until a separate reviewed commit extends that system, QA runs `npm run typecheck:worker` on each T004+ head and records the SHA and exit code. |
+| X. Merge and deploy | Pass. No merge until CI enforces the check on the exact head. No deploy. |
 
 Post-design re-check: the same ten rows. Research did not add a package, a merge, or a workflow file.
 
@@ -56,6 +56,16 @@ No runtime behavior change. No database schema change. No stored data change. No
 Env work reads binding and variable names. The source blob states that secret fields are optional strings and contains no secret values. The finding log records names and mismatches only. It does not record key material, tokens, or `.dev.vars` contents. The spec and this plan do not copy those names into a values file.
 
 Promoted files are type modules and one declaration file beside an existing generated validator. They are not executed as a new service. The declaration file does not change `view-plan.validator.js`.
+
+## Devin's rulings
+
+Recorded 2026-11-12. These replace the earlier "ask which CI file" and "ask which wrangler config" stops.
+
+- CI is a separate reviewed commit that extends main's existing CI system, with no new infrastructure. If main has no CI, stop and report before adding anything. Main `190cd04877812c1d238c4468e98a8714086b457f` has no `.github/workflows` directory and no other CI config. This feature adds none.
+- Until that commit exists, each T004+ commit is gated by QA running `npm run typecheck:worker` on the exact head, with the SHA and exit code recorded.
+- No merge until CI enforces the check on the exact head.
+- The line 111 rule is a conditional check. It applies only to a tree that contains `harness/runtime/whole-api-causes.test.ts`.
+- `env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth. No off-branch wrangler config is adopted. Any wrangler or deploy config is a separate change and is out of scope here.
 
 ## Project Structure
 

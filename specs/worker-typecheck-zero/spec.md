@@ -17,9 +17,9 @@ Answers below are facts checked at head `387f2c8b1662283ca74e657ec85f97068c011ab
 - Q: Which bytes are promoted? → A: The four blobs Tony/Devin named, resolved in this repository's object store: `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`, `ed80553761da2db13495c6eb250a438d7ef54327`, `d4b092167f4e1875d0254c98499a979cbd305dd6`, `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`.
 - Q: Are those the blobs at commit `db3e8548` for every path? → A: No. `types.ts` and `agent-ui/index.ts` match `db3e8548`. `view-plan.ts` at `db3e8548` is blob `82bac154e813b9fa59c2f93e871127e0c37c3b8e`, not `d4b092167f4e`. `view-plan.validator.d.ts` at `db3e8548` is blob `a403845f6cd562a3b2488e0e736aa57aaf57cbd2`, not `5a3b92e373e2`. Promote the named blobs.
 - Q: Is `reconstruction/` on this branch? → A: No. `db3e8548` is not an ancestor of this head. Do not merge that commit or its branch. Read the named blobs from the object store.
-- Q: Does a wrangler config exist on this branch? → A: No. `reconstruction/wrangler.jsonc`, `reconstruction/release/wrangler.jsonc`, and `reconstruction/mcp/wrangler.jsonc` exist only off this branch. Do not choose among them. The Env step uses `reconstruction/env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d`.
-- Q: Is `harness/runtime/whole-api-causes.test.ts` on this branch? → A: No. It exists at commit `1e8f67c`, which is not an ancestor. Line 111 there is the TS2304 cause sentence. Do not add the file. Do not edit line 111. If a later tree contains the file and the work would change line 111, stop and ask.
-- Q: Where is CI configured? → A: No CI configuration file is on this branch. Do not invent a workflow path. Stop and ask Tony which file receives the worker typecheck gate.
+- Q: Does a wrangler config exist on this branch? → A: No. Devin ruled that `env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth. No off-branch wrangler config is adopted. Any wrangler or deploy config is a separate change, out of scope here.
+- Q: Does the line 111 rule apply on this branch? → A: Only when the tree contains `harness/runtime/whole-api-causes.test.ts`. This branch does not contain that file. If a tree contains it, line 111 stays unchanged; if the work would change it, stop and ask.
+- Q: Where does the worker typecheck gate live? → A: CI is a separate reviewed commit that extends main's existing CI system, with no new infrastructure. Main `190cd04877812c1d238c4468e98a8714086b457f` has no CI config, so stop and report before adding anything. Until that commit exists, each T004+ commit is gated by QA running `npm run typecheck:worker` on the exact head, with the SHA and exit code recorded. No merge until CI enforces the check on the exact head.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -33,11 +33,11 @@ A reviewer can see four separate commits. Each commit places one named blob at t
 
 **Acceptance Scenarios**:
 
-1. **Given** head `387f2c8b` with worker typecheck at 119 errors, **When** the `types.ts` blob is placed at `recovered-source/worker/src/types.ts` in one commit, **Then** that file's git blob is `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`, the commit message names the blob and that it was reconstructed, and the worker error count is lower than 119.
+1. **Given** head `387f2c8b` with worker typecheck at 119 errors, **When** the `types.ts` blob is placed at `recovered-source/worker/src/types.ts` in one commit, **Then** that file's git blob is `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`, the commit message names `db3e8548` and that blob id, and the worker error count is lower than 119.
 2. **Given** the previous promotion commit, **When** `packages/contracts/src/agent-ui/index.ts` is added as blob `ed80553761da2db13495c6eb250a438d7ef54327`, **Then** the worker error count is lower than that commit's parent.
 3. **Given** the previous promotion commit, **When** `packages/contracts/src/view-plan.ts` is added as blob `d4b092167f4e1875d0254c98499a979cbd305dd6`, **Then** the worker error count is lower than that commit's parent.
 4. **Given** the previous promotion commit, **When** `recovered-source/worker/src/generated/view-plan.validator.d.ts` is added as blob `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`, **Then** the worker error count is lower than that commit's parent.
-5. **Given** any of those commits, **When** QA reads the file, **Then** provenance is only in the commit message. The file has no new reconstruction comment added by the promotion.
+5. **Given** any of those commits, **When** QA reads the commit message, **Then** it names `db3e8548` and the blob id. The file has no provenance comment.
 
 ---
 
@@ -52,7 +52,7 @@ A reviewer can show that each promoted type exists at one path, and that Env was
 **Acceptance Scenarios**:
 
 1. **Given** the four promotions, **When** QA searches the branch, **Then** each type exists at exactly one path, and no `tsconfig` path, include, or `preserveSymlinks` setting points at `reconstruction/`.
-2. **Given** no wrangler config on the branch, **When** the Env commit runs, **Then** it does not run `wrangler types` against an off-branch config. It checks blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` line by line against the bindings the code reads, and records each mismatch as a finding.
+2. **Given** Env checking, **When** the Env commit runs, **Then** blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth. No off-branch wrangler config is adopted. Any wrangler or deploy config is out of scope. Each name mismatch is a finding.
 3. **Given** that Env blob imports `TenantPolicy` and `Workspace` from `reconstruction/worker-root/`, **When** those imports cannot resolve on this branch, **Then** the mismatch is a finding and no `tsconfig` path into `reconstruction/` is added. The import path may be changed to `recovered-source/worker/src/tenant-policy.ts` and `recovered-source/worker/src/workspace.ts` only when those files already export those type names. If an export is missing, or the worker error count rises, stop and ask.
 4. **Given** a mismatch between the Env names and the code, **When** the code and the type disagree, **Then** a new red test states the mismatch before any fix, and the fix does not use `any` or `@ts-ignore`.
 
@@ -64,13 +64,13 @@ An independent QA session reports worker typecheck at 0 errors, with the test su
 
 **Why this priority**: Zero is the end state. It comes after the promotions and the Env check, because those are what remove the errors.
 
-**Independent Test**: On the exact head, run `npm test`, `npm run typecheck`, and `npm run typecheck:worker`. Compare `harness/runtime/whole-api-causes.test.ts` with the branch start.
+**Independent Test**: On the exact head, run `npm test`, `npm run typecheck`, and `npm run typecheck:worker`, and record the SHA and the worker exit code. Apply the line 111 check only if `harness/runtime/whole-api-causes.test.ts` is in the tree.
 
 **Acceptance Scenarios**:
 
 1. **Given** the promotions and the Env findings, **When** worker typecheck exits 0, **Then** QA records 0 errors, `npm test` is 403 passed and 0 failed, and root typecheck is 0 errors.
-2. **Given** the file `harness/runtime/whole-api-causes.test.ts` is absent at the start, **When** implementation finishes, **Then** that file is still absent. If it is present and line 111 would change, the work has stopped and asked.
-3. **Given** no CI configuration on the branch, **When** implementation reaches the gate task, **Then** it stops and asks Tony which file receives `npm run typecheck:worker` as a required exact-head check. It does not add a workflow file on its own.
+2. **Given** a tree that does not contain `harness/runtime/whole-api-causes.test.ts`, **When** implementation finishes, **Then** the line 111 rule is not applied. **Given** a tree that contains that file, **When** the work would change line 111, **Then** it stops and asks.
+3. **Given** main `190cd048` has no CI config, **When** implementation reaches the gate task, **Then** it stops and reports before adding anything. Until a separate reviewed commit extends main's existing CI, QA gates each T004+ head by running `npm run typecheck:worker` and recording the SHA and exit code. No merge until that CI check exists.
 
 ---
 
@@ -79,7 +79,7 @@ An independent QA session reports worker typecheck at 0 errors, with the test su
 - A promotion commit does not lower the worker error count. Stop. Do not add `any` or `@ts-ignore`.
 - A promotion raises the worker error count or the root typecheck error count. Stop and report the new diagnostics.
 - `npm test` is not 403 passed and 0 failed after a commit, and the failure is not the single red test this spec required for a mismatch. Stop. Do not edit unrelated tests.
-- Placing a blob would require editing `harness/runtime/whole-api-causes.test.ts` line 111. Stop and ask.
+- A tree contains `harness/runtime/whole-api-causes.test.ts` and the work would change line 111. Stop and ask. If the file is absent, the line 111 rule does not apply.
 - The Env check finds a binding the code uses that the blob does not name, or a name the blob has that the code does not use. Log the finding. A behavior change is out of scope.
 - `reconstruction/` is added by a merge. Do not merge. If copies appear, the same commit either points them at the promoted paths or deletes the copies.
 
@@ -88,14 +88,14 @@ An independent QA session reports worker typecheck at 0 errors, with the test su
 ### Functional Requirements
 
 - **FR-001**: Each of the four modules is promoted in its own commit, in this order: `recovered-source/worker/src/types.ts`, `packages/contracts/src/agent-ui/index.ts`, `packages/contracts/src/view-plan.ts`, `recovered-source/worker/src/generated/view-plan.validator.d.ts`.
-- **FR-002**: The file bytes are the named blobs, retrieved from the object store without merging `db3e8548` or any other branch.
-- **FR-003**: The commit message records that the file was reconstructed and records the source blob. The promoted file does not gain a provenance comment.
+- **FR-002**: The file bytes are the named blobs, retrieved from the object store. Do not merge or cherry-pick `db3e8548`. For `packages/contracts/src/view-plan.ts` and `recovered-source/worker/src/generated/view-plan.validator.d.ts`, copy only the named blob, and `git hash-object` of the file must equal that blob id.
+- **FR-003**: The commit message names `db3e8548` plus the blob id. The promoted file does not gain a provenance comment.
 - **FR-004**: After each promotion commit, the worker typecheck error count is strictly lower than the parent commit. `npm test` is 403/0 and root typecheck is 0, unless a mismatch red test is the only new failure and is still red on purpose.
 - **FR-005**: No `tsconfig` path, include, or `preserveSymlinks` setting points at `reconstruction/`.
 - **FR-006**: After the four promotions, each of those types exists at exactly one path on the branch. This branch does not gain a `reconstruction/` copy. If a copy is already present, the same commit retargets it to the promoted path or deletes it.
-- **FR-007**: Env is not generated with `wrangler types` while no wrangler config exists on the branch. The check uses blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d`, line by line, against bindings the code reads. Each mismatch is a finding. Secret values are not written.
-- **FR-008**: A mismatch between a type and the code gets a new red test before the fix. The fix does not use `any` or `@ts-ignore`. `harness/runtime/whole-api-causes.test.ts` line 111 is not that test and is not edited.
-- **FR-009**: The end state of the implementation, not of this spec commit, is worker typecheck exit 0. Attaching that command as a CI gate waits until Tony names the CI file.
+- **FR-007**: `env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth. No off-branch wrangler config is adopted. Any wrangler or deploy config is a separate change and is out of scope. The check compares that blob line by line with the bindings the code reads. Each mismatch is a finding. Secret values are not written.
+- **FR-008**: A mismatch between a type and the code gets a new red test before the fix. The fix does not use `any` or `@ts-ignore`. The line 111 rule applies only to a tree that contains `harness/runtime/whole-api-causes.test.ts`. In that tree, line 111 is not the mismatch test and is not edited.
+- **FR-009**: The end state of the implementation, not of this spec commit, is worker typecheck exit 0. CI is a separate reviewed commit that extends main's existing CI system, with no new infrastructure. If main has no CI, stop and report before adding anything. Until that commit exists, each T004+ commit is gated by QA running `npm run typecheck:worker` on the exact head, with the SHA and exit code recorded. No merge until CI enforces the check on the exact head.
 - **FR-010**: Implementation does not change runtime behavior, database schema, or stored data.
 
 ### Key Entities
@@ -112,9 +112,9 @@ An independent QA session reports worker typecheck at 0 errors, with the test su
 - **SC-001**: QA, in a non-writer session, can list every implementation commit with its parent worker error count and its own worker error count, and each own count is lower than its parent, ending at 0.
 - **SC-002**: On that same head, `npm test` reports 403 passed and 0 failed, and root typecheck reports 0 errors.
 - **SC-003**: QA can show one path per promoted type and no `reconstruction/` tsconfig reference.
-- **SC-004**: `harness/runtime/whole-api-causes.test.ts` is unchanged from the branch start. At this start the file is absent, so it stays absent.
+- **SC-004**: The line 111 rule is checked only on a tree that contains `harness/runtime/whole-api-causes.test.ts`. On this branch the file is absent, so the check does not run.
 - **SC-005**: The Env finding log contains names and mismatches only. It contains no secret values. No runtime, schema, or stored data change is in the diff.
-- **SC-006**: No CI workflow file was added unless Tony named that file. If none was named, the implementation report says the gate is not attached and quotes the missing CI config.
+- **SC-006**: No CI file is added. Main `190cd048` has no CI config, and the writer report says so. Each T004+ head has a recorded SHA and `npm run typecheck:worker` exit code from QA.
 
 ## Assumptions
 

@@ -21,7 +21,7 @@ Not promoted from `db3e8548` even though those paths exist there:
 | Item | Value |
 |---|---|
 | Blob | `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` |
-| When | After the four promotions, and only if no wrangler config is on the branch |
+| When | After the four promotions. This blob is the source of truth. No off-branch wrangler config. Wrangler and deploy config are out of scope |
 | Output | A finding list. Names and mismatches. No secret values |
 
 ## Gates after every implementation commit
@@ -31,4 +31,4 @@ Not promoted from `db3e8548` even though those paths exist there:
 | `npm test` | 403 passed, 0 failed, except one still-red mismatch test this spec required |
 | `npm run typecheck` | 0 errors |
 | `npm run typecheck:worker` | Fewer `error TS` lines than the parent commit |
-| `harness/runtime/whole-api-causes.test.ts` | Absent, as at `387f2c8b`, or byte-identical if it was already present |
+| `harness/runtime/whole-api-causes.test.ts` line 111 | Checked only when that file is in the tree. This branch does not contain it |
