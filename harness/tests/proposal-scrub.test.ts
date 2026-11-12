@@ -378,6 +378,61 @@ test("proposal scrub: a null subject is filled when the column is already there"
   db.close();
 });
 
+test("proposal scrub: a blank or whitespace source id stays unattributed and is not claimed", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE wiki_jobs (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL,
+    run_at INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending', result TEXT)`);
+  const now = Date.now();
+  const insert = db.prepare(
+    "INSERT INTO wiki_jobs (id, kind, payload, run_at) VALUES (?, 'ingest', ?, ?)",
+  );
+  insert.run(1, JSON.stringify({ sourceId: " " }), now);
+  insert.run(2, JSON.stringify({ sourceId: "" }), now);
+  insert.run(3, JSON.stringify({ sourceId: "  src_1  " }), now);
+  db.prepare("INSERT INTO wiki_jobs (id, kind, payload, run_at) VALUES (4, 'lint', '{}', ?)").run(now);
+  const wiki = await openMigrated(db);
+  wiki.wikiForgetSources([SOURCE], NOW);
+  const claimed = wiki.wikiJobsDue(now, 10).map((job) => job.id);
+  const left = readJobs(db).map((job) => ({
+    id: job.id,
+    state: job.state,
+    result: job.result,
+    subject: job.subject,
+  }));
+  assert.deepEqual(
+    { claimed, left },
+    {
+      claimed: [4],
+      left: [
+        { id: 1, state: "failed", result: "unattributed", subject: null },
+        { id: 2, state: "failed", result: "unattributed", subject: null },
+        { id: 4, state: "running", result: left.find((job) => job.id === 4)?.result ?? null, subject: null },
+      ],
+    },
+  );
+  db.close();
+});
+
+test("proposal scrub: a whitespace subject copied earlier is cleared and not claimed", async () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE wiki_jobs (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL,
+    run_at INTEGER NOT NULL, state TEXT NOT NULL DEFAULT 'pending', result TEXT, subject TEXT)`);
+  const now = Date.now();
+  db.prepare(
+    "INSERT INTO wiki_jobs (id, kind, payload, run_at, subject) VALUES (1, 'ingest', ?, ?, ' ')",
+  ).run(JSON.stringify({ sourceId: " " }), now);
+  const wiki = await openMigrated(db);
+  const claimed = wiki.wikiJobsDue(now, 10).map((job) => job.id);
+  const job = readJobs(db)[0];
+  assert.deepEqual(
+    { claimed, subject: job?.subject, state: job?.state, result: job?.result },
+    { claimed: [], subject: null, state: "failed", result: "unattributed" },
+  );
+  db.close();
+});
+
 test("proposal scrub: an ingest job with no subject is refused and lint still runs", async () => {
   const db = new DatabaseSync(":memory:");
   schema(db);
