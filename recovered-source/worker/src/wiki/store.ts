@@ -19,6 +19,7 @@ import {
 } from "../../../../src/state/proposal-review.ts";
 import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
 import { replaceName } from "../../../../src/state/pseudonym-text.ts";
+import { forgetFactSources } from "../../../../src/state/source-forget.ts";
 import { decodeWikiJobStatus, forgetWikiJob, sourceSubject } from "../../../../src/state/wiki-job.ts";
 import type { Fail, ItemRecord, NewItem } from "../workspace.ts";
 import { runWikiJobs, type WikiApi } from "./engine.ts";
@@ -101,7 +102,6 @@ export const WIKI_TABLES = [
   "brain_fields",
   "brain_coach",
 ] as const;
-
 /** A record tagged "contacts" in an account is gated by the account's Contacts subspace, not the account. */
 const gateOfItem = (own: string, tagsJson: string): string =>
   own.startsWith("a_") && tagsJson.includes('"contacts"') ? `${own}:con` : own;
@@ -2118,22 +2118,18 @@ export abstract class WikiBase extends DurableObject<Env> {
     for (const r of this.sql
       .exec("SELECT id, source_ids, source_hashes FROM wiki_facts")
       .toArray()) {
-      const sids = JSON.parse(r.source_ids as string) as string[];
-      if (!hit(sids)) continue;
-      const rest = sids.filter((x) => !gone.has(x));
-      if (!rest.length) {
+      const decision = forgetFactSources(r.source_ids, r.source_hashes, gone);
+      if (decision.tag === "keep") continue;
+      if (decision.tag === "delete") {
         this.sql.exec("DELETE FROM wiki_facts WHERE id = ?", r.id as number);
         out.facts++;
-      } else {
-        const hashes = JSON.parse(r.source_hashes as string) as Record<string, string>;
-        for (const x of gone) delete hashes[x];
+      } else
         this.sql.exec(
           "UPDATE wiki_facts SET source_ids = ?, source_hashes = ? WHERE id = ?",
-          JSON.stringify(rest),
-          JSON.stringify(hashes),
+          JSON.stringify(decision.sourceIds),
+          JSON.stringify(decision.hashes),
           r.id as number,
         );
-      }
     }
     // A line that cites a gone source is dropped from the page and from every revision.
     const redact = (md: string): string =>
