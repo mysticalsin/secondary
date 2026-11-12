@@ -826,7 +826,7 @@ The rows below are the returns and writes. A named-state edge in the list or the
 
 ### `setMember` (`brains/routes.ts`)
 
-Rows are in source order. A later row is reached when the earlier rows did not return. `scoped` is kind `circle`, `department`, or `account` (`:648`). `wantMember` is `role !== null` (`:699`). `status` starts as `"applied"` (`:689`). `govMember` is false when `scoped` is false (`:649-651`).
+Rows are in source order. A later row is reached when `setMember` did not return. A return from a callee does not count. `scoped` is kind `circle`, `department`, or `account` (`:648`). `wantMember` is `role !== null` (`:699`). `status` starts as `"applied"` (`:689`). `govMember` is false when `scoped` is false (`:649-651`).
 
 | Condition | Write | Result | Log | Line |
 |---|---|---|---|---|
@@ -835,9 +835,9 @@ Rows are in source order. A later row is reached when the earlier rows did not r
 | `emailOfPrincipal(pid)` is null | none | throws `notFound()` | none | 645 |
 | `needsSecond` and `step.tag === "same_actor"`. `needsSecond` is `role !== null` and `isMember` and (`restricted` or (`role` is `steward` or `owner` and `facts.type === "global"`)). `isMember` is `govMember` or a stored row with `grantsMemberRole` | none | 409 `same_person` | none | 652-666 |
 | `needsSecond`, `step.tag !== "same_actor"`, and `quorumConfirmed(step)` is false | `audit` `brain.role_request` (`appendReceipt`, return value not read) | 202 `{ ok: true, status: "pending", member }` | none | 667-674 |
-| `audit` of `brain.member_set` or `brain.member_remove` returns false | `appendReceipt` returned not 202 (`audit.ts:32` or `:34`). `gov.remember` is not called | 503 `audit_unavailable` | none | 677-685 |
+| `audit` of `brain.member_set` or `brain.member_remove` returns false | `appendReceipt` returned false (status not 202 at `audit.ts:32`, or threw and was caught at `audit.ts:33-34`). `gov.remember` is not called | 503 `audit_unavailable` | none | 677-685 |
 | That `audit` returns true | `appendReceipt` POST accepted, status 202 (`audit.ts:25-32`, called from `ux/util.ts:60`) | continues | none | 677-684 |
-| `gov.remember`, `email.trim().toLowerCase()` is empty | none | returns. Continues | none | `admin/store.ts:294-295`, called at `brains/routes.ts:686` |
+| `gov.remember`, `email.trim().toLowerCase()` is empty | no insert, `remember` exits early, `setMember` continues | continues to `:689` and `:691` | none | `admin/store.ts:294-295`, called at `brains/routes.ts:686` |
 | `gov.remember`, that email is non-empty | `INSERT INTO gov_identity (principal_id, email) ... ON CONFLICT(principal_id) DO UPDATE SET email = excluded.email` | continues | none | `admin/store.ts:296-300`, called at `brains/routes.ts:686` |
 | `scoped` and `"ok" in scopeDesc` | no further write. The accepted-receipt row and the `gov.remember` row already ran | 422 `invalid_scope` | none | 691-693 |
 | `scoped` and `manageAuthority` is false | no further write. The accepted-receipt row and the `gov.remember` row already ran | 403 `forbidden` | none | 694-698 |
