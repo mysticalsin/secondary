@@ -412,3 +412,96 @@ test("proposal scrub: an ingest job with no subject is refused and lint still ru
   );
   db.close();
 });
+
+async function scrubCitation(body: string): Promise<{
+  completed: boolean;
+  sourceDeleted: boolean;
+  status: string;
+  body: string;
+}> {
+  const db = new DatabaseSync(":memory:");
+  schema(db);
+  insertItem(db, "prop", "candidate", body);
+  db.prepare("INSERT INTO wiki_sources (source_id) VALUES (?)").run(SOURCE);
+  const wiki = await openWiki(db);
+  let completed = true;
+  try {
+    wiki.wikiForgetSources([SOURCE], NOW);
+  } catch {
+    completed = false;
+  }
+  const source = db.prepare("SELECT source_id FROM wiki_sources WHERE source_id = ?").get(SOURCE);
+  const item = db.prepare("SELECT status, body FROM items WHERE id = 'prop'").get() as { status: string; body: string };
+  const out = { completed, sourceDeleted: source === undefined, status: item.status, body: item.body };
+  db.close();
+  return out;
+}
+
+function citation(extra: Record<string, unknown>): string {
+  return JSON.stringify({
+    v: 1,
+    kind: "wiki_ingest",
+    title: "KEEP-ME",
+    rationale: "",
+    origin: "human",
+    pages: [],
+    facts: [],
+    invalidate: [],
+    confirm: [],
+    archive: [],
+    reingest: [],
+    sources: [],
+    findingKey: null,
+    titleSources: [],
+    ...extra,
+  });
+}
+
+test("proposal scrub: a string titleSources value still scrubs and the delete finishes", async () => {
+  const out = await scrubCitation(citation({ titleSources: SOURCE }));
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, kept: out.body.includes("KEEP-ME") },
+    { completed: true, sourceDeleted: true, status: "rejected", kept: false },
+  );
+});
+
+test("proposal scrub: a string reingest value still scrubs and the delete finishes", async () => {
+  const out = await scrubCitation(citation({ reingest: SOURCE }));
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, kept: out.body.includes("KEEP-ME") },
+    { completed: true, sourceDeleted: true, status: "rejected", kept: false },
+  );
+});
+
+test("proposal scrub: sources stored as strings still scrub and the delete finishes", async () => {
+  const out = await scrubCitation(citation({ sources: [SOURCE] }));
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, kept: out.body.includes("KEEP-ME") },
+    { completed: true, sourceDeleted: true, status: "rejected", kept: false },
+  );
+});
+
+test("proposal scrub: a string sourceIds value still scrubs and the delete finishes", async () => {
+  const out = await scrubCitation(citation({ facts: [{ sourceIds: SOURCE }] }));
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, kept: out.body.includes("KEEP-ME") },
+    { completed: true, sourceDeleted: true, status: "rejected", kept: false },
+  );
+});
+
+test("proposal scrub: an invalid body that names the source still scrubs and the delete finishes", async () => {
+  const out = await scrubCitation(`not-json "${SOURCE}" KEEP-ME`);
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, kept: out.body.includes("KEEP-ME") },
+    { completed: true, sourceDeleted: true, status: "rejected", kept: false },
+  );
+});
+
+test("proposal scrub: a malformed body that names only a longer id stays", async () => {
+  const body = `not-json "src_10" KEEP-OTHER`;
+  const out = await scrubCitation(body);
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, body: out.body },
+    { completed: true, sourceDeleted: true, status: "candidate", body },
+  );
+});
