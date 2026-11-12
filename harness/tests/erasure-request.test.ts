@@ -1752,3 +1752,77 @@ test("export refuses through the same key decision when the key is missing or sh
     remove();
   }
 });
+
+test("erase route maps a missing or short key to 503 erase_disabled and writes nothing", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const db = openSqlite(file);
+    db.prepare("INSERT INTO principals (id, email) VALUES ('user_1', 'ada@example.invalid')").run();
+    db.prepare(
+      "INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'status', 'user_1', '', '', 1)",
+    ).run();
+    db.close();
+    const mod = (await import(workerModule("ops-admin.ts"))) as {
+      opsAdminRoutes: (deps: { now?: () => number }) => Hono;
+    };
+    const org = buildOrg(["acme"]);
+    const app = new Hono<{ Variables: { requestId: string; session: unknown } }>();
+    app.use("*", async (c, next) => {
+      c.set("requestId", "r1");
+      c.set("session", {
+        principal: admin("ada", "ada@example.invalid"),
+        ctx: { now: NOW },
+        tenantId: TENANT,
+        org,
+      });
+      await next();
+    });
+    app.route("/v1/admin", mod.opsAdminRoutes({ now: () => NOW }));
+    const post = (env: { PSEUDONYM_KEY?: string }) =>
+      app.request(
+        "https://api.invalid/v1/admin/rights/erase",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ principal: "user_1" }),
+        },
+        env,
+      );
+    const missing = await post({});
+    const missingAgain = await post({});
+    const short = await post({ PSEUDONYM_KEY: "x".repeat(31) });
+    const shortAgain = await post({ PSEUDONYM_KEY: "x".repeat(31) });
+    const after = openSqlite(file);
+    const picture = {
+      person: rowsOf(after, "SELECT id, email FROM principals"),
+      journal: rowsOf(after, "SELECT kind, a, b, c FROM security_journal"),
+      pending: rowsOf(after, "SELECT key, requested_by FROM pending_ops"),
+      erasure: rowsOf(after, "SELECT principal_id, status FROM erasure_requests"),
+    };
+    after.close();
+    assert.deepEqual(
+      {
+        missing: { status: missing.status, body: await missing.json() },
+        missingAgain: { status: missingAgain.status, body: await missingAgain.json() },
+        short: { status: short.status, body: await short.json() },
+        shortAgain: { status: shortAgain.status, body: await shortAgain.json() },
+        picture,
+      },
+      {
+        missing: { status: 503, body: { error: "erase_disabled" } },
+        missingAgain: { status: 503, body: { error: "erase_disabled" } },
+        short: { status: 503, body: { error: "erase_disabled" } },
+        shortAgain: { status: 503, body: { error: "erase_disabled" } },
+        picture: {
+          person: [{ id: "user_1", email: "ada@example.invalid" }],
+          journal: [{ kind: "status", a: "user_1", b: "", c: "" }],
+          pending: [],
+          erasure: [],
+        },
+      },
+    );
+  } finally {
+    remove();
+  }
+});
