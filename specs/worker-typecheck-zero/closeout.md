@@ -66,4 +66,26 @@ From `387f2c8b1662283ca74e657ec85f97068c011ab7` to this head, `recovered-source`
 
 ## T024
 
-The fresh-clone exit codes are the writer report for this head. They are not copied back into this commit, so the verified tree stays the closeout commit.
+Tested `9c76c026f890ad2a1b090db9f1e7b09720e4399c` in a fresh `git clone` of origin with every branch, then `git checkout` of that SHA. Recovered-source tree `310531c5c2ea5e451099f626f8cf63f9dc1153ef`. `harness/tests` and `harness/runtime` match `c865a7ec984727db92daaaae643033a59bfa3569`. The branch tracks no wrangler config, so hands-on Worker smoke is N/A.
+
+| Command | Exit | Result |
+|---|---|---|
+| `npm ci` | 0 | install finished |
+| `npm test` | 0 | 404 passed, 0 failed |
+| `npm run typecheck` | 0 | 0 `error TS` lines |
+| `npm run typecheck:worker` | 0 | 0 `error TS` lines |
+| `npm run verify:provenance` | 0 | the five lines below |
+
+```text
+ok recovered-source/worker/src/env.d.ts: git rev-parse db3e8548:reconstruction/env.d.ts = 841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d
+ok recovered-source/worker/src/types.ts: git rev-parse db3e8548:reconstruction/worker-root/worker/src/types.ts = e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e
+ok recovered-source/shared/packages/contracts/src/agent-ui/index.ts: git rev-parse db3e8548:reconstruction/packages/contracts/src/agent-ui/index.ts = ed80553761da2db13495c6eb250a438d7ef54327
+ok recovered-source/shared/packages/contracts/src/view-plan.ts: git rev-parse be6eb37f31e62f0f04a610202cca120aa4d9302f:reconstruction/packages/contracts/src/view-plan.ts = d4b092167f4e1875d0254c98499a979cbd305dd6
+ok recovered-source/worker/src/generated/view-plan.validator.d.ts: git rev-parse 4ba133b04e49cfb20abe0a22b5ca367284456356:reconstruction/worker-root/worker/src/generated/view-plan.validator.d.ts = 5a3b92e373e2ba7c38cc43e9b217719b0f8db13c
+```
+
+`git clone --single-branch --branch cursor/state-machines-c94c` checked out the same SHA. `npm run verify:provenance` exited 1 and printed five `sourceCommit is not a readable tree` lines.
+
+`git clone --depth 1 --branch cursor/state-machines-c94c` checked out the same SHA. `npm run verify:provenance` exited 1 and printed five `sourceCommit is not a readable tree` lines.
+
+`db3e8548bf74b863847ed9fbf1b71573dd384ee8`, `be6eb37f31e62f0f04a610202cca120aa4d9302f`, and `4ba133b04e49cfb20abe0a22b5ca367284456356` are ancestors of `origin/cursor/worker-reconstruction-0cf6`, `origin/cursor/home-captured-shell-preservation-0cf6`, `origin/cursor/nonrelease-safety-containment-c0a87d8-0cf6`, `origin/cursor/remove-floating-view-buttons-ad74`, and `origin/cursor/secondbrain-mcp-0cf6`. They are not ancestors of this branch. A clone of every origin branch can read them. The single-branch clone and the depth-1 clone cannot.

@@ -192,7 +192,7 @@ Every task is done. None is dropped. `closeout.md` holds the written checks. The
 | T021 | done | closeout commit |
 | T022 | done | closeout commit |
 | T023 | done | closeout commit |
-| T024 | done | closeout commit; exit codes are the writer report for that head |
+| T024 | done | `specs/worker-typecheck-zero/closeout.md` records the exit codes for `9c76c026f890ad2a1b090db9f1e7b09720e4399c` |
 
 ## Dependencies
 
