@@ -1242,9 +1242,9 @@ export class Workspace extends BrainBase {
   purgeExpired(cutoffs: Record<string, number>): number {
     let n = 0;
     const purged: string[] = [];
-    let longest = Number.NEGATIVE_INFINITY;
+    let oldest = Number.POSITIVE_INFINITY;
     for (const value of Object.values(cutoffs)) {
-      if (typeof value === "number" && value > longest) longest = value;
+      if (typeof value === "number" && Number.isFinite(value) && value < oldest) oldest = value;
     }
     this.ctx.storage.transactionSync(() => {
       const rows = this.sql
@@ -1254,7 +1254,7 @@ export class Workspace extends BrainBase {
         const tags = personalTags(r.tags);
         const updated = r.updated_at as number;
         if (tags.tag === "unreadable") {
-          if (!(updated < longest)) {
+          if (!Number.isFinite(oldest) || !(updated < oldest)) {
             console.warn(JSON.stringify({ at: "retention", id: r.id as string }));
             continue;
           }
