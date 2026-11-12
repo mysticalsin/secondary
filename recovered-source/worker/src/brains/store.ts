@@ -451,8 +451,8 @@ export abstract class BrainBase extends WikiBase {
   }
 
   /**
-   * Remove one claim. The predicate is the proposal id plus the state that was read.
-   * A missing id deletes nothing. Zero rows is state_unreadable.
+   * Remove one claim. A first-time row is deleted only while it is still claimed or pending.
+   * Any other row with no pending role is left as it is. A missing id deletes nothing.
    */
   brainMemberDropClaim(
     principalId: string,
@@ -474,14 +474,27 @@ export abstract class BrainBase extends WikiBase {
     const matched = this.sql
       .exec(
         `DELETE FROM brain_members
-         WHERE principal_id = ? AND claim_key = ? AND state = ? AND pending_role IS NULL
+         WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state IN ('claimed', 'pending')
          RETURNING principal_id`,
         principalId,
         key,
-        previousState,
       )
       .toArray().length;
-    return matched === 1 ? { ok: true } : { ok: false, code: "state_unreadable" };
+    if (matched === 1) return { ok: true };
+    const kept = this.sql
+      .exec(
+        `SELECT principal_id FROM brain_members
+         WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL`,
+        principalId,
+        key,
+      )
+      .toArray().length;
+    if (kept === 1) {
+      console.warn(JSON.stringify({ at: "brain_member", principalId, claimKey: key }));
+      return { ok: true };
+    }
+    void previousState;
+    return { ok: false, code: "state_unreadable" };
   }
 
   /**
