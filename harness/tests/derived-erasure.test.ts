@@ -33,6 +33,7 @@ type Workspace = {
   };
   sourceGet(id: string): { title: string; body: string | null } | null;
   sourceSearch(match: string, limit: number): SourceHit[];
+  search(match: string, limit: number): { id: string; rank: number }[];
   purgeExpired(cutoffs: Record<string, number>): number;
 };
 
@@ -226,6 +227,29 @@ test("person erasure removes the email from served source text and source search
       found: [],
       second: { items: 0, comments: 0, approvals: 0, edits: 0 },
     },
+  );
+  db.close();
+});
+
+test("person erasure drops the name and the email from item search", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  const email = "ada@example.invalid";
+  const item = db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, body, created_at, updated_at)
+     VALUES (?, ?, 'candidate', 'INTERNAL', 'human', 'candidate', 1, 'bea', '', 1, 1)`,
+  );
+  item.run("named", "Meet Ada");
+  item.run("mailed", email);
+  const index = db.prepare("INSERT INTO items_fts (label, id) VALUES (?, ?)");
+  index.run("Meet Ada", "named");
+  index.run(email, "mailed");
+  ws.pseudonymise("user_1", "pz_user", ["Ada", email]);
+  ws.pseudonymise("user_1", "pz_user", ["Ada", email]);
+  const hits = (match: string) => ws.search(match, 10).map((row) => row.id).sort();
+  assert.deepEqual(
+    { name: hits("Ada"), email: hits("example AND invalid") },
+    { name: [], email: [] },
   );
   db.close();
 });
