@@ -226,4 +226,4 @@ T015 Stop: main has no CI; do not add any
 
 ## Implementation strategy
 
-The first implementation commit is T018. T011 then T004 through T007 follow. Each of those five commits adds one promoted file and exactly one `reconstructed-manifest.json` entry. User Story 2's path check and name log stay after those files exist. User Story 3 reaches 0 and stops without adding CI, because main has none. This spec commit implements none of these tasks. A new `error TS` line is not waived.
+The first implementation commit is T018. T011 then T004 through T007 follow. Each of those five commits adds one promoted file and exactly one `reconstructed-manifest.json` entry. User Story 2's path check and name log stay after those files exist. User Story 3 reaches 0 and stops without adding CI, because main has none. The ledger names the commit that completed each of these tasks. A new `error TS` line is not waived.
