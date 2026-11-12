@@ -8,7 +8,7 @@
 
 - [ ] No implementation details (languages, frameworks, APIs). Stays open: the acceptance check is the file:line path in the spec.
 - [x] Focused on user value and business needs
-- [ ] Written for non-technical stakeholders. Stays open: the reader is Devin or Tony checking that path and the unnamed option.
+- [ ] Written for non-technical stakeholders. Stays open: the reader is QA checking the M-03 citation and the Replace tests.
 - [x] All mandatory sections completed
 
 ## Requirement Completeness
@@ -31,5 +31,5 @@
 
 ## Notes
 
-- Clarify removed the marker. The two questions stay unanswered for Devin or Tony. FR-002 forbids a behavior change until an option is named.
+- Clarifications names Replace. Accept and Resume are rejected. The behavior commits still wait until QA confirms the reproduction and the user says to start.
 - Each open item that stays open has its reason on the same line.
