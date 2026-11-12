@@ -23,6 +23,7 @@ type Wiki = {
   sql: ReturnType<typeof sqliteStorage>;
   get(id: string): unknown;
   wikiForgetSources(ids: string[], now: number): { facts: number; pages: number; proposals: number };
+  wikiJobsDue(now: number, limit: number): { id: number; kind: string; payload: Record<string, unknown>; runAt: number }[];
 };
 
 type ItemRow = { id: string; label: string; status: string; body: string };
@@ -373,6 +374,41 @@ test("proposal scrub: a null subject is filled when the column is already there"
   assert.deepEqual(
     readJobs(db).map((job) => ({ state: job.state, subject: job.subject, payload: job.payload })),
     [{ state: "pending", subject: null, payload: JSON.stringify({ sourceId: "" }) }],
+  );
+  db.close();
+});
+
+test("proposal scrub: an ingest job with no subject is refused and lint still runs", async () => {
+  const db = new DatabaseSync(":memory:");
+  schema(db);
+  const now = Date.now();
+  const insert = db.prepare(
+    "INSERT INTO wiki_jobs (id, kind, payload, run_at, state, result, subject) VALUES (?, ?, ?, ?, 'pending', NULL, NULL)",
+  );
+  insert.run(1, "ingest", JSON.stringify({ secret: "PAYLOAD-SECRET" }), now);
+  insert.run(2, "lint", "{}", now);
+  insert.run(3, "dream", "{}", now);
+  const wiki = await openWiki(db);
+  const claimed = wiki.wikiJobsDue(now, 10).map((job) => job.kind).sort();
+  const ingest = readJobs(db).find((job) => job.id === 1);
+  const log = db
+    .prepare("SELECT detail FROM wiki_log")
+    .all()
+    .map((row) => (row as { detail: string }).detail)
+    .join("\n");
+  assert.deepEqual(
+    {
+      claimed,
+      ingest: { state: ingest?.state, result: ingest?.result },
+      leaked: `${ingest?.result ?? ""}\n${log}`.includes("PAYLOAD-SECRET"),
+      loggedId: log.includes("1"),
+    },
+    {
+      claimed: ["dream", "lint"],
+      ingest: { state: "failed", result: "unattributed" },
+      leaked: false,
+      loggedId: true,
+    },
   );
   db.close();
 });
