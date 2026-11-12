@@ -276,6 +276,37 @@ test("a two-character name is erased on a word boundary", async () => {
   db.close();
 });
 
+test("a two-character name is erased from history and wiki text", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, body, created_at, updated_at)
+     VALUES ('hist', 'Body text', 'candidate', 'INTERNAL', 'human', 'candidate', 1, 'bea', 'see Bo now', 1, 1)`,
+  ).run();
+  db.prepare(
+    "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES ('hist', 1, 'Body text', 'see Bo now', 'bea', 1)",
+  ).run();
+  db.prepare(
+    `INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, created_at, updated_at)
+     VALUES ('page', 'note', 'Body page', 'Bo wrote it. Body stays.', '', 1, 'published', 1, 1)`,
+  ).run();
+  ws.pseudonymise("user_1", "pz_user", ["Bo"]);
+  ws.pseudonymise("user_1", "pz_user", ["Bo"]);
+  const history = ws.history("hist").map((row) => ({ label: row.label, body: row.body }));
+  const page = db.prepare("SELECT title, markdown FROM wiki_pages WHERE id = 'page'").get() as {
+    title: string;
+    markdown: string;
+  };
+  assert.deepEqual(
+    { history, page: { ...page } },
+    {
+      history: [{ label: "Body text", body: "see pz_user now" }],
+      page: { title: "Body page", markdown: "pz_user wrote it. Body stays." },
+    },
+  );
+  db.close();
+});
+
 test("a retention purge removes the personal note from its revisions", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
