@@ -31,7 +31,7 @@
 
 **Decision**: Write the difference. Change no behavior. It needs its own backlog row.
 
-**Rationale**: The removed machine table said a missing email skips the connector and still erases the directory. Today a missing email at `ops-rights.ts:188` returns true, so directory still runs. A connector step that returns false is `step_failed` at `erasure-request.ts:399`, the status is `partial_failed`, and directory does not run in that attempt.
+**Rationale**: The removed machine table said a missing email skips the connector and still erases the directory. Today a missing email at `ops-rights.ts:188` returns true, so directory still runs. A connector step that returns false is `step_failed` at `erasure-request.ts:412`, the return at line 413 sets `partial_failed`, and directory does not run in that attempt.
 
 **Alternatives considered**: Restoring the old table's "still erase the directory" result after a false connector. That is a different item.
 
@@ -50,4 +50,4 @@ A pure run of `erasureWithGrant` then `runErasure` on a `requested` row whose or
 
 The no-key refusal does not call the runner. `ops-admin.ts:180` returns before quorum. `ops-rights.ts:153` returns before `applyLedger`. The stored step stays `pending`.
 
-The false connector step is `ops-rights.ts:187` when `emailOfPrincipal` (`tenant-policy.ts:1085`) returns an email and `forgetSourceAccess` (`connector.ts:222`) returns false because the connector is absent. Any other step that returns false uses the same `step_failed` rule at `erasure-request.ts:399`.
+The false connector step is `ops-rights.ts:187` when `emailOfPrincipal` (`tenant-policy.ts:1085`) returns an email and `forgetSourceAccess` (`connector.ts:222`) returns false because the connector is absent. Any other step that returns false uses the same `step_failed` rule at `erasure-request.ts:412`, which sets `partial_failed` at line 413.

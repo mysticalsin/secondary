@@ -57,7 +57,7 @@ The absent-subject path, the completed-row rule, unreadable rows, quorum, tombst
 - A pending stored `scope:*` step that the current plan omits stays among the scope steps. Receipts stay first and directory stays last.
 - A done step keeps its mark. Done steps keep their relative order and stay ahead of the not-done steps. A done step is not run. Not-done steps are placed after the done steps, in canonical order.
 - `addSteps` still only appends. The completed-row path may still call it. The non-completed request path does not use it to build this plan.
-- The removed machine table said a missing email skips the connector and still erases the directory. Today a missing email at `recovered-source/worker/src/ops-rights.ts:188` returns true, so directory still runs. A connector step that returns false is `step_failed` at `src/state/erasure-request.ts:399`, the status is `partial_failed`, and directory does not run in that attempt. That difference is unchanged and out of scope. It needs its own backlog row.
+- The removed machine table said a missing email skips the connector and still erases the directory. Today a missing email at `recovered-source/worker/src/ops-rights.ts:188` returns true, so directory still runs. A connector step that returns false is `step_failed` at `src/state/erasure-request.ts:412`, the return at line 413 sets `partial_failed`, and directory does not run in that attempt. That difference is unchanged and out of scope. It needs its own backlog row.
 - Independent QA confirmed the reproduction, and the behavior commits are on this branch.
 
 ## Requirements *(mandatory)*
@@ -109,8 +109,8 @@ This is the behavior on `565bff6a2ba3153f11347482cdee3555b257f87f`. Replace chan
 4. `src/state/erasure-request.ts:252` keeps a grant that already covers the stored order. Lines 256–257 widen the grant's step list and leave the order as `directory`.
 5. `eraseSubject` at `ops-rights.ts:235` sends a `request` whose steps are the canonical plan.
 6. `transitionErasure` at `erasure-request.ts:358` does not replace a `requested` row with a non-empty order. Line 370 appends through `addSteps` at lines 325–333. The persisted order is `directory`, then `receipts`, `tombstone`, `scope:acme`, `personal`, `connector`.
-7. `runErasure` at `erasure-request.ts:411` continues from the first step that is not done. The first step that runs is `directory`, which breaks M-03.
-8. `ops-rights.ts:187` asks the connector when `tenant-policy.ts:1085` has an email. `connector.ts:222` returns false when the connector is absent. `erasure-request.ts:399` sets `partial_failed`.
+7. `runErasure` at `erasure-request.ts:424` continues from the first step that is not done. The first step that runs is `directory`, which breaks M-03.
+8. `ops-rights.ts:187` asks the connector when `tenant-policy.ts:1085` has an email. `connector.ts:222` returns false when the connector is absent. `erasure-request.ts:412` is `step_failed` and line 413 sets `partial_failed`.
 9. A run of those functions with the connector step returning false ended `partial_failed` and order `["directory","receipts","tombstone","scope:acme","personal","connector"]`. Every step returning true ended `completed` with that same order. An absent start ended `partial_failed` with the canonical plan, directory last.
 
 ## Persisted rows

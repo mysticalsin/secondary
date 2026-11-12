@@ -47,7 +47,7 @@
 
 **Independent Test**: T5 passes on the parent and on the green head. Existing erasure tests still pass.
 
-- [x] T008 [US2] Do not edit `recovered-source/worker/src/ops-rights.ts:188` or the `step_failed` result at `src/state/erasure-request.ts:399`. The known difference stays the edge case in `spec.md` and needs its own backlog row. Do not add a migration. The persisted-row finding in `spec.md` stays the record: a stored directory-before-receipts row, if one exists outside tests, is re-planned by T6. Covers FR-004, FR-008, SC-004.
+- [x] T008 [US2] Do not edit `recovered-source/worker/src/ops-rights.ts:188` or the `step_failed` result at `src/state/erasure-request.ts:412`, which returns `partial_failed` at line 413. The known difference stays the edge case in `spec.md` and needs its own backlog row. Do not add a migration. The persisted-row finding in `spec.md` stays the record: a stored directory-before-receipts row, if one exists outside tests, is re-planned by T6. Covers FR-004, FR-008, SC-004.
 - [x] T009 [US2] Re-run the existing no-key tests in `harness/tests/erasure-request.test.ts` (the unusable-key ledger test and the `erase_disabled` route test). Both still pass. Diff the green commit against the unchanged transitions in `data-model.md`. No other erasure transition is in that diff. Covers FR-001, FR-004.
 
 **Checkpoint**: The suite's previous erasure tests pass.
