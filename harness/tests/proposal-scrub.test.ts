@@ -515,6 +515,33 @@ test("proposal scrub: a sources array of a longer id does not throw and stays", 
   );
 });
 
+test("proposal scrub: a rationale equal to the source id stays", async () => {
+  const body = citation({ rationale: SOURCE });
+  const out = await scrubCitation(body);
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, body: out.body },
+    { completed: true, sourceDeleted: true, status: "candidate", body },
+  );
+});
+
+test("proposal scrub: a finding key equal to the source id stays", async () => {
+  const body = citation({ findingKey: SOURCE });
+  const out = await scrubCitation(body);
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, body: out.body },
+    { completed: true, sourceDeleted: true, status: "candidate", body },
+  );
+});
+
+test("proposal scrub: a nested source title equal to the source id stays", async () => {
+  const body = citation({ sources: [{ id: "src_9", hash: "h", title: SOURCE }] });
+  const out = await scrubCitation(body);
+  assert.deepEqual(
+    { completed: out.completed, sourceDeleted: out.sourceDeleted, status: out.status, body: out.body },
+    { completed: true, sourceDeleted: true, status: "candidate", body },
+  );
+});
+
 test("proposal scrub: a malformed body that names only a longer id stays", async () => {
   const body = `not-json "src_10" KEEP-OTHER`;
   const out = await scrubCitation(body);
