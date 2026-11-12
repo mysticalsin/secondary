@@ -40,8 +40,8 @@ test("journal forget removes the person, keeps a switch, and redacts an NDA deta
   insert.run("nda", "other", "acct", detail);
   insert.run("legacy", "other", '"user_1"', "");
   insert.run("legacy", "other", "handbook", "");
-  journal.forget("user_1");
-  journal.forget("user_1");
+  journal.forget("user_1", pz);
+  journal.forget("user_1", pz);
   const rows = db
     .prepare("SELECT kind, a, b, c FROM security_journal ORDER BY seq")
     .all()
@@ -168,8 +168,8 @@ test("a membership whose scope is the erased id replays as the pseudonym and gra
   db.prepare(
     "INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'member', 'other', 'account', 'user_1', 1)",
   ).run();
-  book.forget("user_1");
-  book.forget("user_1");
+  book.forget("user_1", pz);
+  book.forget("user_1", pz);
   book.replay();
   const found = db.prepare("SELECT scope_id FROM memberships").get() as { scope_id: string } | undefined;
   const scopeId = found ? { ...found }.scope_id : "";

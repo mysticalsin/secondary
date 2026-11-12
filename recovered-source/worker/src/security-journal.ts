@@ -82,8 +82,9 @@ export class SecurityJournal {
    * An erased person leaves no entries behind where they are the principal.
    * `pseudonym` is the value from `pseudonymFor`. Another person's row stays,
    * and an exact copy of the id in another field becomes that pseudonym.
+   * There is no empty stand-in: the caller passes `pseudonymFor`.
    */
-  forget(principalId: string, pseudonym = ""): void {
+  forget(principalId: string, pseudonym: string): void {
     for (const row of this.sql.exec("SELECT seq, kind, a, b, c FROM security_journal").toArray()) {
       const decision = forgetJournalEntry(
         {

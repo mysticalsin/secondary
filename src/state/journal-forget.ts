@@ -5,7 +5,7 @@
  * Anywhere else the id is an exact value, that value becomes the pseudonym
  * and the row stays, so a replay still restores the other person.
  * Prose that only contains the id is left as written.
- * A missing pseudonym clears the exact value, which still keeps the row.
+ * The pseudonym is required. An empty string is not a stand-in for one.
  */
 
 export type JournalRow = { kind: string; a: string; b: string; c: string };
@@ -54,7 +54,7 @@ function rewriteField(raw: string, id: string, pseudonym: string): { text: strin
   return { text: JSON.stringify(replaced.value), changed: true };
 }
 
-export function forgetJournalEntry(row: JournalRow, id: string, pseudonym = ""): JournalDecision {
+export function forgetJournalEntry(row: JournalRow, id: string, pseudonym: string): JournalDecision {
   if (id === "") return { tag: "keep" };
   if (row.kind === "switch") return { tag: "keep" };
   if (row.a === id) return { tag: "delete" };
