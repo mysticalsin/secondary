@@ -2116,3 +2116,39 @@ test("erasure append T3: a done step is kept and is not run again", async () => 
   }
 });
 
+test("erasure append T4: a re-plan log names steps and states and omits the key, email, and content", async () => {
+  const { file, remove } = tempFile();
+  const trace: string[] = [];
+  const lines: string[] = [];
+  const warn = console.warn;
+  const log = console.log;
+  const error = console.error;
+  const take = (...args: unknown[]) => {
+    lines.push(args.map((item) => (typeof item === "string" ? item : JSON.stringify(item))).join(" "));
+  };
+  console.warn = take;
+  console.log = take;
+  console.error = take;
+  try {
+    const { org } = await openAppendCase(file, trace, "pending");
+    const { post } = await eraseRoute(org, trace);
+    const refused = await post(admin("ada", "ada@example.invalid"), NOW, {});
+    assert.equal(refused.status, 503);
+    const pending = await post(admin("ada", "ada@example.invalid"), NOW + 1, keyedEnv(false, trace));
+    assert.equal(pending.status, 202);
+    trace.length = 0;
+    lines.length = 0;
+    const ran = await post(admin("bea", "bea@example.invalid"), NOW + 2, keyedEnv(false, trace));
+    assert.equal(ran.status, 502);
+    const text = `${lines.join("\n")}\n${trace.join("\n")}`;
+    assert.equal(text.includes(PSEUDONYM_KEY), false);
+    assert.equal(text.includes(SUBJECT_EMAIL), false);
+    assert.equal(text.includes(PLANTED_PAGE), false);
+    assert.equal(trace[0], "receipts");
+  } finally {
+    console.warn = warn;
+    console.log = log;
+    console.error = error;
+    remove();
+  }
+});
