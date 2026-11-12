@@ -1,1 +1,21 @@
-{"files": []}
+{
+  "files": [
+    {
+      "path": "recovered-source/worker/src/env.d.ts",
+      "sourceCommit": "db3e8548",
+      "sourceBlob": "841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d",
+      "n": 9,
+      "sha256": "bdc26d8aa6b926d01eda5b0db807105a9be071f424a375243fca799152521f24",
+      "byteEdits": [
+        {
+          "before": "import type { TenantPolicy } from \"./worker-root/worker/src/tenant-policy.ts\";",
+          "after": "import type { TenantPolicy } from \"./tenant-policy.ts\";"
+        },
+        {
+          "before": "import type { Workspace } from \"./worker-root/worker/src/workspace.ts\";",
+          "after": "import type { Workspace } from \"./workspace.ts\";"
+        }
+      ]
+    }
+  ]
+}
