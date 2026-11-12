@@ -202,23 +202,24 @@ test("a retention purge removes the personal note from its revisions", async () 
     `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, tags, body, created_at, updated_at)
      VALUES (?, ?, 'personalitem', 'PERSONAL', 'human', 'published', 1, 'user_1', ?, ?, 1, ?)`,
   );
-  item.run("old", "Private note", '["note"]', "SECRET-NOTE", 1);
-  item.run("fresh", "Fresh", '["note"]', "kept fresh", NOW);
+  item.run("old", "draft note", '["draft"]', "PRIVATE_NOTE", 1);
+  item.run("fresh", "brief note", '["brief"]', "kept brief", NOW);
   const revision = db.prepare(
     "INSERT INTO revisions (item_id, revision, label, body, actor_id, at) VALUES (?, 1, ?, ?, 'user_1', 1)",
   );
-  revision.run("old", "Private note", "SECRET-NOTE");
-  revision.run("fresh", "Fresh", "kept fresh");
-  ws.purgeExpired({ note: 1_000, brief: 1_000, draft: 1_000, view: 1_000 });
-  const second = ws.purgeExpired({ note: 1_000, brief: 1_000, draft: 1_000, view: 1_000 });
-  const oldItem = db.prepare("SELECT id FROM items WHERE id = 'old'").get() ?? null;
+  revision.run("old", "draft note", "PRIVATE_NOTE");
+  revision.run("fresh", "brief note", "kept brief");
+  const purged = ws.purgeExpired({ draft: 1_000, brief: 1_000 });
+  const second = ws.purgeExpired({ draft: 1_000, brief: 1_000 });
+  const left = db.prepare("SELECT COUNT(*) AS n FROM items").get() as { n: number };
   const text = (rows: Revision[]) => rows.map((row) => ({ label: row.label, body: row.body }));
   assert.deepEqual(
-    { oldItem, oldHistory: text(ws.history("old")), freshHistory: text(ws.history("fresh")), second },
+    { purged, left: left.n, oldHistory: text(ws.history("old")), freshHistory: text(ws.history("fresh")), second },
     {
-      oldItem: null,
+      purged: 1,
+      left: 1,
       oldHistory: [],
-      freshHistory: [{ label: "Fresh", body: "kept fresh" }],
+      freshHistory: [{ label: "brief note", body: "kept brief" }],
       second: 0,
     },
   );
