@@ -68,7 +68,7 @@ Cited from `1e8f67c:harness/runtime/whole-api-causes.test.ts`. `:114`–`:117` a
 | TS7053 | `:114`, `PERSONAS[s.persona]` in `admin/routes.ts` (line 910 in that record, line 914 on this branch) | T004 |
 | TS2366 | `:115`, `agent/tools.ts:260` | T005 |
 | TS7006 | `:116`, `ai/planner.ts:38` | T006 |
-| TS7006 | `:116`, `ux/notify.ts:45` | T004 |
+| TS7006 | `:116`, `ux/notify.ts:45`. At parent `a4a721a7` this line is TS7006, not TS7053 | T004 |
 | TS7006 | `:116`, `auth/config.ts:54` | T011 |
 | TS2322 | `:117`, `stubs.ts:33` and `:42` | T011 |
 | TS7016 | `:113`, `genui.ts:10` | T007 |

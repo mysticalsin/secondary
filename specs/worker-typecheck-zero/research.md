@@ -2,7 +2,7 @@
 
 ## Decision: Promote the four named blobs, not the `db3e8548` tree
 
-- Decision: Take bytes from the four blobs Devin named. Do not merge or cherry-pick `db3e8548`. Remove only the leading provenance comment and any blank lines directly after it. N is 8, 7, 13, and 5, and none of the four has a blank line after the comment. Every other byte stays identical. The agent-ui barrel is placed beside the existing siblings. Those siblings are not copied.
+- Decision: Write `env.d.ts` from blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` before `types.ts`. That blob's leading comment is N=9, and the tail hash is `a8e2ea493e635421b1acfb0ad5e7557ed39c4d73`. The two import specifiers are then retargeted. Then take bytes from the four blobs Devin named. Do not merge or cherry-pick `db3e8548`. Remove only the leading provenance comment and any blank lines directly after it. N is 8, 7, 13, and 5, and none of the four has a blank line after the comment. Every other byte stays identical. The agent-ui barrel is placed beside the existing siblings. Those siblings are not copied.
 - Rationale: `types.ts` (`e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`) and `agent-ui/index.ts` (`ed80553761da2db13495c6eb250a438d7ef54327`) are the `db3e8548` blobs. `view-plan.ts` at `db3e8548` is `82bac154e813b9fa59c2f93e871127e0c37c3b8e`. The named blob is `d4b092167f4e1875d0254c98499a979cbd305dd6`. `view-plan.validator.d.ts` at `db3e8548` is `a403845f6cd562a3b2488e0e736aa57aaf57cbd2`. The named blob is `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`. `db3e8548` is not an ancestor of `387f2c8b`.
 - Alternatives considered: Checking out `db3e8548` paths. Rejected because two of the four blobs would be the wrong bytes, and the checkout would be a merge-sized import of `reconstruction/`.
 

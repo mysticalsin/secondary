@@ -8,7 +8,7 @@
 
 ## Summary
 
-Place four reconstructed modules at the import paths the Worker already uses, one blob per commit, then check Env names against blob `841f0dbc97ac` without copying secrets. The worker typecheck count falls on every commit and ends at 0. No `reconstruction/` tsconfig entry, no merge, no second copy.
+Write `recovered-source/worker/src/env.d.ts` from blob `841f0dbc97ac` first, then place four reconstructed modules at the import paths the Worker already uses, one blob per commit. The worker typecheck count falls on every commit and ends at 0. No `reconstruction/` tsconfig entry, no merge, no second copy. After T011, T004 is expected to add no `error TS` line. The types.ts trial at `a4a721a7` removed 37 lines from the 119 baseline, which is about 82 once the added `Env` diagnostic is absent. `ux/notify.ts:45` is TS7006 at that parent, not TS7053. T004's gate is the T011 head, not a second copy of the 119 count.
 
 ## Technical Context
 
@@ -67,7 +67,21 @@ Recorded 2026-11-12. These replace the earlier "ask which CI file" and "ask whic
 - The line 111 rule is a conditional check. It applies only to a tree that contains `harness/runtime/whole-api-causes.test.ts`.
 - `env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth. No off-branch wrangler config is adopted. Any wrangler or deploy config is a separate change and is out of scope here.
 - Option B replaces the earlier ruling that a promoted file keeps the named blob's bytes, including its leading `NEW RECONSTRUCTION` comment. Remove only that leading comment and any blank lines directly after it. Every other byte stays identical.
-- Per-commit no regression means no new `error TS` line versus the parent. The lane's exit criterion is absolute: `npm run typecheck:worker` reports 0 errors at the final head. Every one-sided Env finding is resolved or explicitly waived in the closeout before that head is called done.
+- Per-commit no regression means no new `error TS` line versus the parent. Devin rejected a waiver for that rule. If `env.d.ts` references an undeclared name, the writer stops and reports. The lane's exit criterion is absolute: `npm run typecheck:worker` reports 0 errors at the final head. A one-sided Env name finding is still resolved or explicitly waived in the closeout. That waiver is not a waiver of an `error TS` line.
+- T011 runs before T004. The dependency check is below.
+
+## Task order check
+
+T011 was moved ahead of T004. Each later task was checked against that order.
+
+- T011 depends on T002 and T003 only.
+- T004 depends on T011. T005 depends on T004. T006 depends on T005. T007 depends on T006.
+- T008 applies to T004–T007. T011 stops on its own gate.
+- T009 depends on T004–T007, so it is after T011.
+- T010 depends on T009. T012 depends on T010. T013 depends on T012.
+- T014 and T015 depend on T013. T016 and T017 depend on T013–T015.
+
+No task requires a file that a later task creates.
 
 ## How analyze was run
 
@@ -79,7 +93,7 @@ QA #54 found no `specify analyze` binary. That matches this install.
 - Output summary: commands are `init`, `check`, `version`, `mcp`, `self`, `extension`, `integration`, `event`, `preset`, `artifact`, `bundle`, and `workflow`. There is no `analyze` command. The project integration is `none`, so no agent command copy was installed.
 - The v1.4.0 analyze step is the template `templates/commands/analyze.md` in the package checkout of tag `v1.4.0` (git `0019fa14d12f45edabc2cc3176c9168a68bd0f97`). It is read-only. It does not write a file.
 - Its script, run from the repo root: `SPECIFY_FEATURE_DIRECTORY=specs/worker-typecheck-zero .specify/scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks`
-- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after the barrel wording fix: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (`spec.md` status Draft). Constitution II is not in conflict. The barrel follows the same N=7 comment removal as the other promotions.
+- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. Rerun after T011 was moved ahead of T004: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (`spec.md` status Draft). Constitution II is not in conflict. A new `error TS` line is not waived.
 
 ## Project Structure
 

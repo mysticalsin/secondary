@@ -9,7 +9,7 @@ No database table, schema, or stored row changes. The entities are files and cou
 | Destination | The git path in the contract. One path, one blob |
 | Blob | The source blob id in the contract. The committed file is that blob minus the first N lines |
 | N | 8, 7, 13, and 5. No blank line follows the comment in any of the four |
-| Order | types.ts, then the agent-ui barrel, then view-plan.ts, then view-plan.validator.d.ts |
+| Order | `env.d.ts` first (N=9, tail hash `a8e2ea493e635421b1acfb0ad5e7557ed39c4d73`, then the two import replacements), then types.ts, then the agent-ui barrel, then view-plan.ts, then view-plan.validator.d.ts |
 | Location count | One git path on the branch. A barrel re-export is not another path. The five siblings keep their current blobs |
 | Provenance | Commit message records `db3e8548`, the full blob id, N, and the removed header verbatim. The committed file does not contain that comment |
 
