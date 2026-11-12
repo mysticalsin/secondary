@@ -367,7 +367,17 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
       if (next.order.length === state.order.length) return allow(state, []);
       return proceed(next);
     }
-    return allow(addSteps(state, event.steps), []);
+    const done = state.order.filter((id) => state.mark[id] === "done");
+    const rest: string[] = [];
+    for (const id of event.steps) {
+      if (!id || done.includes(id) || rest.includes(id)) continue;
+      rest.push(id);
+    }
+    const order = [...done, ...rest];
+    const mark: Record<string, StepMark> = {};
+    for (const id of done) mark[id] = "done";
+    for (const id of rest) mark[id] = "pending";
+    return allow({ ...state, order, mark }, []);
   }
   if (event.type === "resume") {
     if (state.status.tag === "absent" || state.status.tag === "unreadable")
