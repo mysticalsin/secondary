@@ -6,21 +6,24 @@ No database table, schema, or stored row changes. The entities are files and cou
 
 | Field | Rule |
 |---|---|
-| Destination | One of the four paths in the contract |
-| Blob | The git object id in the contract. The file bytes match that object |
-| Order | types.ts, then agent-ui/index.ts, then view-plan.ts, then view-plan.validator.d.ts |
-| Location count | One path on the branch after the commit that adds it |
-| Provenance | Commit message names `db3e8548` plus the blob id. Not a comment in the file |
+| Destination | The git path in the contract. One path, one blob |
+| Blob | The git object id in the contract. `git hash-object` of that path equals the object, including the blob's existing `NEW RECONSTRUCTION` comment |
+| Order | types.ts, then the agent-ui barrel, then view-plan.ts, then view-plan.validator.d.ts |
+| Location count | One git path on the branch. A barrel re-export is not another path. The five siblings keep their current blobs |
+| Provenance | Commit message names `db3e8548` plus the blob id. The promotion adds no comment |
 
 ## Env name check
 
 | Field | Rule |
 |---|---|
-| Source | Blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` |
-| Compared to | Property names the Worker source reads on `Env` |
+| Source | Blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d`, for `interface Env` member names |
+| Written file | `recovered-source/worker/src/env.d.ts` |
+| Imports | `./tenant-policy.ts` and `./workspace.ts`. Not the blob's `./worker-root/worker/src/...` specifiers |
+| Class lines | `tenant-policy.ts:152` exports `TenantPolicy`. `workspace.ts:172` exports `Workspace` |
+| Compared to | Property names the Worker source reads as `env.<name>` |
 | Stored value | None. Names only |
-| Mismatch | A finding. Not a silent edit |
-| Import paths inside the blob | They point at `reconstruction/worker-root/...`. That is a mismatch to log. No tsconfig path may repair it |
+| Name finding | A name in only one of the two sets. Logged. Not a real mismatch. No behavior change |
+| Real mismatch | A diagnostic the parent commit does not report |
 
 ## Typecheck count
 

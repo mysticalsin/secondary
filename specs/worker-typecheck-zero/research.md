@@ -2,7 +2,7 @@
 
 ## Decision: Promote the four named blobs, not the `db3e8548` tree
 
-- Decision: Copy blob bytes for the four destinations Devin named. Do not merge or cherry-pick `db3e8548`. For `view-plan.ts` and `view-plan.validator.d.ts`, `git hash-object` of the copied file must equal the named blob.
+- Decision: Copy blob bytes for the four destinations Devin named. Do not merge or cherry-pick `db3e8548`. On each exact-blob commit, `git hash-object` of the git path equals the named blob, including the `NEW RECONSTRUCTION` comment already in the blob. The agent-ui barrel is placed beside the existing siblings. Those siblings are not copied.
 - Rationale: `types.ts` (`e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`) and `agent-ui/index.ts` (`ed80553761da2db13495c6eb250a438d7ef54327`) are the `db3e8548` blobs. `view-plan.ts` at `db3e8548` is `82bac154e813b9fa59c2f93e871127e0c37c3b8e`. The named blob is `d4b092167f4e1875d0254c98499a979cbd305dd6`. `view-plan.validator.d.ts` at `db3e8548` is `a403845f6cd562a3b2488e0e736aa57aaf57cbd2`. The named blob is `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`. `db3e8548` is not an ancestor of `387f2c8b`.
 - Alternatives considered: Checking out `db3e8548` paths. Rejected because two of the four blobs would be the wrong bytes, and the checkout would be a merge-sized import of `reconstruction/`.
 
@@ -21,7 +21,7 @@
 ## Decision: The standing red is the worker typecheck
 
 - Decision: Each promotion commit is judged by a lower `error TS` count. A new red test is added only when a promoted type disagrees with the code.
-- Rationale: The baseline failure is already 119 errors. A test that only repeats that count is a second copy of the same gate. A real mismatch still needs its own red test before a fix, and that test is not line 111.
+- Rationale: The baseline failure is already 119 errors. A test that only repeats that count is a second copy of the same gate. A real mismatch is a diagnostic the parent commit does not report. It needs its own red test before a fix, and that test is not line 111. A name finding is the symmetric difference of Env property names and is not a real mismatch.
 - Alternatives considered: Writing a new failing test before each blob copy. Rejected. The copy is the module the imports already name. The typecheck is the red.
 
 ## Decision: Do not add CI while main has none

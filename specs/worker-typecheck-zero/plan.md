@@ -37,10 +37,10 @@ Place four reconstructed modules at the import paths the Worker already uses, on
 | Principle | Result |
 |---|---|
 | I. Simplicity | Pass. One module per commit. No new package. |
-| II. No helper text | Pass. Provenance is the commit message. |
-| III. Separation | Pass. One path per type. No reconstruction tsconfig entry. |
+| II. No helper text | Pass. The promotion adds no comment. Provenance is the commit message, which names `db3e8548` and the blob id. Each named blob already starts with a `NEW RECONSTRUCTION` comment. The exact-blob commit keeps those bytes so `git hash-object` equals the blob id. This feature does not strip that comment. |
+| III. Separation | Pass. One path per type is the contract table: one git path and one blob. Barrel re-exports are not a second path. The five siblings stay where they are. No reconstruction tsconfig entry. |
 | IV. No bolt-ons | Pass. A count that does not fall stops the commit. No `any` or `@ts-ignore`. |
-| V. Tests first | Pass. The standing red is the worker typecheck. A new mismatch gets its own red test first. Line 111 is not edited. |
+| V. Tests first | Pass. The standing red is the worker typecheck. A real mismatch is a diagnostic the parent does not report, and it gets its own red test first. A name finding does not. Line 111 is not edited. |
 | VI. Security & data | Pass. Section below. |
 | VII. Isolated branch | Pass. `cursor/state-machines-c94c` only. No merge of `db3e8548`. |
 | VIII. QA separate | Pass. Writer reports counts. QA is a non-writer session on the exact head. |
@@ -61,11 +61,23 @@ Promoted files are type modules and one declaration file beside an existing gene
 
 Recorded 2026-11-12. These replace the earlier "ask which CI file" and "ask which wrangler config" stops.
 
-- CI is a separate reviewed commit that extends main's existing CI system, with no new infrastructure. If main has no CI, stop and report before adding anything. Main `190cd04877812c1d238c4468e98a8714086b457f` has no `.github/workflows` directory and no other CI config. This feature adds none.
+- CI is a separate reviewed commit that extends main's existing CI system, with no new infrastructure. This replaces the earlier rule that CI is attached only when Tony names the file. If main has no CI, stop and report before adding anything. Main `190cd04877812c1d238c4468e98a8714086b457f` has no `.github/workflows` directory and no other CI config. This feature adds none.
 - Until that commit exists, each T004+ commit is gated by QA running `npm run typecheck:worker` on the exact head, with the SHA and exit code recorded.
 - No merge until CI enforces the check on the exact head.
 - The line 111 rule is a conditional check. It applies only to a tree that contains `harness/runtime/whole-api-causes.test.ts`.
 - `env.d.ts` blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` is the source of truth. No off-branch wrangler config is adopted. Any wrangler or deploy config is a separate change and is out of scope here.
+
+## How analyze was run
+
+QA #54 found no `specify analyze` binary. That matches this install.
+
+- Command: `uvx --from git+https://github.com/github/spec-kit.git@v1.4.0 specify version`
+- Output summary: CLI Version 1.4.0, Python 3.12.3, Linux x86_64.
+- Command: `uvx --from git+https://github.com/github/spec-kit.git@v1.4.0 specify --help`
+- Output summary: commands are `init`, `check`, `version`, `mcp`, `self`, `extension`, `integration`, `event`, `preset`, `artifact`, `bundle`, and `workflow`. There is no `analyze` command. The project integration is `none`, so no agent command copy was installed.
+- The v1.4.0 analyze step is the template `templates/commands/analyze.md` in the package checkout of tag `v1.4.0` (git `0019fa14d12f45edabc2cc3176c9168a68bd0f97`). It is read-only. It does not write a file.
+- Its script, run from the repo root: `SPECIFY_FEATURE_DIRECTORY=specs/worker-typecheck-zero .specify/scripts/bash/check-prerequisites.sh --json --require-spec --require-tasks --include-tasks`
+- The review then reads `spec.md`, `plan.md`, `tasks.md`, and `.specify/memory/constitution.md` under the rules in that template. The counts from the review after this docs commit are recorded in the writer report: 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW (status Draft).
 
 ## Project Structure
 
@@ -86,15 +98,18 @@ specs/worker-typecheck-zero/
 
 ```text
 recovered-source/worker/src/types.ts
-packages/contracts/src/agent-ui/index.ts
-packages/contracts/src/view-plan.ts
+recovered-source/shared/packages/contracts/src/agent-ui/index.ts
+recovered-source/shared/packages/contracts/src/view-plan.ts
 recovered-source/worker/src/generated/view-plan.validator.d.ts
+recovered-source/worker/src/env.d.ts
 tsconfig.worker.json
 package.json
 ```
 
-**Structure Decision**: The four destinations are the paths the Worker already imports. `tsconfig.worker.json` already includes `recovered-source/worker/src/**/*.ts`. Root `tsconfig.json` does not gain a `reconstruction/` include. No new project directory.
+**Structure Decision**: The four git paths are the contract table. `packages` stays a symlink to `recovered-source/shared/packages`, so the worker import strings and the git paths are one file each. The five agent-ui siblings stay in that directory and are not copied. `tsconfig.worker.json` already includes `recovered-source/worker/src/**/*.ts` and `recovered-source/shared/packages/**/*.ts`. Root `tsconfig.json` does not gain a `reconstruction/` include. No new project directory.
 
 ## Complexity Tracking
 
-None. The constitution check has no violation that needs a simpler alternative rejected.
+| Exception | Why it stays | Simpler alternative rejected because |
+|---|---|---|
+| The `NEW RECONSTRUCTION` comment already in each of the four blobs | Constitution II is met by not adding a comment and by putting provenance in the commit message. The earlier spec sentence that the file has no such comment is the exception. `git hash-object` on the exact-blob commit must equal the blob id, so the comment stays in that commit. | Stripping it in the promotion commit would fail `git hash-object`. A later strip commit would not lower the worker error count, so it is not a task on this lane. |
