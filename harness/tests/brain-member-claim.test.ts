@@ -174,3 +174,54 @@ test("brain claim: the proposal id is stored only after propose returns", async 
     remove();
   }
 });
+
+test("brain claim: a claim replaced during propose is left in place", async () => {
+  const { file, remove } = tempFile();
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map((part) => String(part)).join(" "));
+  };
+  try {
+    const { db, brain, place } = await openBrain(file);
+    let n = 0;
+    const gov = {
+      changeByKey() {
+        return null;
+      },
+      propose() {
+        n += 1;
+        db.prepare("UPDATE brain_members SET claim_key = ? WHERE principal_id = 'ada'").run(`mem_other_${n}`);
+        return { ok: true, change: { id: `chg_${n}` }, applied: false };
+      },
+    };
+    const first = await place(gov, brain, proposal, "ada", "owner", "bea", NOW);
+    const second = await place(gov, brain, proposal, "ada", "owner", "bea", NOW + 1);
+    const row = db
+      .prepare("SELECT state, claim_key, change_id FROM brain_members WHERE principal_id = 'ada'")
+      .get() as { state: string; claim_key: string; change_id: string | null };
+    const logged = warnings.map((line) => JSON.parse(line) as { reason?: string; principalId?: string });
+    assert.deepEqual(
+      {
+        first: first.ok,
+        second: second.ok,
+        row: { ...row },
+        logged: logged.map((line) => ({ reason: line.reason ?? null, principalId: line.principalId ?? null })),
+        leaked: warnings.some((line) => line.includes("Engineering") || line.includes("Adding")),
+      },
+      {
+        first: false,
+        second: false,
+        row: { state: "claimed", claim_key: "mem_other_2", change_id: null },
+        logged: [
+          { reason: "illegal_move", principalId: "ada" },
+          { reason: "illegal_move", principalId: "ada" },
+        ],
+        leaked: false,
+      },
+    );
+  } finally {
+    console.warn = original;
+    remove();
+  }
+});
