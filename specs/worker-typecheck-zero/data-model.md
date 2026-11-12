@@ -12,6 +12,7 @@ No database table, schema, or stored row changes. The entities are files and cou
 | Order | `env.d.ts` first (N=9, tail hash `a8e2ea493e635421b1acfb0ad5e7557ed39c4d73`, then the two import replacements), then types.ts, then the agent-ui barrel, then view-plan.ts, then view-plan.validator.d.ts |
 | Location count | One git path on the branch. A barrel re-export is not another path. The five siblings keep their current blobs |
 | Provenance | Commit message records `db3e8548`, the full blob id, N, and the removed header verbatim. The committed file does not contain that comment |
+| Manifest | One entry in `reconstructed-manifest.json` in the same commit. Fields are path, `db3e8548`, the full source blob, N, the sha256 of the committed file, and spec-named byte edits |
 
 ## Env name check
 
@@ -35,6 +36,20 @@ No database table, schema, or stored row changes. The entities are files and cou
 | Commit count | The `error TS` line count on this commit |
 | Relation | Commit count is strictly less than parent count |
 | End | 0 |
+
+## Reconstructed manifest entry
+
+| Field | Rule |
+|---|---|
+| File | `reconstructed-manifest.json` at the repository root. `candidate-manifest.json` is not edited |
+| List | `files`. Empty on T018. One new object on T011 and on T004 through T007 |
+| path | The git path of the promoted file |
+| sourceCommit | `db3e8548` |
+| sourceBlob | The full promoted blob id |
+| n | The header length for that blob |
+| sha256 | SHA-256 hex of the committed file bytes. The contract table names each digest |
+| byteEdits | `{ "before", "after" }` pairs. Empty except the two `env.d.ts` import lines |
+| Tree | The recovered-source walk equals the union of the two path sets. The sets do not overlap |
 
 ## Finding
 

@@ -1,5 +1,11 @@
 # Research: Worker typecheck zero
 
+## Decision: Keep the recovered manifest, and list promotions separately
+
+- Decision: `candidate-manifest.json` stays the recovered intake list and is not edited. Promoted files are recorded in `reconstructed-manifest.json` at the repository root. T018 commits an empty `files` array and the intake test update before any promoted file. Each promotion commit appends one entry with the file.
+- Rationale: Devin ruled C. Adding `env.d.ts` under `recovered-source` makes `harness/tests/intake.test.ts` fail, because that test requires the tree to equal the candidate manifest. A separate list keeps the recovered manifest intact and still rejects an unlisted path.
+- Alternatives considered: Adding promoted paths to `candidate-manifest.json`. Rejected. That file is the recovered intake record.
+
 ## Decision: Promote the four named blobs, not the `db3e8548` tree
 
 - Decision: Write `env.d.ts` from blob `841f0dbc97ac0c6d5caaf83bf25b1609a08bdb2d` before `types.ts`. That blob's leading comment is N=9, and the tail hash is `a8e2ea493e635421b1acfb0ad5e7557ed39c4d73`. The two import specifiers are then retargeted. Then take bytes from the four blobs Devin named. Do not merge or cherry-pick `db3e8548`. Remove only the leading provenance comment and any blank lines directly after it. N is 8, 7, 13, and 5, and none of the four has a blank line after the comment. Every other byte stays identical. The agent-ui barrel is placed beside the existing siblings. Those siblings are not copied.

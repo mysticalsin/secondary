@@ -22,12 +22,13 @@ This spec commit does not change those counts.
 ## After each implementation commit
 
 1. `git rev-parse HEAD` and `git rev-parse HEAD^`.
-2. `npm run typecheck:worker` on that exact head and on the parent. Record the SHA, the exit code, and the `error TS` breakdown. The count is lower than the parent. No `error TS` line (file, line, column, and TS code) appears that the parent does not report. Until a separate CI commit extends main's CI, this QA run is the gate for every T004+ commit.
-3. `npm test`. Expect 403 passed and 0 failed, unless the commit is the red test for a logged mismatch and that is the only failure.
-4. `npm run typecheck`. Expect exit 0.
-5. For a promotion commit, use the git path in [contracts/promoted-modules.md](./contracts/promoted-modules.md), not `packages/...`. N is 8 for `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`, 7 for `ed80553761da2db13495c6eb250a438d7ef54327`, 13 for `d4b092167f4e1875d0254c98499a979cbd305dd6`, and 5 for `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`. `git cat-file -p <blob> | tail -n +<N+1> | git hash-object --stdin` equals `git rev-parse HEAD:<git path>`. `git cat-file -p <blob> | head -n <N>` contains only comment lines and blank lines. The commit message records `db3e8548`, the full blob id, N, and that header verbatim. The `packages` symlink is unchanged. The five agent-ui sibling blobs are unchanged.
-6. `git grep -n reconstruction tsconfig.json tsconfig.worker.json` finds no path, include, or `preserveSymlinks` entry.
-7. If `harness/runtime/whole-api-causes.test.ts` is in the tree, line 111 is unchanged. If the file is absent, skip this check.
+2. `npm run typecheck:worker` on that exact head and on the parent. Record the SHA, the exit code, and the `error TS` breakdown. T018's count equals its parent. Each promotion commit's count is lower than its parent. No `error TS` line (file, line, column, and TS code) appears that the parent does not report. Until a separate CI commit extends main's CI, this QA run is the gate for every T004+ commit.
+3. `npm test`. On this spec head, expect 403 passed and 0 failed. From T018 onward, expect 404 passed and 0 failed, unless the commit is the red test for a logged mismatch and that is the only failure. 404 is 403 plus the one test T018 adds.
+4. For T018, `reconstructed-manifest.json` has an empty `files` array, `candidate-manifest.json` is unchanged, and worker typecheck is still 119. For T011 and T004 through T007, the commit has the new file and `reconstructed-manifest.json` only. The new entry's path, `db3e8548`, full blob id, N, sha256, and byte edits match the file and the contract table. The recovered-source walk equals the union of the two manifests. The path sets are disjoint.
+5. `npm run typecheck`. Expect exit 0.
+6. For a promotion commit, use the git path in [contracts/promoted-modules.md](./contracts/promoted-modules.md), not `packages/...`. N is 8 for `e8a6cc08cd5cf4bdc4ab102a0c2c5d00ac430e9e`, 7 for `ed80553761da2db13495c6eb250a438d7ef54327`, 13 for `d4b092167f4e1875d0254c98499a979cbd305dd6`, and 5 for `5a3b92e373e2ba7c38cc43e9b217719b0f8db13c`. `git cat-file -p <blob> | tail -n +<N+1> | git hash-object --stdin` equals `git rev-parse HEAD:<git path>`. `git cat-file -p <blob> | head -n <N>` contains only comment lines and blank lines. The commit message records `db3e8548`, the full blob id, N, and that header verbatim. The `packages` symlink is unchanged. The five agent-ui sibling blobs are unchanged.
+7. `git grep -n reconstruction tsconfig.json tsconfig.worker.json` finds no path, include, or `preserveSymlinks` entry.
+8. If `harness/runtime/whole-api-causes.test.ts` is in the tree, line 111 is unchanged. If the file is absent, skip this check.
 
 ## End state
 
