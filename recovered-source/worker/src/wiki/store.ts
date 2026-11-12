@@ -707,6 +707,15 @@ export abstract class WikiBase extends DurableObject<Env> {
       "DELETE FROM wiki_jobs WHERE state IN ('done', 'failed') AND run_at < ?",
       real - DONE_JOB_KEEP_MS,
     );
+    const refused = this.sql
+      .exec(
+        `UPDATE wiki_jobs SET state = 'failed', result = 'unattributed'
+         WHERE kind = 'ingest' AND state = 'pending' AND (subject IS NULL OR subject = '')
+         RETURNING id`,
+      )
+      .toArray();
+    if (refused.length > 0)
+      this.wikiLogAppend("system", "job.unattributed", { ids: refused.map((r) => r.id as number) }, now);
     return this.sql
       .exec(
         `UPDATE wiki_jobs SET state = 'running', result = ?, attempts = attempts + 1
