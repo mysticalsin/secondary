@@ -114,7 +114,6 @@ test("brain claim: the key is on the row before propose runs", async () => {
     };
     const brain = Object.create(mod.BrainBase.prototype) as { sql: SqlStorage };
     brain.sql = sql;
-    let seen: string | null = null;
     await assert.rejects(
       () =>
         mod.placeScopedMember(
@@ -124,7 +123,6 @@ test("brain claim: the key is on the row before propose runs", async () => {
                 state: string;
                 claim_key: string | null;
               };
-              seen = row.claim_key;
               assert.equal(row.state, "claimed");
               assert.equal(typeof row.claim_key, "string");
               assert.ok(row.claim_key && row.claim_key.length > 0);
@@ -140,16 +138,10 @@ test("brain claim: the key is on the row before propose runs", async () => {
         ),
       /stop before propose returns/,
     );
-    const after = db.prepare("SELECT state, claim_key FROM brain_members WHERE principal_id = 'ada'").get() as {
-      state: string;
-      claim_key: string | null;
-    };
-    assert.equal(after.state, "claimed");
-    assert.equal(after.claim_key, seen);
-    assert.equal(
-      (db.prepare("SELECT role FROM brain_members WHERE principal_id = 'ada'").get() as { role: string }).role,
-      "owner",
-    );
+    const after = db.prepare("SELECT state, claim_key, role FROM brain_members WHERE principal_id = 'ada'").get() as
+      | { state: string; claim_key: string | null; role: string }
+      | undefined;
+    assert.equal(after, undefined);
     const store = brain as unknown as { brainRoleOf(ids: string[]): string | null };
     assert.equal(store.brainRoleOf(["ada"]), null);
     db.close();

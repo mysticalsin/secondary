@@ -90,7 +90,7 @@ function member(db: DatabaseSync, id: string): { role: string; state: string; ch
     .get(id) as { role: string; state: string; change_id: string | null } | undefined;
 }
 
-test("brain claim: a thrown proposal keeps the keyed claim and grants nothing", async () => {
+test("brain claim: a thrown proposal with no stored change leaves a first-time member absent", async () => {
   const { file, remove } = tempFile();
   try {
     const { db, brain, place } = await openBrain(file);
@@ -112,8 +112,7 @@ test("brain claim: a thrown proposal keeps the keyed claim and grants nothing", 
       /proposal failed/,
     );
     const kept = member(db, "ada");
-    assert.equal(kept?.state, "claimed");
-    assert.equal(kept?.change_id, null);
+    assert.equal(kept, undefined);
     assert.equal(brain.brainRoleOf(["ada"]), null);
     assert.equal(
       (db.prepare("SELECT COUNT(*) AS n FROM wiki_log").get() as { n: number }).n,
@@ -321,8 +320,9 @@ test("brain claim: an active member keeps the in-flight role while propose is op
     );
     while (!inside) await new Promise((resolve) => setImmediate(resolve));
     const held = db
-      .prepare("SELECT role, state FROM brain_members WHERE principal_id = 'ada'")
-      .get() as { role: string; state: string };
+      .prepare("SELECT role, state, pending_role, claim_key FROM brain_members WHERE principal_id = 'ada'")
+      .get() as { role: string; state: string; pending_role: string | null; claim_key: string | null };
+    const during = brain.brainRoleOf(["ada"]);
     const second = await place(
       {
         changeByKey() {
@@ -344,10 +344,19 @@ test("brain claim: an active member keeps the in-flight role while propose is op
     const row = db
       .prepare("SELECT role, state, change_id FROM brain_members WHERE principal_id = 'ada'")
       .get() as { role: string; state: string; change_id: string | null };
+    assert.equal(typeof held.claim_key, "string");
+    assert.ok(held.claim_key && held.claim_key.length > 0);
     assert.deepEqual(
-      { held: { ...held }, owner, secondOk: second.ok, row: { ...row } },
       {
-        held: { role: "owner", state: "claimed" },
+        held: { role: held.role, state: held.state, pending_role: held.pending_role },
+        during,
+        owner,
+        secondOk: second.ok,
+        row: { ...row },
+      },
+      {
+        held: { role: "reader", state: "active", pending_role: "owner" },
+        during: "reader",
         owner: { ok: true, status: "applied", changeId: "chg_owner" },
         secondOk: false,
         row: { role: "owner", state: "active", change_id: "chg_owner" },
