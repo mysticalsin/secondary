@@ -254,6 +254,28 @@ test("person erasure drops the name and the email from item search", async () =>
   db.close();
 });
 
+test("a two-character name is erased on a word boundary", async () => {
+  const db = new DatabaseSync(":memory:");
+  const ws = await openWorkspace(db);
+  db.prepare(
+    `INSERT INTO items (id, label, kind, plane, origin, status, revision, author_id, body, created_at, updated_at)
+     VALUES ('note', 'Body text', 'candidate', 'INTERNAL', 'human', 'candidate', 1, 'bea', 'see Bo now', 1, 1)`,
+  ).run();
+  db.prepare("INSERT INTO comments (item_id, author_id, text, at) VALUES ('note', 'bea', 'Bo wrote', 1)").run();
+  ws.pseudonymise("user_1", "pz_user", ["Bo"]);
+  ws.pseudonymise("user_1", "pz_user", ["Bo"]);
+  const item = db.prepare("SELECT label, body FROM items WHERE id = 'note'").get() as {
+    label: string;
+    body: string;
+  };
+  const comment = db.prepare("SELECT text FROM comments").get() as { text: string };
+  assert.deepEqual(
+    { item: { ...item }, comment: comment.text },
+    { item: { label: "Body text", body: "see pz_user now" }, comment: "pz_user wrote" },
+  );
+  db.close();
+});
+
 test("a retention purge removes the personal note from its revisions", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
