@@ -671,13 +671,10 @@ export abstract class WikiBase extends DurableObject<Env> {
     const body = JSON.stringify(payload);
     const subject = sourceSubject(payload.sourceId);
     // A source read again soon after its last ingest waits for the debounce window: saving a record
-    // in a loop makes one job per window, not one per save (M-05).
-    if (kind === "ingest" && runAt === undefined && payload.force !== true) {
+    // in a loop makes one job per window, not one per save (M-05). The stored subject is that id.
+    if (kind === "ingest" && runAt === undefined && payload.force !== true && subject !== null) {
       const last = this.sql
-        .exec(
-          "SELECT ingested_at FROM wiki_sources WHERE source_id = ?",
-          String(payload.sourceId ?? ""),
-        )
+        .exec("SELECT ingested_at FROM wiki_sources WHERE source_id = ?", subject)
         .toArray()[0]?.ingested_at as number | null | undefined;
       if (last) runAt = Math.max(now + 1_000, last + INGEST_DEBOUNCE_MS);
     }
