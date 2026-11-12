@@ -1186,9 +1186,9 @@ export class TenantPolicy extends DurableObject<Env> {
   }
 
   /**
-   * Remember an erasure until the backup window ends. The first write wins.
-   * A repeat, a shorter expiry, and a longer one leave the row. A row that
-   * appears before this insert is not replaced.
+   * Remember an erasure until the backup window ends. One statement.
+   * A live row (expires_at > now) is left alone. An expired row takes the new
+   * expiry and keeps every other column. `now` is the caller's clock.
    */
   tombstoneAdd(
     principalId: string,
@@ -1197,22 +1197,17 @@ export class TenantPolicy extends DurableObject<Env> {
     now: number,
     expiresAt: number,
   ): void {
-    const prior = this.sql
-      .exec(
-        "SELECT pseudonym, aliases, erased_at, expires_at FROM erasure_tombstones WHERE principal_id = ?",
-        principalId,
-      )
-      .toArray()[0];
-    if (prior) return;
     this.sql.exec(
       `INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at)
        VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(principal_id) DO NOTHING`,
+       ON CONFLICT(principal_id) DO UPDATE SET expires_at = excluded.expires_at
+       WHERE erasure_tombstones.expires_at <= ?`,
       principalId,
       pseudonym,
       JSON.stringify(aliases),
       now,
       expiresAt,
+      now,
     );
   }
 
