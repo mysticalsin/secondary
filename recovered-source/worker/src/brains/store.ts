@@ -1170,6 +1170,19 @@ export async function placeScopedMember(
     if (!released.ok) return { ok: false, status: 409, code: released.code };
     return { ok: false, status: made.status, code: made.code, message: made.message };
   }
+  const current = await Promise.resolve(brain.brainMemberRead(principalId));
+  if (!current || current.claimKey !== hold.key) {
+    console.warn(
+      JSON.stringify({
+        at: "brain_member",
+        reason: "illegal_move",
+        principalId,
+        claimKey: hold.key,
+        changeId: made.change.id,
+      }),
+    );
+    return { ok: false, status: 409, code: "mismatch", changeId: made.change.id };
+  }
   const noted = await Promise.resolve(brain.brainMemberNote(principalId, made.change.id, hold));
   if (!noted.ok) return { ok: false, status: 409, code: noted.code };
   const state = made.applied ? "active" : "pending";
