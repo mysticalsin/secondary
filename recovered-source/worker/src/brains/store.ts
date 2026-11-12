@@ -53,6 +53,8 @@ export type MemberHold =
       previousState: string;
       key: string;
       previousKey: string | null;
+      previousRole: BrainRole | null;
+      inflightState: string;
     };
 
 export interface MemberRow {
@@ -251,14 +253,28 @@ export abstract class BrainBase extends WikiBase {
     const previousKey =
       row?.claim_key === null || row?.claim_key === undefined ? null : String(row.claim_key);
     if (row && (String(row.state) === "claimed" || String(row.state) === "pending") && previousKey) {
+      if (String(row.role) !== role) {
+        console.warn(
+          JSON.stringify({
+            at: "brain_member",
+            reason: "illegal_move",
+            principalId,
+            claimKey: previousKey,
+          }),
+        );
+        return { ok: false, code: "replay" };
+      }
+      const state = String(row.state);
       return {
         ok: true,
         at: Number(row.at),
         inserted: false,
         previousAt: Number(row.at),
-        previousState: String(row.state),
+        previousState: state,
         key: previousKey,
         previousKey,
+        previousRole: role,
+        inflightState: state,
       };
     }
     const key = `mem_${crypto.randomUUID().slice(0, 8)}`;
@@ -281,14 +297,25 @@ export abstract class BrainBase extends WikiBase {
         console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
         return { ok: false, code: "replay" };
       }
-      return { ok: true, at: now, inserted: true, previousAt: null, previousState: "claimed", key, previousKey: null };
+      return {
+        ok: true,
+        at: now,
+        inserted: true,
+        previousAt: null,
+        previousState: "claimed",
+        key,
+        previousKey: null,
+        previousRole: null,
+        inflightState: "claimed",
+      };
     }
     const previousAt = Number(row?.at);
     const matched = this.sql
       .exec(
-        `UPDATE brain_members SET at = ?, claim_key = ? WHERE principal_id = ? AND state = ? AND at = ? RETURNING principal_id`,
+        `UPDATE brain_members SET at = ?, claim_key = ?, role = ?, state = 'claimed' WHERE principal_id = ? AND state = ? AND at = ? RETURNING principal_id`,
         now,
         key,
+        role,
         principalId,
         from.tag,
         previousAt,
@@ -298,7 +325,17 @@ export abstract class BrainBase extends WikiBase {
       console.warn(JSON.stringify({ at: "brain_member", reason: "replay" }));
       return { ok: false, code: "replay" };
     }
-    return { ok: true, at: now, inserted: false, previousAt, previousState: from.tag, key, previousKey };
+    return {
+      ok: true,
+      at: now,
+      inserted: false,
+      previousAt,
+      previousState: from.tag,
+      key,
+      previousKey,
+      previousRole: (row?.role ?? null) as BrainRole | null,
+      inflightState: "claimed",
+    };
   }
 
   brainMemberRead(principalId: string): {
@@ -481,13 +518,15 @@ export abstract class BrainBase extends WikiBase {
           .toArray().length
       : this.sql
           .exec(
-            `UPDATE brain_members SET at = ?, claim_key = ?
+            `UPDATE brain_members SET at = ?, claim_key = ?, state = ?, role = COALESCE(?, role)
              WHERE principal_id = ? AND claim_key = ? AND state = ? AND at = ? RETURNING principal_id`,
             hold.previousAt,
             hold.previousKey,
+            hold.previousState,
+            hold.previousRole,
             principalId,
             hold.key,
-            hold.previousState,
+            hold.inflightState ?? hold.previousState,
             hold.at,
           )
           .toArray().length;
@@ -1196,7 +1235,7 @@ export async function placeScopedMember(
       made.change.id,
       hold.at,
       hold.key,
-      hold.previousState,
+      hold.inflightState ?? hold.previousState,
     ),
   );
   if (!set.ok) return { ok: false, status: 409, code: "mismatch", changeId: made.change.id };
