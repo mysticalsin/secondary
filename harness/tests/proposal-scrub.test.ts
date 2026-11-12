@@ -18,6 +18,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 const NOW = 1_700_000_000_000;
 const SOURCE = "src_1";
 const storeSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
+const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
 
 type Wiki = {
   sql: ReturnType<typeof sqliteStorage>;
@@ -122,10 +123,10 @@ async function openWiki(db: DatabaseSync): Promise<Wiki> {
       return ready;
     },
   };
-  const mod = (await import(storeSpecifier)) as {
-    WikiBase: new (ctx: unknown, env: unknown) => Wiki;
+  const mod = (await import(workspaceSpecifier)) as {
+    Workspace: new (ctx: unknown, env: unknown) => Wiki;
   };
-  const wiki = new mod.WikiBase(ctx, {});
+  const wiki = new mod.Workspace(ctx, {});
   await ready;
   wiki.get = (id: string) => {
     const row = db.prepare("SELECT id, label, kind, status, body, origin, updated_at FROM items WHERE id = ?").get(id) as

@@ -13,7 +13,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const storeSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
+const storeSpecifier = "../../recovered-source/worker/src/workspace.ts";
 
 type Wiki = {
   wikiForgetSources(ids: string[], now: number): { facts: number; pages: number; proposals: number };
@@ -29,8 +29,8 @@ async function openWiki(db: DatabaseSync): Promise<Wiki> {
       return ready;
     },
   };
-  const mod = (await import(storeSpecifier)) as { WikiBase: new (ctx: unknown, env: unknown) => Wiki };
-  const wiki = new mod.WikiBase(ctx, {});
+  const mod = (await import(storeSpecifier)) as { Workspace: new (ctx: unknown, env: unknown) => Wiki };
+  const wiki = new mod.Workspace(ctx, {});
   await ready;
   db.exec(`
     CREATE TABLE IF NOT EXISTS items (

@@ -1028,7 +1028,13 @@ export class Workspace extends BrainBase {
   override wikiForgetSources(
     ids: string[],
     now: number,
-  ): { facts: number; pages: number; proposals: number; ids: string[] } {
+  ): {
+    facts: number;
+    pages: number;
+    proposals: number;
+    ids: string[];
+    revisions: { pageId: string; revision: number; markdown: string }[];
+  } {
     const before = this.sql
       .exec("SELECT id FROM wiki_pages")
       .toArray()
@@ -1037,13 +1043,23 @@ export class Workspace extends BrainBase {
     const removed = before.filter(
       (id) => this.sql.exec("SELECT id FROM wiki_pages WHERE id = ?", id).toArray().length === 0,
     );
-    this.forgetDerived({ type: "source", ids: out.ids, removedPages: removed });
+    this.forgetDerived({
+      type: "source",
+      ids: out.ids,
+      removedPages: removed,
+      pageRevisions: out.revisions,
+    });
     return out;
   }
 
   private forgetDerived(
     op:
-      | { type: "source"; ids: string[]; removedPages: string[] }
+      | {
+          type: "source";
+          ids: string[];
+          removedPages: string[];
+          pageRevisions: { pageId: string; revision: number; markdown: string }[];
+        }
       | { type: "items"; ids: string[] }
       | { type: "person"; from: string; to: string; aliases: string[] },
   ): void {
@@ -1073,6 +1089,13 @@ export class Workspace extends BrainBase {
       }
       for (const pageId of op.removedPages)
         this.sql.exec("DELETE FROM brain_fields WHERE page_id = ?", pageId);
+      for (const rev of op.pageRevisions)
+        this.sql.exec(
+          "UPDATE wiki_page_revisions SET markdown = ? WHERE page_id = ? AND revision = ?",
+          rev.markdown,
+          rev.pageId,
+          rev.revision,
+        );
       return;
     }
     const names = [

@@ -2102,17 +2102,24 @@ export abstract class WikiBase extends DurableObject<Env> {
   /**
    * Retention and erasure follow derived knowledge (M-02). A source is gone (deleted at the customer's
    * request, retention purge, a removed note): the facts that rest on it are deleted, the page lines
-   * that cite it are removed from every page and every revision, search rows are rebuilt, proposals
-   * that cite it are rejected and emptied, and its title leaves the source table, the jobs and the
-   * log. Runs inside the caller's transaction.
+   * that cite it are removed from every page. Revision targets are returned and not written.
+   * Search rows are rebuilt, proposals that cite it are rejected and emptied, and its title
+   * leaves the source table, the jobs and the log. Runs inside the caller's transaction.
    */
   wikiForgetSources(
     ids: string[],
     now: number,
-  ): { facts: number; pages: number; proposals: number; ids: string[] } {
+  ): {
+    facts: number;
+    pages: number;
+    proposals: number;
+    ids: string[];
+    revisions: { pageId: string; revision: number; markdown: string }[];
+  } {
     const gone = new Set(ids);
     const out = { facts: 0, pages: 0, proposals: 0, ids: [] as string[] };
-    if (!gone.size) return out;
+    const revisions: { pageId: string; revision: number; markdown: string }[] = [];
+    if (!gone.size) return { ...out, revisions };
     const hit = (cites: string[]) => cites.some((x) => gone.has(x));
     for (const r of this.sql
       .exec("SELECT id, source_ids, source_hashes FROM wiki_facts")
@@ -2161,13 +2168,12 @@ export abstract class WikiBase extends DurableObject<Env> {
       .exec("SELECT page_id, revision, markdown FROM wiki_page_revisions")
       .toArray()) {
       const md = r.markdown as string;
-      if (hit(citationsOf(md)))
-        this.sql.exec(
-          "UPDATE wiki_page_revisions SET markdown = ? WHERE page_id = ? AND revision = ?",
-          redact(md),
-          r.page_id as string,
-          r.revision as number,
-        );
+      if (!hit(citationsOf(md))) continue;
+      revisions.push({
+        pageId: r.page_id as string,
+        revision: r.revision as number,
+        markdown: redact(md),
+      });
     }
     for (const r of this.sql.exec("SELECT id, title, markdown, status FROM wiki_pages").toArray()) {
       const markdown = String(r.markdown ?? "");
@@ -2262,7 +2268,7 @@ export abstract class WikiBase extends DurableObject<Env> {
       );
     if (out.facts || out.pages || out.proposals)
       this.wikiLogAppend("system", "sources.forgotten", { ...out, sources: gone.size }, now);
-    return out;
+    return { ...out, revisions };
   }
 
   /** What a person did in this wiki, for the subject export. */
