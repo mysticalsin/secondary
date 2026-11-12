@@ -98,6 +98,18 @@ Kind placement of an omitted scope is already asserted at `harness/tests/erasure
 
 - T015 and T016 depend on the head `962dfc093df66f2367476af95bb8da549652998e`. Neither edits `src/`.
 
+## Phase 8: Pin which store an erase opens
+
+**Goal**: The harness store resolver records the tenant id and returns the store installed for that tenant. An erase of `tenant-a` leaves `tenant-b` unchanged.
+
+**Independent Test**: T017 installs two stores and erases through the route for `tenant-a`.
+
+- [ ] T017 [US1] In its own commit, add one test in `harness/tests/erasure-request.test.ts`. Install store A for `tenant-a` and store B for `tenant-b`, each with its own erasure row. Erase `tenant-a` through the route. Assert store B's row, `updated_at`, and ledger bytes are unchanged, and every store-resolver call named `tenant-a`. A scratch fake that returns the wrong store fails that assertion and is not committed. The harness may learn keyed stores in an earlier commit. A single installed store stays the fallback. No file under `src/` or `recovered-source/` changes. Covers FR-014.
+
+## Dependencies for the store pin
+
+- T017 depends on the head `7b141881fdc495e15c4d1a8d9240ab0bb2899506`. It does not edit `src/` or `recovered-source/`.
+
 ## Dependencies
 
 - T1, T1b, T2, T3, T3b, T4, and T5 depend on T000. Each test is its own commit. T3, T4, and T5 are locks. T4's log assertions pass on the parent. The receipts-first assertion in T4 is the check T1b owns.
