@@ -16,6 +16,8 @@ import {
   decodeErasureLedger,
   encodeErasure,
   erasureWithGrant,
+  ledgerVersion,
+  withLedgerVersion,
 } from "../../../src/state/erasure-request.ts";
 import { forgetPilotMember } from "../../../src/state/pilot-member.ts";
 import {
@@ -1165,11 +1167,17 @@ export class TenantPolicy extends DurableObject<Env> {
     steps: readonly string[],
     now: number,
   ): void {
-    const existing = decodeErasureLedger(this.erasureLoad(subject), subject);
+    const loaded = this.erasureLoad(subject);
+    const existing = decodeErasureLedger(loaded, subject);
     const next = erasureWithGrant(existing, { subject, requester, confirmer, steps: [...steps] });
     if (next === existing) return;
     const stored = encodeErasure(next);
-    this.erasureSave(subject, stored.status, stored.ledger, now);
+    this.erasureSave(
+      subject,
+      stored.status,
+      withLedgerVersion(stored.ledger, ledgerVersion(loaded?.ledger) + 1),
+      now,
+    );
   }
 
   /**
@@ -1188,8 +1196,7 @@ export class TenantPolicy extends DurableObject<Env> {
       `INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(principal_id) DO UPDATE SET status = excluded.status, ledger = excluded.ledger,
          updated_at = excluded.updated_at
-       WHERE json_extract(excluded.ledger, '$.v') IS NULL
-          OR COALESCE(json_extract(erasure_requests.ledger, '$.v'), 0) < json_extract(excluded.ledger, '$.v')`,
+       WHERE COALESCE(json_extract(excluded.ledger, '$.v'), 0) > COALESCE(json_extract(erasure_requests.ledger, '$.v'), 0)`,
       principalId,
       status,
       ledger,

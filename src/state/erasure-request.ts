@@ -225,6 +225,24 @@ export function encodeErasure(state: StoredErasure): { status: string; ledger: s
   return { status: state.status.tag, ledger: JSON.stringify(body) };
 }
 
+/** The positive integer version on a ledger, or 0 when the row has none. */
+export function ledgerVersion(ledger: unknown): number {
+  if (typeof ledger !== "string") return 0;
+  try {
+    const body = JSON.parse(ledger) as { v?: unknown };
+    return typeof body.v === "number" && Number.isSafeInteger(body.v) && body.v > 0 ? body.v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Stamp `version` onto a ledger. Other fields stay. */
+export function withLedgerVersion(ledger: string, version: number): string {
+  const body = JSON.parse(ledger) as Record<string, unknown>;
+  body.v = version;
+  return JSON.stringify(body);
+}
+
 /**
  * Keep a ledger whose grant already covers its own steps. Newly approved steps
  * join that grant. A missing or invalid grant starts the approved plan instead.
