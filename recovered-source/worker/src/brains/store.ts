@@ -788,8 +788,6 @@ export abstract class BrainBase extends WikiBase {
             now - f.retentionDays * DAY,
           )
           .toArray().length;
-    // A page that is gone keeps no values.
-    this.sql.exec("DELETE FROM brain_fields WHERE page_id NOT IN (SELECT id FROM wiki_pages)");
     return n;
   }
 

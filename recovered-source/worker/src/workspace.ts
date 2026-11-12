@@ -1025,6 +1025,18 @@ export class Workspace extends BrainBase {
    * Derived stores that erasure owns in one place: the proposal snapshot review serves,
    * source text and source search, a purged item's revisions, and fields of a deleted page.
    */
+  /** Aged values stay a single-key delete. A page that is gone loses its fields on the derived path. */
+  override brainPurgeFields(now: number): number {
+    const n = super.brainPurgeFields(now);
+    const orphans = this.sql
+      .exec("SELECT DISTINCT page_id FROM brain_fields WHERE page_id NOT IN (SELECT id FROM wiki_pages)")
+      .toArray()
+      .map((row) => String(row.page_id));
+    if (orphans.length)
+      this.forgetDerived({ type: "source", ids: [], removedPages: orphans, pageRevisions: [] });
+    return n;
+  }
+
   override wikiForgetSources(
     ids: string[],
     now: number,
