@@ -1098,7 +1098,10 @@ export class Workspace extends BrainBase {
         const current = row.body === null || row.body === undefined ? null : String(row.body);
         const body = current === null ? null : replaceName(current, name, op.to);
         if (label === String(row.label ?? "") && body === current) continue;
-        this.sql.exec("UPDATE items SET label = ?, body = ? WHERE id = ?", label, body, row.id as string);
+        const id = row.id as string;
+        this.sql.exec("UPDATE items SET label = ?, body = ? WHERE id = ?", label, body, id);
+        if (label !== String(row.label ?? "") && this.sql.exec("SELECT id FROM items_fts WHERE id = ?", id).toArray().length)
+          this.reindex(id, label);
       }
       for (const row of this.sql
         .exec(
