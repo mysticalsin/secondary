@@ -367,14 +367,15 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
       if (next.order.length === state.order.length) return allow(state, []);
       return proceed(next);
     }
-    const done = state.order.filter((id) => state.mark[id] === "done");
+    const notDone = (id: string) => state.mark[id] !== "done";
+    const done = state.order.filter((id) => id && !notDone(id));
     const rest: string[] = [];
     for (const id of event.steps) {
-      if (!id || done.includes(id) || rest.includes(id)) continue;
+      if (!id || !notDone(id) || rest.includes(id)) continue;
       rest.push(id);
     }
     for (const id of state.order) {
-      if (!id || state.mark[id] !== "pending" || done.includes(id) || rest.includes(id)) continue;
+      if (!id || !notDone(id) || rest.includes(id)) continue;
       rest.push(id);
     }
     const place = (id: string) =>
