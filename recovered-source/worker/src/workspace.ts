@@ -1080,6 +1080,11 @@ export class Workspace extends BrainBase {
         .exec("SELECT id, user_validated FROM items WHERE user_validated IS NOT NULL")
         .toArray()) {
         const read = readUserValidated(r.user_validated);
+        if (read.tag === "unreadable") {
+          if (from !== "" && String(r.user_validated ?? "").includes(from))
+            this.sql.exec("UPDATE items SET user_validated = NULL WHERE id = ?", r.id as string);
+          continue;
+        }
         if (read.tag !== "ok" || read.value.by !== from) continue;
         this.sql.exec(
           "UPDATE items SET user_validated = ? WHERE id = ?",
