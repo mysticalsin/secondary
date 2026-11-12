@@ -1,6 +1,7 @@
 /**
- * Wipe and the erasure path cover every derived table the schema creates.
- * A new derived table fails this test until both paths clear it.
+ * Every workspace table is either primary or derived.
+ * Wipe empties every derived table, and the erasure path clears a planted secret from each one.
+ * A new table fails until it is classified, and a new derived table fails until both paths clear it.
  */
 
 import assert from "node:assert/strict";
@@ -15,6 +16,49 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 
 const NOW = 1_700_000_000_000;
 const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
+
+/** SQLite bookkeeping. Named exactly; a new internal table is unclassified until it is listed here. */
+const SQLITE_INTERNAL = ["sqlite_sequence"];
+
+/** FTS5 shadow tables for items_fts, source_fts, and wiki_fts. */
+const FTS_SHADOWS = [
+  "items_fts_config",
+  "items_fts_content",
+  "items_fts_data",
+  "items_fts_docsize",
+  "items_fts_idx",
+  "source_fts_config",
+  "source_fts_content",
+  "source_fts_data",
+  "source_fts_docsize",
+  "source_fts_idx",
+  "wiki_fts_config",
+  "wiki_fts_content",
+  "wiki_fts_data",
+  "wiki_fts_docsize",
+  "wiki_fts_idx",
+];
+
+const PRIMARY = [
+  "approvals",
+  "brain_coach",
+  "brain_members",
+  "comments",
+  "contributions",
+  "edits",
+  "items",
+  "outbox",
+  "source_items",
+  "wiki_facts",
+  "wiki_findings",
+  "wiki_jobs",
+  "wiki_log",
+  "wiki_meta",
+  "wiki_pages",
+  "wiki_promotions",
+  "wiki_schema",
+  "wiki_sources",
+];
 
 const DERIVED = [
   "brain_fields",
@@ -67,28 +111,36 @@ async function openWorkspace(db: DatabaseSync): Promise<Workspace> {
   return ws;
 }
 
-function derivedTables(db: DatabaseSync): string[] {
+function schemaTables(db: DatabaseSync): string[] {
   return (
     db
       .prepare(
-        `SELECT name FROM sqlite_master
-         WHERE type IN ('table', 'virtual')
-           AND name NOT LIKE 'sqlite_%'
-           AND name NOT LIKE '%\\_data' ESCAPE '\\'
-           AND name NOT LIKE '%\\_idx' ESCAPE '\\'
-           AND name NOT LIKE '%\\_content' ESCAPE '\\'
-           AND name NOT LIKE '%\\_docsize' ESCAPE '\\'
-           AND name NOT LIKE '%\\_config' ESCAPE '\\'
-           AND (
-             name LIKE '%\\_fts' ESCAPE '\\'
-             OR name LIKE '%\\_revisions' ESCAPE '\\'
-             OR name = 'revisions'
-             OR name = 'brain_fields'
-           )
-         ORDER BY name`,
+        `SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual') ORDER BY name`,
       )
       .all() as { name: string }[]
   ).map((row) => row.name);
+}
+
+function coverage(db: DatabaseSync): {
+  found: string[];
+  unclassified: string[];
+  missing: string[];
+  overlap: string[];
+  unknownExclusion: string[];
+} {
+  const all = schemaTables(db);
+  const excluded = [...SQLITE_INTERNAL, ...FTS_SHADOWS];
+  const skip = new Set(excluded);
+  const primary = new Set(PRIMARY);
+  const derived = new Set(DERIVED);
+  const present = all.filter((name) => !skip.has(name));
+  return {
+    found: present.filter((name) => derived.has(name)),
+    unclassified: present.filter((name) => !primary.has(name) && !derived.has(name)),
+    missing: [...PRIMARY, ...DERIVED].filter((name) => !present.includes(name)),
+    overlap: PRIMARY.filter((name) => derived.has(name)),
+    unknownExclusion: excluded.filter((name) => !all.includes(name)),
+  };
 }
 
 function count(db: DatabaseSync, table: string): number {
@@ -103,7 +155,8 @@ function dump(db: DatabaseSync, table: string): string {
 test("wipe empties every derived table the schema creates", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
-  const found = derivedTables(db);
+  const schema = coverage(db);
+  const found = schema.found;
   db.prepare(
     "INSERT INTO brain_fields (page_id, field_key, value, written_by, written_at) VALUES ('p', 'note', 'SECRET-FIELD', 'ada', 1)",
   ).run();
@@ -119,8 +172,21 @@ test("wipe empties every derived table the schema creates", async () => {
   ws.wipe();
   ws.wipe();
   assert.deepEqual(
-    { found, left: found.map((table) => count(db, table)) },
-    { found: DERIVED, left: DERIVED.map(() => 0) },
+    {
+      schema: {
+        unclassified: schema.unclassified,
+        missing: schema.missing,
+        overlap: schema.overlap,
+        unknownExclusion: schema.unknownExclusion,
+      },
+      found,
+      left: found.map((table) => count(db, table)),
+    },
+    {
+      schema: { unclassified: [], missing: [], overlap: [], unknownExclusion: [] },
+      found: DERIVED,
+      left: DERIVED.map(() => 0),
+    },
   );
   db.close();
 });
@@ -128,7 +194,8 @@ test("wipe empties every derived table the schema creates", async () => {
 test("the erasure path clears every derived table the schema creates", async () => {
   const db = new DatabaseSync(":memory:");
   const ws = await openWorkspace(db);
-  const found = derivedTables(db);
+  const schema = coverage(db);
+  const found = schema.found;
   db.prepare(
     `INSERT INTO wiki_pages (id, type, title, markdown, summary, revision, status, created_at, updated_at)
      VALUES ('kept', 'concept', 'Kept', ?, '', 1, 'published', 1, 1)`,
@@ -168,8 +235,21 @@ test("the erasure path clears every derived table the schema creates", async () 
   const left = Object.fromEntries(found.map((table) => [table, dump(db, table)]));
   const leaked = found.filter((table) => /SECRET-/.test(left[table] ?? ""));
   assert.deepEqual(
-    { found, purged, again, leaked, kept: left.wiki_page_revisions },
     {
+      schema: {
+        unclassified: schema.unclassified,
+        missing: schema.missing,
+        overlap: schema.overlap,
+        unknownExclusion: schema.unknownExclusion,
+      },
+      found,
+      purged,
+      again,
+      leaked,
+      kept: left.wiki_page_revisions,
+    },
+    {
+      schema: { unclassified: [], missing: [], overlap: [], unknownExclusion: [] },
       found: DERIVED,
       purged: 1,
       again: 0,
