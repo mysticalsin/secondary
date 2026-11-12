@@ -511,12 +511,47 @@ export abstract class BrainBase extends WikiBase {
     if (state === "pending" && row?.pendingRole && row.claimKey === key) {
       return { ok: true, state: "pending" };
     }
-    const matched =
-      at === null
+    // Already applied. A later finish does not take the caller's role.
+    if (row && row.claimKey === key && row.pendingRole == null && row.state === state && state !== "pending") {
+      return { ok: true, state };
+    }
+    const stored = row?.pendingRole ?? null;
+    const matched = stored
+      ? at === null
+        ? this.sql
+            .exec(
+              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND state = ?
+               RETURNING principal_id`,
+              state,
+              actor,
+              now,
+              changeId,
+              principalId,
+              key,
+              previousState,
+            )
+            .toArray().length
+        : this.sql
+            .exec(
+              `UPDATE brain_members SET role = pending_role, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NOT NULL AND state = ? AND at = ?
+               RETURNING principal_id`,
+              state,
+              actor,
+              now,
+              changeId,
+              principalId,
+              key,
+              previousState,
+              at,
+            )
+            .toArray().length
+      : at === null
         ? this.sql
             .exec(
               `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
-               WHERE principal_id = ? AND claim_key = ? AND state = ? RETURNING principal_id`,
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state = ? RETURNING principal_id`,
               role,
               state,
               actor,
@@ -530,7 +565,7 @@ export abstract class BrainBase extends WikiBase {
         : this.sql
             .exec(
               `UPDATE brain_members SET role = ?, state = ?, added_by = ?, at = ?, change_id = ?, pending_role = NULL, pending_at = NULL
-               WHERE principal_id = ? AND claim_key = ? AND state = ? AND at = ? RETURNING principal_id`,
+               WHERE principal_id = ? AND claim_key = ? AND pending_role IS NULL AND state = ? AND at = ? RETURNING principal_id`,
               role,
               state,
               actor,
@@ -544,7 +579,12 @@ export abstract class BrainBase extends WikiBase {
             .toArray().length;
     if (matched !== 1) {
       const again = this.brainMemberRead(principalId);
-      if (again && again.claimKey === key && again.role === role && again.state === state) {
+      if (
+        again &&
+        again.claimKey === key &&
+        again.state === state &&
+        (again.role === role || again.role === stored)
+      ) {
         return { ok: true, state };
       }
       console.warn(
@@ -558,7 +598,7 @@ export abstract class BrainBase extends WikiBase {
       );
       return { ok: false, code: "mismatch", changeId };
     }
-    this.wikiLogAppend(actor, "brain.member", { principalId, role, state }, now);
+    this.wikiLogAppend(actor, "brain.member", { principalId, role: stored ?? role, state }, now);
     return { ok: true, state };
   }
 
