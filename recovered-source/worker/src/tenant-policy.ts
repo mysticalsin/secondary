@@ -1172,6 +1172,16 @@ export class TenantPolicy extends DurableObject<Env> {
     this.erasureSave(subject, stored.status, stored.ledger, now);
   }
 
+  /**
+   * Save an erasure row and its receipt cursor in one transaction.
+   * The clock is `updatedAt`, supplied by the caller.
+   */
+  erasureSaveAtomic(principalId: string, status: string, ledger: string, updatedAt: number): void {
+    this.ctx.storage.transactionSync(() => {
+      this.erasureSave(principalId, status, ledger, updatedAt);
+    });
+  }
+
   /** Replace the erasure request for one subject. The caller supplies the clock. */
   erasureSave(principalId: string, status: string, ledger: string, updatedAt: number): void {
     this.sql.exec(

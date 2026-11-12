@@ -29,11 +29,23 @@ export type ErasureGrant = {
   steps: string[];
 };
 
+/**
+ * One scan of the receipt bucket. `done` has no cursor. `partial` is the next page.
+ * `failed` keeps the last good cursor when there is one. `rejected` is not a position.
+ */
+export type ReceiptErase =
+  | { tag: "done"; rewritten: number }
+  | { tag: "partial"; rewritten: number; cursor: string }
+  | { tag: "failed"; reason: "unavailable" | "refused" | "malformed"; rewritten: number; cursor: string | null }
+  | { tag: "rejected" };
+
 export type StoredErasure = {
   status: ErasureStatus;
   order: string[];
   mark: Record<string, StepMark>;
   grant: ErasureGrant | null;
+  /** Absent on rows from before the receipt cursor. That starts the scan again. */
+  receipts: ReceiptErase | null;
 };
 
 export type ErasureEvent =
@@ -78,12 +90,12 @@ function knownErasureStep(id: string): boolean {
 }
 
 export function absentErasure(): StoredErasure {
-  return { status: { tag: "absent" }, order: [], mark: {}, grant: null };
+  return { status: { tag: "absent" }, order: [], mark: {}, grant: null, receipts: null };
 }
 
 /** A row the caller must not resume. Decoding it does not write. */
 export function unreadableErasure(): StoredErasure {
-  return { status: { tag: "unreadable" }, order: [], mark: {}, grant: null };
+  return { status: { tag: "unreadable" }, order: [], mark: {}, grant: null, receipts: null };
 }
 
 /**
@@ -136,7 +148,47 @@ export function decodeErasure(row: { status: unknown; order: unknown; mark: unkn
   const decoded = decodeErasureStatus(row.status);
   if (decoded.tag === "unreadable") return unreadableErasure();
   if (decoded.tag === "completed" && !allDone(order, mark)) return unreadableErasure();
-  return { status: decoded, order, mark, grant: null };
+  return { status: decoded, order, mark, grant: null, receipts: null };
+}
+
+function wholeCount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return null;
+  return value;
+}
+
+/**
+ * A cursor the audit worker handed back. A missing, empty, numeric, `legacy`,
+ * or `unknown` value starts the scan again. It is never sent on as a skip.
+ */
+export function decodeReceiptCursor(value: unknown): string | null {
+  if (typeof value !== "string" || value === "" || value === "legacy" || value === "unknown") return null;
+  return value;
+}
+
+/** A stored receipt scan. A bad shape is `rejected`, which is not `done` and not a cursor. */
+export function decodeReceiptErase(value: unknown): ReceiptErase {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { tag: "rejected" };
+  const raw = value as Record<string, unknown>;
+  const rewritten = wholeCount(raw.rewritten);
+  if (raw.tag === "done") {
+    if (rewritten === null || raw.cursor !== undefined) return { tag: "rejected" };
+    return { tag: "done", rewritten };
+  }
+  if (raw.tag === "partial") {
+    if (rewritten === null) return { tag: "rejected" };
+    const cursor = decodeReceiptCursor(raw.cursor);
+    if (!cursor) return { tag: "rejected" };
+    return { tag: "partial", rewritten, cursor };
+  }
+  if (raw.tag === "failed") {
+    if (
+      rewritten === null ||
+      (raw.reason !== "unavailable" && raw.reason !== "refused" && raw.reason !== "malformed")
+    )
+      return { tag: "rejected" };
+    return { tag: "failed", reason: raw.reason, rewritten, cursor: decodeReceiptCursor(raw.cursor) };
+  }
+  return { tag: "rejected" };
 }
 
 export function decodeErasureLedger(
@@ -152,23 +204,25 @@ export function decodeErasureLedger(
     return unreadableErasure();
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return unreadableErasure();
-  const body = parsed as { order?: unknown; mark?: unknown; grant?: unknown };
+  const body = parsed as { order?: unknown; mark?: unknown; grant?: unknown; receipts?: unknown };
   const state = decodeErasure({ status: row.status, order: body.order, mark: body.mark });
   if (state.status.tag === "absent" || state.status.tag === "unreadable") return state;
   const grant = readGrant(body.grant);
   if (!erasureGrantOk(grant, subject, state.order)) return unreadableErasure();
-  return { ...state, grant };
+  const receipts = body.receipts === undefined ? null : decodeReceiptErase(body.receipts);
+  return { ...state, grant, receipts };
 }
 
 export function encodeErasure(state: StoredErasure): { status: string; ledger: string } {
-  return {
-    status: state.status.tag,
-    ledger: JSON.stringify(
-      state.grant
-        ? { order: state.order, mark: state.mark, grant: state.grant }
-        : { order: state.order, mark: state.mark },
-    ),
-  };
+  const body: {
+    order: string[];
+    mark: Record<string, StepMark>;
+    grant?: ErasureGrant;
+    receipts?: ReceiptErase;
+  } = { order: state.order, mark: state.mark };
+  if (state.grant) body.grant = state.grant;
+  if (state.receipts) body.receipts = state.receipts;
+  return { status: state.status.tag, ledger: JSON.stringify(body) };
 }
 
 /**
@@ -223,7 +277,7 @@ function sameErasure(left: StoredErasure, right: StoredErasure): boolean {
     const id = left.order[i];
     if (id !== right.order[i] || left.mark[id] !== right.mark[id]) return false;
   }
-  return true;
+  return JSON.stringify(left.receipts ?? null) === JSON.stringify(right.receipts ?? null);
 }
 
 function incomplete(state: StoredErasure): string | null {
@@ -247,7 +301,7 @@ function requestedFrom(steps: readonly string[]): StoredErasure {
   const order = [...new Set(steps.filter((id) => id !== ""))];
   const mark: Record<string, StepMark> = {};
   for (const id of order) mark[id] = "pending";
-  return { status: { tag: "requested" }, order, mark, grant: null };
+  return { status: { tag: "requested" }, order, mark, grant: null, receipts: null };
 }
 
 function addSteps(state: StoredErasure, steps: readonly string[]): StoredErasure {
@@ -329,7 +383,7 @@ export const commitErasure = (state: StoredErasure, event: ErasureEvent): Erasur
 export async function runErasure(
   state: StoredErasure,
   event: ErasureEvent,
-  perform: (step: string) => Promise<boolean>,
+  perform: (step: string, report: (progress: ReceiptErase) => Promise<void>) => Promise<boolean>,
   persist: (state: StoredErasure) => Promise<void>,
 ): Promise<StoredErasure> {
   let step = commitErasure(state, event);
@@ -343,12 +397,17 @@ export async function runErasure(
     current = step.state;
     if (!sameErasure(prior, current)) await persist(current);
   }
+  const report = async (progress: ReceiptErase) => {
+    const next = { ...current, receipts: progress };
+    await persist(next);
+    current = next;
+  };
   while (true) {
     const run = step.effects.find((effect) => effect.type === "run");
     if (!run) return current;
     let ok = false;
     try {
-      ok = await perform(run.step);
+      ok = await perform(run.step, report);
     } catch {
       ok = false;
     }

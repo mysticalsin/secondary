@@ -145,12 +145,13 @@ async function runErasure(
   const state = await applyLedger(
     decodeErasureLedger(await tenant.erasureLoad(principalId), principalId),
     event,
-    async (step) => {
+    async (step, report) => {
       if (step === "receipts") {
-        const rewritten = await pseudonymiseReceipts(env, tenantId, principalId, pseudonym);
-        if (rewritten === null) return false;
-        summary.receiptsPseudonymised = rewritten;
-        return true;
+        const prior = decodeErasureLedger(await tenant.erasureLoad(principalId), principalId).receipts;
+        const result = await pseudonymiseReceipts(env, tenantId, principalId, pseudonym, prior, report);
+        if (result.tag === "done" || result.tag === "partial" || result.tag === "failed")
+          summary.receiptsPseudonymised = result.rewritten;
+        return result.tag === "done";
       }
       if (step === "tombstone") {
         await tenant.tombstoneAdd(
@@ -191,7 +192,9 @@ async function runErasure(
     },
     async (next: StoredErasure) => {
       const stored = encodeErasure(next);
-      await tenant.erasureSave(principalId, stored.status, stored.ledger, event.now);
+      if (next.receipts)
+        tenant.erasureSaveAtomic(principalId, stored.status, stored.ledger, event.now);
+      else await tenant.erasureSave(principalId, stored.status, stored.ledger, event.now);
     },
   );
   return { ...summary, ...erasureOutcome(state) };

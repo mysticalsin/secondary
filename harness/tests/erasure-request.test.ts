@@ -19,6 +19,8 @@ import {
   commitErasure,
   decodeErasureLedger,
   decodeErasureStatus,
+  decodeReceiptCursor,
+  decodeReceiptErase,
   decodeStepMark,
   encodeErasure,
   erasurePlan,
@@ -150,6 +152,7 @@ test("erasure request: a failed step stops the attempt and a resume continues it
       order: plan,
       mark: opened,
       grant: { subject: "p1", requester: "ada", confirmer: "bea", steps: plan },
+      receipts: null,
     },
     { type: "request", now: NOW, steps: plan },
     async (step) => {
@@ -503,6 +506,7 @@ function completedLedger(order: readonly string[]): { status: string; ledger: st
     order: [...order],
     mark,
     grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: [...order] },
+    receipts: null,
   });
 }
 
@@ -580,6 +584,7 @@ test("erasure request: a proven partial failure resumes without a second person"
       order,
       mark: Object.fromEntries(order.map((id) => [id, id === "receipts" ? "failed" : "pending"])),
       grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
+      receipts: null,
     });
     putLedger(file, stored.status, stored.ledger);
     const { post } = await eraseApp(org);
@@ -610,6 +615,7 @@ test("erasure request: a failed step is stored, and the next call resumes that r
       order,
       mark,
       grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
+      receipts: null,
     });
     putLedger(file, stored.status, stored.ledger);
     const failing = await eraseApp(org, { receipts: false });
@@ -1308,6 +1314,28 @@ async function postReceipts(pages: ReceiptPage[]): Promise<{ status: number; see
   );
   return { status: res.status, seen };
 }
+
+test("erasure receipts: a typed result decodes and a bad shape is rejected", () => {
+  assert.deepEqual(decodeReceiptErase({ tag: "done", rewritten: 2 }), { tag: "done", rewritten: 2 });
+  assert.deepEqual(decodeReceiptErase({ tag: "partial", rewritten: 1, cursor: "p2" }), {
+    tag: "partial",
+    rewritten: 1,
+    cursor: "p2",
+  });
+  assert.deepEqual(decodeReceiptErase({ tag: "failed", reason: "refused", rewritten: 1, cursor: "p2" }), {
+    tag: "failed",
+    reason: "refused",
+    rewritten: 1,
+    cursor: "p2",
+  });
+  assert.equal(decodeReceiptErase({ tag: "done" }).tag, "rejected");
+  assert.equal(decodeReceiptErase({ tag: "done", rewritten: -1 }).tag, "rejected");
+  assert.equal(decodeReceiptErase({ tag: "partial", rewritten: 1, cursor: "legacy" }).tag, "rejected");
+  assert.equal(decodeReceiptErase({ tag: "nope" }).tag, "rejected");
+  assert.equal(decodeReceiptCursor("p2"), "p2");
+  assert.equal(decodeReceiptCursor("legacy"), null);
+  assert.equal(decodeReceiptCursor(2), null);
+});
 
 test("erasure receipts: a crash after a page resumes at the next page", async () => {
   const { file, remove } = tempFile();
