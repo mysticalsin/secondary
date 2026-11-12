@@ -99,6 +99,28 @@ Step 0 (`harness/tests/characterization.test.ts`) pins the current behaviour and
 - **#13.** `nonceFirst` (`tenant-policy.ts`) is `INSERT OR IGNORE ... RETURNING key`. True when one row comes back. The old `DELETE` of expired rows is gone, so a key is not accepted again after `expires_at`. The stored expiry is `(T + skew + 1)` seconds, strictly after the last millisecond the verifiers accept timestamp `T`.
 - **#6.** Fixed. `commitLoginRecord` (`src/state/login-record.ts`) consumes an issued login on `idp_error`, `missing_state`, `state_mismatch`, `exchange_failed`, and `accepted`. A consumed record accepts nothing. The callback takes the cookie hash and, when it differs, the query hash, before it returns. Logs are reason codes. `loginStateTake` (`identity-store.ts`) still deletes the row and then returns null when it is already expired.
 
+## Ledger
+
+Batch 10 follow-up accepted at head `9a3b551f0021c32854f64d607701ee0b37799079`. Sentinel batch 15: ACCEPT WITH RESIDUALS, sha256 `ed062dc6…f5c5`. The machine 12 tables in this file are the record of the paths. The four residuals below are accepted behaviour, not open defects.
+
+| QA | Reviewed at | Outcome | Fix |
+|---|---|---|---|
+| #45 | parent of `135da55` | Fail. A first-time finish keeps `claim_key`. Apply and DropClaim do not clear it. DropClaim deletes only a claimed or pending row. | `135da55` |
+| #46 | `135da55` | Fail. The #45 clause passed. A thrown proposal with nothing stored releases the claim: a first-time hold is deleted, a reused hold is restored to its previous key. | `bb7d7b8` |
+| #47 | `bb7d7b8` | Fail. A reused hold keeps its key. A null-key finish retry accepts a different caller role. Unknown governance status leaves an active row granting and a claimed row not. Shareable brains other than circle, department, and account delete a member with no directory proposal. | `2ad4f22` |
+| #48 | `2ad4f22` | Fail. Directory status stays `applied` unless membership must change. A missed proposal finish can return ok. | `7377af4` |
+| #49 | `7377af4` | Fail. Machine 12 is one table row per return and write. | `9371587` |
+| #50 | `9371587` | Fail. The diagram cites all four state-setting finish updates. `[*] --> Absent` is not a write. The illegal-transition warn is `illegal.ts:22-30`. The 202 row is reached only when `step.tag !== "same_actor"`. A lookup throw in the propose catch does not release. `setMember` records the accepted receipt and the `gov_identity` write. | `e21baaf` |
+| #51 | `e21baaf` | Fail. A return from `remember` does not end `setMember`. `appendReceipt` is false when the status is not 202 or the fetch throws. | `9a3b551` |
+| #52 | `9a3b551f` | Pass. | — |
+
+Residuals, each one table row:
+
+- Stale-at finish ok. `pending_role` set, state already the requested state, and a non-matching `at` misses `brains/store.ts:557-568`. The call returns ok with no log when the key and state still match and the role is the caller role or the stored pending role (`brains/store.ts:610-616`). Any other miss is mismatch (`brains/store.ts:618-627`). `placeScopedMember` returns 409 when that call returns not ok (`brains/store.ts:1464`).
+- Lease skips a null or non-finite `claimAt`. `reconcileBrainMember` returns without `brainMemberDropClaim` when `claimAt` is null, not finite, or still inside the lease (`brains/store.ts:1376-1377`).
+- A zero-row release leaves the key. `brainMemberRelease` returns `state_unreadable` and does not write when the `DELETE` or `UPDATE` matches zero rows (`brains/store.ts:732`). A thrown propose that finds nothing stored still calls release (`brains/store.ts:1426-1427`). That zero-row release leaves the new key with no governance row.
+- A different-role null-key retry is ok and writes nothing. When `pendingRole` is null, `claimKey` is null, and the state matches, `row.role === (stored ?? row.role)` holds for any caller role. That return is before the update (`brains/store.ts:529-537`) and after a missed update (`brains/store.ts:600-608`).
+
 ## Named areas that are not in this repo
 
 Searches were `rg` over the repo for `LaunchAgent`, `launchd`, `recorder`, `calendarRefresh`, `refreshCalendar`, `CalDAV`, and `ical`, plus a file listing of `recovered-source/worker/src` (99 TypeScript files) and the root docs. `RECOVERY.md` says the static UI is not here and that ops, MCP, audit, and connector workers are not here. `PROVENANCE.md` says the archive has no calendar, event, mail, or transcript data.
