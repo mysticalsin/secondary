@@ -12,7 +12,7 @@ import test from "node:test";
 import { Hono } from "hono";
 import { ROLES, type Org, type OrgNode, type Principal } from "../adapters/policy-entry.ts";
 import { requireFail, requireOk } from "./require-ok.ts";
-import { erasureCalls, installErasureTenant } from "../runtime/fake-erasure-stub.ts";
+import { erasureActors, erasureCalls, installErasureTenant } from "../runtime/fake-erasure-stub.ts";
 import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 import {
   absentErasure,
@@ -2236,5 +2236,92 @@ test("erasure append T010: a pending scope the current plan omits stays and runs
     assert.equal(trace.includes("scope:beta"), true);
   } finally {
     remove();
+  }
+});
+
+test("erasure append T012: a kept step runs only for this principal and this session tenant", async () => {
+  const { file, remove } = tempFile();
+  const otherTenant = tempFile();
+  const trace: string[] = [];
+  const otherId = "other-subject";
+  const otherPage = "other-subject-page-body";
+  const otherTenantId = "tenant-b";
+  const kept = erasurePlan(["acme", "beta"]);
+  try {
+    await openPolicy(otherTenant.file);
+    const otherDb = openSqlite(otherTenant.file);
+    otherDb.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(otherId, "other.tenant@example.invalid");
+    otherDb.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (1, 'note', ?, '', ?, 1)").run(
+      otherId,
+      otherPage,
+    );
+    otherDb
+      .prepare(
+        "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 5)",
+      )
+      .run(otherId, JSON.stringify({ order: ["scope:beta"], mark: { "scope:beta": "pending" } }));
+    otherDb.close();
+    const otherRead = openSqlite(otherTenant.file);
+    const otherBefore = otherRead.prepare("SELECT principal_id, status, ledger FROM erasure_requests").all();
+    otherRead.close();
+    const { org } = await openAppendCase(file, trace, "absent");
+    const session = openSqlite(file);
+    session.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(otherId, "other.person@example.invalid");
+    session.prepare("INSERT INTO security_journal (at, kind, a, b, c, v) VALUES (2, 'note', ?, '', ?, 1)").run(
+      otherId,
+      otherPage,
+    );
+    session
+      .prepare(
+        "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'requested', ?, 5)",
+      )
+      .run(
+        otherId,
+        JSON.stringify({
+          order: kept,
+          mark: Object.fromEntries(kept.map((id) => [id, "pending"])),
+          grant: { subject: otherId, requester: "ada", confirmer: "bea", steps: kept },
+        }),
+      );
+    session.close();
+    const otherLedgerBefore = openSqlite(file)
+      .prepare("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?")
+      .get(otherId);
+    putLedger(
+      file,
+      "requested",
+      JSON.stringify({
+        order: kept,
+        mark: Object.fromEntries(kept.map((id) => [id, "pending"])),
+        grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: kept },
+      }),
+    );
+    const { post } = await eraseRoute(org, trace);
+    const ran = await post(admin("ada", "ada@example.invalid"), NOW, keyedEnv(true, trace));
+    assert.equal(ran.status, 200);
+    const beta = erasureActors().filter((actor) => actor.op === "pseudonymise" && actor.scope === "beta");
+    assert.deepEqual(
+      beta.map((actor) => ({ tenantId: actor.tenantId, principalId: actor.principalId })),
+      [{ tenantId: TENANT, principalId: SUBJECT }],
+    );
+    assert.equal(
+      erasureActors().some((actor) => actor.principalId === otherId || actor.tenantId === otherTenantId),
+      false,
+    );
+    const left = openSqlite(file);
+    const otherPrincipal = left.prepare("SELECT id FROM principals WHERE id = ?").get(otherId);
+    const otherJournal = left.prepare("SELECT c FROM security_journal WHERE a = ?").get(otherId) as { c: string };
+    const otherLedger = left.prepare("SELECT status, ledger FROM erasure_requests WHERE principal_id = ?").get(otherId);
+    left.close();
+    assert.equal((otherPrincipal as { id: string } | undefined)?.id, otherId);
+    assert.equal(otherJournal.c, otherPage);
+    assert.deepEqual(otherLedger, otherLedgerBefore);
+    const otherReadAgain = openSqlite(otherTenant.file);
+    const otherAfter = otherReadAgain.prepare("SELECT principal_id, status, ledger FROM erasure_requests").all();
+    otherReadAgain.close();
+    assert.deepEqual(otherAfter, otherBefore);
+  } finally {
+    remove();
+    otherTenant.remove();
   }
 });
