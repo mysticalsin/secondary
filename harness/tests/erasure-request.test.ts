@@ -701,3 +701,169 @@ test("erasure request: an unknown step needs a second person and is not rewritte
 test("erasure request: a second person replaces an unknown step with the full plan", async () => {
   await damagePlansInFull("partial_failed", UNKNOWN_STEP_LEDGER);
 });
+
+async function acmePlan(): Promise<string[]> {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    companyScopes: (org: Org) => string[];
+  };
+  return erasurePlan(rights.companyScopes(buildOrg(["acme"])));
+}
+
+function pendingLedger(order: readonly string[], grant?: object): string {
+  const mark: Record<string, string> = {};
+  for (const id of order) mark[id] = "pending";
+  return JSON.stringify(grant ? { order, mark, grant } : { order, mark });
+}
+
+test("erasure request: a stored row without a grant is unreadable", () => {
+  const row = decodeErasureLedger({
+    status: "requested",
+    ledger: JSON.stringify({ order: ["receipts"], mark: { receipts: "pending" } }),
+  });
+  assert.equal(row.status.tag, "unreadable");
+  assert.deepEqual(row.order, []);
+});
+
+test("erasure request: a requested row without a grant needs a second person", async () => {
+  await damageStaysPending("requested", pendingLedger(await acmePlan()));
+});
+
+test("erasure request: a running row without a grant needs a second person", async () => {
+  await damageStaysPending("running", pendingLedger(await acmePlan()));
+});
+
+test("erasure request: one approver on the grant needs a second person", async () => {
+  const plan = await acmePlan();
+  await damageStaysPending(
+    "requested",
+    pendingLedger(plan, { subject: SUBJECT, requester: "ada", confirmer: "ada", steps: plan }),
+  );
+});
+
+test("erasure request: a plan step outside the grant needs a second person", async () => {
+  const plan = await acmePlan();
+  await damageStaysPending(
+    "requested",
+    pendingLedger(plan, {
+      subject: SUBJECT,
+      requester: "ada",
+      confirmer: "bea",
+      steps: plan.filter((id) => id !== "directory"),
+    }),
+  );
+});
+
+test("erasure request: a valid grant resumes without a second person", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const plan = await acmePlan();
+    const mark: Record<string, string> = {};
+    for (const id of plan) mark[id] = id === "receipts" ? "failed" : "pending";
+    putLedger(
+      file,
+      "partial_failed",
+      JSON.stringify({
+        order: plan,
+        mark,
+        grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: plan },
+      }),
+    );
+    const { post } = await eraseApp(buildOrg(["acme"]));
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(res.status, 200);
+    assert.equal(pendingErase(file), undefined);
+    const body = JSON.parse(readLedger(file)?.ledger ?? "{}") as { grant?: { confirmer?: string } };
+    assert.equal(body.grant?.confirmer, "bea");
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request: one person asking writes no erasure row", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const { post } = await eraseApp(buildOrg(["acme"]));
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(res.status, 202);
+    assert.equal(readLedger(file), undefined);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request: reapply skips a row without a grant and runs a granted row", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const granted = "subject-granted";
+    const bare = "subject-bare";
+    const db = openSqlite(file);
+    const insertLedger = db.prepare(
+      "INSERT INTO erasure_requests (principal_id, status, ledger, updated_at) VALUES (?, 'completed', ?, 5)",
+    );
+    insertLedger.run(
+      granted,
+      JSON.stringify({
+        order: ["directory"],
+        mark: { directory: "done" },
+        grant: { subject: granted, requester: "ada", confirmer: "bea", steps: ["directory"] },
+      }),
+    );
+    insertLedger.run(bare, JSON.stringify({ order: ["directory"], mark: { directory: "done" } }));
+    const insertPerson = db.prepare("INSERT INTO principals (id, email) VALUES (?, ?)");
+    insertPerson.run(granted, "granted@example.invalid");
+    insertPerson.run(bare, "bare@example.invalid");
+    const insertStone = db.prepare(
+      "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+    );
+    insertStone.run(granted, "pz_granted", "[]", NOW - 1_000, NOW + 86_400_000);
+    insertStone.run(bare, "pz_bare", "[]", NOW - 1_000, NOW + 86_400_000);
+    db.close();
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      reapplyErasures: (
+        env: { AUDIT: { fetch: (url: string) => Promise<Response> } },
+        tenantId: string,
+        kind: "tenant",
+        scope: string,
+        now: number,
+      ) => Promise<number | { applied: number; skipped: readonly string[] }>;
+    };
+    const result = await rights.reapplyErasures(
+      {
+        AUDIT: {
+          fetch: async () => new Response(JSON.stringify({ rewritten: 1 }), { status: 200 }),
+        },
+      },
+      TENANT,
+      "tenant",
+      "tenant",
+      NOW,
+    );
+    const reported = typeof result === "object" && result !== null ? [...result.skipped] : result;
+    const left = openSqlite(file);
+    const barePerson = left.prepare("SELECT id FROM principals WHERE id = ?").get(bare);
+    const grantedPerson = left.prepare("SELECT id FROM principals WHERE id = ?").get(granted);
+    const bareRow = left
+      .prepare("SELECT updated_at FROM erasure_requests WHERE principal_id = ?")
+      .get(bare) as { updated_at: number } | undefined;
+    left.close();
+    assert.deepEqual(
+      {
+        skipped: reported,
+        bareStillPresent: barePerson !== undefined,
+        bareUpdatedAt: bareRow?.updated_at,
+        grantedRemoved: grantedPerson === undefined,
+      },
+      {
+        skipped: [bare],
+        bareStillPresent: true,
+        bareUpdatedAt: 5,
+        grantedRemoved: true,
+      },
+    );
+  } finally {
+    remove();
+  }
+});
