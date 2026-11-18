@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secondary API — synthetic local shell</title>
+  <link rel="stylesheet" href="/synthetic-shell.css">
+</head>
+<body>
+  <main>
+    <span class="mark">Synthetic</span>
+    <h1>Secondary API, local shell</h1>
+    <p>This page is a stand-in for the static files this repository does not contain. The data below is not a person's notes. Nothing here is a private vault.</p>
+    <p>The Worker behind this page is the recovered API. These links are the checks that run with no account and no tunnel.</p>
+    <ul>
+      <li><a href="/v1/health">GET /v1/health</a> — liveness</li>
+      <li><a href="/v1/ready">GET /v1/ready</a> — Durable Object and blob store, absent in this boot</li>
+      <li><a href="/v1/me">GET /v1/me</a> — signed-in profile, refused without a session</li>
+      <li><a href="/auth/providers">GET /auth/providers</a> — which sign-in buttons exist</li>
+    </ul>
+  </main>
+</body>
+</html>
