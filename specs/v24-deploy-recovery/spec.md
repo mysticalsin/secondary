@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-18
 
-**Status**: Draft
+**Status**: Ready for QA
 
 **Input**: User description: "Recover the Cloudflare deploy setup for secondary-api-dev so it matches live v24 bindings, Durable Object classes, migration tag v3, compatibility settings, asset routing, and the /graph wrapper. QA prep only. Do not deploy."
 

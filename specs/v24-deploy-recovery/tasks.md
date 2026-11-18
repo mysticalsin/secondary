@@ -17,7 +17,7 @@
 
 **Purpose**: Confirm the parent head before any new test.
 
-- [ ] T000 Confirm the parent is `c9417c885fc3f12fdcf5201fa15f0e807d50f05d` and the branch is `cursor/recover-v24-deploy-1c66`. Record parent `npm test` as 416 passed and 0 failed, and both typechecks and `npm run verify:provenance` as exit 0. Add no recovered-source edit. Covers FR-012, FR-013.
+- [x] T000 Confirm the parent is `c9417c885fc3f12fdcf5201fa15f0e807d50f05d` and the branch is `cursor/recover-v24-deploy-1c66`. Record parent `npm test` as 416 passed and 0 failed, and both typechecks and `npm run verify:provenance` as exit 0. Add no recovered-source edit. Covers FR-012, FR-013.
 
 ## Phase 2: Red tests
 
@@ -25,8 +25,8 @@
 
 **Independent Test**: `npm test` fails, and the new assertions are the failures.
 
-- [ ] T001 [US1] Add `harness/tests/v24-bindings.test.ts`. It parses `wrangler.jsonc`, requires the 26 names and types in `contracts/bindings.md`, requires `secrets.required` to be the nine secret names, requires the eleven plain-text names in the config comment, requires `keep_vars` true, requires no `vars` key, requires the single `v3` migration, and requires the asset, service, and R2 fields in FR-001 through FR-007 and FR-014. It also requires `deploy/assets/UNREPRODUCED` to be the only file in that directory, and it checks `deploy/guard.ts` plus `deploy.sh` with no arguments. Covers FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-011, FR-014, SC-001, SC-003.
-- [ ] T002 [P] [US2] Add `harness/tests/graph-entry.test.ts`. It imports `deploy/graph-route.ts`, checks the eight sha256 rows in `contracts/graph-entry.md`, and checks the serve, head, delegate, and rewrite rules in User Story 2. It reads `deploy/graph-entry.ts` for the re-export and the absence of a second Durable Object class. Covers FR-009, SC-002.
+- [x] T001 [US1] Add `harness/tests/v24-bindings.test.ts`. It parses `wrangler.jsonc`, requires the 26 names and types in `contracts/bindings.md`, requires `secrets.required` to be the nine secret names, requires the eleven plain-text names in the config comment, requires `keep_vars` true, requires no `vars` key, requires the single `v3` migration, and requires the asset, service, and R2 fields in FR-001 through FR-007 and FR-014. It also requires `deploy/assets/UNREPRODUCED` to be the only file in that directory, and it checks `deploy/guard.ts` plus `deploy.sh` with no arguments. Covers FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-011, FR-014, SC-001, SC-003.
+- [x] T002 [P] [US2] Add `harness/tests/graph-entry.test.ts`. It imports `deploy/graph-route.ts`, checks the eight sha256 rows in `contracts/graph-entry.md`, and checks the serve, head, delegate, and rewrite rules in User Story 2. It reads `deploy/graph-entry.ts` for the re-export and the absence of a second Durable Object class. Covers FR-009, SC-002.
 
 ## Phase 3: User Story 1 and User Story 3 - Config and guard (Priority: P1)
 
@@ -34,9 +34,9 @@
 
 **Independent Test**: T001 passes. `deploy.sh` without `--dry-run` exits non-zero.
 
-- [ ] T003 [US1] Add `wrangler` `4.158.0` to devDependencies and refresh `package-lock.json`. Do not change `@cloudflare/workers-types`. Replace the package description that says this tree is not a deployable Worker with one sentence: `deploy.sh` refuses a real deploy while `deploy/assets/UNREPRODUCED` exists. Covers FR-012.
-- [ ] T004 [US1] Add `wrangler.jsonc` with the fields T001 asserts, including `alias` to `./harness/adapters/policy-entry.ts` and a Text rule for `**/*.html`, `**/*.css`, and `**/*.txt`. Add `deploy/assets/UNREPRODUCED` and no other file in that directory. Covers FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-011, FR-014, SC-001.
-- [ ] T005 [US3] Add `deploy/guard.ts` and `deploy.sh`. The guard fails a real deploy while the marker exists, fails when `.dev.vars` exists, and fails a `vars` object or a migration other than FR-007. `deploy.sh --dry-run` invokes local `wrangler deploy --dry-run` with no `--secrets-file`. Any other argument fails. Covers FR-008, FR-013, SC-003.
+- [x] T003 [US1] Add `wrangler` `4.158.0` to devDependencies and refresh `package-lock.json`. Do not change `@cloudflare/workers-types`. Replace the package description that says this tree is not a deployable Worker with one sentence: `deploy.sh` refuses a real deploy while `deploy/assets/UNREPRODUCED` exists. Covers FR-012.
+- [x] T004 [US1] Add `wrangler.jsonc` with the fields T001 asserts, including `alias` to `./harness/adapters/policy-entry.ts` and a Text rule for `**/*.html`, `**/*.css`, and `**/*.txt`. Add `deploy/assets/UNREPRODUCED` and no other file in that directory. Covers FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-011, FR-014, SC-001.
+- [x] T005 [US3] Add `deploy/guard.ts` and `deploy.sh`. The guard fails a real deploy while the marker exists, fails when `.dev.vars` exists, and fails a `vars` object or a migration other than FR-007. `deploy.sh --dry-run` invokes local `wrangler deploy --dry-run` with no `--secrets-file`. Any other argument fails. Covers FR-008, FR-013, SC-003.
 
 ## Phase 4: User Story 2 - Graph wrapper (Priority: P1)
 
@@ -44,7 +44,7 @@
 
 **Independent Test**: T002 passes.
 
-- [ ] T006 [US2] Extract the eight v24 files into the repo paths in `contracts/graph-entry.md`. Add `deploy/graph-route.ts` and `deploy/graph-entry.ts`. Do not edit `recovered-source/`. Covers FR-009, FR-010, SC-002.
+- [x] T006 [US2] Extract the eight v24 files into the repo paths in `contracts/graph-entry.md`. Add `deploy/graph-route.ts` and `deploy/graph-entry.ts`. Do not edit `recovered-source/`. Covers FR-009, FR-010, SC-002.
 
 ## Phase 5: User Story 4 - Verdict check (Priority: P2)
 
@@ -52,14 +52,14 @@
 
 **Independent Test**: `git diff` for `recovered-source/worker/src/brains/store.ts` is empty, and `wrangler.jsonc` has no tag other than `v3`.
 
-- [ ] T007 [US4] Do not edit `recovered-source/worker/src/brains/store.ts` and do not add a migration tag other than `v3`. The spec's pending-column verdict remains the record. Covers FR-010, SC-005.
+- [x] T007 [US4] Do not edit `recovered-source/worker/src/brains/store.ts` and do not add a migration tag other than `v3`. The spec's pending-column verdict remains the record. Covers FR-010, SC-005.
 
 ## Phase 6: Gates
 
 **Purpose**: Run the checks named in the spec.
 
-- [ ] T008 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. All exit 0. Worker errors stay 0. Existing tests stay as they are. Covers FR-012, SC-006.
-- [ ] T009 [US3] Run `bash deploy.sh --dry-run` with no login. Record the exit code. A non-zero result that asks for an account is reported and is not followed by `wrangler login`. Covers SC-004, FR-013.
+- [x] T008 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. All exit 0. Worker errors stay 0. Existing tests stay as they are. Covers FR-012, SC-006.
+- [x] T009 [US3] Run `bash deploy.sh --dry-run` with no login. Record the exit code. A non-zero result that asks for an account is reported and is not followed by `wrangler login`. Covers SC-004, FR-013.
 
 ## Dependencies & Execution Order
 

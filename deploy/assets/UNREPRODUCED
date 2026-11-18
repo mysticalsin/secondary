@@ -1,0 +1,1 @@
+The live SPA asset bytes are not in this repo or the v24 source map. deploy.sh refuses a real deploy while this file exists.

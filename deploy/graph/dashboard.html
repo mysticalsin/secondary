@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dashboard · Second Brain</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236600ae'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/graph/dashboard.css">
+<script src="/graph/dashboard.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">
+    <span class="mark"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="5" r="2.2" fill="#fff"/><circle cx="11.5" cy="6.5" r="2.4" fill="#fff"/><circle cx="6.5" cy="11.5" r="1.9" fill="#fff"/><path d="M5 5L11.5 6.5L6.5 11.5Z" fill="none" stroke="#fff" stroke-width="1"/></svg></span>
+    Second Brain
+  </a>
+  <nav class="capsule" aria-label="Second Brain">
+    <a href="/">Home</a>
+    <a href="/brains">Brains</a>
+    <a href="/dashboard" aria-current="page">Dashboard</a>
+    <a href="/graph">Graph</a>
+    <a href="/search">Search</a>
+  </nav>
+  <label class="brain-pick"><span>Brain</span>
+    <select id="brain" aria-label="Brain"><option value="">All brains</option></select>
+  </label>
+</header>
+<p id="status" role="status" data-kind="loading">Reading your second brain…</p>
+<main id="main">
+  <div class="skeleton" aria-hidden="true"><div></div><div></div><div></div><div></div></div>
+</main>
+<aside id="drawer" hidden aria-label="Connected details"></aside>
+</body>
+</html>

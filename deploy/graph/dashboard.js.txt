@@ -1,0 +1,754 @@
+(() => {
+  "use strict";
+
+  const MAX_DETAILS = 400;
+  const CONCURRENCY = 6;
+  const DAY = 86400000;
+  const COLORS = ["#6600ae", "#db64ff", "#ffc709", "#ff6571", "#1e6b34", "#9c43da", "#efb003", "#5c5d6d"];
+  const $ = (sel) => document.querySelector(sel);
+  const main = $("#main");
+  const statusEl = $("#status");
+  const brainEl = $("#brain");
+  const drawer = $("#drawer");
+
+  const LENSES = {
+    finance: {
+      label: "Financial",
+      words: ["revenue", "revenues", "sales", "turnover", "chiffre d'affaires", "cost", "costs", "expense", "expenses", "spend", "budget", "budgets", "margin", "margins", "profit", "ebitda", "cash", "cash flow", "invoice", "invoices", "invoiced", "billing", "p&l", "forecast", "price", "pricing", "daily rate", "tjm", "salary", "salaries", "payroll", "investment", "funding", "valuation", "arr", "mrr", "fee", "fees", "receivable", "payable"],
+      folders: ["finance", "budget", "invoice", "expense", "cost", "revenue", "p&l", "forecast"],
+    },
+    business: {
+      label: "Business",
+      words: ["client", "clients", "customer", "customers", "account", "accounts", "deal", "deals", "pipeline", "opportunity", "opportunities", "proposal", "contract", "contracts", "renewal", "churn", "market", "competitor", "competitors", "partner", "partners", "prospect", "prospects", "lead", "leads", "rfp", "tender", "strategy", "okr", "kpi", "negotiation", "signed", "upsell"],
+      folders: ["account", "client", "customer", "company", "deal", "opportunit", "partner", "prospect", "organi", "decision", "market"],
+    },
+    consulting: {
+      label: "Consulting & people",
+      words: ["consultant", "consultants", "staffing", "staffed", "bench", "mission", "missions", "assignment", "utilization", "utilisation", "billable", "timesheet", "feedback", "appraisal", "performance", "skills", "certification", "certified", "manager", "mentor", "mentoring", "onboarding", "intercontract", "career", "promotion", "1:1", "one-on-one", "rating", "rated"],
+      folders: ["person", "people", "consultant", "team", "member", "employee", "staff", "talent", "collaborator", "profile"],
+    },
+    delivery: {
+      label: "Projects & delivery",
+      words: ["project", "projects", "milestone", "milestones", "deadline", "deliverable", "deliverables", "sprint", "release", "risk", "risks", "issue", "issues", "blocked", "blocker", "roadmap", "dependency", "go-live", "launch", "delayed", "on track", "at risk", "kickoff", "status"],
+      folders: ["project", "mission", "engagement", "initiative", "program", "risk", "issue", "milestone", "meeting"],
+    },
+    knowledge: {
+      label: "Knowledge",
+      words: ["idea", "ideas", "note", "notes", "topic", "topics", "concept", "learning", "reading", "book", "research", "insight", "insights", "question", "questions", "hypothesis", "framework"],
+      folders: ["idea", "topic", "concept", "note", "book", "research", "learning", "reference"],
+    },
+  };
+  const LENS_ORDER = ["finance", "business", "consulting", "delivery", "knowledge"];
+
+  const POSITIVE = ["excellent", "great", "outstanding", "strong", "impressive", "praised", "appreciated", "delighted", "happy", "satisfied", "exceeded", "ahead", "reliable", "proactive", "best", "kudos", "thanks", "won", "success", "successful", "promoted", "positive", "brilliant", "solid"];
+  const NEGATIVE = ["late", "delay", "delayed", "issue", "issues", "problem", "concern", "concerns", "weak", "complaint", "complained", "unhappy", "dissatisfied", "missed", "poor", "conflict", "escalation", "escalated", "blocked", "churn", "lost", "negative", "underperform", "underperforming", "slipping", "behind"];
+
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const wordRe = (list) => new RegExp(`(?:^|[^\\p{L}\\p{N}])(${list.map(esc).join("|")})(?=$|[^\\p{L}\\p{N}])`, "giu");
+  const LENS_RE = Object.fromEntries(LENS_ORDER.map((k) => [k, wordRe(LENSES[k].words)]));
+  const POS_RE = wordRe(POSITIVE);
+  const NEG_RE = wordRe(NEGATIVE);
+
+  const CUR = "R\\$|US\\$|\\$|€|£|CHF|EUR|USD|GBP|BRL";
+  const NUM = "\\d{1,3}(?:[ .,\\u00a0]\\d{3})+(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?";
+  const MULT = "k|m|mn|bn|million|millions|thousand|mil";
+  const MONEY_RE = new RegExp(`(?:(${CUR})\\s?(${NUM})(?:\\s?(${MULT})\\b)?)|(?:(${NUM})(?:\\s?(${MULT}))?\\s?(${CUR})(?![A-Za-z])(?!\\s?\\d))`, "gi");
+  const PERCENT_RE = /(\d{1,3}(?:[.,]\d+)?)\s?%/g;
+  const RATING_RE = /(?:\b(?:rating|rated|score|scored|note)\s*[:=]?\s*(\d{1,2}(?:[.,]\d)?)(?:\s?\/\s?(5|10))?)|(?:\b(\d{1,2}(?:[.,]\d)?)\s?\/\s?(5|10)\b)/gi;
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const MONTH_RE = "(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?";
+  const DATE_RES = [
+    { re: /\b(20\d{2})-(0[1-9]|1[0-2])(?:-(0[1-9]|[12]\d|3[01]))?\b/g, parse: (m) => ({ y: +m[1], mo: +m[2], d: m[3] ? +m[3] : null }) },
+    { re: new RegExp(`\\b(\\d{1,2})\\s+${MONTH_RE}\\s+(20\\d{2})\\b`, "gi"), parse: (m) => ({ y: +m[3], mo: MONTHS.indexOf(m[2].toLowerCase()) + 1, d: +m[1] }) },
+    { re: new RegExp(`\\b${MONTH_RE}\\s+(\\d{1,2}),?\\s+(20\\d{2})\\b`, "gi"), parse: (m) => ({ y: +m[3], mo: MONTHS.indexOf(m[1].toLowerCase()) + 1, d: +m[2] }) },
+    { re: new RegExp(`\\b${MONTH_RE}\\s+(20\\d{2})\\b`, "gi"), parse: (m) => ({ y: +m[2], mo: MONTHS.indexOf(m[1].toLowerCase()) + 1, d: null }) },
+    { re: /\bQ([1-4])\s?(20\d{2})\b/g, parse: (m) => ({ y: +m[2], mo: (+m[1] - 1) * 3 + 1, d: null }) },
+  ];
+  const SYMBOL = { "$": "USD", "US$": "USD", "€": "EUR", "£": "GBP", "R$": "BRL", CHF: "CHF", EUR: "EUR", USD: "USD", GBP: "GBP", BRL: "BRL" };
+
+  let brain = null;
+  let current = null;
+  let lensOverride = "";
+
+  class AuthError extends Error {}
+
+  async function getJson(path) {
+    let res;
+    try {
+      res = await fetch(path, { credentials: "same-origin", headers: { accept: "application/json" } });
+    } catch {
+      throw new AuthError("network");
+    }
+    if (res.status === 401 || res.status === 403) throw new AuthError(String(res.status));
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
+    if (!(res.headers.get("content-type") || "").includes("application/json")) throw new AuthError("not_json");
+    return res.json();
+  }
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.dataset.kind = kind || "";
+    statusEl.hidden = !text;
+  }
+
+  function h(tag, props, ...children) {
+    const e = document.createElement(tag);
+    if (props) {
+      for (const [k, v] of Object.entries(props)) {
+        if (v === null || v === undefined || v === false) continue;
+        if (k === "class") e.className = v;
+        else if (k === "text") e.textContent = v;
+        else if (k === "style") Object.assign(e.style, v);
+        else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+        else e.setAttribute(k, v === true ? "" : String(v));
+      }
+    }
+    for (const c of children.flat()) {
+      if (c === null || c === undefined || c === false) continue;
+      e.append(c instanceof Node ? c : String(c));
+    }
+    return e;
+  }
+
+  function s(tag, attrs, ...children) {
+    const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, String(v));
+    for (const c of children.flat()) if (c) e.append(c);
+    return e;
+  }
+
+  async function loadBrain() {
+    setStatus("Reading your second brain…", "loading");
+    const tree = await getJson("/v1/brain/tree");
+    const roots = Array.isArray(tree.roots) ? tree.roots : [];
+    const workspaces = roots.filter((r) => r.access !== "locked" && Array.isArray(r.children));
+    const locked = roots.filter((r) => r.access === "locked").length;
+    const pages = [];
+    const byKey = new Map();
+    for (const ws of workspaces) {
+      for (const folder of ws.children) {
+        for (const item of folder.children || []) {
+          const slash = item.id.indexOf("/");
+          const pid = slash >= 0 ? item.id.slice(slash + 1) : item.id;
+          const page = { key: item.id, ws: ws.id, wsLabel: ws.label, pid, title: item.label, folder: folder.label, text: "", raw: "", rawLinks: [], out: [], in: [], fields: [], updatedAt: null, loaded: false };
+          pages.push(page);
+          byKey.set(page.key, page);
+        }
+      }
+    }
+    const queue = pages.slice(0, MAX_DETAILS);
+    let done = 0;
+    let failed = 0;
+    async function worker() {
+      while (queue.length) {
+        const page = queue.shift();
+        try {
+          const d = await getJson(`/v1/wiki/${encodeURIComponent(page.ws)}/pages/${encodeURIComponent(page.pid)}`);
+          page.raw = typeof d.markdown === "string" ? d.markdown : "";
+          page.rawLinks = Array.isArray(d.links) ? d.links : [];
+          page.fields = Array.isArray(d.fields) ? d.fields : [];
+          page.updatedAt = d.updatedAt ? Date.parse(d.updatedAt) : null;
+          page.loaded = true;
+        } catch (err) {
+          failed += 1;
+          if (err instanceof AuthError) {
+            queue.length = 0;
+            throw err;
+          }
+        }
+        done += 1;
+        if (done % 5 === 0) setStatus(`Reading your second brain… ${done} / ${Math.min(pages.length, MAX_DETAILS)} pages`, "loading");
+      }
+    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    const byPid = new Map(pages.map((p) => [p.pid, p]));
+    for (const p of pages) {
+      for (const l of p.rawLinks) {
+        if (typeof l.id !== "string" || l.broken) continue;
+        const target = l.id.startsWith("global:") ? byPid.get(l.id.slice(7)) : byKey.get(`${p.ws}/${l.id}`);
+        if (target && target !== p && !p.out.includes(target)) {
+          p.out.push(target);
+          target.in.push(p);
+        }
+      }
+    }
+    for (const p of pages) {
+      p.text = String(p.raw)
+        .replace(/ ?\{src:[^}]+\}/g, "")
+        .replace(/\[\[(?:global:)?([A-Za-z0-9:_-]{1,70})\]\]/g, (_m, id) => (byPid.get(id) ? byPid.get(id).title : id))
+        .replace(/^#+[ \t]{0,}/gm, "")
+        .trim();
+      if (p.text.startsWith(p.title)) p.text = p.text.slice(p.title.length).trim();
+    }
+    return { pages, workspaces, locked, failed, capped: pages.length > MAX_DETAILS ? pages.length : 0 };
+  }
+
+  function parseNum(str) {
+    let t = str.replace(/[\s\u00a0]/g, "");
+    const c = t.lastIndexOf(",");
+    const d = t.lastIndexOf(".");
+    if (c >= 0 && d >= 0) {
+      const dec = c > d ? "," : ".";
+      t = t.split(dec === "," ? "." : ",").join("").replace(dec, ".");
+    } else if (c >= 0 || d >= 0) {
+      const parts = t.split(c >= 0 ? "," : ".");
+      t = parts.length > 2 || parts[parts.length - 1].length === 3 ? parts.join("") : parts.join(".");
+    }
+    return Number(t);
+  }
+
+  const MULTIPLIER = { k: 1e3, thousand: 1e3, m: 1e6, mn: 1e6, million: 1e6, millions: 1e6, mil: 1e6, bn: 1e9 };
+
+  function categoryOf(context) {
+    const c = context.toLowerCase();
+    if (/revenue|sales|turnover|chiffre|income|arr|mrr|billed|invoiced|invoice/.test(c)) return "Revenue";
+    if (/margin|profit|ebitda/.test(c)) return "Margin";
+    if (/budget/.test(c)) return "Budget";
+    if (/cost|expense|spend|salary|salaries|payroll|paid/.test(c)) return "Cost";
+    if (/rate|tjm|price|pricing|fee/.test(c)) return "Rate";
+    if (/pipeline|deal|contract|opportunit|proposal|renewal/.test(c)) return "Deal value";
+    return "Other";
+  }
+
+  function datesIn(text) {
+    const out = [];
+    for (const { re, parse } of DATE_RES) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(text))) {
+        const v = parse(m);
+        if (v.mo >= 1 && v.mo <= 12) out.push({ ...v, index: m.index });
+      }
+    }
+    return out.sort((a, b) => a.index - b.index);
+  }
+
+  function sentencesOf(text) {
+    return text.split(/(?<=[.!?])\s+|\n+/).map((x) => x.trim()).filter((x) => x.length > 3);
+  }
+
+  function countMatches(re, text) {
+    re.lastIndex = 0;
+    let n = 0;
+    while (re.exec(text)) n += 1;
+    return n;
+  }
+
+  function sentiment(text) {
+    return countMatches(POS_RE, text) - countMatches(NEG_RE, text);
+  }
+
+  function hasHint(folder, hints) {
+    const f = folder.toLowerCase();
+    return hints.some((x) => f.includes(x));
+  }
+
+  function analyze(pages) {
+    const scores = Object.fromEntries(LENS_ORDER.map((k) => [k, 0]));
+    const evidence = Object.fromEntries(LENS_ORDER.map((k) => [k, { terms: 0, pages: new Set(), folders: new Set() }]));
+    const amounts = [];
+    const percents = [];
+    const ratings = [];
+    const comments = [];
+    const fieldNums = new Map();
+    const fieldCats = new Map();
+    const now = Date.now();
+
+    for (const p of pages) {
+      const body = `${p.title}\n${p.text}`;
+      for (const k of LENS_ORDER) {
+        const n = countMatches(LENS_RE[k], body);
+        if (n) {
+          scores[k] += n;
+          evidence[k].terms += n;
+          evidence[k].pages.add(p);
+        }
+        if (hasHint(p.folder, LENSES[k].folders)) {
+          scores[k] += 3;
+          evidence[k].folders.add(p.folder);
+          evidence[k].pages.add(p);
+        }
+      }
+      for (const sentence of sentencesOf(p.text)) {
+        const dates = datesIn(sentence);
+        MONEY_RE.lastIndex = 0;
+        let m;
+        while ((m = MONEY_RE.exec(sentence))) {
+          const sym = m[1] || m[6];
+          if (!m[1] && /^(19|20)\d{2}$/.test(m[4])) continue;
+          const num = parseNum(m[2] || m[4]);
+          const mult = MULTIPLIER[(m[3] || m[5] || "").toLowerCase()] || 1;
+          if (!Number.isFinite(num)) continue;
+          const before = sentence.slice(Math.max(0, m.index - 70), m.index);
+          amounts.push({ page: p, value: num * mult, currency: SYMBOL[sym.toUpperCase()] || SYMBOL[sym] || "EUR", category: categoryOf(`${before} ${p.title}`), sentence, date: dates[0] || null });
+        }
+        PERCENT_RE.lastIndex = 0;
+        while ((m = PERCENT_RE.exec(sentence))) {
+          const ctx = sentence.slice(Math.max(0, m.index - 60), m.index).toLowerCase();
+          const kind = /utili[sz]ation|billable|staffed|occupancy/.test(ctx) ? "Utilization" : /margin/.test(ctx) ? "Margin" : /growth|increase|up /.test(ctx) ? "Growth" : /churn|attrition|turnover/.test(ctx) ? "Churn" : /conversion|win rate/.test(ctx) ? "Win rate" : /complete|progress|done/.test(ctx) ? "Progress" : null;
+          if (kind) percents.push({ page: p, kind, value: parseNum(m[1]), sentence });
+        }
+        RATING_RE.lastIndex = 0;
+        while ((m = RATING_RE.exec(sentence))) {
+          const v = parseNum(m[1] || m[3]);
+          const scale = Number(m[2] || m[4] || (v <= 5 ? 5 : 10));
+          if (Number.isFinite(v) && v <= scale) ratings.push({ page: p, value: v / scale, sentence });
+        }
+        const tone = sentiment(sentence);
+        if (tone !== 0) comments.push({ page: p, sentence, tone, date: p.updatedAt });
+      }
+      for (const f of p.fields) {
+        if (!f || f.masked || f.value === null || f.value === undefined || f.value === "") continue;
+        const label = String(f.label || f.key);
+        const n = parseNum(String(f.value).replace(/[^\d.,\s-]/g, ""));
+        if ((f.type === "number" || f.type === "currency" || /^[\s\d.,%$€£-]+$/.test(String(f.value))) && Number.isFinite(n)) {
+          const agg = fieldNums.get(label) || { label, sum: 0, count: 0, pages: [] };
+          agg.sum += n;
+          agg.count += 1;
+          agg.pages.push(p);
+          fieldNums.set(label, agg);
+        } else if (String(f.value).length <= 40) {
+          const cat = fieldCats.get(label) || new Map();
+          const key = String(f.value);
+          cat.set(key, (cat.get(key) || 0) + 1);
+          fieldCats.set(label, cat);
+        }
+      }
+    }
+
+    const total = LENS_ORDER.reduce((n, k) => n + scores[k], 0);
+    const shares = Object.fromEntries(LENS_ORDER.map((k) => [k, total ? scores[k] / total : 0]));
+    if (amounts.length >= 3) shares.finance = Math.max(shares.finance, 0.15);
+    let active = LENS_ORDER.filter((k) => shares[k] >= 0.12).sort((a, b) => shares[b] - shares[a]).slice(0, 3);
+    if (!active.length) active = [total ? LENS_ORDER.slice().sort((a, b) => shares[b] - shares[a])[0] : "knowledge"];
+
+    const isPerson = (p) => hasHint(p.folder, LENSES.consulting.folders);
+    let people = pages.filter(isPerson);
+    if (!people.length && active.includes("consulting")) people = pages.filter((p) => /^[A-Z][\p{L}'-]+(?: [A-Z][\p{L}'-]+){1,2}$/u.test(p.title));
+    const peopleRows = people.map((person) => {
+      const name = person.title.toLowerCase();
+      const first = name.split(" ")[0];
+      const about = [];
+      for (const p of pages) {
+        if (p === person) continue;
+        for (const sentence of sentencesOf(p.text)) {
+          const low = sentence.toLowerCase();
+          if (low.includes(name) || (first.length > 3 && new RegExp(`\\b${esc(first)}\\b`).test(low) && p.out.includes(person))) about.push({ page: p, sentence });
+        }
+      }
+      const own = sentencesOf(person.text).map((sentence) => ({ page: person, sentence }));
+      const all = [...about, ...own];
+      const rate = ratings.filter((r) => r.page === person || about.some((a) => a.sentence === r.sentence));
+      const util = percents.filter((x) => x.kind === "Utilization" && x.page === person);
+      const tone = all.reduce((n, a) => n + sentiment(a.sentence), 0);
+      return {
+        page: person,
+        mentions: about.length + person.in.length,
+        rating: rate.length ? rate.reduce((n, r) => n + r.value, 0) / rate.length : null,
+        utilization: util.length ? util[util.length - 1].value : null,
+        tone,
+        comments: about.filter((a) => sentiment(a.sentence) !== 0).concat(own.filter((a) => sentiment(a.sentence) !== 0)),
+      };
+    });
+    const maxMentions = Math.max(1, ...peopleRows.map((r) => r.mentions));
+    for (const r of peopleRows) {
+      const toneScore = 0.5 + Math.max(-1, Math.min(1, r.tone / 4)) / 2;
+      const rating = r.rating === null ? 0.6 : r.rating;
+      const util = r.utilization === null ? 0.6 : Math.min(1, r.utilization / 100);
+      r.score = Math.round((0.4 * rating + 0.3 * toneScore + 0.2 * (r.mentions / maxMentions) + 0.1 * util) * 100);
+      r.signals = (r.rating !== null ? 1 : 0) + (r.utilization !== null ? 1 : 0) + r.comments.length;
+    }
+    peopleRows.sort((a, b) => b.score - a.score || b.mentions - a.mentions);
+
+    const accounts = pages.filter((p) => hasHint(p.folder, ["account", "client", "customer", "company", "deal", "opportunit", "partner", "prospect", "organi"])).map((p) => {
+      const linked = [...new Set([...p.out, ...p.in])];
+      const risks = linked.filter((x) => hasHint(x.folder, ["risk", "issue"]) || /\brisk|churn|blocked|escalat/i.test(x.text));
+      const value = amounts.filter((a) => a.page === p).reduce((n, a) => n + a.value, 0);
+      const t = `${p.title} ${p.text}`.toLowerCase();
+      const stage = /closed lost|\blost\b/.test(t) ? "Lost" : /\bwon\b|signed|closed won/.test(t) ? "Won" : /negotiat/.test(t) ? "Negotiation" : /proposal|rfp|tender|quote/.test(t) ? "Proposal" : /renewal|renew/.test(t) ? "Renewal" : /\blead\b|prospect|discovery/.test(t) ? "Lead" : "Active";
+      return { page: p, linked, risks, value, stage };
+    }).sort((a, b) => b.linked.length - a.linked.length);
+
+    const projects = pages.filter((p) => hasHint(p.folder, ["project", "mission", "engagement", "initiative", "program"])).map((p) => {
+      const t = p.text.toLowerCase();
+      const status = /blocked|stuck|on hold/.test(t) ? "Blocked" : /at risk|delay|slipping|behind|risk/.test(t) ? "At risk" : /\bdone\b|completed|delivered|closed|shipped|went live/.test(t) ? "Done" : "On track";
+      return { page: p, status };
+    });
+    const risks = pages.filter((p) => hasHint(p.folder, ["risk", "issue"]));
+    const decisions = [];
+    for (const p of pages) {
+      if (hasHint(p.folder, ["decision"])) decisions.push({ page: p, sentence: sentencesOf(p.text)[0] || p.title });
+      else for (const sentence of sentencesOf(p.text)) if (/\b(decided|agreed|approved|decision)\b/i.test(sentence)) decisions.push({ page: p, sentence });
+    }
+    const upcoming = [];
+    for (const p of pages) {
+      for (const sentence of sentencesOf(p.text)) {
+        for (const d of datesIn(sentence)) {
+          if (!d.d) continue;
+          const t = Date.UTC(d.y, d.mo - 1, d.d);
+          if (t >= now - DAY && t <= now + 180 * DAY) upcoming.push({ page: p, sentence, t });
+        }
+      }
+    }
+    upcoming.sort((a, b) => a.t - b.t);
+
+    const degree = (p) => p.out.length + p.in.length;
+    return {
+      pages, scores, shares, active, evidence, total, amounts, percents, ratings, comments,
+      people: peopleRows, accounts, projects, risks, decisions, upcoming,
+      fieldNums: [...fieldNums.values()], fieldCats: [...fieldCats.entries()],
+      hubs: pages.filter((p) => degree(p) > 0).sort((a, b) => degree(b) - degree(a)).slice(0, 8),
+      orphans: pages.filter((p) => degree(p) === 0 && p.loaded),
+      recent: pages.filter((p) => p.updatedAt).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8),
+      links: pages.reduce((n, p) => n + p.out.length, 0),
+      folders: new Set(pages.map((p) => `${p.ws}#${p.folder}`)).size,
+      fresh: pages.filter((p) => p.updatedAt && now - p.updatedAt < 30 * DAY).length,
+      degree,
+    };
+  }
+
+  function fmtMoney(value, currency) {
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency, notation: "compact", maximumFractionDigits: 1 }).format(value);
+    } catch {
+      return `${Math.round(value).toLocaleString()} ${currency}`;
+    }
+  }
+  const fmtNum = (v) => new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(v);
+  const fmtDate = (t) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const periodLabel = (key) => {
+    const [y, m] = key.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: "short", year: "2-digit", timeZone: "UTC" });
+  };
+  const plural = (n, one, many) => `${fmtNum(n)} ${n === 1 ? one : many || `${one}s`}`;
+  const clip = (t, n) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+
+  function ent(page, label) {
+    return h("button", { type: "button", class: "ent", onclick: () => openDrawer(page), title: `Open ${page.title}` }, label || page.title);
+  }
+
+  function card(title, why, ...body) {
+    return h("section", { class: "card" }, h("header", { class: "card-head" }, h("h3", { text: title }), why ? h("p", { class: "why", text: why }) : null), ...body);
+  }
+
+  function kpi(label, value, sub, onclick) {
+    return h(onclick ? "button" : "div", { class: "kpi", type: onclick ? "button" : null, onclick }, h("span", { class: "kpi-label", text: label }), h("strong", { class: "kpi-value", text: value }), sub ? h("span", { class: "kpi-sub", text: sub }) : null);
+  }
+
+  function bars(rows, opts = {}) {
+    const max = Math.max(...rows.map((r) => r.value), 0) || 1;
+    if (!rows.length) return h("p", { class: "empty", text: opts.empty || "Nothing to chart yet." });
+    return h("ul", { class: "bars" }, rows.map((r, i) => h("li", null,
+      h("span", { class: "bar-label" }, r.page ? ent(r.page, r.label) : r.label),
+      h("span", { class: "bar-track" }, h("span", { class: "bar-fill", style: { width: `${Math.max(2, (r.value / max) * 100)}%`, background: r.color || COLORS[opts.mono ? 0 : i % COLORS.length] } })),
+      h("span", { class: "bar-value", text: r.display || fmtNum(r.value) }),
+    )));
+  }
+
+  function donut(segments, center) {
+    const total = segments.reduce((n, x) => n + x.value, 0) || 1;
+    const r = 42;
+    const C = 2 * Math.PI * r;
+    let offset = 0;
+    const arcs = segments.filter((x) => x.value > 0).map((x) => {
+      const len = (x.value / total) * C;
+      const arc = s("circle", { cx: 60, cy: 60, r, fill: "none", stroke: x.color, "stroke-width": 16, "stroke-dasharray": `${len} ${C - len}`, "stroke-dashoffset": -offset, transform: "rotate(-90 60 60)" });
+      offset += len;
+      return arc;
+    });
+    const svg = s("svg", { viewBox: "0 0 120 120", class: "donut", role: "img", "aria-label": segments.map((x) => `${x.label} ${Math.round((x.value / total) * 100)}%`).join(", ") },
+      s("circle", { cx: 60, cy: 60, r, fill: "none", stroke: "rgba(255,255,255,.12)", "stroke-width": 16 }), ...arcs);
+    if (center) {
+      const t = s("text", { x: 60, y: 64, "text-anchor": "middle", class: "donut-text" });
+      t.textContent = center;
+      svg.append(t);
+    }
+    return svg;
+  }
+
+  function lineChart(series, periods, money) {
+    const W = 640;
+    const H = 220;
+    const P = { l: 56, r: 12, t: 12, b: 28 };
+    const max = Math.max(...series.flatMap((x) => periods.map((k) => x.points.get(k) || 0)), 1);
+    const xOf = (i) => P.l + (periods.length === 1 ? (W - P.l - P.r) / 2 : (i * (W - P.l - P.r)) / (periods.length - 1));
+    const yOf = (v) => H - P.b - (v / max) * (H - P.t - P.b);
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, class: "line", role: "img", "aria-label": `Trend of ${series.map((x) => x.label).join(", ")} over ${periods.length} periods` });
+    for (let i = 0; i <= 3; i += 1) {
+      const v = (max * i) / 3;
+      svg.append(s("line", { x1: P.l, x2: W - P.r, y1: yOf(v), y2: yOf(v), stroke: "#d8d8df", "stroke-width": 1 }));
+      const t = s("text", { x: P.l - 6, y: yOf(v) + 4, "text-anchor": "end", class: "axis" });
+      t.textContent = money ? fmtMoney(v, money) : fmtNum(v);
+      svg.append(t);
+    }
+    const step = Math.max(1, Math.ceil(periods.length / 8));
+    periods.forEach((k, i) => {
+      if (i % step) return;
+      const t = s("text", { x: xOf(i), y: H - 8, "text-anchor": "middle", class: "axis" });
+      t.textContent = periodLabel(k);
+      svg.append(t);
+    });
+    series.forEach((x, si) => {
+      const pts = periods.map((k, i) => [xOf(i), yOf(x.points.get(k) || 0)]);
+      svg.append(s("polyline", { points: pts.map((p) => p.join(",")).join(" "), fill: "none", stroke: COLORS[si % COLORS.length], "stroke-width": 2.5, "stroke-linejoin": "round" }));
+      for (const [cx, cy] of pts) svg.append(s("circle", { cx, cy, r: 3.5, fill: COLORS[si % COLORS.length] }));
+    });
+    const legend = h("div", { class: "legend" }, series.map((x, i) => h("span", null, h("i", { style: { background: COLORS[i % COLORS.length] } }), x.label)));
+    return h("div", null, svg, legend);
+  }
+
+  function quote(item, about) {
+    const tone = typeof item.tone === "number" ? item.tone : sentiment(item.sentence);
+    return h("li", { class: `quote ${tone > 0 ? "pos" : tone < 0 ? "neg" : "neutral"}` },
+      h("p", { text: `“${clip(item.sentence, 220)}”` }),
+      h("span", { class: "meta" }, about ? [ent(about), " · "] : null, "in ", ent(item.page)));
+  }
+
+  function evidenceLine(m, k) {
+    const e = m.evidence[k];
+    const bits = [];
+    if (e.terms) bits.push(plural(e.terms, `${LENSES[k].label.toLowerCase()} term`));
+    if (k === "finance" && m.amounts.length) bits.push(plural(m.amounts.length, "amount"));
+    if (k === "consulting" && m.people.length) bits.push(plural(m.people.length, "person page"));
+    if (k === "business" && m.accounts.length) bits.push(plural(m.accounts.length, "account page"));
+    if (e.folders.size) bits.push(`folders ${[...e.folders].slice(0, 3).join(", ")}`);
+    return `Shown because your notes contain ${bits.join(", ") || "related content"} across ${plural(e.pages.size, "page")}.`;
+  }
+
+  function financeSection(m) {
+    const byCur = new Map();
+    for (const a of m.amounts) byCur.set(a.currency, (byCur.get(a.currency) || 0) + 1);
+    const currency = [...byCur.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "EUR";
+    const mine = m.amounts.filter((a) => a.currency === currency);
+    const cats = new Map();
+    for (const a of mine) cats.set(a.category, (cats.get(a.category) || 0) + a.value);
+    const catRows = [...cats.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, display: fmtMoney(value, currency) }));
+    const kpis = catRows.slice(0, 4).map((r) => kpi(r.label, r.display, `${plural(mine.filter((a) => a.category === r.label).length, "figure")} in your notes`));
+    const pct = ["Margin", "Growth", "Churn", "Win rate"].map((kind) => {
+      const xs = m.percents.filter((x) => x.kind === kind);
+      return xs.length ? kpi(`${kind} (avg)`, `${fmtNum(xs.reduce((n, x) => n + x.value, 0) / xs.length)}%`, plural(xs.length, "mention")) : null;
+    });
+    const dated = mine.filter((a) => a.date);
+    const periods = [...new Set(dated.map((a) => `${a.date.y}-${String(a.date.mo).padStart(2, "0")}`))].sort().slice(-18);
+    const topCats = catRows.slice(0, 3).map((r) => r.label);
+    const series = topCats.map((label) => {
+      const points = new Map();
+      for (const a of dated.filter((x) => x.category === label)) {
+        const k = `${a.date.y}-${String(a.date.mo).padStart(2, "0")}`;
+        points.set(k, (points.get(k) || 0) + a.value);
+      }
+      return { label, points };
+    }).filter((x) => x.points.size);
+    const pageTotals = new Map();
+    for (const a of mine) pageTotals.set(a.page, (pageTotals.get(a.page) || 0) + a.value);
+    const largest = [...mine].sort((a, b) => b.value - a.value).slice(0, 8);
+    const other = [...byCur.keys()].filter((c) => c !== currency);
+    return [
+      h("div", { class: "kpis" }, kpis, pct),
+      h("div", { class: "grid2" },
+        card("Where the money is", `Totals by what the surrounding words say, in ${currency}.${other.length ? ` Also found: ${other.join(", ")} (not converted).` : ""}`, bars(catRows)),
+        series.length && periods.length > 1
+          ? card("Trend over time", "Amounts that sit next to a month, quarter, or date.", lineChart(series, periods, currency))
+          : card("Figures by page", "Pages holding the most money.", bars([...pageTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([page, value]) => ({ label: page.title, page, value, display: fmtMoney(value, currency) })), { mono: true })),
+      ),
+      card("Largest figures", "Each figure links back to the page and sentence it came from.", h("table", { class: "table" },
+        h("thead", null, h("tr", null, h("th", { text: "Amount" }), h("th", { text: "Type" }), h("th", { text: "Page" }), h("th", { text: "Context" }))),
+        h("tbody", null, largest.map((a) => h("tr", null, h("td", { class: "num", text: fmtMoney(a.value, a.currency) }), h("td", { text: a.category }), h("td", null, ent(a.page)), h("td", { class: "ctx", text: clip(a.sentence, 120) })))))),
+    ];
+  }
+
+  function businessSection(m) {
+    const stages = ["Lead", "Proposal", "Negotiation", "Active", "Renewal", "Won", "Lost"];
+    const stageRows = stages.map((label) => ({ label, value: m.accounts.filter((a) => a.stage === label).length })).filter((r) => r.value);
+    const atRisk = m.accounts.filter((a) => a.risks.length);
+    return [
+      h("div", { class: "kpis" },
+        kpi("Accounts & deals", fmtNum(m.accounts.length), "pages in client folders"),
+        kpi("With open risks", fmtNum(atRisk.length), atRisk[0] ? `e.g. ${atRisk[0].page.title}` : "none linked", atRisk[0] ? () => openDrawer(atRisk[0].page) : null),
+        kpi("Decisions logged", fmtNum(m.decisions.length), "decided, agreed, approved"),
+        kpi("Stages seen", fmtNum(stageRows.length), stageRows.map((r) => r.label).join(", ") || "none yet"),
+      ),
+      h("div", { class: "grid2" },
+        card("Accounts", "Ranked by how connected they are in your brain.", m.accounts.length ? h("table", { class: "table" },
+          h("thead", null, h("tr", null, h("th", { text: "Account" }), h("th", { text: "Stage" }), h("th", { text: "Links" }), h("th", { text: "Risks" }))),
+          h("tbody", null, m.accounts.slice(0, 10).map((a) => h("tr", null, h("td", null, ent(a.page)), h("td", null, h("span", { class: `pill st-${a.stage.toLowerCase()}`, text: a.stage })), h("td", { class: "num", text: String(a.linked.length) }), h("td", null, a.risks.length ? a.risks.slice(0, 2).map((r) => ent(r)) : h("span", { class: "muted", text: "None" }))))))
+          : h("p", { class: "empty", text: "No pages sit in an Account or Client folder yet." })),
+        card("Pipeline", "Stage read from each account page's wording.", bars(stageRows, { empty: "No stage words (lead, proposal, signed…) found yet." })),
+      ),
+      m.decisions.length ? card("Recent decisions", null, h("ul", { class: "list" }, m.decisions.slice(0, 6).map((d) => h("li", null, h("p", { text: clip(d.sentence, 200) }), h("span", { class: "meta" }, "in ", ent(d.page)))))) : null,
+    ];
+  }
+
+  function consultingSection(m) {
+    const top = m.people[0];
+    const util = m.people.filter((r) => r.utilization !== null);
+    const allComments = m.people.flatMap((r) => r.comments.map((c) => ({ ...c, about: r.page, tone: sentiment(c.sentence) })));
+    const praise = allComments.filter((c) => c.tone > 0).length;
+    return [
+      h("div", { class: "kpis" },
+        kpi("People", fmtNum(m.people.length), "person pages in your brain"),
+        kpi("Top performer", top ? top.page.title : "—", top ? `score ${top.score} from ${plural(top.signals, "signal")}` : "add person pages", top ? () => openDrawer(top.page) : null),
+        kpi("Avg utilization", util.length ? `${fmtNum(util.reduce((n, r) => n + r.utilization, 0) / util.length)}%` : "—", util.length ? plural(util.length, "person", "people") : "no utilization % noted"),
+        kpi("Feedback tone", allComments.length ? `${Math.round((praise / allComments.length) * 100)}% positive` : "—", plural(allComments.length, "comment")),
+      ),
+      h("div", { class: "grid2" },
+        card("Top performing", "Ranked from what your notes say: ratings, feedback tone, how often people are mentioned, and utilization. Not an HR score.", m.people.length ? h("table", { class: "table" },
+          h("thead", null, h("tr", null, h("th", { text: "#" }), h("th", { text: "Person" }), h("th", { text: "Score" }), h("th", { text: "Rating" }), h("th", { text: "Mentions" }), h("th", { text: "Utilization" }))),
+          h("tbody", null, m.people.slice(0, 10).map((r, i) => h("tr", null,
+            h("td", { class: "num", text: String(i + 1) }),
+            h("td", null, ent(r.page)),
+            h("td", null, h("span", { class: "score" }, h("span", { class: "score-fill", style: { width: `${r.score}%` } })), h("span", { class: "num", text: ` ${r.score}` })),
+            h("td", { class: "num", text: r.rating === null ? "—" : `${fmtNum(r.rating * 5)}/5` }),
+            h("td", { class: "num", text: String(r.mentions) }),
+            h("td", { class: "num", text: r.utilization === null ? "—" : `${fmtNum(r.utilization)}%` }),
+          )))) : h("p", { class: "empty", text: "No person pages yet. Add a People or Consultants folder to see a leaderboard." })),
+        card("What people are saying", "Sentences about a person that carry praise or concern.", allComments.length ? h("ul", { class: "quotes" }, allComments.slice(0, 6).map((c) => quote(c, c.about))) : h("p", { class: "empty", text: "No feedback sentences found yet." })),
+      ),
+      card("Most mentioned", "How often each person comes up across other pages.", bars(m.people.slice().sort((a, b) => b.mentions - a.mentions).slice(0, 8).map((r) => ({ label: r.page.title, page: r.page, value: r.mentions })), { mono: true })),
+    ];
+  }
+
+  function deliverySection(m) {
+    const cols = ["On track", "At risk", "Blocked", "Done"];
+    return [
+      h("div", { class: "kpis" },
+        kpi("Projects", fmtNum(m.projects.length), "pages in project folders"),
+        kpi("At risk or blocked", fmtNum(m.projects.filter((p) => p.status === "At risk" || p.status === "Blocked").length), "from the page wording"),
+        kpi("Risks logged", fmtNum(m.risks.length), "pages in Risk folders"),
+        kpi("Next date", m.upcoming[0] ? fmtDate(m.upcoming[0].t) : "—", m.upcoming[0] ? m.upcoming[0].page.title : "no upcoming dates found", m.upcoming[0] ? () => openDrawer(m.upcoming[0].page) : null),
+      ),
+      m.projects.length ? card("Project status", "Status read from words like blocked, delayed, delivered.", h("div", { class: "board" }, cols.map((c) => h("div", { class: `col st-${c.replace(" ", "-").toLowerCase()}` },
+        h("h4", { text: `${c} · ${m.projects.filter((p) => p.status === c).length}` }),
+        m.projects.filter((p) => p.status === c).slice(0, 8).map((p) => h("div", { class: "tile" }, ent(p.page), h("span", { class: "muted", text: `${plural(p.page.out.length + p.page.in.length, "link")}` }))))))) : null,
+      h("div", { class: "grid2" },
+        card("Risks", "Each risk with the pages it touches.", m.risks.length ? h("ul", { class: "list" }, m.risks.slice(0, 8).map((r) => h("li", null, ent(r), h("span", { class: "meta" }, [...new Set([...r.in, ...r.out])].slice(0, 3).map((x) => ent(x)))))) : h("p", { class: "empty", text: "No Risk folder yet." })),
+        card("Coming up", "Dates in the next six months found in your notes.", m.upcoming.length ? h("ul", { class: "list" }, m.upcoming.slice(0, 8).map((u) => h("li", null, h("strong", { text: fmtDate(u.t) }), h("p", { text: clip(u.sentence, 140) }), h("span", { class: "meta" }, "in ", ent(u.page))))) : h("p", { class: "empty", text: "No upcoming dates found." })),
+      ),
+    ];
+  }
+
+  function knowledgeSection(m) {
+    const topics = m.pages.filter((p) => hasHint(p.folder, LENSES.knowledge.folders)).sort((a, b) => m.degree(b) - m.degree(a));
+    return [
+      h("div", { class: "grid2" },
+        card("Most connected ideas", "Pages with the most links in and out. These are your hubs.", bars(m.hubs.map((p) => ({ label: p.title, page: p, value: m.degree(p) })), { mono: true })),
+        card("Topics", "Sized by how connected each topic or idea is.", topics.length ? h("div", { class: "cloud" }, topics.slice(0, 30).map((p) => {
+          const b = ent(p);
+          b.style.fontSize = `${12 + Math.min(12, m.degree(p) * 2)}px`;
+          return b;
+        })) : h("p", { class: "empty", text: "No Topic or Idea folders yet." })),
+      ),
+      m.orphans.length ? card("Not connected yet", "Linking these pages would make your brain more useful.", h("div", { class: "cloud" }, m.orphans.slice(0, 24).map((p) => ent(p)))) : null,
+    ];
+  }
+
+  function fieldsSection(m) {
+    if (!m.fieldNums.length && !m.fieldCats.length) return null;
+    return card("Structured fields", "Values from the typed fields on your pages.", h("div", { class: "grid2 inner" },
+      m.fieldNums.length ? h("div", { class: "kpis" }, m.fieldNums.slice(0, 6).map((f) => kpi(f.label, fmtNum(f.sum), `total over ${plural(f.count, "page")} · avg ${fmtNum(f.sum / f.count)}`))) : null,
+      m.fieldCats.slice(0, 2).map(([label, counts]) => h("div", null, h("h4", { class: "sub", text: label }), bars([...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ label: k, value: v })))))));
+  }
+
+  const SECTIONS = { finance: financeSection, business: businessSection, consulting: consultingSection, delivery: deliverySection, knowledge: knowledgeSection };
+
+  function render() {
+    if (!brain) return;
+    const ws = brainEl.value;
+    const pages = brain.pages.filter((p) => !ws || p.ws === ws);
+    const m = analyze(pages);
+    current = m;
+    main.replaceChildren();
+    if (!pages.length) {
+      main.append(h("div", { class: "empty-state" }, h("h2", { text: "Your second brain has no pages yet" }), h("p", { text: "Add or import notes and this dashboard will shape itself around what they are about." }), h("a", { class: "btn", href: "/brains/me" }, "Open your Personal Brain")));
+      return;
+    }
+    const lenses = lensOverride ? [lensOverride] : m.active;
+    const mix = LENS_ORDER.map((k, i) => ({ label: LENSES[k].label, value: m.scores[k], color: ["#db64ff", "#ffc709", "#ff6571", "#eaa7ff", "#9c43da"][i] }));
+    const hero = h("section", { class: "hero" },
+      h("div", { class: "hero-copy" },
+        h("p", { class: "eyebrow", text: ws ? brain.workspaces.find((w) => w.id === ws)?.label || "Brain" : "All brains" }),
+        h("h1", { text: `Adapted for ${m.active.map((k) => LENSES[k].label).join(" · ")}` }),
+        h("p", { class: "lede", text: `Built from ${plural(m.total, "signal")} in ${plural(pages.length, "page")}. Change what you write and this dashboard changes with it.` }),
+        h("div", { class: "chips", role: "group", "aria-label": "Dashboard focus" },
+          h("button", { type: "button", class: "chip", "aria-pressed": String(!lensOverride), onclick: () => { lensOverride = ""; render(); } }, "Adaptive"),
+          LENS_ORDER.map((k) => h("button", { type: "button", class: "chip", "aria-pressed": String(lensOverride === k), onclick: () => { lensOverride = k; render(); } }, `${LENSES[k].label} ${Math.round(m.shares[k] * 100)}%`)),
+        ),
+      ),
+      h("div", { class: "hero-mix" }, donut(mix, `${pages.length}`), h("ul", { class: "mix-legend" }, mix.map((x, i) => h("li", null, h("i", { style: { background: x.color } }), `${x.label}`, h("b", { text: `${Math.round(m.shares[LENS_ORDER[i]] * 100)}%` }))))),
+      h("div", { class: "hero-kpis" },
+        kpi("Pages", fmtNum(pages.length), `${plural(m.folders, "folder")}`),
+        kpi("Links", fmtNum(m.links), `${plural(m.orphans.length, "page")} not linked`),
+        kpi("Updated in 30 days", fmtNum(m.fresh), m.recent[0] ? `latest: ${m.recent[0].title}` : "no dates", m.recent[0] ? () => openDrawer(m.recent[0]) : null),
+        kpi("Figures found", fmtNum(m.amounts.length + m.percents.length), "amounts and percentages"),
+      ),
+    );
+    main.append(hero);
+    for (const k of lenses) {
+      const parts = SECTIONS[k](m).filter(Boolean);
+      main.append(h("section", { class: "lens", id: `lens-${k}` },
+        h("header", { class: "lens-head" }, h("h2", { text: LENSES[k].label }), h("p", { class: "why", text: lensOverride ? "Shown because you picked this focus." : evidenceLine(m, k) })),
+        ...parts));
+    }
+    const fields = fieldsSection(m);
+    if (fields) main.append(fields);
+    main.append(h("div", { class: "grid2" },
+      card("Recent activity", "Latest page updates.", m.recent.length ? h("ul", { class: "list" }, m.recent.map((p) => h("li", null, ent(p), h("span", { class: "meta", text: `${p.folder} · ${fmtDate(p.updatedAt)}` })))) : h("p", { class: "empty", text: "No update dates yet." })),
+      card("How it connects", "Open the graph to see every page and link.", h("p", { class: "muted", text: `${plural(m.links, "link")} join ${plural(pages.length - m.orphans.length, "page")}. ${m.hubs[0] ? `${m.hubs[0].title} is your most connected page.` : ""}` }), h("a", { class: "btn", href: m.hubs[0] ? `/graph#focus=${encodeURIComponent(m.hubs[0].key)}` : "/graph" }, "Open graph view")),
+    ));
+  }
+
+  function openDrawer(page) {
+    const m = current && current.pages.includes(page) ? current : analyze(brain.pages);
+    const figures = m.amounts.filter((a) => a.page === page);
+    const said = [];
+    const low = page.title.toLowerCase();
+    for (const p of brain.pages) {
+      if (p === page) continue;
+      for (const sentence of sentencesOf(p.text)) if (sentence.toLowerCase().includes(low)) said.push({ page: p, sentence, tone: sentiment(sentence) });
+    }
+    const person = m.people.find((r) => r.page === page);
+    const account = m.accounts.find((a) => a.page === page);
+    const linked = (list, empty) => (list.length ? h("div", { class: "cloud" }, list.map((p) => ent(p))) : h("p", { class: "muted", text: empty }));
+    drawer.replaceChildren(h("div", { class: "drawer-body" },
+      h("header", { class: "drawer-head" }, h("div", null, h("p", { class: "eyebrow", text: `${page.folder} · ${page.wsLabel}` }), h("h2", { text: page.title })), h("button", { type: "button", class: "close", "aria-label": "Close", onclick: closeDrawer }, "×")),
+      person ? h("div", { class: "kpis small" }, kpi("Score", String(person.score)), kpi("Mentions", String(person.mentions)), kpi("Rating", person.rating === null ? "—" : `${fmtNum(person.rating * 5)}/5`)) : null,
+      account ? h("div", { class: "kpis small" }, kpi("Stage", account.stage), kpi("Links", String(account.linked.length)), kpi("Risks", String(account.risks.length))) : null,
+      h("p", { class: "preview", text: page.text ? clip(page.text, 600) : "This page has no text yet." }),
+      figures.length ? h("div", null, h("h4", { class: "sub", text: "Figures on this page" }), h("ul", { class: "list" }, figures.slice(0, 6).map((a) => h("li", null, h("strong", { text: fmtMoney(a.value, a.currency) }), ` ${a.category}`, h("p", { class: "muted", text: clip(a.sentence, 140) }))))) : null,
+      h("h4", { class: "sub", text: `Links to ${page.out.length}` }), linked(page.out, "No outgoing links."),
+      h("h4", { class: "sub", text: `Linked from ${page.in.length}` }), linked(page.in, "No backlinks."),
+      said.length ? h("div", null, h("h4", { class: "sub", text: `Mentioned in ${plural(said.length, "sentence")}` }), h("ul", { class: "quotes" }, said.slice(0, 5).map((c) => quote(c)))) : null,
+      h("div", { class: "drawer-actions" }, h("a", { class: "btn", href: `/brains/${encodeURIComponent(page.ws)}/pages/${encodeURIComponent(page.pid)}` }, "Open page"), h("a", { class: "btn ghost", href: `/graph#focus=${encodeURIComponent(page.key)}` }, "Show in graph")),
+    ));
+    drawer.hidden = false;
+    drawer.querySelector(".close").focus();
+  }
+
+  function closeDrawer() {
+    drawer.hidden = true;
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !drawer.hidden) closeDrawer();
+  });
+  brainEl.addEventListener("change", () => {
+    lensOverride = "";
+    closeDrawer();
+    render();
+  });
+
+  loadBrain().then((b) => {
+    brain = b;
+    brainEl.replaceChildren(new Option("All brains", ""));
+    for (const ws of b.workspaces) brainEl.append(new Option(ws.label, ws.id));
+    const notes = [];
+    if (b.capped) notes.push(`Read the first ${MAX_DETAILS} of ${b.capped} pages.`);
+    if (b.failed) notes.push(`${plural(b.failed, "page")} could not be read.`);
+    if (b.locked) notes.push(`${plural(b.locked, "brain")} visible by name only.`);
+    setStatus(notes.join(" "), "");
+    render();
+  }).catch((err) => {
+    main.replaceChildren();
+    setStatus(err instanceof AuthError ? "Your sign-in has expired or the brain could not be reached. Reload to sign in again." : `The brain could not be loaded (${err.message}).`, "error");
+  });
+})();

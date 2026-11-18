@@ -1,0 +1,55 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+// plain-text: ACCESS_AUD, ACCESS_TEAM_DOMAIN, DEFAULT_TENANT_ID, DO_JURISDICTION, ENVIRONMENT, MCP_PUBLIC_URL, RATE_LIMIT_PER_MIN, RESTORE_ENABLED, RETENTION_BRIEF_DAYS, RETENTION_DRAFT_DAYS, TENANT_DOMAINS
+  "name": "secondary-api-dev",
+  "main": "deploy/graph-entry.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "logpush": false,
+  "keep_vars": true,
+  "upload_source_maps": false,
+  "alias": {
+    "@secondary/policy": "./harness/adapters/policy-entry.ts"
+  },
+  "rules": [
+    { "type": "Text", "globs": ["**/*.html", "**/*.css", "**/*.txt"], "fallthrough": true }
+  ],
+  "assets": {
+    "directory": "./deploy/assets",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true,
+    "base_path": "/"
+  },
+  "services": [
+    { "binding": "AUDIT", "service": "secondary-audit-dev" },
+    { "binding": "CONNECTOR", "service": "secondary-connector-dev" }
+  ],
+  "r2_buckets": [
+    { "binding": "BLOBS", "bucket_name": "secondary-blobs-dev", "jurisdiction": "eu" }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "TENANT_POLICY", "class_name": "TenantPolicy" },
+      { "name": "WORKSPACE", "class_name": "Workspace" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v3", "new_sqlite_classes": ["TenantPolicy", "Workspace"] }
+  ],
+  "secrets": {
+    "required": [
+      "AUDIT_KEY_API",
+      "AUDIT_KEY_ERASE",
+      "AUDIT_KEY_READ",
+      "BRIEF_PROOF_KEY",
+      "CONNECTOR_HMAC_KEY",
+      "INTERNAL_HMAC_KEY",
+      "OPS_HMAC_KEY",
+      "PSEUDONYM_KEY",
+      "SEED_TOKEN"
+    ]
+  }
+}
