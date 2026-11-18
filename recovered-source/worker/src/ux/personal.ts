@@ -2,7 +2,7 @@
 // Everything here addresses the caller's own workspace (personal:<id>) and nothing else.
 
 import { Hono } from "hono";
-import { asciiLower } from "../../../src/state/actor.ts";
+import { asciiLower } from "../../../../src/state/actor.ts";
 import { viewOf } from "../auth.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
 import { detectSensitivity } from "../sensitivity.ts";

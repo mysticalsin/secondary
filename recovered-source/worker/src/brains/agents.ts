@@ -2,7 +2,7 @@
 // feature flags per cohort, admin only). API-CONTRACT "v3 brains".
 
 import { Hono } from "hono";
-import { normalEmail } from "../../../src/state/actor.ts";
+import { normalEmail } from "../../../../src/state/actor.ts";
 import { viewOf } from "../auth.ts";
 import { tenantStub } from "../stubs.ts";
 import { FLAG_KEYS } from "../tenant-policy.ts";
