@@ -15,7 +15,7 @@ test("withdraw: a non-proposer gets 403 and only a rejected receipt", async () =
   const decisions: string[] = [];
   const specifier = new URL("../../recovered-source/worker/src/admin/routes.ts", import.meta.url).href;
   const mod = (await import(specifier)) as { adminRoutes: (deps: object) => Hono };
-  const app = new Hono();
+  const app = new Hono<{ Variables: { session: unknown } }>();
   const principal = persona("consultant");
   const namespace = {
     jurisdiction() {
