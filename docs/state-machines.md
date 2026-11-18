@@ -53,12 +53,12 @@ Status in the table matches the code on this branch. Devin approved this invento
 | 32 | Worker typecheck | `tsconfig.worker.json` | FIXED | — | NOT A DEFECT | The intake measured 119 errors. `specs/worker-typecheck-zero/closeout.md` records 0 `error TS` lines. This batch re-ran both typechecks at exit 0. |
 | 33 | Login query state | `auth/routes.ts` callback mismatch | FIXED | Low | FIX now | The callback takes the row keyed by the cookie state and never a row named only by the query. A mismatch, an IdP error, and a missing cookie leave the other row. No session is issued for those three. |
 | 34 | SCIM user_name | `resolveEntra`, `scimUserList`, `scimUserCreate`, and `scimUserPatch` in `auth/identity-store.ts` | FIXED | Low | FIX now | Those compares use `normalizedEmailSql`. Create checks before `ensurePrincipal`, so a folded twin does not insert a principal. A missed address stays `not_provisioned`. |
-| 35 | Non-ASCII email fold | `normalizedEmailSql` and `normalEmail` | LATER | Low | LATER | Known limit. SQLite `lower()` does not fold non-ASCII letters (İ, Ω), so `Ω@x.com` does not match `ω@x.com`. SQL and JS stay on one expression. A JS-only fold is not the next change. |
-| 36 | Unknown stored switch name | `switchState` in `tenant-policy.ts` | FIXED | Low | FIX now | An unknown stored name is still skipped. `switchState` logs `unknown_name` once per call, with no stored name and no enabled value. |
+| 35 | Non-ASCII email fold | `normalizedEmailSql` and `normalEmail` | FIXED | Low | FIX now | Lowercase is ASCII A–Z on both sides, matching SQLite `lower()`. U+212A does not match `k` and U+0130 does not match `i`. Ω still does not match ω. |
+| 36 | Unknown stored switch name | `switchState` in `tenant-policy.ts` | FIXED | Low | FIX now | An unknown stored name is still skipped. The first read logs `unknown_name` once per name, with no stored name and no enabled value. A later read of that name logs nothing. |
 
 ## Review notes
 
-Devin approved the inventory at `b527a8de` with these changes. #6 is the login-record reducer. #4 is the quorum reducer. #7 calls that result. #8 does not call it yet. The other High-risk reducers are not written yet. Devin accepted M at `fe68515` and classified #34 and #35 as Low. #34 is fixed. #35 stays the known non-ASCII limit.
+Devin approved the inventory at `b527a8de` with these changes. #6 is the login-record reducer. #4 is the quorum reducer. #7 calls that result. #8 does not call it yet. The other High-risk reducers are not written yet. Devin accepted M at `fe68515` and classified #34 and #35 as Low. #34 is fixed. #35 lowercases ASCII A–Z on both sides. Ω still does not match ω.
 
 Right-sizing:
 
@@ -339,7 +339,7 @@ Same actor is `sameActor` in `src/state/actor.ts`. Quorum, `humanIds`, and gover
 
 `ensurePrincipal`, `session`, `resolvePrincipalId`, `isEmailActive` (`identity-store.ts`), `subjectOfEmail` (`identity-store.ts`), `resolveEntra` (`identity-store.ts` and ), and the rename uniqueness check (`identity-store.ts`) look up with that expression. A lookup that matches more than one stored principal is `ambiguous_principal`: the log is `{ at: "identity", reason: "ambiguous_principal", ids }` and carries no address. Nobody is picked, and no new principal is created. `isEmailActive` reports inactive and `subjectOfEmail` reports no subject. Rename refuses. When more than one row matches, the `resolveEntra` email lookup (`identity-store.ts`) refuses. The already-bound subject branch (`identity-store.ts`–) logs `ambiguous_principal`, skips the email update, and continues as the bound principal. Continuing as that principal is intended, because a bound subject is authoritative. `ensurePrincipal` inserts and reads again inside one transaction. If that read finds a different id, the insert rolls back and the result is `ambiguous`. This is M.
 
-SCIM `user_name` uses `normalizedEmailSql` in `resolveEntra`, `scimUserCreate`, `scimUserPatch`, and the list filter in `scimUserList` (`#34`). Create checks that fold before `ensurePrincipal`, so a twin does not insert a principal. A case-only rename of the same row still writes. Known limit (`#35`): SQLite `lower()` does not fold non-ASCII letters (İ, Ω), so `Ω@x.com` does not match `ω@x.com`. SQL and JS stay on one expression. A JS-only fold is not the next change.
+SCIM `user_name` uses `normalizedEmailSql` in `resolveEntra`, `scimUserCreate`, `scimUserPatch`, and the list filter in `scimUserList` (`#34`). Create checks that fold before `ensurePrincipal`, so a twin does not insert a principal. A case-only rename of the same row still writes. `normalEmail` lowercases only ASCII A–Z, the same letters as SQLite `lower()` (`#35`). U+212A does not match `k` and U+0130 does not match `i`. Ω still does not match ω.
 
 Logs are `{ at: "illegal_transition", machine: "quorum", reason }` or `{ at: "quorum", reason: "replay" }`. The reason is a code. The line does not carry an id, a subject, or an address.
 
