@@ -399,6 +399,59 @@ serial("oidc callback: success opens a session, and a replay of that state is re
   }
 });
 
+serial("oidc callback: exactly 600 seconds is rejected and 601 seconds is rejected", async () => {
+  for (const age of [600_000, 601_000]) {
+    const { file, remove } = tempFile();
+    try {
+      const policy = await openPolicy(file);
+      const state = `secret-state-boundary-${age}`;
+      const code = `secret-code-boundary-${age}`;
+      const hash = await sha256Hex(state);
+      policy.loginStatePut(hash, "nonce-boundary", "verifier-boundary", "/done", NOW, "ip");
+      const { authRoutes } = await loadRoutes();
+      const app = authRoutes({ now: () => NOW + age });
+      const res = await callback(app, { state, code }, state);
+      assert.equal(res.status, 400);
+      assert.equal(res.setCookie.includes(SESSION_COOKIE), false);
+      assert.equal(rowNonce(file, hash), undefined);
+    } finally {
+      remove();
+    }
+  }
+});
+
+serial("oidc callback: a replay after a failed code exchange is refused", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const state = "secret-state-failed-replay";
+    const code = "secret-code-failed-replay";
+    const hash = await sha256Hex(state);
+    policy.loginStatePut(hash, "nonce-failed-replay", "verifier-failed-replay", "/done", NOW, "ip");
+    const { authRoutes } = await loadRoutes();
+    const app = authRoutes({
+      now: () => NOW,
+      entra: {
+        fetch: async (input) => {
+          const url = String(input);
+          if (url.includes("openid-configuration")) return discovery();
+          return new Response("rejected", { status: 400 });
+        },
+      },
+    });
+    const failed = await callback(app, { state, code }, state);
+    assert.equal(failed.status, 401);
+    assert.equal(rowNonce(file, hash), undefined);
+    const replay = await callback(app, { state, code }, state);
+    assert.equal(replay.status, 400);
+    assert.equal(replay.setCookie.includes(SESSION_COOKIE), false);
+    assert.equal(rowNonce(file, hash), undefined);
+    noSecrets(replay.logs, [state, code, "nonce-failed-replay", "verifier-failed-replay"]);
+  } finally {
+    remove();
+  }
+});
+
 serial("oidc callback: kelvin and dotted I in the token do not bind the ASCII principals", async () => {
   const cases = [
     ["kay", "k@ascii.example", "\u212A@ascii.example"],
