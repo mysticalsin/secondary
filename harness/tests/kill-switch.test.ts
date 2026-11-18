@@ -479,3 +479,26 @@ test("kill switch: unknown names stop being logged after 256", async () => {
     remove();
   }
 });
+
+test("kill switch: hitting the unknown-name cap logs one warning", async () => {
+  const warn = captureWarn();
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    const insert = db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    );
+    for (let i = 0; i < 257; i += 1) insert.run(`cap-warn-${i}`, 0, "ada", NOW);
+    policy.switchStatus(NOW);
+    const caps = warn.lines.filter((line) => line.includes('"reason":"cap"'));
+    assert.equal(caps.length, 1);
+    assert.equal(caps[0]?.includes("@"), false);
+    const marked = warn.lines.length;
+    policy.switchStatus(NOW + 1);
+    assert.equal(warn.lines.length, marked);
+    db.close();
+  } finally {
+    warn.restore();
+    remove();
+  }
+});
