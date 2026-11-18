@@ -642,10 +642,12 @@ export class TenantPolicy extends DurableObject<Env> {
     )
       return "too_many";
     if (!create && !exists) return "not_found";
-    const members = [...new Set(c.members.map((m) => m.trim().toLowerCase()))].slice(
-      0,
-      MAX_COHORT_MEMBERS,
-    );
+    const members = [
+      ...new Set(c.members.flatMap((m) => {
+        const email = normalEmail(m);
+        return email ? [email] : [];
+      })),
+    ].slice(0, MAX_COHORT_MEMBERS);
     this.sql.exec(
       `INSERT INTO pilot_cohorts (id, name, members, flags, created_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, members = excluded.members, flags = excluded.flags`,
@@ -676,13 +678,14 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** Flags for one address: a key is managed once any cohort sets it, and is then on only for its members. */
   flagsFor(email: string): Record<FlagKey, boolean> {
-    const e = email.trim().toLowerCase();
+    const e = normalEmail(email);
     const cohorts = this.pilotList();
     const out = {} as Record<FlagKey, boolean>;
     for (const k of FLAG_KEYS) {
       const setBy = cohorts.filter((c) => Object.hasOwn(c.flags, k));
       out[k] =
-        setBy.length === 0 || setBy.some((c) => c.flags[k] === true && c.members.includes(e));
+        setBy.length === 0 ||
+        setBy.some((c) => c.flags[k] === true && e !== null && c.members.includes(e));
     }
     return out;
   }
@@ -1056,8 +1059,8 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */
   private rememberAddress(principalId: string, email: string): void {
-    const e = email.trim().toLowerCase();
-    if (!e.includes("@")) return;
+    const e = normalEmail(email);
+    if (!e) return;
     this.sql.exec(
       "INSERT INTO gov_identity (principal_id, email) VALUES (?, ?) ON CONFLICT(principal_id) DO UPDATE SET email = excluded.email",
       principalId,
