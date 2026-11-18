@@ -52,6 +52,11 @@ type Policy = {
     change: { userName: string },
     now: number,
   ): Promise<{ ok: true } | { ok: false; code: string }>;
+  scimUserList(
+    filter: { userName?: string },
+    start: number,
+    count: number,
+  ): { total: number; users: { id: string }[] };
 };
 
 function tempFile(): { file: string; remove: () => void } {
@@ -112,6 +117,10 @@ function emailOf(db: DatabaseSync, id: string): string | undefined {
 
 function countOf(db: DatabaseSync): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM principals").get() as { n: number }).n;
+}
+
+function scimCount(db: DatabaseSync): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM scim_users").get() as { n: number }).n;
 }
 
 function captureWarn(): { lines: string[]; restore: () => void } {
@@ -400,4 +409,67 @@ test("email identity: sql and js fold one list, including tab, newline, blank, a
   assert.equal(sqlEmail("   "), null);
   assert.equal(sqlEmail("\t\n"), null);
   db.close();
+});
+
+test("email identity: a folded SCIM user name is one person and does not insert another", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    addPrincipal(db, "stored", "other@same.example");
+    addScim(db, "su-stored", "stored", "Ada@Same.example");
+    const created = await policy.scimUserCreate({ userName: "ada@same.example", active: true }, NOW);
+    assert.equal(created.ok, false);
+    if (!created.ok) assert.equal(created.code, "uniqueness");
+    assert.equal(countOf(db), 1);
+    assert.equal(scimCount(db), 1);
+    assert.equal(emailOf(db, "stored"), "other@same.example");
+
+    addPrincipal(db, "ada", "ada@scim.example");
+    addScim(db, "su-ada", "ada", "ada@scim.example");
+    const signed = await policy.sessionCreate(
+      "hash-scim-case",
+      { tid: "contoso", oid: "oid-ada", email: "Ada@Scim.example", emailIsUpn: true, guest: false },
+      [],
+      NOW,
+      true,
+    );
+    assert.equal(signed.ok, true);
+    if (signed.ok) assert.equal(signed.principalId, "ada");
+    assert.equal(countOf(db), 2);
+    assert.equal(emailOf(db, "ada"), "ada@scim.example");
+
+    const listed = policy.scimUserList({ userName: " Ada@Scim.example " }, 1, 20);
+    assert.equal(listed.total, 1);
+    assert.equal(listed.users[0]?.id, "su-ada");
+    const blank = policy.scimUserList({ userName: " \u00A0 " }, 1, 20);
+    assert.equal(blank.total, 0);
+
+    addPrincipal(db, "bea", "bea@other.example");
+    addScim(db, "su-bea", "bea", "bea@other.example");
+    const renamed = await policy.scimUserPatch("su-bea", { userName: "ada@same.example" }, NOW);
+    assert.equal(renamed.ok, false);
+    if (!renamed.ok) assert.equal(renamed.code, "uniqueness");
+    assert.equal(emailOf(db, "bea"), "bea@other.example");
+    assert.equal(countOf(db), 3);
+
+    addPrincipal(db, "self", "kept@self.example");
+    addScim(db, "su-self", "self", "Ada@Self.example");
+    const foldedSelf = await policy.scimUserPatch("su-self", { userName: "ada@self.example" }, NOW);
+    assert.equal(foldedSelf.ok, true);
+    assert.equal(countOf(db), 4);
+
+    const missing = await policy.sessionCreate(
+      "hash-scim-missing",
+      { tid: "contoso", oid: "oid-missing", email: "other@scim.example", emailIsUpn: true, guest: false },
+      [],
+      NOW,
+      true,
+    );
+    assert.equal(missing.ok, false);
+    if (!missing.ok) assert.equal(missing.reason, "not_provisioned");
+    assert.equal(countOf(db), 4);
+    db.close();
+  } finally {
+    remove();
+  }
 });
