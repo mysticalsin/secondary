@@ -14,14 +14,13 @@ import type { Proposal } from "./types.ts";
 
 export type Right = { allowed: boolean; reason: string };
 
-/** Review, release or edit rights on the workspace node are what let someone decide a wiki proposal. */
+/**
+ * A wiki decision publishes. Elevation can add review and edit. It does not add approve_release,
+ * and a role's `never` list keeps that release closed.
+ */
 export function mayDecide(view: AdmittedView, p: Principal, nodeId: string): Right {
   if (nodeId === personalRootId(p.id)) return { allowed: true, reason: "Your Personal Brain" };
-  for (const a of ["review", "approve_release", "edit"] as const) {
-    const d = canDoInView(view, p, nodeId, a);
-    if (d.allowed) return d;
-  }
-  return canDoInView(view, p, nodeId, "review");
+  return canDoInView(view, p, nodeId, "approve_release");
 }
 
 /** The sources a proposal's own text rests on (what the queue row would show). */
