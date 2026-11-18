@@ -2,6 +2,7 @@
 // feature flags per cohort, admin only). API-CONTRACT "v3 brains".
 
 import { Hono } from "hono";
+import { normalEmail } from "../../../src/state/actor.ts";
 import { viewOf } from "../auth.ts";
 import { tenantStub } from "../stubs.ts";
 import { FLAG_KEYS } from "../tenant-policy.ts";
@@ -23,7 +24,7 @@ async function cohortInput(
   const name = cleanText(text(b.name, 1, 60, "invalid_name"), 60);
   if (!name) throw bad("invalid_name");
   if (!Array.isArray(b.members) || b.members.length > 500) throw bad("invalid_members");
-  const members = b.members.map((m) => (typeof m === "string" ? m.trim().toLowerCase() : ""));
+  const members = b.members.map((m) => (typeof m === "string" ? (normalEmail(m) ?? "") : ""));
   if (members.some((m) => !EMAIL.test(m) || m.length > 254)) throw bad("invalid_members");
   const flags: Record<string, boolean> = {};
   if (b.flags !== undefined) {

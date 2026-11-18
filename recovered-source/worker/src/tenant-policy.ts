@@ -283,7 +283,7 @@ export class TenantPolicy extends DurableObject<Env> {
         this.sql.exec(
           "INSERT INTO principals (id, email) VALUES (?, ?)",
           p.id,
-          p.email.toLowerCase(),
+          normalEmail(p.email) ?? p.email,
         );
         for (const r of p.roleIds)
           this.sql.exec(
@@ -1298,13 +1298,7 @@ export class TenantPolicy extends DurableObject<Env> {
     now: number,
     managed: boolean,
   ) {
-    return this.identity.sessionCreate(
-      idHash,
-      { ...who, email: who.email.trim().toLowerCase() },
-      groups,
-      now,
-      managed,
-    );
+    return this.identity.sessionCreate(idHash, who, groups, now, managed);
   }
   sessionValidate(idHash: string, now: number) {
     return this.identity.sessionValidate(idHash, now);

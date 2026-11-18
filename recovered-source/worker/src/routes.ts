@@ -2,6 +2,7 @@
 // first, answer only from it, and fan out only to the workspaces that view reaches. A node outside
 // the view is indistinguishable from a node that does not exist.
 
+import { asciiLower, normalEmail } from "../../../src/state/actor.ts";
 import {
   ACTIONS,
   type Action,
@@ -205,10 +206,14 @@ export function parseUserValidated(
 ): UserValidated {
   if (!v || typeof v !== "object") throw bad("user_validation_required", 422);
   const o = v as Record<string, unknown>;
-  const by = typeof o.by === "string" ? o.by.toLowerCase() : "";
+  const byRaw = typeof o.by === "string" ? o.by.trim() : "";
+  const byId = asciiLower(byRaw);
+  const byEmail = normalEmail(byRaw);
   const at = typeof o.at === "string" ? Date.parse(o.at) : Number.NaN;
-  if (by !== s.principal.id.toLowerCase() && by !== s.principal.email.toLowerCase())
-    throw bad("user_validation_required", 422);
+  const idMatch = byId !== "" && byId === asciiLower(s.principal.id.trim());
+  const principalEmail = normalEmail(s.principal.email);
+  const emailMatch = byEmail !== null && principalEmail !== null && byEmail === principalEmail;
+  if (!idMatch && !emailMatch) throw bad("user_validation_required", 422);
   if (!Number.isFinite(at) || at > s.ctx.now + 300_000 || s.ctx.now - at > VALIDATION_MAX_AGE_MS)
     throw bad("user_validation_required", 422);
   if (o.revision !== expectedRevision) throw bad("user_validation_required", 422);

@@ -48,7 +48,7 @@ export function normalizedEmailSql(column: string): string {
 }
 
 /** A–Z only, the same letters SQLite lower() changes. U+212A and U+0130 stay put. */
-const asciiLower = (value: string): string =>
+export const asciiLower = (value: string): string =>
   value.replace(/[A-Z]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 32));
 
 /** Fold `EMAIL_FOLD` to spaces, trim, and lowercase ASCII A–Z. Empty becomes null. */

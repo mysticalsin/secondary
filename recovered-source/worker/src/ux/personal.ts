@@ -2,6 +2,7 @@
 // Everything here addresses the caller's own workspace (personal:<id>) and nothing else.
 
 import { Hono } from "hono";
+import { asciiLower } from "../../../src/state/actor.ts";
 import { viewOf } from "../auth.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
 import { detectSensitivity } from "../sensitivity.ts";
@@ -39,7 +40,7 @@ function tagsOf(v: unknown): string[] {
   const out = new Set<string>();
   for (const t of v) {
     if (typeof t !== "string" || !TAG_RE.test(t.trim())) throw bad("invalid_tags");
-    out.add(t.trim().toLowerCase());
+    out.add(asciiLower(t.trim()));
   }
   return [...out];
 }

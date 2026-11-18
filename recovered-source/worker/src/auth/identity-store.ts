@@ -3,7 +3,7 @@
 // constructs one and exposes thin RPC methods. Nothing here holds organisation content.
 
 import { ROLE_ORDER, ROLES } from "@secondary/policy";
-import { normalEmail, normalizedEmailSql } from "../../../../src/state/actor.ts";
+import { asciiLower, normalEmail, normalizedEmailSql } from "../../../../src/state/actor.ts";
 import type { SecurityJournal } from "../security-journal.ts";
 import {
   ABSOLUTE_MS,
@@ -29,7 +29,7 @@ const PRIVILEGED_ROLES: ReadonlySet<string> = new Set(
 );
 
 /** Group ids are Entra object ids (GUIDs). They compare case-insensitively. */
-export const groupKey = (s: string): string => s.trim().toLowerCase();
+export const groupKey = (s: string): string => asciiLower(s.trim());
 
 const GROUP_KEY = /^[a-z0-9][a-z0-9_.:-]{0,63}$/;
 const MAX_OIDC_GROUPS = 500;
@@ -619,7 +619,7 @@ export class IdentityStore {
     },
     now: number,
   ): Promise<Ok<{ user: ScimUserRec }> | Fail> {
-    const userName = input.userName.trim().toLowerCase();
+    const userName = asciiLower(input.userName.trim());
     if (!userName.includes("@") || userName.length > 254 || !normalEmail(userName)) return fail("invalid");
     if (this.userNameTaken(userName)) return fail("uniqueness");
     const principalId = await this.ensurePrincipal(userName);
@@ -662,7 +662,7 @@ export class IdentityStore {
     const principalId = s(row.principal_id);
     let renamed = false;
     if (c.userName !== undefined) {
-      const userName = c.userName.trim().toLowerCase();
+      const userName = asciiLower(c.userName.trim());
       if (!userName.includes("@") || userName.length > 254 || !normalEmail(userName)) return fail("invalid");
       if (userName !== row.user_name) {
         const twins = this.emailRows(userName).filter((row) => row.id !== principalId);

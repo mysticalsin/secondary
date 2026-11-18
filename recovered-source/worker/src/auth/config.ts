@@ -1,6 +1,8 @@
 // Auth configuration read from the environment. Everything is optional: with no Entra values the
 // Entra login is off and Cloudflare Access (the default AUTH_MODE) is the only identity source.
 
+import { asciiLower, normalEmail } from "../../../../src/state/actor.ts";
+
 export type AuthMode = "access" | "entra" | "both";
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,8 +19,8 @@ export type EntraConfig = { tenantId: string; clientId: string; clientSecret: st
 
 /** All three values must be present and well formed. Anything less disables Entra login. */
 export function entraConfig(env: Env): EntraConfig | null {
-  const tenantId = env.ENTRA_TENANT_ID?.trim().toLowerCase();
-  const clientId = env.ENTRA_CLIENT_ID?.trim().toLowerCase();
+  const tenantId = env.ENTRA_TENANT_ID ? asciiLower(env.ENTRA_TENANT_ID.trim()) : undefined;
+  const clientId = env.ENTRA_CLIENT_ID ? asciiLower(env.ENTRA_CLIENT_ID.trim()) : undefined;
   const clientSecret = env.ENTRA_CLIENT_SECRET?.trim();
   if (!tenantId || !clientId || !clientSecret) return null;
   if (!GUID.test(tenantId) || !GUID.test(clientId)) return null;
@@ -48,8 +50,8 @@ export const allowGuests = (env: Env): boolean =>
  * to. Anything else is a different identity source and is refused: `ACCESS_LINKED_EMAILS` is the
  * explicit link, a comma separated list.
  */
-export const accessLinked = (env: Env, email: string): boolean =>
-  (env.ACCESS_LINKED_EMAILS ?? "")
-    .split(",")
-    .map((e) => e.trim().toLowerCase())
-    .includes(email);
+export const accessLinked = (env: Env, email: string): boolean => {
+  const needle = normalEmail(email);
+  if (!needle) return false;
+  return (env.ACCESS_LINKED_EMAILS ?? "").split(",").some((e) => normalEmail(e) === needle);
+};
