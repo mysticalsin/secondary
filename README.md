@@ -14,12 +14,12 @@ npm test
 npm run typecheck
 ```
 
-`npm test` on this tree passed 442 and failed 0. `npm run typecheck` and `npm run typecheck:worker` each reported 0 `error TS` lines.
+`npm test` on this tree passed 449 and failed 0. `npm run typecheck` and `npm run typecheck:worker` each reported 0 `error TS` lines.
 
 ```bash
 npm run verify:provenance
 ```
 
-That check compares every reconstructed file with the commit that contains its source blob (`db3e8548bf74b863847ed9fbf1b71573dd384ee8`, `be6eb37f31e62f0f04a610202cca120aa4d9302f`, and `4ba133b04e49cfb20abe0a22b5ca367284456356`). A clone that does not have those commits, including a shallow clone or a copy used offline, exits 1 and prints `sourceCommit is not a readable tree`. The check is not part of `npm test`, and it is not stubbed.
+That check compares every reconstructed file with the commit that contains its source blob (`db3e8548bf74b863847ed9fbf1b71573dd384ee8`, `be6eb37f31e62f0f04a610202cca120aa4d9302f`, and `4ba133b04e49cfb20abe0a22b5ca367284456356`). It needs those commits in the local object store. A shallow clone or an offline copy exits 1 and prints `sourceCommit is not a readable tree`. That exit is the missing-history result, not a claim that a hash mismatched. The check is not part of `npm test`, and it is not stubbed to pass offline.
 
 There is no deploy script in this repo. Do not deploy, and do not point Wrangler at a Cloudflare account from here.

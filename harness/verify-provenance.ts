@@ -1,6 +1,7 @@
 /**
  * Check every reconstructed-manifest entry against the commit that contains its blob.
- * Not part of npm test.
+ * Not part of npm test. The source commits must be in this clone. If they are not,
+ * the process exits 1 and says the tree is not readable. That is not a hash match.
  */
 
 import { execFileSync } from "node:child_process";
