@@ -3,6 +3,7 @@
 // signature (RS256, keys from the discovery jwks_uri), issuer, audience, expiry, tenant and nonce.
 
 import { createRemoteJWKSet, errors, type JWTVerifyGetKey, jwtVerify } from "jose";
+import { asciiLower, normalEmail } from "../../../../src/state/actor.ts";
 import { safeEqual } from "../security.ts";
 import type { EntraConfig } from "./config.ts";
 
@@ -185,8 +186,9 @@ const EMAIL = /^[^\s@]+@[^\s@]+$/;
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const mail = (v: unknown): string | null => {
-  const e = typeof v === "string" ? v.trim().toLowerCase() : "";
-  return EMAIL.test(e) && e.length <= 254 ? e : null;
+  if (typeof v !== "string") return null;
+  const e = normalEmail(v);
+  return e && EMAIL.test(e) && e.length <= 254 ? e : null;
 };
 
 export async function verifyIdToken(
@@ -217,7 +219,7 @@ export async function verifyIdToken(
           : "token_invalid",
     );
   }
-  if (typeof payload.tid !== "string" || payload.tid.toLowerCase() !== cfg.tenantId)
+  if (typeof payload.tid !== "string" || asciiLower(payload.tid) !== cfg.tenantId)
     throw new OidcError("wrong_tenant");
   if (typeof payload.nonce !== "string" || !safeEqual(payload.nonce, expectedNonce))
     throw new OidcError("nonce_mismatch");
@@ -235,8 +237,8 @@ export async function verifyIdToken(
     ? payload.groups.filter((g): g is string => typeof g === "string")
     : [];
   return {
-    tid: (payload.tid as string).toLowerCase(),
-    oid: payload.oid.toLowerCase(),
+    tid: asciiLower(payload.tid as string),
+    oid: asciiLower(payload.oid),
     email,
     emailIsUpn: upn !== null,
     guest,

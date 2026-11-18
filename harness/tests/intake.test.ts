@@ -47,6 +47,7 @@ const PATCHED_RECOVERED = new Set<string>([
   "recovered-source/worker/src/wiki/routes.ts",
   "recovered-source/worker/src/wiki/store.ts",
   "recovered-source/worker/src/uxv2/questions.ts",
+  "recovered-source/worker/src/observe.ts",
   "recovered-source/worker/src/ops-admin.ts",
   "recovered-source/worker/src/ops-rights.ts",
   "recovered-source/worker/src/audit.ts",
@@ -55,6 +56,14 @@ const PATCHED_RECOVERED = new Set<string>([
   "recovered-source/worker/src/admin/routes.ts",
   "recovered-source/worker/src/auth/identity-store.ts",
   "recovered-source/worker/src/scim/routes.ts",
+  "recovered-source/worker/src/auth/oidc.ts",
+  "recovered-source/worker/src/auth/config.ts",
+  "recovered-source/worker/src/org.ts",
+  "recovered-source/worker/src/routes.ts",
+  "recovered-source/worker/src/brains/agents.ts",
+  "recovered-source/worker/src/ux/personal.ts",
+  "recovered-source/worker/src/wiki/review.ts",
+  "recovered-source/worker/src/brains/open.ts",
 ]);
 
 function sha256(file: string): string {

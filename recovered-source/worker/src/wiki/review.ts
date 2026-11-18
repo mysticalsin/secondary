@@ -14,14 +14,26 @@ import type { Proposal } from "./types.ts";
 
 export type Right = { allowed: boolean; reason: string };
 
-/** Review, release or edit rights on the workspace node are what let someone decide a wiki proposal. */
-export function mayDecide(view: AdmittedView, p: Principal, nodeId: string): Right {
+/**
+ * A lead may decide inside a brain where they hold a standing review, edit, or approve_release
+ * grant. A right that exists only while elevated does not count, and the author cannot approve
+ * their own proposal. An elevated release still needs approve_release, which elevation does not grant.
+ */
+export function mayDecide(
+  view: AdmittedView,
+  p: Principal,
+  nodeId: string,
+  authorId?: string | null,
+): Right {
   if (nodeId === personalRootId(p.id)) return { allowed: true, reason: "Your Personal Brain" };
-  for (const a of ["review", "approve_release", "edit"] as const) {
-    const d = canDoInView(view, p, nodeId, a);
-    if (d.allowed) return d;
+  if (authorId != null && authorId === p.id)
+    return { allowed: false, reason: "You cannot approve your own proposal" };
+  const standing: AdmittedView = { ...view, ctx: { ...view.ctx, elevatedUntil: undefined } };
+  for (const action of ["review", "approve_release", "edit"] as const) {
+    const decision = canDoInView(standing, p, nodeId, action);
+    if (decision.allowed) return decision;
   }
-  return canDoInView(view, p, nodeId, "review");
+  return canDoInView(view, p, nodeId, "approve_release");
 }
 
 /** The sources a proposal's own text rests on (what the queue row would show). */

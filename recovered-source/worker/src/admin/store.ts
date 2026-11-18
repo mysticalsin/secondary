@@ -6,7 +6,7 @@
 // never be the one who approves it, whatever the route above decided.
 
 import type { Role } from "@secondary/policy";
-import { actorFromDirectory, type DirectoryPrincipal, sameActor } from "../../../../src/state/actor.ts";
+import { actorFromDirectory, type DirectoryPrincipal, normalEmail, sameActor } from "../../../../src/state/actor.ts";
 import {
   claimAccessRequest,
   commitAccessRequest,
@@ -291,7 +291,7 @@ export class GovStore {
 
   /** Records the address a principal id acted with. A dev persona has an id per persona, so ids alone cannot tell two roles of one tester apart. */
   remember(principalId: string, email: string): void {
-    const e = email.trim().toLowerCase();
+    const e = normalEmail(email);
     if (!e) return;
     this.sql.exec(
       "INSERT INTO gov_identity (principal_id, email) VALUES (?, ?) ON CONFLICT(principal_id) DO UPDATE SET email = excluded.email",

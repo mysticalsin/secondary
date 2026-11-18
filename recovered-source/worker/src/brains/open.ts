@@ -181,10 +181,11 @@ export async function directPublish(
     personal: boolean;
     vn: ViewNode | null;
     stub: ReturnType<typeof workspaceStub>;
-    can: { edit: boolean };
+    can: { edit: boolean; decide?: boolean };
   },
 ): Promise<boolean> {
   if (!w.can.edit) return false;
+  if (!w.personal && w.can.decide !== true) return false;
   // M-5: text written by an agent (an MCP call) always waits for a person, whatever the brain's mode.
   if (sess(c).internal) return false;
   const cfg = await w.stub.brainConfig();
