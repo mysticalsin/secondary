@@ -145,6 +145,7 @@ export type AgentRow = {
   calls: number;
   revoked: boolean;
 };
+const seenUnknownSwitch = new Set<string>();
 const MAX_COHORTS = 20;
 const MAX_COHORT_MEMBERS = 500;
 const MAX_GRANTS_PER_PERSON = 50;
@@ -841,10 +842,13 @@ export class TenantPolicy extends DurableObject<Env> {
 
   private switchState(): SwitchState {
     const out = allOn();
-    let unknown = false;
     for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray()) {
       if (!isSwitchName(r.name)) {
-        unknown = true;
+        const key = typeof r.name === "string" ? r.name : "";
+        if (!seenUnknownSwitch.has(key)) {
+          seenUnknownSwitch.add(key);
+          commit(reject("kill_switch", "unreadable", "read", "unknown_name"));
+        }
         continue;
       }
       const flag = decodeSwitchEnabled(r.enabled);
@@ -855,7 +859,6 @@ export class TenantPolicy extends DurableObject<Env> {
       }
       out[r.name] = flag.tag === "on";
     }
-    if (unknown) commit(reject("kill_switch", "unreadable", "read", "unknown_name"));
     return out;
   }
 
