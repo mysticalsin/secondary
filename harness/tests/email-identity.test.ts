@@ -411,6 +411,52 @@ test("email identity: sql and js fold one list, including tab, newline, blank, a
   db.close();
 });
 
+test("email identity: kelvin sign and dotted I do not match an ASCII principal", async () => {
+  const kelvin = `\u212A@ascii.example`;
+  const dotted = `\u0130@ascii.example`;
+  const mem = new DatabaseSync(":memory:");
+  const expr = normalizedEmailSql("?");
+  const sqlEmail = (value: string): string | null =>
+    (mem.prepare(`SELECT ${expr} AS v`).get(value) as { v: string | null }).v;
+  assert.equal(sqlEmail(kelvin), normalEmail(kelvin));
+  assert.equal(sqlEmail(dotted), normalEmail(dotted));
+  assert.notEqual(normalEmail(kelvin), "k@ascii.example");
+  assert.notEqual(normalEmail(dotted), "i@ascii.example");
+  assert.equal(normalEmail(dotted).includes("\u0307"), false);
+  mem.close();
+
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    addPrincipal(db, "kay", "k@ascii.example");
+    addPrincipal(db, "aye", "i@ascii.example");
+    const kelvinSign = await policy.sessionCreate(
+      "hash-kelvin",
+      { tid: "contoso", oid: "oid-kelvin", email: kelvin, emailIsUpn: true, guest: false },
+      [],
+      NOW,
+      false,
+    );
+    const dottedSign = await policy.sessionCreate(
+      "hash-dotted",
+      { tid: "contoso", oid: "oid-dotted", email: dotted, emailIsUpn: true, guest: false },
+      [],
+      NOW,
+      false,
+    );
+    assert.equal(kelvinSign.ok, true);
+    assert.equal(dottedSign.ok, true);
+    if (kelvinSign.ok) assert.notEqual(kelvinSign.principalId, "kay");
+    if (dottedSign.ok) assert.notEqual(dottedSign.principalId, "aye");
+    assert.equal(emailOf(db, "kay"), "k@ascii.example");
+    assert.equal(emailOf(db, "aye"), "i@ascii.example");
+    assert.equal(countOf(db), 4);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
 test("email identity: a folded SCIM user name is one person and does not insert another", async () => {
   const { file, remove } = tempFile();
   try {
