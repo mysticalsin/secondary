@@ -410,14 +410,20 @@ test("kill switch: a stored unknown name is logged once and is not echoed", asyn
     assert.equal(status.switches.connector.enabled, true);
     assert.equal(status.switches.ai.enabled, true);
     assert.equal(status.switches.contribute.enabled, true);
-    const hits = warn.lines
-      .map((line) => JSON.parse(line) as { reason?: string; machine?: string })
-      .filter((line) => line.reason === "unknown_name");
-    assert.equal(hits.length, 1);
-    assert.equal(hits[0]?.machine, "kill_switch");
+    const unknownLines = () =>
+      warn.lines
+        .map((line) => JSON.parse(line) as { reason?: string; machine?: string })
+        .filter((line) => line.reason === "unknown_name");
+    const first = unknownLines();
+    assert.equal(first.length, 2);
+    assert.equal(first.every((line) => line.machine === "kill_switch"), true);
     const text = warn.lines.join("\n");
     assert.equal(text.includes("not-a-switch"), false);
     assert.equal(text.includes("also-unknown"), false);
+    const marked = warn.lines.length;
+    policy.switchStatus(NOW + 1);
+    assert.equal(warn.lines.length, marked);
+    assert.equal(unknownLines().length, 2);
     db.close();
   } finally {
     warn.restore();
