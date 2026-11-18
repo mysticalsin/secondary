@@ -47,9 +47,9 @@ Merge and deploy happen only when Tony says so in his own words. A reviewer's ac
 These add constraints. They do not weaken Principles I–X.
 
 - GitHub Spec Kit v1.4.0 is required for every change. Do not substitute another Spec Kit version. If v1.4.0 cannot be fetched, stop.
-- This lane's branch is `cursor/state-machines-c94c`.
-- `npm test` stays 403 passed and 0 failed, and `npm run typecheck` stays 0 errors, except while a red test required by Principle V is the only failing assertion. That test is made green without rewriting unrelated tests.
-- The worker typecheck error count goes down on every implementation commit of this lane. It never goes up.
+- The state-machines lane's branch is `cursor/state-machines-c94c`. The full-fix batch Tony named on 2026-11-18 uses `cursor/sb-full-fix-b165`. Principle VII's named branch for that batch is `cursor/sb-full-fix-b165`.
+- Do not delete or weaken a passing test. Main `c9417c885fc3f12fdcf5201fa15f0e807d50f05d` is 416 passed and 0 failed. A red test required by Principle V may be the only failing assertion, and that test is made green without rewriting unrelated tests. `npm run typecheck` stays 0 errors.
+- The worker typecheck on this batch stays 0 errors. It does not go up.
 - An open question is reported. It is not answered by guessing.
 
 ## Governance
@@ -58,4 +58,6 @@ This constitution supersedes local habit. An amendment that removes or redefines
 
 Compliance review: QA checks the plan's Security & data section, the branch, the exact head, and the gates in the feature spec. A missing Security & data section, a force push, a hook bypass, a push to `main`, a merge, or a deploy is a stop.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-12 | **Last Amended**: 2026-11-12
+**Version**: 1.0.1 | **Ratified**: 2026-11-12 | **Last Amended**: 2026-11-18
+
+Amendment 1.0.1: Tony's full-fix instruction requires new regression tests, and main is already 416 passed after the erasure merge. The repo rule that named 403 is now "do not delete or weaken a passing test". The full-fix branch is named. No principle is weakened.
