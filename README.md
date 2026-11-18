@@ -14,6 +14,12 @@ npm test
 npm run typecheck
 ```
 
-`npm test` runs 17 isolated tests of recovered policy, receipt, log, HMAC, agent-plan, and GenUI code. `npm run typecheck` checks the shared packages and the Worker modules whose imports do not depend on missing files.
+`npm test` on this tree passed 427 and failed 0. The runner `duration_ms` was 5663.854576. `npm run typecheck` and `npm run typecheck:worker` each reported 0 `error TS` lines.
 
-`npm run typecheck:worker` typechecks the whole Worker and fails. The missing modules are listed in RECOVERY.md. There is no deploy script in this repo. Do not deploy, and do not point Wrangler at a Cloudflare account from here.
+```bash
+npm run verify:provenance
+```
+
+That check compares every reconstructed file with the commit that contains its source blob (`db3e8548bf74b863847ed9fbf1b71573dd384ee8`, `be6eb37f31e62f0f04a610202cca120aa4d9302f`, and `4ba133b04e49cfb20abe0a22b5ca367284456356`). A clone that does not have those commits, including a shallow clone or a copy used offline, exits 1 and prints `sourceCommit is not a readable tree`. The check is not part of `npm test`, and it is not stubbed.
+
+There is no deploy script in this repo. Do not deploy, and do not point Wrangler at a Cloudflare account from here.

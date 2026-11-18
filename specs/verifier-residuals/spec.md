@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-18
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: Sentinel report `37eb44c2f426efa0cce0d6dfb157eda79deafaa3c374f136bdc43842c2775269` and Inspector report `4f47ada0cebc9c39119800366206e15a202c0d07e3039c3b25c1e07f3a90fea7`, both on head `6f7aaeae6af7c39d06d056a5306be25b9f888b0c`, plus Devin's L1. L2, the budget refund, the wiki claim reducer, and the role-null member pass stay out.
 
