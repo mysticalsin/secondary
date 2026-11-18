@@ -422,7 +422,9 @@ test("email identity: kelvin sign and dotted I do not match an ASCII principal",
   assert.equal(sqlEmail(dotted), normalEmail(dotted));
   assert.notEqual(normalEmail(kelvin), "k@ascii.example");
   assert.notEqual(normalEmail(dotted), "i@ascii.example");
-  assert.equal(normalEmail(dotted).includes("\u0307"), false);
+  const dottedFold = normalEmail(dotted);
+  assert.equal(typeof dottedFold, "string");
+  assert.equal(dottedFold?.includes("\u0307"), false);
   mem.close();
 
   const { file, remove } = tempFile();
