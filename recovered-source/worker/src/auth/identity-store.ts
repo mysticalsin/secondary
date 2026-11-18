@@ -663,7 +663,7 @@ export class IdentityStore {
     let renamed = false;
     if (c.userName !== undefined) {
       const userName = c.userName.trim().toLowerCase();
-      if (!userName.includes("@") || userName.length > 254) return fail("invalid");
+      if (!userName.includes("@") || userName.length > 254 || !normalEmail(userName)) return fail("invalid");
       if (userName !== row.user_name) {
         const twins = this.emailRows(userName).filter((row) => row.id !== principalId);
         if (twins.length > 1) this.warnAmbiguous(twins.map((row) => row.id));
