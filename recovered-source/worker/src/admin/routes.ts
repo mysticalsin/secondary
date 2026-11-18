@@ -102,7 +102,10 @@ const receipt = (
 
 /** A refusal on authority: a deny receipt, then 403 with the reason. */
 async function deny(c: C, action: string, reason: string, scopeId: string | null = null) {
-  await audit(c, receipt(action, "deny", reason.slice(0, 280), scopeId));
+  const wrote = await audit(c, receipt(action, "deny", reason.slice(0, 280), scopeId));
+  if (!wrote) {
+    console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
+  }
   return refuse(c, 403, "forbidden", reason);
 }
 
