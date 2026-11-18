@@ -841,8 +841,12 @@ export class TenantPolicy extends DurableObject<Env> {
 
   private switchState(): SwitchState {
     const out = allOn();
+    let unknown = false;
     for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray()) {
-      if (!isSwitchName(r.name)) continue;
+      if (!isSwitchName(r.name)) {
+        unknown = true;
+        continue;
+      }
       const flag = decodeSwitchEnabled(r.enabled);
       if (flag.tag === "corrupt") {
         commit(reject("kill_switch", "corrupt", "read", "corrupt_value"));
@@ -851,6 +855,7 @@ export class TenantPolicy extends DurableObject<Env> {
       }
       out[r.name] = flag.tag === "on";
     }
+    if (unknown) commit(reject("kill_switch", "unreadable", "read", "unknown_name"));
     return out;
   }
 
