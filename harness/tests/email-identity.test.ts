@@ -517,6 +517,28 @@ test("email identity: SCIM create and patch keep kelvin and dotted I off the ASC
   }
 });
 
+test("email identity: a patch of an address with no local part is invalid", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    addPrincipal(db, "bea", "bea@blank.example");
+    addScim(db, "su-bea", "bea", "bea@blank.example");
+    for (const userName of ["@ascii.example", "@"]) {
+      const patched = await policy.scimUserPatch("su-bea", { userName }, NOW);
+      assert.equal(patched.ok, false);
+      if (!patched.ok) assert.equal(patched.code, "invalid");
+    }
+    assert.equal(emailOf(db, "bea"), "bea@blank.example");
+    const stored = db.prepare("SELECT user_name FROM scim_users WHERE id = ?").get("su-bea") as {
+      user_name: string;
+    };
+    assert.equal(stored.user_name, "bea@blank.example");
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
 test("email identity: a patch of a blank folded name writes nothing", async () => {
   const { file, remove } = tempFile();
   try {
