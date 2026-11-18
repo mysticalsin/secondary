@@ -38,8 +38,9 @@ export const isRoleId = (v: unknown): v is RoleId =>
  * two principals with separate Personal Brains. The seeded persona addresses (`<role>@...`) keep the
  * canonical id `u_<role>`, because the synthetic items name those ids as their authors.
  */
-export async function personaId(roleId: RoleId, email: string): Promise<string> {
-  const e = normalEmail(email) ?? "";
+export async function personaId(roleId: RoleId, email: string): Promise<string | null> {
+  const e = normalEmail(email);
+  if (!e) return null;
   if (e.split("@")[0] === roleId) return PERSONAS[roleId].id;
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e));
   const h = Array.from(new Uint8Array(d).slice(0, 5), (b) => b.toString(16).padStart(2, "0")).join(
