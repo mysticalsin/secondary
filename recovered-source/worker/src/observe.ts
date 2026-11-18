@@ -60,8 +60,8 @@ const within = async (p: Promise<unknown>): Promise<"ok" | "fail"> => {
 export async function readiness(env: Env, now = Date.now()): Promise<ReadyBody> {
   if (cached && now - cached.at < CACHE_MS) return cached.body;
   const [d, r] = await Promise.all([
-    within(tenantStub(env, env.DEFAULT_TENANT_ID).epoch()),
-    within(env.BLOBS.head("__ready__")),
+    within(Promise.resolve().then(() => tenantStub(env, env.DEFAULT_TENANT_ID).epoch())),
+    within(Promise.resolve().then(() => env.BLOBS.head("__ready__"))),
   ]);
   const body: ReadyBody = { ready: d === "ok" && r === "ok", checks: { do: d, r2: r } };
   cached = { at: now, body };
