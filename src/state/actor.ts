@@ -47,10 +47,14 @@ export function normalizedEmailSql(column: string): string {
   return `nullif(lower(trim(${expr})), '')`;
 }
 
-/** Fold `EMAIL_FOLD` to spaces, trim, and lowercase. Empty becomes null. */
+/** A–Z only, the same letters SQLite lower() changes. U+212A and U+0130 stay put. */
+const asciiLower = (value: string): string =>
+  value.replace(/[A-Z]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 32));
+
+/** Fold `EMAIL_FOLD` to spaces, trim, and lowercase ASCII A–Z. Empty becomes null. */
 export function normalEmail(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.replace(FOLD, " ").trim().toLowerCase();
+  const trimmed = asciiLower(value.replace(FOLD, " ").trim());
   return trimmed === "" ? null : trimmed;
 }
 

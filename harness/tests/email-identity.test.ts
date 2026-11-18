@@ -430,27 +430,14 @@ test("email identity: kelvin sign and dotted I do not match an ASCII principal",
     const { policy, db } = await openPolicy(file);
     addPrincipal(db, "kay", "k@ascii.example");
     addPrincipal(db, "aye", "i@ascii.example");
-    const kelvinSign = await policy.sessionCreate(
-      "hash-kelvin",
-      { tid: "contoso", oid: "oid-kelvin", email: kelvin, emailIsUpn: true, guest: false },
-      [],
-      NOW,
-      false,
-    );
-    const dottedSign = await policy.sessionCreate(
-      "hash-dotted",
-      { tid: "contoso", oid: "oid-dotted", email: dotted, emailIsUpn: true, guest: false },
-      [],
-      NOW,
-      false,
-    );
-    assert.equal(kelvinSign.ok, true);
-    assert.equal(dottedSign.ok, true);
-    if (kelvinSign.ok) assert.notEqual(kelvinSign.principalId, "kay");
-    if (dottedSign.ok) assert.notEqual(dottedSign.principalId, "aye");
-    assert.equal(emailOf(db, "kay"), "k@ascii.example");
-    assert.equal(emailOf(db, "aye"), "i@ascii.example");
-    assert.equal(countOf(db), 4);
+    addScim(db, "su-kay", "kay", "k@ascii.example");
+    addScim(db, "su-aye", "aye", "i@ascii.example");
+    const kelvinList = policy.scimUserList({ userName: kelvin }, 1, 20);
+    const dottedList = policy.scimUserList({ userName: dotted }, 1, 20);
+    assert.equal(kelvinList.total, 0);
+    assert.equal(dottedList.total, 0);
+    assert.equal(policy.scimUserList({ userName: "K@ascii.example" }, 1, 20).total, 1);
+    assert.equal(countOf(db), 2);
     db.close();
   } finally {
     remove();
