@@ -217,7 +217,7 @@ serial("oidc callback: a missing state consumes the cookie's login row", async (
   }
 });
 
-serial("oidc callback: a state mismatch consumes both login rows", async () => {
+serial("oidc callback: a state mismatch consumes only the cookie login row", async () => {
   const { file, remove } = tempFile();
   try {
     const policy = await openPolicy(file);
@@ -235,10 +235,59 @@ serial("oidc callback: a state mismatch consumes both login rows", async () => {
       cookieState,
     );
     assert.equal(res.status, 400);
+    assert.equal(res.setCookie.includes(SESSION_COOKIE), false);
     assert.equal(rowNonce(file, cookieHash), undefined);
-    assert.equal(rowNonce(file, queryHash), undefined);
+    assert.equal(rowNonce(file, queryHash), "nonce-query");
     assert.deepEqual(res.logs, [JSON.stringify({ at: "entra_login", reason: "state_mismatch" })]);
-    noSecrets(res.logs, [cookieState, queryState, "secret-code-mismatch", "verifier-cookie"]);
+    noSecrets(res.logs, [cookieState, queryState, "secret-code-mismatch", "verifier-cookie", "nonce-query"]);
+  } finally {
+    remove();
+  }
+});
+
+serial("oidc callback: an idp error does not consume a login row named only by the query", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const cookieState = "secret-state-idp-cookie";
+    const queryState = "secret-state-idp-query";
+    const cookieHash = await sha256Hex(cookieState);
+    const queryHash = await sha256Hex(queryState);
+    policy.loginStatePut(cookieHash, "nonce-idp-cookie", "verifier-idp-cookie", "/", NOW, "ip");
+    policy.loginStatePut(queryHash, "nonce-idp-query", "verifier-idp-query", "/", NOW, "ip");
+    const { authRoutes } = await loadRoutes();
+    const app = authRoutes({ now: () => NOW });
+    const res = await callback(
+      app,
+      { error: "access_denied", state: queryState, code: "secret-code-idp-foreign" },
+      cookieState,
+    );
+    assert.equal(res.status, 400);
+    assert.equal(res.setCookie.includes(SESSION_COOKIE), false);
+    assert.equal(rowNonce(file, cookieHash), undefined);
+    assert.equal(rowNonce(file, queryHash), "nonce-idp-query");
+    assert.deepEqual(res.logs, [JSON.stringify({ at: "entra_login", reason: "idp_error" })]);
+    noSecrets(res.logs, [cookieState, queryState, "secret-code-idp-foreign", "nonce-idp-query", "verifier-idp-query"]);
+  } finally {
+    remove();
+  }
+});
+
+serial("oidc callback: a missing cookie does not consume the query login row", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const queryState = "secret-state-query-only";
+    const queryHash = await sha256Hex(queryState);
+    policy.loginStatePut(queryHash, "nonce-query-only", "verifier-query-only", "/", NOW, "ip");
+    const { authRoutes } = await loadRoutes();
+    const app = authRoutes({ now: () => NOW });
+    const res = await callback(app, { state: queryState });
+    assert.equal(res.status, 400);
+    assert.equal(res.setCookie.includes(SESSION_COOKIE), false);
+    assert.equal(rowNonce(file, queryHash), "nonce-query-only");
+    assert.deepEqual(res.logs, [JSON.stringify({ at: "entra_login", reason: "missing_state" })]);
+    noSecrets(res.logs, [queryState, "nonce-query-only", "verifier-query-only"]);
   } finally {
     remove();
   }
