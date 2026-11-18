@@ -444,6 +444,27 @@ test("email identity: kelvin sign and dotted I do not match an ASCII principal",
   }
 });
 
+test("email identity: a patch of a blank folded name writes nothing", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    addPrincipal(db, "bea", "bea@blank.example");
+    addScim(db, "su-bea", "bea", "bea@blank.example");
+    const patched = await policy.scimUserPatch("su-bea", { userName: "\u00A0\u00A0" }, NOW);
+    assert.equal(patched.ok, false);
+    if (!patched.ok) assert.equal(patched.code, "invalid");
+    assert.equal(emailOf(db, "bea"), "bea@blank.example");
+    const stored = db.prepare("SELECT user_name FROM scim_users WHERE id = ?").get("su-bea") as {
+      user_name: string;
+    };
+    assert.equal(stored.user_name, "bea@blank.example");
+    assert.equal(countOf(db), 1);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
 test("email identity: a folded SCIM user name is one person and does not insert another", async () => {
   const { file, remove } = tempFile();
   try {
