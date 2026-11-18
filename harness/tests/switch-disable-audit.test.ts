@@ -71,8 +71,10 @@ test("switch disable: a refused receipt stays applied and logs a warning with no
     const body = (await res.json()) as { status?: string; enabled?: boolean };
     assert.equal(body.status, "applied");
     assert.equal(body.enabled, false);
-    const warning = lines.find((line) => line.includes("audit_unavailable"));
+    const warning = lines.find((line) => line.includes("switch_disable"));
     assert.equal(typeof warning, "string");
+    assert.equal(warning?.includes('"audit":"refused"'), true);
+    assert.equal(warning?.includes('"switch":"applied"'), true);
     assert.equal(warning?.includes("@"), false);
     assert.equal(warning?.includes("platform_admin@"), false);
   } finally {
@@ -99,8 +101,9 @@ test("switch disable: a hung audit receipt does not hold the response", async ()
     if (typeof winner !== "string") {
       assert.equal(winner.status, 200);
     }
-    const warning = lines.find((line) => line.includes("audit_unavailable"));
+    const warning = lines.find((line) => line.includes("switch_disable"));
     assert.equal(typeof warning, "string");
+    assert.equal(warning?.includes('"audit":"timed_out"'), true);
     assert.equal(warning?.includes("@"), false);
   } finally {
     console.warn = original;
