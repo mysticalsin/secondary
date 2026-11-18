@@ -393,3 +393,34 @@ test("kill switch route: replay and refused are 409, and pending is the only 202
   const pendingAt = route.indexOf('res.status === "pending"');
   assert.equal(refusedAt >= 0 && pendingAt > refusedAt, true);
 });
+
+test("kill switch: a stored unknown name is logged once and is not echoed", async () => {
+  const { file, remove } = tempFile();
+  const warn = captureWarn();
+  try {
+    const { policy, db } = await openPolicy(file);
+    db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    ).run("not-a-switch", 0, "ada", NOW);
+    db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    ).run("also-unknown", 1, "bea", NOW);
+    const status = policy.switchStatus(NOW);
+    assert.equal(status.switches.mcp.enabled, true);
+    assert.equal(status.switches.connector.enabled, true);
+    assert.equal(status.switches.ai.enabled, true);
+    assert.equal(status.switches.contribute.enabled, true);
+    const hits = warn.lines
+      .map((line) => JSON.parse(line) as { reason?: string; machine?: string })
+      .filter((line) => line.reason === "unknown_name");
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0]?.machine, "kill_switch");
+    const text = warn.lines.join("\n");
+    assert.equal(text.includes("not-a-switch"), false);
+    assert.equal(text.includes("also-unknown"), false);
+    db.close();
+  } finally {
+    warn.restore();
+    remove();
+  }
+});
