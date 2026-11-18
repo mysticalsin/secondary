@@ -444,6 +444,31 @@ test("email identity: kelvin sign and dotted I do not match an ASCII principal",
   }
 });
 
+test("email identity: the same folded name back to back does not add a principal", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    const first = await policy.scimUserCreate({ userName: "ada@back.example", active: true }, NOW);
+    assert.equal(first.ok, true);
+    const second = await policy.scimUserCreate({ userName: "ADA@back.example", active: true }, NOW);
+    assert.equal(second.ok, false);
+    if (!second.ok) assert.equal(second.code, "uniqueness");
+    assert.equal(countOf(db), 1);
+    const other = await policy.scimUserCreate({ userName: "bea@back.example", active: true }, NOW);
+    assert.equal(other.ok, true);
+    const id = db.prepare("SELECT id FROM scim_users WHERE user_name = ?").get("bea@back.example") as {
+      id: string;
+    };
+    const renamed = await policy.scimUserPatch(id.id, { userName: "Ada@back.example" }, NOW);
+    assert.equal(renamed.ok, false);
+    if (!renamed.ok) assert.equal(renamed.code, "uniqueness");
+    assert.equal(countOf(db), 2);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
 test("email identity: a patch of a blank folded name writes nothing", async () => {
   const { file, remove } = tempFile();
   try {

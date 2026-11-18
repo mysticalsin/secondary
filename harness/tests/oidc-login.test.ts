@@ -76,6 +76,24 @@ function tempFile(): { file: string; remove: () => void } {
   };
 }
 
+function rowReturn(file: string, stateHash: string): string | null | undefined {
+  const db = openSqlite(file);
+  const row = db.prepare("SELECT return_to FROM login_state WHERE state_hash = ?").get(stateHash) as
+    | { return_to: string | null }
+    | undefined;
+  db.close();
+  return row ? row.return_to : undefined;
+}
+
+function assertHostCookie(header: string, name: string): void {
+  assert.equal(header.includes(`${name}=`), true);
+  assert.match(header, /;\s*Secure(?:;|$)/);
+  assert.match(header, /;\s*HttpOnly(?:;|$)/);
+  assert.match(header, /;\s*SameSite=Lax(?:;|$)/i);
+  assert.match(header, /;\s*Path=\/(?:;|$)/);
+  assert.equal(/;\s*Domain=/i.test(header), false);
+}
+
 function rowNonce(file: string, stateHash: string): string | undefined {
   const db = openSqlite(file);
   const row = db.prepare("SELECT nonce FROM login_state WHERE state_hash = ?").get(stateHash) as
@@ -316,7 +334,12 @@ serial("oidc callback: a failed code exchange consumes the login row", async () 
     assert.equal(res.status, 401);
     assert.equal(rowNonce(file, hash), undefined);
     assert.deepEqual(res.logs, [JSON.stringify({ at: "entra_login", reason: "exchange_failed" })]);
+    const replay = await callback(app, { state, code }, state);
+    assert.equal(replay.status, 400);
+    assert.equal(replay.setCookie.includes(SESSION_COOKIE), false);
+    assert.equal(rowNonce(file, hash), undefined);
     noSecrets(res.logs, [state, code, "nonce-exchange", "verifier-exchange"]);
+    noSecrets(replay.logs, [state, code, "nonce-exchange", "verifier-exchange"]);
   } finally {
     remove();
   }
@@ -363,6 +386,7 @@ serial("oidc callback: success opens a session, and a replay of that state is re
     assert.equal(ok.status, 303);
     assert.equal(ok.location, "/done");
     assert.equal(ok.setCookie.includes(SESSION_COOKIE), true);
+    assertHostCookie(ok.setCookie, SESSION_COOKIE);
     assert.equal(rowNonce(file, hash), undefined);
     noSecrets(ok.logs, [state, code, nonce, verifier, idToken]);
     const again = await callback(app, { state, code }, state);
@@ -390,6 +414,83 @@ serial("oidc callback: a login older than 600 seconds is rejected and the row is
     assert.equal(res.setCookie.includes(SESSION_COOKIE), false);
     assert.equal(rowNonce(file, hash), undefined);
     noSecrets(res.logs, [state, code, "nonce-expired", "verifier-expired"]);
+  } finally {
+    remove();
+  }
+});
+
+serial("oidc login: the cookie is host-only and only a validated return path is stored", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const { authRoutes } = await loadRoutes();
+    const app = authRoutes({
+      now: () => NOW,
+      entra: { fetch: async () => discovery() },
+    });
+    const good = await app.request("https://api.invalid/login?returnTo=/done", {}, env);
+    assert.equal(good.status, 302);
+    const setCookie = good.headers.get("set-cookie") ?? "";
+    assertHostCookie(setCookie, LOGIN_COOKIE);
+    const state = setCookie.match(new RegExp(`${LOGIN_COOKIE}=([^;]+)`))?.[1] ?? "";
+    assert.equal(state.length > 0, true);
+    assert.equal(rowReturn(file, await sha256Hex(state)), "/done");
+
+    const external = await app.request("https://api.invalid/login?returnTo=https://evil.example/phish", {}, env);
+    const externalState = (external.headers.get("set-cookie") ?? "").match(
+      new RegExp(`${LOGIN_COOKIE}=([^;]+)`),
+    )?.[1] ?? "";
+    assert.equal(rowReturn(file, await sha256Hex(externalState)), null);
+
+    const schemeRelative = await app.request("https://api.invalid/login?returnTo=//evil.example", {}, env);
+    const relativeState = (schemeRelative.headers.get("set-cookie") ?? "").match(
+      new RegExp(`${LOGIN_COOKIE}=([^;]+)`),
+    )?.[1] ?? "";
+    assert.equal(rowReturn(file, await sha256Hex(relativeState)), null);
+  } finally {
+    remove();
+  }
+});
+
+serial("oidc callback: a null stored return path redirects to the site root", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const state = "secret-state-root";
+    const code = "secret-code-root";
+    const hash = await sha256Hex(state);
+    policy.loginStatePut(hash, "nonce-root", "verifier-root", null, NOW, "ip");
+    const { publicKey, privateKey } = await generateKeyPair("RS256");
+    const idToken = await new SignJWT({
+      tid: TENANT,
+      nonce: "nonce-root",
+      oid: OID,
+      preferred_username: "ada@example.invalid",
+      ver: "2.0",
+    })
+      .setProtectedHeader({ alg: "RS256" })
+      .setSubject("sub-root")
+      .setIssuer(ISSUER)
+      .setAudience(CLIENT)
+      .setIssuedAt(Math.floor(NOW / 1000))
+      .setExpirationTime(Math.floor(NOW / 1000) + 600)
+      .sign(privateKey);
+    const { authRoutes } = await loadRoutes();
+    const app = authRoutes({
+      now: () => NOW,
+      entra: {
+        fetch: async (input) => {
+          const url = String(input);
+          if (url.includes("openid-configuration")) return discovery();
+          return Response.json({ id_token: idToken });
+        },
+        jwks: () => async () => publicKey,
+      },
+    });
+    const ok = await callback(app, { state, code }, state);
+    assert.equal(ok.status, 303);
+    assert.equal(ok.location, "/");
+    noSecrets(ok.logs, [state, code, "nonce-root", "verifier-root", idToken]);
   } finally {
     remove();
   }
