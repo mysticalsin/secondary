@@ -14,7 +14,7 @@ npm test
 npm run typecheck
 ```
 
-`npm test` on this tree passed 427 and failed 0. `npm run typecheck` and `npm run typecheck:worker` each reported 0 `error TS` lines.
+`npm test` on this tree passed 441 and failed 0. `npm run typecheck` and `npm run typecheck:worker` each reported 0 `error TS` lines.
 
 ```bash
 npm run verify:provenance
