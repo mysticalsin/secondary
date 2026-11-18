@@ -2,7 +2,7 @@
 // first, answer only from it, and fan out only to the workspaces that view reaches. A node outside
 // the view is indistinguishable from a node that does not exist.
 
-import { asciiLower, normalEmail } from "../../../src/state/actor.ts";
+import { asciiLower, normalEmail, principalEmailLabel } from "../../../src/state/actor.ts";
 import {
   ACTIONS,
   type Action,
@@ -469,7 +469,12 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     };
     const d = s.org ? describe(s.principal, s.org) : { see: [], do: [], never: [] };
     return c.json({
-      principal: { id: s.principal.id, email: s.principal.email, roleIds: s.principal.roleIds },
+      principal: {
+        id: s.principal.id,
+        email: s.principal.email,
+        emailLabel: principalEmailLabel(s.principal.email),
+        roleIds: s.principal.roleIds,
+      },
       tenantId: s.tenantId,
       persona: s.persona,
       describe: d,
