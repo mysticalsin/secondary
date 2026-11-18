@@ -399,6 +399,64 @@ serial("oidc callback: success opens a session, and a replay of that state is re
   }
 });
 
+serial("oidc callback: kelvin and dotted I in the token do not bind the ASCII principals", async () => {
+  const cases = [
+    ["kay", "k@ascii.example", "\u212A@ascii.example"],
+    ["aye", "i@ascii.example", "\u0130@ascii.example"],
+  ] as const;
+  for (const [id, ascii, raw] of cases) {
+    const { file, remove } = tempFile();
+    try {
+      const policy = await openPolicy(file);
+      const db = openSqlite(file);
+      db.prepare("INSERT INTO principals (id, email, subject) VALUES (?, ?, ?)").run(id, ascii, null);
+      db.close();
+      const state = `secret-state-${id}`;
+      const code = `secret-code-${id}`;
+      const nonce = `nonce-${id}`;
+      const hash = await sha256Hex(state);
+      policy.loginStatePut(hash, nonce, `verifier-${id}`, "/done", NOW, "ip");
+      const { publicKey, privateKey } = await generateKeyPair("RS256");
+      const idToken = await new SignJWT({
+        tid: TENANT,
+        nonce,
+        oid: OID,
+        preferred_username: raw,
+        ver: "2.0",
+      })
+        .setProtectedHeader({ alg: "RS256" })
+        .setSubject(`sub-${id}`)
+        .setIssuer(ISSUER)
+        .setAudience(CLIENT)
+        .setIssuedAt(Math.floor(NOW / 1000))
+        .setExpirationTime(Math.floor(NOW / 1000) + 600)
+        .sign(privateKey);
+      const { authRoutes } = await loadRoutes();
+      const app = authRoutes({
+        now: () => NOW,
+        entra: {
+          fetch: async (input) => {
+            const url = String(input);
+            if (url.includes("openid-configuration")) return discovery();
+            return Response.json({ id_token: idToken });
+          },
+          jwks: () => async () => publicKey,
+        },
+      });
+      const res = await callback(app, { state, code }, state);
+      assert.equal(res.status, 303);
+      const after = openSqlite(file);
+      const emails = after.prepare("SELECT id, email FROM principals").all() as { id: string; email: string }[];
+      after.close();
+      assert.equal(emails.some((row) => row.email === raw), true);
+      assert.equal(emails.filter((row) => row.id === id && row.email === ascii).length, 1);
+      noSecrets(res.logs, [state, code, nonce, idToken, raw]);
+    } finally {
+      remove();
+    }
+  }
+});
+
 serial("oidc callback: a login older than 600 seconds is rejected and the row is deleted", async () => {
   const { file, remove } = tempFile();
   try {

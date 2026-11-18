@@ -432,14 +432,27 @@ test("email identity: kelvin sign and dotted I do not match an ASCII principal",
     const { policy, db } = await openPolicy(file);
     addPrincipal(db, "kay", "k@ascii.example");
     addPrincipal(db, "aye", "i@ascii.example");
-    addScim(db, "su-kay", "kay", "k@ascii.example");
-    addScim(db, "su-aye", "aye", "i@ascii.example");
-    const kelvinList = policy.scimUserList({ userName: kelvin }, 1, 20);
-    const dottedList = policy.scimUserList({ userName: dotted }, 1, 20);
-    assert.equal(kelvinList.total, 0);
-    assert.equal(dottedList.total, 0);
-    assert.equal(policy.scimUserList({ userName: "K@ascii.example" }, 1, 20).total, 1);
-    assert.equal(countOf(db), 2);
+    const kelvinSign = await policy.sessionCreate(
+      "hash-kelvin",
+      { tid: "contoso", oid: "oid-kelvin", email: kelvin, emailIsUpn: true, guest: false },
+      [],
+      NOW,
+      false,
+    );
+    const dottedSign = await policy.sessionCreate(
+      "hash-dotted",
+      { tid: "contoso", oid: "oid-dotted", email: dotted, emailIsUpn: true, guest: false },
+      [],
+      NOW,
+      false,
+    );
+    assert.equal(kelvinSign.ok, true);
+    assert.equal(dottedSign.ok, true);
+    if (kelvinSign.ok) assert.notEqual(kelvinSign.principalId, "kay");
+    if (dottedSign.ok) assert.notEqual(dottedSign.principalId, "aye");
+    assert.equal(emailOf(db, "kay"), "k@ascii.example");
+    assert.equal(emailOf(db, "aye"), "i@ascii.example");
+    assert.equal(countOf(db), 4);
     db.close();
   } finally {
     remove();
@@ -465,6 +478,39 @@ test("email identity: the same folded name back to back does not add a principal
     assert.equal(renamed.ok, false);
     if (!renamed.ok) assert.equal(renamed.code, "uniqueness");
     assert.equal(countOf(db), 2);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
+test("email identity: SCIM create and patch keep kelvin and dotted I off the ASCII principals", async () => {
+  const kelvin = "\u212A@scim.example";
+  const dotted = "\u0130@scim.example";
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    addPrincipal(db, "kay", "k@scim.example");
+    addScim(db, "su-kay", "kay", "k@scim.example");
+    addPrincipal(db, "aye", "i@scim.example");
+    addScim(db, "su-aye", "aye", "i@scim.example");
+    addPrincipal(db, "bea", "bea@scim.example");
+    addScim(db, "su-bea", "bea", "bea@scim.example");
+    const created = await policy.scimUserCreate({ userName: kelvin, active: true }, NOW);
+    assert.equal(created.ok, true);
+    const createdName = db.prepare("SELECT user_name, principal_id FROM scim_users WHERE user_name = ?").get(kelvin) as
+      | { user_name: string; principal_id: string }
+      | undefined;
+    assert.equal(createdName?.user_name, kelvin);
+    assert.notEqual(createdName?.principal_id, "kay");
+    const patched = await policy.scimUserPatch("su-bea", { userName: dotted }, NOW);
+    assert.equal(patched.ok, true);
+    const patchedName = db.prepare("SELECT user_name FROM scim_users WHERE id = ?").get("su-bea") as {
+      user_name: string;
+    };
+    assert.equal(patchedName.user_name, dotted);
+    assert.equal(emailOf(db, "kay"), "k@scim.example");
+    assert.equal(emailOf(db, "aye"), "i@scim.example");
     db.close();
   } finally {
     remove();
