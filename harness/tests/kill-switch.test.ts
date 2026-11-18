@@ -430,3 +430,52 @@ test("kill switch: a stored unknown name is logged once and is not echoed", asyn
     remove();
   }
 });
+
+test("kill switch: each tenant logs an unknown name even after another tenant saw it", async () => {
+  const warn = captureWarn();
+  const first = tempFile();
+  const second = tempFile();
+  try {
+    const a = await openPolicy(first.file);
+    a.db
+      .prepare("INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)")
+      .run("tenant-only-a", 0, "ada", NOW);
+    a.policy.switchStatus(NOW);
+    const marked = warn.lines.filter((line) => line.includes("unknown_name")).length;
+    assert.equal(marked >= 1, true);
+    const b = await openPolicy(second.file);
+    b.db
+      .prepare("INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)")
+      .run("tenant-only-a", 0, "ada", NOW);
+    b.policy.switchStatus(NOW);
+    assert.equal(warn.lines.filter((line) => line.includes("unknown_name")).length, marked + 1);
+    a.db.close();
+    b.db.close();
+  } finally {
+    warn.restore();
+    first.remove();
+    second.remove();
+  }
+});
+
+test("kill switch: unknown names stop being logged after 256", async () => {
+  const warn = captureWarn();
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    const insert = db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    );
+    for (let i = 0; i < 257; i += 1) insert.run(`cap-name-${i}`, 0, "ada", NOW);
+    policy.switchStatus(NOW);
+    const first = warn.lines.filter((line) => line.includes("unknown_name")).length;
+    assert.equal(first, 256);
+    const marked = warn.lines.length;
+    policy.switchStatus(NOW + 1);
+    assert.equal(warn.lines.length, marked);
+    db.close();
+  } finally {
+    warn.restore();
+    remove();
+  }
+});
