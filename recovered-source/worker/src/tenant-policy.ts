@@ -283,11 +283,9 @@ export class TenantPolicy extends DurableObject<Env> {
         String(now),
       );
       for (const p of principals) {
-        this.sql.exec(
-          "INSERT INTO principals (id, email) VALUES (?, ?)",
-          p.id,
-          normalEmail(p.email) ?? p.email,
-        );
+        const email = normalEmail(p.email);
+        if (!email) continue;
+        this.sql.exec("INSERT INTO principals (id, email) VALUES (?, ?)", p.id, email);
         for (const r of p.roleIds)
           this.sql.exec(
             "INSERT INTO role_assignments (principal_id, role_id) VALUES (?, ?)",
