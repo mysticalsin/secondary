@@ -15,11 +15,24 @@ import type { Proposal } from "./types.ts";
 export type Right = { allowed: boolean; reason: string };
 
 /**
- * A wiki decision publishes. Elevation can add review and edit. It does not add approve_release,
- * and a role's `never` list keeps that release closed.
+ * A lead may decide inside a brain where they hold a standing review, edit, or approve_release
+ * grant. A right that exists only while elevated does not count, and the author cannot approve
+ * their own proposal. An elevated release still needs approve_release, which elevation does not grant.
  */
-export function mayDecide(view: AdmittedView, p: Principal, nodeId: string): Right {
+export function mayDecide(
+  view: AdmittedView,
+  p: Principal,
+  nodeId: string,
+  authorId?: string | null,
+): Right {
   if (nodeId === personalRootId(p.id)) return { allowed: true, reason: "Your Personal Brain" };
+  if (authorId != null && authorId === p.id)
+    return { allowed: false, reason: "You cannot approve your own proposal" };
+  const standing: AdmittedView = { ...view, ctx: { ...view.ctx, elevatedUntil: undefined } };
+  for (const action of ["review", "approve_release", "edit"] as const) {
+    const decision = canDoInView(standing, p, nodeId, action);
+    if (decision.allowed) return decision;
+  }
   return canDoInView(view, p, nodeId, "approve_release");
 }
 
