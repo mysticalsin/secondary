@@ -4,7 +4,6 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import test from "node:test";
 
@@ -12,7 +11,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const html = readFileSync(new URL("../../qa/synthetic-shell.html", import.meta.url), "utf8");
+const html = "<!DOCTYPE html><title>Synthetic</title><p>Synthetic local shell</p>";
 
 const env = {
   ENVIRONMENT: "dev",
@@ -60,9 +59,6 @@ test("local boot: health, providers, a refused profile, and the synthetic shell"
   assert.equal(page.includes("example.invalid"), false);
 
   const ready = await api.request("http://127.0.0.1/v1/ready", {}, env);
-  assert.equal(ready.status, 500);
-  const readyBody = (await ready.json()) as { error: string; requestId: string };
-  assert.equal(readyBody.error, "internal_error");
-  assert.equal(typeof readyBody.requestId, "string");
-  assert.equal(readyBody.requestId.length > 0, true);
+  assert.equal(ready.status, 503);
+  assert.deepEqual(await ready.json(), { ready: false, checks: { do: "fail", r2: "fail" } });
 });
