@@ -120,4 +120,4 @@ Tests cover recovered behavior only. The in-memory replay object in `harness/tes
 
 ## Next step
 
-The Worker typecheck stays blocked until `worker/src/types.ts`, `packages/contracts/src/agent-ui/index.ts`, and `packages/contracts/src/view-plan.ts` are copied from an original tree, if one still exists. Do not fetch the deployed Worker to invent them, and do not write substitutes into `recovered-source/`. `Env` belongs with the missing `wrangler.jsonc` surface, not with a guessed config in this repo.
+The 119 `typecheck:worker` errors in the table above are the intake measurement on this file's original run. `specs/worker-typecheck-zero/closeout.md` records the later promotion of `env.d.ts`, `types.ts`, the agent-ui barrel, `view-plan.ts`, and `view-plan.validator.d.ts`, and records 0 `error TS` lines. Do not fetch the deployed Worker to invent further substitutes. There is still no wrangler config in this recovery record, and this file is not a deploy instruction.

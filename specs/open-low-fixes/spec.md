@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-18
 
-**Status**: Draft
+**Status**: Implemented
 
 **Input**: Tony, 2026-11-18: fix the open findings that have a local change. Leave anything that needs a refactor, a live Access login, or `deploy/assets` on `cursor/recover-v24-deploy-1c66`.
 
