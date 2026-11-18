@@ -375,6 +375,26 @@ serial("oidc callback: success opens a session, and a replay of that state is re
   }
 });
 
+serial("oidc callback: a login older than 600 seconds is rejected and the row is deleted", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const policy = await openPolicy(file);
+    const state = "secret-state-expired";
+    const code = "secret-code-expired";
+    const hash = await sha256Hex(state);
+    policy.loginStatePut(hash, "nonce-expired", "verifier-expired", "/done", NOW, "ip");
+    const { authRoutes } = await loadRoutes();
+    const app = authRoutes({ now: () => NOW + 601_000 });
+    const res = await callback(app, { state, code }, state);
+    assert.equal(res.status, 400);
+    assert.equal(res.setCookie.includes(SESSION_COOKIE), false);
+    assert.equal(rowNonce(file, hash), undefined);
+    noSecrets(res.logs, [state, code, "nonce-expired", "verifier-expired"]);
+  } finally {
+    remove();
+  }
+});
+
 serial("oidc callback: a disabled IdP consumes the cookie login row", async () => {
   const { file, remove } = tempFile();
   try {
