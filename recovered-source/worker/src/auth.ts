@@ -239,7 +239,9 @@ export const authenticate =
     if (asked !== undefined) {
       if (!isRoleId(asked)) return c.json({ error: "unknown_persona" }, 400);
       persona = asked;
-      const p = personaPrincipal(asked, tenantId, email, await personaId(asked, email));
+      const personaKey = await personaId(asked, email);
+      if (!personaKey) return c.json({ error: "unauthorized" }, 401);
+      const p = personaPrincipal(asked, tenantId, email, personaKey);
       actAs = { id: p.id, roleIds: p.roleIds, memberships: p.memberships };
     }
 

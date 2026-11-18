@@ -27,18 +27,29 @@ const envName = (env: Env): string => env.ENVIRONMENT;
 const isProd = (env: Env): boolean => envName(env) === "prod";
 const AUDIT_WAIT_MS = 1_000;
 
+type AuditOutcome = "succeeded" | "refused" | "timed_out";
+
 /** The off path must return even when the audit call does not. */
-function boundedAudit(run: Promise<boolean>): Promise<boolean> {
+function boundedAudit(run: Promise<boolean>): Promise<AuditOutcome> {
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), AUDIT_WAIT_MS);
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve("timed_out");
+    }, AUDIT_WAIT_MS);
     run.then(
       (ok) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
-        resolve(ok);
+        resolve(ok ? "succeeded" : "refused");
       },
       () => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
-        resolve(false);
+        resolve("refused");
       },
     );
   });
@@ -146,10 +157,14 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     );
     // Turning a switch off must never wait on a stuck audit log (incident response).
     if (!enabled) {
-      const wrote = await boundedAudit(audit(c, s, "switch_disable", `${name} off`));
-      if (!wrote)
+      const auditOutcome = await boundedAudit(audit(c, s, "switch_disable", `${name} off`));
+      if (auditOutcome !== "succeeded" || res.status !== "applied")
         console.warn(
-          JSON.stringify({ at: "audit_unavailable", action: "switch_disable", decision: "allow" }),
+          JSON.stringify({
+            at: "switch_disable",
+            audit: auditOutcome,
+            switch: res.status,
+          }),
         );
     }
     if (res.status === "refused" || res.status === "replay" || res.sameActor === true)

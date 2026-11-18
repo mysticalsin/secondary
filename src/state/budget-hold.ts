@@ -9,12 +9,15 @@ export type BudgetHoldState =
   | { tag: "idle" }
   | { tag: "held"; estimate: number }
   | { tag: "denied" }
+  | { tag: "refund"; delta: number }
   | { tag: "settled"; actual: number };
 
 export type BudgetHoldEvent =
   | { type: "reserved"; estimate: number }
   | { type: "denied" }
-  | { type: "settle"; actual: number };
+  | { type: "settle"; actual: number }
+  | { type: "refund_due"; delta: number }
+  | { type: "cleared" };
 
 export type BudgetHoldEffect = { type: "adjust"; delta: number } | { type: "none" };
 
@@ -34,7 +37,12 @@ export function transitionBudgetHold(
   state: BudgetHoldState,
   event: BudgetHoldEvent,
 ): BudgetHoldStep {
-  if (state.tag !== "idle" && event.type !== "settle") {
+  if (
+    state.tag !== "idle" &&
+    event.type !== "settle" &&
+    event.type !== "refund_due" &&
+    event.type !== "cleared"
+  ) {
     return reject("budget_hold", state.tag, event.type, `${state.tag} does not accept ${event.type}`);
   }
   if (state.tag === "idle" && event.type === "denied") return none({ tag: "denied" });
@@ -44,6 +52,15 @@ export function transitionBudgetHold(
     }
     return none({ tag: "held", estimate: event.estimate });
   }
+  if (state.tag === "held" && event.type === "refund_due") {
+    if (!finiteHoldNumber(event.delta) || event.delta >= 0) {
+      return reject("budget_hold", "held", "refund_due", "the refund is not a negative finite number");
+    }
+    return none({ tag: "refund", delta: event.delta });
+  }
+  if (state.tag === "refund" && event.type === "refund_due") return none(state);
+  if (state.tag === "refund" && event.type === "cleared")
+    return none({ tag: "settled", actual: state.delta });
   if (state.tag === "held" && event.type === "settle") {
     if (!finiteHoldNumber(event.actual)) {
       return reject("budget_hold", "held", "settle", "the actual total is not a finite number");
@@ -95,15 +112,38 @@ export async function openHold(
   );
   if (!held.ok || held.state.tag !== "held") return null;
   let hold: BudgetHoldState = held.state;
+  let writing = false;
   return {
     settle: async (actual) => {
-      const next = commitBudgetHold(hold, { type: "settle", actual });
-      if (!next.ok || next.state.tag !== "settled") return;
-      hold = next.state;
-      for (const effect of next.effects) {
-        if (effect.type !== "adjust") continue;
-        const wrote = await store.add(effect.delta, Number.MAX_SAFE_INTEGER);
-        if (wrote === null) console.warn(JSON.stringify({ at: "budget_adjust_failed" }));
+      if (writing) return;
+      writing = true;
+      try {
+        if (hold.tag === "refund") {
+          const wrote = await store.add(hold.delta, Number.MAX_SAFE_INTEGER);
+          if (wrote === null) {
+            console.warn(JSON.stringify({ at: "budget_refund_failed" }));
+            return;
+          }
+          const cleared = commitBudgetHold(hold, { type: "cleared" });
+          if (cleared.ok) hold = cleared.state;
+          return;
+        }
+        const next = commitBudgetHold(hold, { type: "settle", actual });
+        if (!next.ok || next.state.tag !== "settled") return;
+        for (const effect of next.effects) {
+          if (effect.type !== "adjust") continue;
+          const wrote = await store.add(effect.delta, Number.MAX_SAFE_INTEGER);
+          if (wrote === null && effect.delta < 0) {
+            const owed = commitBudgetHold(hold, { type: "refund_due", delta: effect.delta });
+            if (owed.ok) hold = owed.state;
+            console.warn(JSON.stringify({ at: "budget_refund_failed" }));
+            return;
+          }
+          if (wrote === null) console.warn(JSON.stringify({ at: "budget_adjust_failed" }));
+        }
+        hold = next.state;
+      } finally {
+        writing = false;
       }
     },
   };

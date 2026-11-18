@@ -329,7 +329,16 @@ function mapFail(c: C, f: { code: string; message: string; currentRevision?: num
 }
 
 const deny = async (c: C, action: string, id: string, scope: string | null, reason: string) => {
-  await audit(c, { action, nodeId: id, scopeId: scope, revision: null, decision: "deny", reason });
+  const wrote = await audit(c, {
+    action,
+    nodeId: id,
+    scopeId: scope,
+    revision: null,
+    decision: "deny",
+    reason,
+  });
+  if (!wrote)
+    console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
   return forbidden(c, reason);
 };
 

@@ -1,0 +1,46 @@
+{
+  "label": "SYNTHETIC",
+  "tenantId": "tenant_mantu_synthetic",
+  "note": "Ids and addresses are the ones packages/policy/src/personas.ts and packages/policy/src/roles.ts already declare. Nothing here is a person.",
+  "policyRoles": [
+    { "id": "u_ceo", "email": "ceo@example.invalid", "roleId": "ceo" },
+    { "id": "u_head_bid", "email": "head_bid@example.invalid", "roleId": "head_bid", "memberships": [{ "scope_type": "circle", "scope_id": "c_bid" }] },
+    { "id": "u_acme_lead", "email": "acme_lead@example.invalid", "roleId": "acme_lead", "memberships": [{ "scope_type": "circle", "scope_id": "c_sales" }, { "scope_type": "account", "scope_id": "a_acme" }] },
+    { "id": "u_consultant", "email": "consultant@example.invalid", "roleId": "consultant", "memberships": [{ "scope_type": "circle", "scope_id": "c_delivery" }, { "scope_type": "circle", "scope_id": "c_eng" }] },
+    { "id": "u_reviewer", "email": "reviewer@example.invalid", "roleId": "reviewer" },
+    { "id": "u_platform_admin", "email": "platform_admin@example.invalid", "roleId": "platform_admin" },
+    { "id": "u_auditor", "email": "auditor@example.invalid", "roleId": "auditor" }
+  ],
+  "brains": [
+    {
+      "id": "core",
+      "type": "global",
+      "label": "Company Brain",
+      "members": [
+        { "principalId": "u_reader_core", "email": "reader.core@example.invalid", "brainRole": "reader" },
+        { "principalId": "u_contributor_core", "email": "contributor.core@example.invalid", "brainRole": "contributor" },
+        { "principalId": "u_editor_core", "email": "editor.core@example.invalid", "brainRole": "editor" },
+        { "principalId": "u_steward_core", "email": "steward.core@example.invalid", "brainRole": "steward" },
+        { "principalId": "u_owner_core", "email": "owner.core@example.invalid", "brainRole": "owner" }
+      ]
+    },
+    {
+      "id": "a_acme",
+      "type": "account",
+      "label": "Acme Synthetic SA",
+      "restricted": true,
+      "members": [
+        { "principalId": "u_reader_acme", "email": "reader.acme@example.invalid", "brainRole": "reader" },
+        { "principalId": "u_contributor_acme", "email": "contributor.acme@example.invalid", "brainRole": "contributor" },
+        { "principalId": "u_editor_acme", "email": "editor.acme@example.invalid", "brainRole": "editor" },
+        { "principalId": "u_steward_acme", "email": "steward.acme@example.invalid", "brainRole": "steward" },
+        { "principalId": "u_owner_acme", "email": "owner.acme@example.invalid", "brainRole": "owner" }
+      ]
+    }
+  ],
+  "switches": {
+    "note": "Absence of a row is on (allOn). A row stores enabled 0 or 1. One name cannot be both at once.",
+    "off": { "mcp": 0, "connector": 0, "ai": 0, "contribute": 0 },
+    "on": { "mcp": 1, "connector": 1, "ai": 1, "contribute": 1 }
+  }
+}

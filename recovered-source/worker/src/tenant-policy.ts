@@ -154,7 +154,9 @@ export class TenantPolicy extends DurableObject<Env> {
   private readonly identity: IdentityStore;
   private readonly journal: SecurityJournal;
   private govStore!: GovStore;
+  /** Names seen by this object. A restart clears it. It is not stored. */
   private readonly seenUnknownSwitch = new Set<string>();
+  private capWarned = false;
   private static readonly UNKNOWN_SWITCH_CAP = 256;
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -281,11 +283,9 @@ export class TenantPolicy extends DurableObject<Env> {
         String(now),
       );
       for (const p of principals) {
-        this.sql.exec(
-          "INSERT INTO principals (id, email) VALUES (?, ?)",
-          p.id,
-          normalEmail(p.email) ?? p.email,
-        );
+        const email = normalEmail(p.email);
+        if (!email) continue;
+        this.sql.exec("INSERT INTO principals (id, email) VALUES (?, ?)", p.id, email);
         for (const r of p.roleIds)
           this.sql.exec(
             "INSERT INTO role_assignments (principal_id, role_id) VALUES (?, ?)",
@@ -849,11 +849,14 @@ export class TenantPolicy extends DurableObject<Env> {
     for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray()) {
       if (!isSwitchName(r.name)) {
         const key = typeof r.name === "string" ? r.name : "";
-        if (
-          this.seenUnknownSwitch.has(key) ||
-          this.seenUnknownSwitch.size >= TenantPolicy.UNKNOWN_SWITCH_CAP
-        )
+        if (this.seenUnknownSwitch.has(key)) continue;
+        if (this.seenUnknownSwitch.size >= TenantPolicy.UNKNOWN_SWITCH_CAP) {
+          if (!this.capWarned) {
+            this.capWarned = true;
+            console.warn(JSON.stringify({ at: "kill_switch", reason: "cap" }));
+          }
           continue;
+        }
         this.seenUnknownSwitch.add(key);
         commit(reject("kill_switch", "unreadable", "read", "unknown_name"));
         continue;
