@@ -51,11 +51,17 @@ export function normalizedEmailSql(column: string): string {
 export const asciiLower = (value: string): string =>
   value.replace(/[A-Z]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 32));
 
-/** Fold `EMAIL_FOLD` to spaces, trim, and lowercase ASCII A–Z. Empty becomes null. */
+/**
+ * Fold `EMAIL_FOLD` to spaces, trim, and lowercase ASCII A–Z.
+ * Empty, more than one `@`, or an empty local part or domain becomes null.
+ */
 export function normalEmail(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const trimmed = asciiLower(value.replace(FOLD, " ").trim());
-  return trimmed === "" ? null : trimmed;
+  if (trimmed === "") return null;
+  const at = trimmed.indexOf("@");
+  if (at <= 0 || at !== trimmed.lastIndexOf("@") || at === trimmed.length - 1) return null;
+  return trimmed;
 }
 
 /** Trim and drop NBSP and other padding. Empty becomes null. Case stays. */
