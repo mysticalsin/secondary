@@ -825,7 +825,7 @@ export function wikiRoutes(deps: AppDeps, helpers: PromoteHelpers): Hono<AppEnv>
     if (!NODE_ID.test(id)) throw notFound();
     const b = await readObject(c);
     if (b.decision !== "approve" && b.decision !== "reject") throw bad("invalid_decision");
-    if (b.decision === "approve") {
+    if (b.decision === "approve" || b.decision === "reject") {
       const proposal = await w.stub.wikiProposalView(id);
       if (!proposal) throw notFound();
       const right = mayDecide(w.view, s.principal, w.nodeId, proposal.authorId);

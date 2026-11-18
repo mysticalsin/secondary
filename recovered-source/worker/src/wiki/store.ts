@@ -18,6 +18,7 @@ import {
   type FindingStatus,
 } from "../../../../src/state/proposal-review.ts";
 import { citedSourceIds } from "../../../../src/state/proposal-citation.ts";
+import { asciiLower } from "../../../../src/state/actor.ts";
 import { boundedName } from "../../../../src/state/pseudonym-text.ts";
 import { forgetFactSources, pageIndexMatches } from "../../../../src/state/source-forget.ts";
 import { decodeWikiJobStatus, forgetWikiJob, sourceSubject } from "../../../../src/state/wiki-job.ts";
@@ -1479,13 +1480,15 @@ export abstract class WikiBase extends DurableObject<Env> {
 
   /** The contributor and anyone who edited the proposal count as its authors (H-01). */
   private wikiAuthored(item: ItemRecord, ids: string[]): boolean {
-    if (item.authorId !== null && ids.includes(item.authorId)) return true;
+    const folded = ids.map((id) => asciiLower(id.trim()));
+    if (item.authorId !== null && folded.includes(asciiLower(item.authorId.trim()))) return true;
+    if (folded.length === 0) return false;
     return (
       this.sql
         .exec(
-          `SELECT 1 FROM edits WHERE item_id = ? AND actor_id IN (${ids.map(() => "?").join(",")}) LIMIT 1`,
+          `SELECT 1 FROM edits WHERE item_id = ? AND lower(actor_id) IN (${folded.map(() => "?").join(",")}) LIMIT 1`,
           item.id,
-          ...ids,
+          ...folded,
         )
         .toArray().length > 0
     );

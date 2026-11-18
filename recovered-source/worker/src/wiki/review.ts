@@ -9,29 +9,42 @@ import {
   type Principal,
   personalRootId,
 } from "@secondary/policy";
+import { asciiLower } from "../../../../src/state/actor.ts";
 import type { ItemRecord } from "../workspace.ts";
 import type { Proposal } from "./types.ts";
 
 export type Right = { allowed: boolean; reason: string };
 
+/** Roles that lead a brain. A standing edit or review grant on any other role is not a decision. */
+const LEAD_ROLES = new Set(["acme_lead"]);
+
+const sameId = (a: string, b: string): boolean => asciiLower(a.trim()) === asciiLower(b.trim());
+
 /**
- * A lead may decide inside a brain where they hold a standing review, edit, or approve_release
- * grant. A right that exists only while elevated does not count, and the author cannot approve
- * their own proposal. An elevated release still needs approve_release, which elevation does not grant.
+ * A lead may decide inside a brain they lead. Anyone else needs a standing approve_release grant.
+ * Elevation does not count. The author, including a different letter case or an alias id, cannot decide.
  */
 export function mayDecide(
   view: AdmittedView,
   p: Principal,
   nodeId: string,
   authorId?: string | null,
+  aliasIds: readonly string[] = [],
 ): Right {
   if (nodeId === personalRootId(p.id)) return { allowed: true, reason: "Your Personal Brain" };
-  if (authorId != null && authorId === p.id)
+  if (
+    authorId != null &&
+    (sameId(authorId, p.id) || aliasIds.some((id) => sameId(id, p.id)))
+  )
     return { allowed: false, reason: "You cannot approve your own proposal" };
   const standing: AdmittedView = { ...view, ctx: { ...view.ctx, elevatedUntil: undefined } };
-  for (const action of ["review", "approve_release", "edit"] as const) {
-    const decision = canDoInView(standing, p, nodeId, action);
-    if (decision.allowed) return decision;
+  const release = canDoInView(standing, p, nodeId, "approve_release");
+  if (release.allowed) return release;
+  if (p.roleIds.some((id) => LEAD_ROLES.has(id))) {
+    for (const action of ["review", "edit", "manage_members"] as const) {
+      const decision = canDoInView(standing, p, nodeId, action);
+      if (decision.allowed) return { allowed: true, reason: "Lead of this brain" };
+    }
   }
   return canDoInView(view, p, nodeId, "approve_release");
 }

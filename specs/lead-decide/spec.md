@@ -32,7 +32,7 @@ An elevated CEO still cannot approve or publish. Nobody approves their own propo
 
 ### Functional Requirements
 
-- **FR-001**: A standing `review`, `edit`, or `approve_release` grant on a node allows `mayDecide` for that node. An allow that exists only while `elevatedUntil` is set does not.
+- **FR-001**: Only a lead role (`acme_lead`) with a standing `review`, `edit`, or `manage_members` grant on that node, or any role with a standing `approve_release` grant, may decide or direct-publish another person's proposal. A standing `edit` or `review` grant on any other role does not. An allow that exists only while `elevatedUntil` is set does not. Tony, t1195s4999, L-1 B.
 - **FR-002**: An elevated CEO remains denied. This keeps `specs/identity-fold/spec.md` FR-008. `review` and `edit` from elevation are not a release.
 - **FR-003**: When the caller is the proposal author, `mayDecide` is denied. The approve route passes that author.
 - **FR-004**: `packages/policy` role elevation actions do not include `approve_release`.
