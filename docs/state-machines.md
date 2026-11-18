@@ -405,7 +405,7 @@ stateDiagram-v2
 
 ### Platform / flag differences
 
-`twoPerson` is an argument. The ops route sets it from prod. The route returns 409 `switch_refused` for `refused` and for `replay` (`ops-admin.ts`). `202` with `needs: second_person` is only for a pending ask (`recorded` or `same_actor`).
+`twoPerson` is an argument. The ops route sets it from prod. The route returns 409 `switch_refused` for `refused`, for `replay`, and for a pending ask whose `sameActor` is true (`ops-admin.ts`). `202` with `needs: second_person` is only for a pending ask that a different person can still confirm.
 
 ## 6. OIDC login
 
