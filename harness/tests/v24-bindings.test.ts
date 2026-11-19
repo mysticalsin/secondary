@@ -413,6 +413,22 @@ exit 7
   assert.deepEqual(readdirSync(tmpParent), []);
 });
 
+test("a tmp copy changed after write and before rehash is refused", () => {
+  const index = "alpha";
+  const dir = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
+  });
+  const result = spawnSync("bash", ["deploy.sh"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, DEPLOY_AFTER_COPY: "mutated" },
+  });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /assets-manifest-mismatch/);
+  assert.equal(result.stderr.includes("wrangler-invoked"), false);
+});
+
 test("an empty unreproduced directory in any case is refused", () => {
   const index = "alpha";
   const manifest = `${sha256(index)}  index.html\n`;
