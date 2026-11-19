@@ -101,14 +101,22 @@ test("lead grant: who decides stays, and the lead is not a role-id list", async 
 
   let loose: boolean | "threw" = "threw";
   try {
-    loose = await directPublish(session, {
-      personal: false,
-      nodeId: "c_sales",
-      view: editorView,
-      vn: editorView.nodes.get("c_sales"),
-      stub: { brainConfig: async () => ({ publication: "direct" }) },
-      can: { edit: true, decide: true },
-    });
+    loose = await directPublish(
+      {
+        get: (key: string) =>
+          key === "session"
+            ? { principal: editor, internal: undefined, tenantId: editor.tenantId, ctx: { now: NOW } }
+            : undefined,
+      },
+      {
+        personal: false,
+        nodeId: "c_sales",
+        view: editorView,
+        vn: editorView.nodes.get("c_sales"),
+        stub: { brainConfig: async () => ({ publication: "direct" }) },
+        can: { edit: true, decide: true },
+      },
+    );
   } catch {
     loose = "threw";
   }
