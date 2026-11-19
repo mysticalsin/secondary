@@ -93,22 +93,25 @@ function treeFor(cards: Card[], pagesById: Record<string, Page[]>): { roots: unk
   };
 }
 
-function wiki(page: Page): Record<string, unknown> {
+type WikiLink = { id: string; title?: string; broken?: boolean };
+
+function wiki(page: Page, links: WikiLink[] = []): Record<string, unknown> {
   return {
     markdown: `# ${page.label}\n\nSynthetic page.\n`,
     summary: page.label,
-    links: [],
+    links,
     updatedAt: "2026-11-01T00:00:00.000Z",
     type: "note",
     fields: [],
   };
 }
 
-async function load(file: string, cards: Card[], pagesById: Record<string, Page[]>): Promise<{
+async function load(file: string, cards: Card[], pagesById: Record<string, Page[]>, extra: { links?: Record<string, WikiLink[]>; settle?: boolean } = {}): Promise<{
   urls: URL[];
   value: string;
   options: { value: string; text: string }[];
   texts: string[];
+  stats: string;
 }> {
   const urls: URL[] = [];
   const tree = treeFor(cards, pagesById);
@@ -152,7 +155,7 @@ async function load(file: string, cards: Card[], pagesById: Record<string, Page[
       if (match) {
         const id = `${decodeURIComponent(match[1])}/${decodeURIComponent(match[2])}`;
         const page = Object.values(pagesById).flat().find((item) => item.id === id);
-        if (page) return Response.json(wiki(page));
+        if (page) return Response.json(wiki(page, extra.links?.[page.id] || []));
       }
       return new Response("no", { status: 404, headers: { "content-type": "text/plain" } });
     },
@@ -169,12 +172,24 @@ async function load(file: string, cards: Card[], pagesById: Record<string, Page[
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   await new Promise((resolve) => setTimeout(resolve, 20));
+  if (extra.settle) {
+    const end = Date.now() + 500;
+    let last = -1;
+    while (Date.now() < end) {
+      const wikiCount = urls.filter((url) => url.pathname.includes("/pages/")).length;
+      if (wikiCount > 0 && urls.length === last) break;
+      last = urls.length;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
   const select = elements[selectId];
   return {
     urls,
     value: select?.value ?? "",
     options: (select?.childNodes || []).map((node) => ({ value: String(node.value ?? ""), text: String(node.textContent ?? "") })),
     texts: collect(file.endsWith("dashboard.js.txt") ? elements.main : elements.status),
+    stats: String(elements.stats?.textContent || ""),
   };
 }
 
@@ -252,4 +267,33 @@ test("My Secondary stays the default when it is the first brain with pages", asy
     ...expectBrains(dashboard, cards, "me", false).map((problem) => `dashboard: ${problem}`),
     ...expectBrains(graph, cards, "me", false).map((problem) => `graph: ${problem}`),
   ], []);
+});
+
+test("counters stay on the chosen brain", async () => {
+  const cards: Card[] = [
+    { id: "me", name: "My Secondary", pages: 0 },
+    { id: "c_delivery", name: "Delivery", pages: 2 },
+    { id: "c_eng", name: "Engineering", pages: 1 },
+  ];
+  const pages = {
+    c_delivery: [
+      { id: "c_delivery/kickoff", label: "Kickoff" },
+      { id: "c_delivery/retro", label: "Retro" },
+    ],
+    c_eng: [{ id: "c_eng/rfc", label: "RFC" }],
+  };
+  const links = {
+    "c_delivery/kickoff": [{ id: "global:rfc", title: "RFC" }],
+    "c_eng/rfc": [{ id: "missing", title: "Gone", broken: true }],
+  };
+  const dashboard = await load("deploy/graph/dashboard.js.txt", cards, pages, { links, settle: true });
+  const graph = await load("deploy/graph/app.js.txt", cards, pages, { links, settle: true });
+  const linkAt = dashboard.texts.indexOf("Links");
+  const problems: string[] = [];
+  if (dashboard.value !== "c_delivery") problems.push(`dashboard selected ${dashboard.value}`);
+  if (dashboard.texts[linkAt + 1] !== "0") problems.push(`dashboard Links ${dashboard.texts[linkAt + 1]}`);
+  if (graph.value !== "c_delivery") problems.push(`graph selected ${graph.value}`);
+  if (!/^2 notes/.test(graph.stats)) problems.push(`graph stats ${graph.stats}`);
+  if (graph.stats.includes("unresolved")) problems.push(`graph unresolved ${graph.stats}`);
+  assert.deepEqual(problems, []);
 });
