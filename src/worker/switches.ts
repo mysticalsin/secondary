@@ -75,10 +75,11 @@ export const SWITCH_TABLE: readonly Row[] = [
 
 type MatchRow = { name: SwitchName; http?: (method: string, path: string) => boolean };
 
-/** Lower case and one trailing slash. Every row matches this form. */
+/** Lower case and every trailing slash. Every row matches this form. */
 export function normalizedSwitchPath(path: string): string {
-  const lower = path.toLowerCase();
-  return lower.length > 1 && lower.endsWith("/") ? lower.slice(0, -1) : lower;
+  let lower = path.toLowerCase();
+  while (lower.length > 1 && lower.endsWith("/")) lower = lower.slice(0, -1);
+  return lower;
 }
 
 function onPrefix(path: string, prefix: string): boolean {
