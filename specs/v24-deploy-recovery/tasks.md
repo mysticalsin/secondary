@@ -61,6 +61,25 @@
 - [x] T008 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. All exit 0. Worker errors stay 0. Existing tests stay as they are. Covers FR-012, SC-006.
 - [x] T009 [US3] Run `bash deploy.sh --dry-run` with no login. Record the exit code. A non-zero result that asks for an account is reported and is not followed by `wrangler login`. Covers SC-004, FR-013.
 
+## Phase 7: Take main
+
+**Purpose**: Put main `0644553837eb3ea8d49cddc8a0954d12a6cb5364` on this branch without a force push.
+
+- [x] T009a Merge `origin/main` into `cursor/recover-v24-deploy-1c66`. Do not rebase. Resolve nothing by editing main's behavior: the merge has no conflicts. Record `npm test` on the merge head as 459 passed and 0 failed. Covers the 2026-11-19 clarification.
+
+## Phase 8: User Story 5 - Asset drop-in check (Priority: P1)
+
+**Goal**: A real deploy stays refused until a captured manifest matches, and a synthetic match passes the guard.
+
+**Independent Test**: T010 fails before T011, then passes. `deploy/assets/` is still only `UNREPRODUCED`.
+
+- [ ] T010 [US5] Add the asset drop-in test in `harness/tests/v24-bindings.test.ts`. It uses temporary synthetic files only. `deploy.sh` exits 2 with `assets-unreproduced` while the marker exists, and exits 2 with `assets-manifest-mismatch` when any listed file's sha256 differs, a listed file is missing, or an unlisted file is present. The guard fails with `assets-manifest-missing` when the manifest is absent. The guard passes when the manifest matches. The pass case does not start Wrangler. A stub stands in for `wrangler` so a refusal cannot upload. Do not rewrite the existing tests. Covers FR-008, FR-011, FR-015, SC-003, SC-007.
+- [ ] T011 [US5] Teach `deploy/guard.ts` the order and the line rules in `contracts/asset-manifest.md`. Do not add files under `deploy/assets/`. Do not call Wrangler from the test's pass case. Covers FR-015, SC-007.
+
+## Phase 9: Gates after the manifest check
+
+- [ ] T012 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. All exit 0. Existing tests stay as they are. Do not run `wrangler deploy`. Covers FR-012, SC-006.
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -74,6 +93,10 @@
 - T007 is a non-edit check after T004 and T006.
 - T008 depends on T004, T005, and T006.
 - T009 depends on T005 and T006.
+- T009a has no dependency on T010.
+- T010 depends on T009a and must fail before T011.
+- T011 depends on the red run of T010.
+- T012 depends on T011.
 
 ### Parallel Opportunities
 
@@ -82,4 +105,4 @@
 
 ## Implementation Strategy
 
-T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. No task deploys.
+T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. No task deploys, and no task writes live UI bytes.

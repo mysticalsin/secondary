@@ -33,3 +33,4 @@
 
 - Clarifications are recorded in `spec.md`. No question is left open.
 - The pending-column verdict is no.
+- The asset drop-in check is `contracts/asset-manifest.md`. The repo still holds only `UNREPRODUCED`.

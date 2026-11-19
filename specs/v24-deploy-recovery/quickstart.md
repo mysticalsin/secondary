@@ -11,7 +11,9 @@ npm run verify:provenance
 bash deploy.sh --dry-run
 ```
 
-`bash deploy.sh` without `--dry-run` must exit non-zero while `deploy/assets/UNREPRODUCED` exists. That refusal is the expected result. Do not delete the marker to force an upload.
+`bash deploy.sh` without `--dry-run` must exit 2 while `deploy/assets/UNREPRODUCED` exists. It must also exit 2 when that marker is gone and `deploy/assets/MANIFEST.sha256` is missing or does not match the files. That refusal is the expected result. Do not delete the marker, and do not add asset bytes, to force an upload.
+
+The asset check is `harness/tests/v24-bindings.test.ts`. Its fixtures are temporary synthetic files. The pass case stops at the guard.
 
 Do not run `wrangler login`, `wrangler deploy` without `--dry-run`, or `wrangler secret`. Do not create `.dev.vars`.
 

@@ -30,3 +30,7 @@ One entry. Tag `v3`. `new_sqlite_classes` is `TenantPolicy` then `Workspace`. No
 ## Asset directory
 
 `deploy/assets/` contains one marker file, `UNREPRODUCED`. It is not a recovered SPA file. The live SPA bytes are not a row in this model.
+
+## Asset manifest
+
+An asset manifest is `MANIFEST.sha256` in that directory. Each line names one relative path and the sha256 of that file's bytes. The line shape and the directory rules are `contracts/asset-manifest.md`. The manifest is not stored in this repo. A passing check has the marker absent, one or more listed files, each hash equal to the file bytes, and no extra file. A test builds that directory with synthetic bytes and then deletes it with the temporary directory.

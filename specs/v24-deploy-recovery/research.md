@@ -48,6 +48,14 @@
 
 **Alternatives considered**: Copy frontend files from `cursor/worker-reconstruction-0cf6`. Rejected. Those branches were limited to Wrangler hints, and the task says no earlier UI capture is available. Invent an `index.html`. Rejected. That would be a fake UI.
 
+## Decision: checksum manifest for the later asset drop-in
+
+**Decision**: Keep `deploy/assets/UNREPRODUCED` as the only committed asset file. Extend the real-deploy guard so it also requires `deploy/assets/MANIFEST.sha256` to match the files in that directory, using the line and directory rules in `contracts/asset-manifest.md`. `--dry-run` does not apply the asset check. Tests write synthetic files in a temporary directory. A passing fixture stops at the guard.
+
+**Rationale**: The owner asked for the branch to be ready for a captured UI drop-in, and for a red test of the refusal and the match. The live asset list is still unreadable. Inventing those bytes would replace the live SPA with a fake UI. The marker stays the first refusal so deleting it without a matching manifest cannot upload. The hash is sha256 of raw bytes, which is what a later capture can record without putting secret values in git. A path with `..` is rejected so the check cannot read outside the asset directory.
+
+**Alternatives considered**: Put a guessed `index.html` in `deploy/assets/`. Rejected. The task forbids inventing UI assets. Fetch the live Worker assets. Rejected. This run does not call Cloudflare. Make `--dry-run` refuse while the marker exists. Rejected. The existing dry run is how the bundle was shown to compile, and the new refusal is the real deploy path.
+
 ## Decision: alias the existing policy adapter
 
 **Decision**: `alias["@secondary/policy"]` is `./harness/adapters/policy-entry.ts`.
