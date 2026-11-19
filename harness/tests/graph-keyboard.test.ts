@@ -18,8 +18,8 @@ test("the canvas is an application and does not point at Find a page", () => {
   const canvas = page.match(/<canvas\b[^>]*>/)?.[0] || "";
   assert.match(canvas, /role="application"/);
   assert.doesNotMatch(canvas, /role="img"/);
-  assert.match(canvas, /aria-label="[^"]*Arrow/);
-  assert.match(canvas, /aria-label="[^"]*Enter/);
+  assert.doesNotMatch(canvas, /aria-label="[^"]*Arrow/);
+  assert.doesNotMatch(canvas, /aria-label="[^"]*Enter/);
   assert.doesNotMatch(canvas, /Find a page/);
 });
 

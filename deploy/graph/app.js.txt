@@ -681,6 +681,8 @@
 
   function select(n) {
     selected = n;
+    const live = $("#graph-selection");
+    if (live) live.textContent = n && n.label ? n.label : "";
     if (opts.local) refresh(true);
     renderPanel();
     draw();
