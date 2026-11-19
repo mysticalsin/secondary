@@ -590,7 +590,7 @@ test("a stat error on wrangler.jsonc is refused", async () => {
   const dir = matchingAssets();
   unlinkSync(join(dir, "wrangler.jsonc"));
   mkdirSync(join(dir, "wrangler.jsonc"));
-  refuseDeploy(dir, "config-unreadable");
+  refuseDeploy(dir, "config-not-file");
 
   const guard = (await import("../../deploy/guard.ts")) as {
     guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
@@ -657,8 +657,9 @@ test("dotenv files and .dev.vars.* are refused like .dev.vars", async () => {
   const guard = (await import("../../deploy/guard.ts")) as {
     guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
   };
-  const cases: Array<{ name: string; reason: string; kind: "file" | "link" | "dangling" | "self" }> = [
+  const cases: Array<{ name: string; reason: string; kind: "file" | "link" | "dangling" | "self" | "dir" }> = [
     { name: ".env", reason: "env-file-present", kind: "file" },
+    { name: ".env", reason: "env-file-present", kind: "dir" },
     { name: ".env", reason: "env-file-present", kind: "link" },
     { name: ".env", reason: "env-file-present", kind: "dangling" },
     { name: ".env", reason: "env-file-present", kind: "self" },
@@ -676,6 +677,7 @@ test("dotenv files and .dev.vars.* are refused like .dev.vars", async () => {
     const dir = matchingAssets();
     const path = join(dir, item.name);
     if (item.kind === "file") writeFileSync(path, "SECRET=value\n");
+    else if (item.kind === "dir") mkdirSync(path);
     else if (item.kind === "dangling") symlinkSync(join(dir, `${item.name}.missing`), path);
     else if (item.kind === "self") symlinkSync(item.name, path);
     else {
@@ -689,4 +691,30 @@ test("dotenv files and .dev.vars.* are refused like .dev.vars", async () => {
   }
   const ignore = readFileSync(join(root, ".gitignore"), "utf8");
   assert.match(ignore, /(^|\n)\.env\*(?:\n|$)/);
+});
+
+test("a fifo or other non-file wrangler.jsonc is refused before it is read", () => {
+  const dir = matchingAssets();
+  unlinkSync(join(dir, "wrangler.jsonc"));
+  const fifo = join(dir, "wrangler.jsonc");
+  const made = spawnSync("mkfifo", [fifo], { encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+  const result = spawnSync("bash", ["deploy.sh"], { cwd: dir, encoding: "utf8", timeout: 2000, killSignal: "SIGKILL" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /config-not-file/);
+  assert.equal(result.stderr.includes("wrangler-invoked"), false);
+});
+
+test("a symlinked deploy/graph or deploy/graph-entry.ts is refused", () => {
+  const graph = matchingAssets();
+  const held = join(graph, "held-graph");
+  mkdirSync(held);
+  symlinkSync(held, join(graph, "deploy", "graph"));
+  refuseDeploy(graph, "assets-symlink");
+
+  const entry = matchingAssets();
+  const heldEntry = join(entry, "held-entry.ts");
+  writeFileSync(heldEntry, "export {}\n");
+  symlinkSync(heldEntry, join(entry, "deploy", "graph-entry.ts"));
+  refuseDeploy(entry, "assets-symlink");
 });
