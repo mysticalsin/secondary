@@ -48,7 +48,31 @@ Exit 1. 4 pass, 3 fail. Duration about 4.9s.
   AssertionError: actual false, expected true
 ```
 
-`a brain at 2499ms is kept and a brain at 2501ms is degraded` passed on the 2500ms bound. The exact root list, the closed-brain check, and the late-page check passed. The hung read is not aborted yet, and the clients do not share a fetch module.
+That third name overclaimed. The SQL read is not cancelled. The test is now `the wait marks its signal aborted when a brain does not answer`.
+
+`a brain at 2499ms is kept and a brain at 2501ms is degraded` passed on the 2500ms bound. The exact root list, the closed-brain check, and the late-page check passed. The wait did not yet end a read that ignores the signal, and the clients do not share a fetch module.
+
+## Loop 3 red output
+
+The listener that schedules `finish("miss")` was deleted, the file was not committed that way, and this command was run:
+
+```
+node --experimental-strip-types --test --test-reporter=spec --test-name-pattern "a read that ignores the signal" harness/tests/src-hardening.test.ts
+```
+
+Exit 1. 0 pass, 1 fail. `duration_ms` 1048.896085. The listener was then restored.
+
+```
+✖ a read that ignores the signal does not hold the tree (863.256016ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" to be strictly unequal to:
+
+  'hung'
+    actual: 'hung'
+    expected: 'hung'
+    operator: 'notStrictEqual'
+```
+
+With the listener restored, the same command passed. The test double never settles and does not read the signal. `wikiPages` still runs to completion. The listener only ends the wait.
 
 ## Fix
 

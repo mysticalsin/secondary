@@ -34,9 +34,10 @@ const MAX_PAGES_PER_FOLDER = 200;
 const TREE_BOUND_MS = 2_500;
 
 /**
- * One brain has this long to answer. The timer aborts the read. A value that arrives after that
- * abort is a miss, even when the read resolves in the abort turn. A read that never settles is a
- * miss on the following turn, so one hung brain does not hold the others.
+ * One brain has this long to answer. The timer ends the wait. `wikiPages` takes no signal, so
+ * that SQL read runs to completion. A value that arrives in the abort turn is left out of the
+ * response. A read that never settles is a miss on the following turn, so one hung brain does
+ * not hold the others.
  */
 function within<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promise<T | "miss"> {
   const ac = new AbortController();
@@ -51,8 +52,9 @@ function within<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promi
       resolve(value);
     };
     const timer = setTimeout(() => ac.abort(), ms);
-    // The work registers its abort listener before this one, so a late resolve is queued first
-    // and the miss rule decides it. The safety timer covers a read that ignores the abort.
+    // The work may register its abort listener before this one, so a late resolve is queued
+    // first and the miss rule leaves it out of the response. This listener ends the wait when
+    // the read ignores the signal. It does not cancel wikiPages.
     const pending = work(ac.signal);
     ac.signal.addEventListener(
       "abort",
@@ -125,6 +127,7 @@ export async function brainTree(
     wanted.map(async (t) => {
       const stub = stubOf(c, t.scope);
       const read = await within(ms, async (signal) => {
+        // The real wikiPages() takes no signal. The extra argument does not cancel the SQL read.
         const readPages = stub.wikiPages as (signal?: AbortSignal) => ReturnType<typeof stub.wikiPages>;
         const [pages, schema] = await Promise.all([
           Promise.resolve(readPages(signal)),

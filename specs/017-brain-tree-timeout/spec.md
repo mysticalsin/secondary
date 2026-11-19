@@ -6,7 +6,7 @@ One hung brain must not freeze Dashboard or Graph. `GET /v1/brains` already boun
 
 ## Requirements
 
-- `GET /v1/brain/tree` gives each admitted brain 2500ms. A test may pass `treeBoundMs` instead.
+- `GET /v1/brain/tree` gives each admitted brain 2500ms. A test may pass `treeBoundMs` instead. `wikiPages` takes no signal, so the SQL read runs to completion. Only the wait and the response are bounded.
 - A brain that does not answer is still in `roots`: a workspace, its label, `access: "degraded"`, and no children. Brains that answered keep today's nodes.
 - The graph and the dashboard stop their own `GET /v1/brain/tree` after 8000ms. Both call the same `boundFetch` in `deploy/graph/fetch-bound.js.txt`. A test may set `document.documentElement.dataset.fetchBound` to a shorter bound. That helper leaves no timer pending after a success or a timeout.
 - A brain that answers at 2499ms is kept. A brain that answers at 2501ms is degraded, including when its pages resolve in the abort turn.

@@ -556,7 +556,7 @@ test("a read that ignores the signal does not hold the tree", async () => {
   }
 });
 
-test("the tree aborts a hung read", async () => {
+test("the wait marks its signal aborted when a brain does not answer", async () => {
   const held = await openDirectory();
   const api = await app({ treeBoundMs: 40 });
   hung.cancelled = [];
