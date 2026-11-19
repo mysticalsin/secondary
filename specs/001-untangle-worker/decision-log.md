@@ -166,3 +166,11 @@ Queued with that move, and not a behaviour change:
 `internalRouteVerdict` and `isImport` stay on the raw pathname. Publish still reads `can.decide`. Those are not this slice.
 
 Comment removed because it only repeated the code: the note on `blockingSwitch` said it returns the first matching row whose switch is off. The function walks the rows and returns that row.
+
+## Docs and tests after the move
+
+The intake archive is still 99 Worker files plus 18 shared-package files, 117 in all. That split stays in `candidate-manifest.json`. It is not the live tree. `src/worker` now holds 102 files: 101 `.ts`, including 2 `.d.ts`, and 1 `.js`. `recovered-source/shared/packages` now holds 20 `.ts` files. `RECOVERY.md` and `docs/state-machines.md` name those current counts. The intake 99 and 18 stay labeled as the archive split.
+
+Nothing in those notes was deleted. The sentences that pointed the old 99 at `src/worker` were rewritten.
+
+The MCP allowlist call site still passes `new URL(c.req.url).pathname`. The pin now also rejects `decodeURI`, `unescape`, `toLowerCase`, `c.req.path`, and `replace(` in that call. A signed-request test of `authenticate` is deferred. Reaching that line needs a signed internal principal, a replay store, and a tenant session. That is a later test, not this docs pass. The allowlist function itself is already pinned: an encoded path is `no`.

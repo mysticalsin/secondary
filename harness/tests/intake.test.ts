@@ -195,6 +195,13 @@ test("every recovered file matches the manifest, and nothing else is in recovere
   }
   assert.equal(bytes, manifest.counts.source_bytes);
 
+  const pinned = JSON.parse(
+    readFileSync(new URL("./patched-sha256.json", import.meta.url), "utf8"),
+  ) as Record<string, string>;
+  const patched = [...new Set(PATCHED_RECOVERED)].sort();
+  assert.deepEqual(Object.keys(pinned).sort(), patched);
+  for (const rel of patched) assert.equal(sha256(path.join(root, rel)), pinned[rel], rel);
+
   const present = recoveredWalk();
   const stayed = [...expected].filter((rel) => !rel.startsWith(WORKER_PREFIX));
   assertRecoveredUnion(present, stayed, loadReconstructed());

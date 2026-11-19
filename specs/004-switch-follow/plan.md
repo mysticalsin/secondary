@@ -1,6 +1,6 @@
 # Plan 004: Switch follow-up
 
-`httpSwitch(method, path, switches)` calls `blockingSwitch`, which returns the first matching row whose switch is off. With no switch map it still returns the first match, which the characterization matrix used before this slice. `switchGate` passes the session switches.
+`httpSwitch(method, path, switches)` requires the switch map and calls `blockingSwitch`, which returns the first matching row whose switch is off. There is no first-match fallback. `switchGate` passes the session switches.
 
 Probes live on the HTTP rows in `SWITCH_TABLE`. The disjoint test walks those probes. The handler-key test names all eight keys.
 
