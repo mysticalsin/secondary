@@ -12,7 +12,7 @@ Spec 013 says: `There is no "All brains" option.` That removal is deliberate. Th
 
 Graph's unresolved count uses ghosts in the selected brain only. The note and link counts already use the visible graph, which is filtered by that brain.
 
-Dashboard's link total and page degree count an edge only when the other page is in the selected brain. A `global:` link that lands in another brain does not add to the selected brain's Links number.
+Dashboard's link total, the page drawer, and the project tiles count an edge through one shared filter, and only when the other page is in the selected brain. A same-brain edge still counts. A `global:` link that lands in another brain does not add to the selected brain's Links number, the drawer's link list, or a project tile.
 
 ## Independent test
 
