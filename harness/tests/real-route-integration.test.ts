@@ -17,6 +17,11 @@ const TEAM = "synthetic.example";
 const AUD = "synthetic-aud";
 const OPS_SECRET = "synthetic-ops-hmac-secret-value-32";
 const MCP_SECRET = "synthetic-mcp-hmac-secret-value-32";
+const CONNECTOR_SECRET = "synthetic-connector-hmac-secret-32";
+const PRINCIPAL = "u_consultant";
+const SOURCE_ID = "src:sharep:0123456789abcdef01234567";
+const ITEM_ID = "pi:abcd1234";
+const NOW = 1_700_000_000_000;
 
 type App = {
   request: (input: string, init: RequestInit | undefined, env: unknown) => Promise<Response>;
@@ -30,6 +35,16 @@ type Policy = {
     now: number,
     twoPerson: boolean,
   ) => { status: string };
+  seed: (
+    config: { tenantId: string; seed: number; personalOwners: string[] },
+    principals: {
+      id: string;
+      email: string;
+      roleIds: string[];
+      memberships: { scope_type: "circle"; scope_id: string }[];
+    }[],
+    now: number,
+  ) => number;
 };
 
 async function token(): Promise<{ jwt: string; jwks: (team: string) => unknown }> {
@@ -47,7 +62,10 @@ async function token(): Promise<{ jwt: string; jwks: (team: string) => unknown }
   return { jwt, jwks: () => keys };
 }
 
-async function policy(off: readonly string[]): Promise<{ binding: unknown; remove: () => void }> {
+async function policy(
+  off: readonly string[],
+  seeded = false,
+): Promise<{ binding: unknown; remove: () => void }> {
   const dir = mkdtempSync(path.join(tmpdir(), "real-route-"));
   const db = openSqlite(path.join(dir, "tenant.sqlite"));
   const sql = sqliteStorage(db);
@@ -70,6 +88,23 @@ async function policy(off: readonly string[]): Promise<{ binding: unknown; remov
   };
   const object = new mod.TenantPolicy(ctx, {});
   await ready;
+  if (seeded) {
+    object.seed(
+      { tenantId: TENANT, seed: 20261104, personalOwners: [PRINCIPAL] },
+      [
+        {
+          id: PRINCIPAL,
+          email: EMAIL,
+          roleIds: ["consultant"],
+          memberships: [
+            { scope_type: "circle", scope_id: "c_delivery" },
+            { scope_type: "circle", scope_id: "c_eng" },
+          ],
+        },
+      ],
+      NOW,
+    );
+  }
   const now = Date.now();
   for (const name of off) {
     const turned = object.setSwitch(name, false, "ada", now, false);
@@ -89,19 +124,43 @@ async function policy(off: readonly string[]): Promise<{ binding: unknown; remov
   return { binding, remove: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-const workspace = {
-  jurisdiction() {
-    return workspace;
-  },
-  idFromName() {
-    return "ws";
-  },
-  get() {
-    return { get: async () => null };
-  },
-};
+function workspace(ready: boolean) {
+  const store = {
+    jurisdiction() {
+      return store;
+    },
+    idFromName() {
+      return "ws";
+    },
+    get() {
+      return {
+        get: async (id: string) =>
+          ready && id === ITEM_ID
+            ? { id, kind: "personalitem", label: "Note", body: "Plain note", revision: 1 }
+            : null,
+        sourceGet: async (id: string) =>
+          ready && id === SOURCE_ID
+            ? {
+                id,
+                title: "Synthetic file",
+                gateNodeId: "c_delivery",
+                plane: "TEAM_RESTRICTED",
+                webUrl: "https://synthetic.example/file",
+                mime: "text/plain",
+                size: 4,
+                body: "note",
+                syncedAt: NOW,
+              }
+            : null,
+        create: async () => ({ id: "cand:c_delivery:abcd1234", status: "candidate", revision: 1 }),
+        addContribution: async () => undefined,
+      };
+    },
+  };
+  return store;
+}
 
-function env(binding: unknown) {
+function env(binding: unknown, ready = false) {
   return {
     ENVIRONMENT: "test",
     AUTH_MODE: "access",
@@ -111,17 +170,22 @@ function env(binding: unknown) {
     TENANT_DOMAINS: JSON.stringify({ [TEAM]: TENANT }),
     OPS_HMAC_KEY: OPS_SECRET,
     INTERNAL_HMAC_KEY: MCP_SECRET,
+    CONNECTOR_HMAC_KEY: CONNECTOR_SECRET,
     TENANT_POLICY: binding,
-    WORKSPACE: workspace,
+    WORKSPACE: workspace(ready),
+    AUDIT: { fetch: async () => new Response(null, { status: 202 }) },
+    CONNECTOR: {
+      fetch: async () => Response.json({ results: { [SOURCE_ID]: { allowed: true } } }),
+    },
   };
 }
 
-async function app(jwks: (team: string) => unknown): Promise<App> {
+async function app(jwks: (team: string) => unknown, now?: () => number): Promise<App> {
   const specifier = new URL("../../src/worker/index.ts", import.meta.url).href;
   const loaded = (await import(specifier)) as {
-    createApp: (deps: { jwks: (team: string) => unknown }) => App;
+    createApp: (deps: { jwks: (team: string) => unknown; now?: () => number }) => App;
   };
-  return loaded.createApp({ jwks });
+  return loaded.createApp({ jwks, ...(now ? { now } : {}) });
 }
 
 async function json(res: Response): Promise<Record<string, unknown>> {
@@ -202,6 +266,7 @@ test("signed session: sources and contribute follow the TenantPolicy switches", 
       { headers: auth },
       env(open.binding),
     );
+    assert.equal(seen.routes.at(-1), "/v1/sources/:id");
     assert.equal(onSources.status, 404);
     assert.deepEqual(await json(onSources), { error: "not_found" });
 
@@ -271,6 +336,9 @@ test("internal ops and mcp skip switchGate and answer with their own HMAC", asyn
     const unsignedOps = await api.request(opsUrl, {}, bindings);
     assert.equal(unsignedOps.status, 401);
     assert.equal((await json(unsignedOps)).error, "unauthorized");
+    const doubledOps = await api.request("http://127.0.0.1/v1/internal//ops/targets", {}, bindings);
+    assert.equal(doubledOps.status, 401);
+    assert.equal((await json(doubledOps)).error, "unauthorized");
     const unsignedMcp = await api.request(mcpUrl, {}, bindings);
     assert.equal(unsignedMcp.status, 401);
     assert.equal((await json(unsignedMcp)).error, "unauthorized");
@@ -287,6 +355,76 @@ test("internal ops and mcp skip switchGate and answer with their own HMAC", asyn
     const flags = (await json(mcp)).switches as Record<string, boolean>;
     assert.deepEqual(flags, { mcp: false, connector: false, ai: false, contribute: false });
   } finally {
+    held.remove();
+  }
+});
+
+test("a forged Access token and a malformed string are both 401", async () => {
+  const signed = await token();
+  const other = await generateKeyPair("RS256");
+  const forged = await new SignJWT({ email: EMAIL })
+    .setProtectedHeader({ alg: "RS256" })
+    .setIssuer(`https://${TEAM}`)
+    .setAudience(AUD)
+    .setIssuedAt()
+    .setExpirationTime("2h")
+    .sign(other.privateKey);
+  const api = await app(signed.jwks);
+  const held = await policy([]);
+  try {
+    for (const jwt of [forged, "not-a-jwt"]) {
+      const res = await api.request(
+        "http://127.0.0.1/v1/sources/s1",
+        { headers: { "Cf-Access-Jwt-Assertion": jwt } },
+        env(held.binding),
+      );
+      assert.equal(res.status, 401, jwt.slice(0, 12));
+      assert.deepEqual(await json(res), { error: "unauthorized" });
+    }
+  } finally {
+    held.remove();
+  }
+});
+
+test("the real handlers return the source and the contribution when the switches are on", async () => {
+  const signed = await token();
+  const api = await app(signed.jwks, () => NOW);
+  const held = await policy([], true);
+  const seen = captureRoutes();
+  try {
+    const auth = { "Cf-Access-Jwt-Assertion": signed.jwt };
+    const source = await api.request(
+      `http://127.0.0.1/v1/sources/${SOURCE_ID}`,
+      { headers: auth },
+      env(held.binding, true),
+    );
+    assert.equal(seen.routes.at(-1), "/v1/sources/:id");
+    assert.equal(source.status, 200);
+    const file = await json(source);
+    assert.equal(file.id, SOURCE_ID);
+    assert.equal(file.title, "Synthetic file");
+    assert.equal(file.kind, "source");
+
+    const post = await api.request(
+      `http://127.0.0.1/v1/personal/items/${ITEM_ID}/contribute`,
+      {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({
+          targetScopeId: "c_delivery",
+          user_validated: { by: PRINCIPAL, at: new Date(NOW).toISOString(), revision: 1 },
+        }),
+      },
+      env(held.binding, true),
+    );
+    assert.equal(seen.routes.at(-1), "/v1/personal/items/:id/contribute");
+    assert.equal(post.status, 201);
+    const made = await json(post);
+    assert.equal(made.ok, true);
+    assert.equal(made.status, "candidate");
+    assert.equal(typeof made.candidateId, "string");
+  } finally {
+    seen.restore();
     held.remove();
   }
 });
