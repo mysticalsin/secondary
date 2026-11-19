@@ -1,4 +1,4 @@
-# Spec 007: Dashboard and Graph open on Home's brains
+# Spec 013: Dashboard and Graph open on Home's brains
 
 **Feature Branch**: `cursor/sb-dashboard-graph-brains-1c66`
 
