@@ -163,7 +163,7 @@ async function load(file: string, cards: Card[], pagesById: Record<string, Page[
   const context = createContext(sandbox);
   runInContext(PRELUDE, context);
   runInContext(readFileSync(join(root, file), "utf8"), context);
-  const elements = sandbox.__elements as Record<string, { value: string; childNodes: { value?: string; textContent?: string; childNodes?: unknown[] }[] }>;
+  const elements = sandbox.__elements as Record<string, { value: string; textContent?: string; childNodes: { value?: string; textContent?: string; childNodes?: unknown[] }[] }>;
   const selectId = file.endsWith("dashboard.js.txt") ? "brain" : "workspace";
   const deadline = Date.now() + 1000;
   while (Date.now() < deadline) {

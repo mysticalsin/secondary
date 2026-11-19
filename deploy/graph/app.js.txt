@@ -279,7 +279,7 @@
     };
     const notes = visible.nodes.filter((n) => n.kind === "note").length;
     const noteLinks = visible.links.filter((l) => l.kind === "note").length;
-    const ghosts = nodes.filter((n) => n.kind === "ghost").length;
+    const ghosts = nodes.filter((n) => n.kind === "ghost" && (!ws || n.ws === ws)).length;
     statsEl.textContent = `${notes} note${notes === 1 ? "" : "s"} · ${noteLinks} link${noteLinks === 1 ? "" : "s"}${ghosts ? ` · ${ghosts} unresolved` : ""}`;
     alpha = keepHeat ? Math.max(alpha, 0.5) : 1;
     start();

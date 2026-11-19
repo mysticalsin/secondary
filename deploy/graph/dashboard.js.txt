@@ -262,6 +262,8 @@
   }
 
   function analyze(pages) {
+    const pageSet = new Set(pages);
+    const degree = (p) => p.out.filter((t) => pageSet.has(t)).length + p.in.filter((t) => pageSet.has(t)).length;
     const scores = Object.fromEntries(LENS_ORDER.map((k) => [k, 0]));
     const evidence = Object.fromEntries(LENS_ORDER.map((k) => [k, { terms: 0, pages: new Set(), folders: new Set() }]));
     const amounts = [];
@@ -410,7 +412,6 @@
     }
     upcoming.sort((a, b) => a.t - b.t);
 
-    const degree = (p) => p.out.length + p.in.length;
     return {
       pages, scores, shares, active, evidence, total, amounts, percents, ratings, comments,
       people: peopleRows, accounts, projects, risks, decisions, upcoming,
@@ -418,7 +419,7 @@
       hubs: pages.filter((p) => degree(p) > 0).sort((a, b) => degree(b) - degree(a)).slice(0, 8),
       orphans: pages.filter((p) => degree(p) === 0 && p.loaded),
       recent: pages.filter((p) => p.updatedAt).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8),
-      links: pages.reduce((n, p) => n + p.out.length, 0),
+      links: pages.reduce((n, p) => n + p.out.filter((t) => pageSet.has(t)).length, 0),
       folders: new Set(pages.map((p) => `${p.ws}#${p.folder}`)).size,
       fresh: pages.filter((p) => p.updatedAt && now - p.updatedAt < 30 * DAY).length,
       degree,
