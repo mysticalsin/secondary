@@ -35,7 +35,7 @@ const gated = {
   },
 };
 
-const mod = await import("../../recovered-source/worker/src/admin/store.ts");
+const mod = await import("../../src/worker/admin/store.ts");
 const store = Object.create(mod.GovStore.prototype) as {
   sql: SqlStorage;
   tx: <T>(fn: () => T) => T;

@@ -35,7 +35,7 @@ const gated = {
     return result;
   },
 };
-const mod = await import("../../recovered-source/worker/src/tenant-policy.ts");
+const mod = await import("../../src/worker/tenant-policy.ts");
 const policy = Object.create(mod.TenantPolicy.prototype) as {
   sql: SqlStorage;
   requestSecond(key: string, actor: string, now: number, email?: string): string | { tag: string };
