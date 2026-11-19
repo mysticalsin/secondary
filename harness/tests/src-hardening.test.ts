@@ -1198,9 +1198,9 @@ test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async (t) =>
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let armed = 0;
   const mockedSet = globalThis.setTimeout;
-  globalThis.setTimeout = ((fn: Parameters<typeof setTimeout>[0], ms?: number, ...rest: unknown[]) => {
+  globalThis.setTimeout = ((fn: Parameters<typeof setTimeout>[0], ms?: number) => {
     if (ms === 2499) armed += 1;
-    return mockedSet(fn, ms, ...rest);
+    return mockedSet(fn, ms);
   }) as typeof setTimeout;
   try {
     const pending = api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email));
