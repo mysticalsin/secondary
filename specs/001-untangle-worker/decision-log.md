@@ -152,7 +152,7 @@ Mutations, restored before commit:
 
 ## Folder move
 
-The Worker HTTP code lives in `recovered-source/worker/src` and the decisions it calls live in `src/state`. A change to one system is split across two trees. Tony approved this move ("A, all three"). The tree moves to `src/worker`, beside `src/state`. HTTP answers stay as on main `e8e7ef63`.
+The Worker HTTP code lives in `recovered-source/worker/src` and the decisions it calls live in `src/state`. A change to one system is split across two trees. Tony approved this move ("A, all three"). The tree moves to `src/worker`, beside `src/state`. HTTP answers stay as on main `e8e7ef63`. The pin in `harness/tests/worker-pin.test.ts` passed on that main (exit 0, 1 pass). Skipping the off-switch return made `GET /v1/sources/s1` with the connector switch off `200 !== 503` (exit 1, 0 pass, 1 fail, duration_ms 249.61952). That edit was restored.
 
 Queued with that move, and not a behaviour change:
 
