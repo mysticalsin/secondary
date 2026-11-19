@@ -41,7 +41,15 @@ import {
   type TemplateId,
 } from "./model.ts";
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
-import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag, reconcileStoredMembers } from "./open.ts";
+import {
+  admittedBrainParams,
+  type Brain,
+  brainOf,
+  needBrain,
+  needFlag,
+  reconcileStoredMembers,
+  restrictionOf,
+} from "./open.ts";
 import { placeScopedMember } from "./store.ts";
 import { type BrainCard, cardOf, lineReadable, rateLimit, roleOfBrain, SKIP_TYPES, seeBrains } from "./shared.ts";
 
@@ -141,10 +149,26 @@ type MissedCard = {
 
 /** A card for a brain that missed the bound. Role is included only when the view already produced it. Template is not: it lives in the workspace this read did not finish. */
 function missedCard(
-  p: { param: string; vn: { kind: string; label: string; restricted?: boolean; nda?: boolean } | null },
+  p: {
+    param: string;
+    vn: {
+      kind: string;
+      label: string;
+      restricted?: boolean;
+      nda?: boolean;
+      contacts?: boolean;
+      parentId?: string | null;
+    } | null;
+  },
   brain: Brain | null,
+  nodes: {
+    get(id: string):
+      | { restricted?: boolean; nda?: boolean; contacts?: boolean; parentId?: string | null }
+      | undefined;
+  },
 ): MissedCard {
   const type = p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal");
+  const flags = restrictionOf(p.vn, nodes, { personal: p.param === "me" });
   const card: MissedCard = {
     id: p.param,
     type,
@@ -153,8 +177,8 @@ function missedCard(
     manages: false,
     restricted: isRestrictedBrain({
       type,
-      restricted: p.vn?.restricted,
-      nda: p.vn?.nda,
+      restricted: flags.restricted,
+      nda: flags.nda,
     }),
     publication: "review",
     pages: 0,
@@ -213,7 +237,7 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
         // type and q apply to a miss as well as a card that arrived. The check is here, after the
         // bound, so a hung workspace cannot skip it.
         if (known ? !keep(known) : !listed(p, query.type, query.q)) return null;
-        if (result === "miss") return missedCard(p, known);
+        if (result === "miss") return missedCard(p, known, requireOrg(sess(c)).nodes);
         return result;
       }),
     );
@@ -261,7 +285,10 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
           type: t,
           name: vn.label,
           canOpen: false as const,
-          restricted: isRestrictedBrain({ type: t, restricted: vn.restricted, nda: vn.nda }),
+          restricted: isRestrictedBrain({
+            type: t,
+            ...restrictionOf(vn, requireOrg(s).nodes),
+          }),
           canRequestAccess:
             vn.kind !== "core" && canDoInView(view, s.principal, vn.id, "request_access").allowed,
         };

@@ -18,11 +18,18 @@ const STRANGER = { id: "u_reviewer", email: "reviewer@synthetic.example" };
 const REVIEWER = { id: "u_content_reviewer", email: "content-reviewer@synthetic.example" };
 const ADMIN = { id: "u_platform_admin", email: "platform_admin@synthetic.example" };
 const LEAD = { id: "u_acme_lead", email: "acme@synthetic.example" };
+const BID = { id: "u_head_bid", email: "head_bid@synthetic.example" };
 const CANDIDATE = "cand:c_delivery:abcd1234";
 const OTHER_CIRCLE = "cand:c_eng:abcd1234";
 const NDA_CANDIDATE = "cand:a_calypso:abcd1234";
 const LONG_NODE = `n${"a".repeat(113)}`;
 const LONG_CANDIDATE = `cand:${LONG_NODE}:abcd1234`;
+const OVER_NODE = `n${"b".repeat(120)}`;
+const OVER_CANDIDATE = `cand:${OVER_NODE}:abcd1234`;
+const EDGE_NODE = `n${"c".repeat(114)}`;
+const EDGE_CANDIDATE = `cand:${EDGE_NODE}:abcd1234`;
+const HIDDEN_NODE = "c_hidden_author";
+const HIDDEN_CANDIDATE = "cand:c_hidden_author:abcd1234";
 const NOT_FOUND = { error: "not_found" };
 
 const hung = {
@@ -37,13 +44,15 @@ const hung = {
   deafReads: [] as string[],
 };
 let failScope: string | null = null;
+const hangIds = new Set<string>();
 
 type App = {
   request: (input: string, init: RequestInit | undefined, env: unknown) => Promise<Response>;
 };
 
 function workspace(name: string) {
-  const slow = name.includes("c_delivery") || name.includes("a_acme");
+  const slow =
+    name.includes("c_delivery") || name.includes("a_acme") || [...hangIds].some((id) => name.includes(id));
   return {
     brainMemberRead: async () => null,
     brainRoleOf: async () => null,
@@ -84,12 +93,31 @@ function workspace(name: string) {
         });
       });
     },
-    wikiSchema: async () => ({ types: {} }),
-    brainConfig: async () => ({ template: null, publication: "review", everyone: null, fields: [] }),
+    brainConfig: async () => ({
+      template: null,
+      publication: name.includes("c_bid") ? "direct" : "review",
+      everyone: null,
+      fields: [],
+    }),
     wikiMeta: async () => null,
     wikiHealth: async () => null,
+    wikiTouch: async () => {},
+    wikiSchema: async () => ({ types: { topic: { label: "Topic" } } }),
+    wikiPage: async () => null,
+    wikiPropose: async (_proposal: unknown, _author: string, _now: number, opts?: { publishDirect?: boolean }) => ({
+      ok: true,
+      created: true,
+      id: "prop-synthetic",
+      autoAccepted: opts?.publishDirect === true,
+    }),
     get: async (id: string) =>
-      id === CANDIDATE || id === OTHER_CIRCLE || id === NDA_CANDIDATE || id === LONG_CANDIDATE
+      id === CANDIDATE ||
+      id === OTHER_CIRCLE ||
+      id === NDA_CANDIDATE ||
+      id === LONG_CANDIDATE ||
+      id === OVER_CANDIDATE ||
+      id === EDGE_CANDIDATE ||
+      id === HIDDEN_CANDIDATE
         ? {
             id,
             kind: "candidate",
@@ -158,19 +186,22 @@ type Directory = {
 
 let directory: Directory;
 
-/** Put a 114-character circle on the synthetic org so a 128-character candidate id can name it. */
-async function plantLongNode(): Promise<void> {
+/** Add one circle for this test and return a function that takes it back off the shared org. */
+async function plantCircle(
+  id: string,
+  label: string,
+  flags: {
+    restricted?: boolean;
+    nda?: boolean;
+    contacts?: boolean;
+    parentId?: string | null;
+    linkUnder?: string;
+  } = {},
+): Promise<() => void> {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
     getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
-      nodes: Map<
-        string,
-        {
-          id: string;
-          childIds: string[];
-          plane: string;
-        }
-      >;
+      nodes: Map<string, { id: string; childIds: string[]; plane: string }>;
     };
   };
   const org = orgMod.getOrg({
@@ -178,26 +209,38 @@ async function plantLongNode(): Promise<void> {
     seed: 20261104,
     personalOwners: [AUTHOR.id],
   });
-  if (org.nodes.has(LONG_NODE)) return;
-  const parent = org.nodes.get("d_amaris");
+  const parentId = flags.parentId === undefined ? "d_amaris" : flags.parentId;
+  const linkUnder = flags.linkUnder ?? (parentId || "d_amaris");
+  const parent = org.nodes.get(linkUnder);
   if (!parent) throw new Error("missing department");
-  org.nodes.set(LONG_NODE, {
-    id: LONG_NODE,
-    label: "Synthetic long circle",
-    kind: "circle",
-    plane: parent.plane,
-    parentId: parent.id,
-    childIds: [],
-    dept: parent.id,
-    circle: LONG_NODE,
-    facts: {},
-    leaf: null,
-  } as never);
-  parent.childIds.push(LONG_NODE);
+  if (!org.nodes.has(id)) {
+    org.nodes.set(id, {
+      id,
+      label,
+      kind: "circle",
+      plane: parent.plane,
+      parentId,
+      childIds: [],
+      dept: "d_amaris",
+      circle: id,
+      ...(flags.restricted ? { restricted: true } : {}),
+      ...(flags.nda ? { nda: true } : {}),
+      ...(flags.contacts ? { contacts: true } : {}),
+      facts: {},
+      leaf: null,
+    } as never);
+    parent.childIds.push(id);
+  }
+  return () => {
+    org.nodes.delete(id);
+    const still = org.nodes.get(linkUnder);
+    if (still) still.childIds = still.childIds.filter((child) => child !== id);
+  };
 }
 
-async function openDirectory(): Promise<{ binding: unknown; remove: () => void }> {
-  await plantLongNode();
+async function openDirectory(
+  extra: { scope_type: "circle"; scope_id: string }[] = [],
+): Promise<{ binding: unknown; remove: () => void }> {
   const made = policy();
   const specifier = new URL("../../src/worker/tenant-policy.ts", import.meta.url).href;
   const mod = (await import(specifier)) as {
@@ -215,7 +258,7 @@ async function openDirectory(): Promise<{ binding: unknown; remove: () => void }
         memberships: [
           { scope_type: "circle", scope_id: "c_delivery" },
           { scope_type: "circle", scope_id: "c_eng" },
-          { scope_type: "circle", scope_id: LONG_NODE },
+          ...extra,
         ],
       },
       {
@@ -241,6 +284,12 @@ async function openDirectory(): Promise<{ binding: unknown; remove: () => void }
         email: LEAD.email,
         roleIds: ["acme_lead"],
         memberships: [{ scope_type: "account", scope_id: "a_acme" }],
+      },
+      {
+        id: BID.id,
+        email: BID.email,
+        roleIds: ["head_bid"],
+        memberships: [{ scope_type: "circle", scope_id: "c_bid" }],
       },
     ],
     1_700_000_000_000,
@@ -398,7 +447,8 @@ test("bad candidate ids share one 404 body", async () => {
 });
 
 test("an author can read a 128-character candidate id", async () => {
-  const held = await openDirectory();
+  const restore = await plantCircle(LONG_NODE, "Synthetic long circle");
+  const held = await openDirectory([{ scope_type: "circle", scope_id: LONG_NODE }]);
   const api = await app();
   try {
     const res = await candidate(api, held.binding, AUTHOR.email, LONG_CANDIDATE);
@@ -412,6 +462,662 @@ test("an author can read a 128-character candidate id", async () => {
       targetNodeId: LONG_NODE,
     });
   } finally {
+    restore();
+    held.remove();
+  }
+});
+
+test("a 129-character candidate id is not found and a 128-character id is", async () => {
+  assert.equal(LONG_CANDIDATE.length, 128);
+  assert.equal(EDGE_CANDIDATE.length, 129);
+  const restoreLong = await plantCircle(LONG_NODE, "Synthetic long circle");
+  const restoreEdge = await plantCircle(EDGE_NODE, "Synthetic edge circle");
+  const held = await openDirectory([
+    { scope_type: "circle", scope_id: LONG_NODE },
+    { scope_type: "circle", scope_id: EDGE_NODE },
+  ]);
+  const api = await app();
+  try {
+    const kept = await candidate(api, held.binding, AUTHOR.email, LONG_CANDIDATE);
+    assert.equal(kept.status, 200);
+    const edge = await candidate(api, held.binding, AUTHOR.email, EDGE_CANDIDATE);
+    assert.equal(edge.status, 404);
+    assert.deepEqual(await edge.json(), NOT_FOUND);
+  } finally {
+    restoreEdge();
+    restoreLong();
+    held.remove();
+  }
+});
+
+test("the author of a candidate on a node they cannot view gets 404", async () => {
+  const restore = await plantCircle(HIDDEN_NODE, "Hidden author circle");
+  const held = await openDirectory();
+  const api = await app();
+  try {
+    const res = await candidate(api, held.binding, AUTHOR.email, HIDDEN_CANDIDATE);
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), NOT_FOUND);
+  } finally {
+    restore();
+    held.remove();
+  }
+});
+
+test("a planted candidate node is gone before the next test", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: { has(id: string): boolean };
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  assert.equal(org.nodes.has(LONG_NODE), false);
+});
+
+test("an id longer than 128 characters is not found even when it names a real node", async () => {
+  assert.equal(OVER_NODE.length > 114, true);
+  assert.equal(OVER_CANDIDATE.length > 128, true);
+  const restore = await plantCircle(OVER_NODE, "Synthetic overlong circle");
+  const held = await openDirectory([{ scope_type: "circle", scope_id: OVER_NODE }]);
+  const api = await app();
+  try {
+    const res = await candidate(api, held.binding, AUTHOR.email, OVER_CANDIDATE);
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), NOT_FOUND);
+  } finally {
+    restore();
+    held.remove();
+  }
+});
+
+async function restrictionOfLeaves(leaves: string[], hang: string[]) {
+  for (const id of hang) hangIds.add(id);
+  const held = await openDirectory(leaves.map((id) => ({ scope_type: "circle" as const, scope_id: id })));
+  const api = await app({ brainBoundMs: 40 });
+  const res = await api.request("http://127.0.0.1/v1/brains", {}, env(held.binding, AUTHOR.email));
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as {
+    brains: { id: string; restricted?: boolean; unavailable?: boolean }[];
+  };
+  return {
+    cards: body.brains,
+    close() {
+      for (const id of hang) hangIds.delete(id);
+      held.remove();
+    },
+  };
+}
+
+test("grandparent restriction reaches both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_gp_top", "Grandparent restricted", { restricted: true, linkUnder: "d_amaris" }));
+  restore.push(
+    await plantCircle("c_gp_mid", "Grandparent middle", { parentId: "c_gp_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_gp_hit", "Grandparent hit", { parentId: "c_gp_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_gp_miss", "Grandparent miss", { parentId: "c_gp_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_gp_hit", "c_gp_miss"], ["c_gp_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_gp_hit");
+    const miss = read.cards.find((b) => b.id === "c_gp_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+test("an NDA on a grandparent reaches both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_nda_top", "NDA grandparent", { nda: true, linkUnder: "d_amaris" }));
+  restore.push(
+    await plantCircle("c_nda_mid", "NDA middle", { parentId: "c_nda_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_nda_hit", "NDA hit", { parentId: "c_nda_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_nda_miss", "NDA miss", { parentId: "c_nda_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_nda_hit", "c_nda_miss"], ["c_nda_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_nda_hit");
+    const miss = read.cards.find((b) => b.id === "c_nda_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+test("a missing parent fails closed on both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle("c_gap_hit", "Missing parent hit", { parentId: "c_gap_gone", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_gap_miss", "Missing parent miss", {
+      parentId: "c_gap_gone",
+      linkUnder: "d_amaris",
+    }),
+  );
+  const read = await restrictionOfLeaves(["c_gap_hit", "c_gap_miss"], ["c_gap_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_gap_hit");
+    const miss = read.cards.find((b) => b.id === "c_gap_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+test("a chain past the hop cap fails closed on both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_hop_13", "Hop 13", { parentId: null, linkUnder: "d_amaris" }));
+  for (let n = 12; n >= 1; n -= 1) {
+    restore.push(
+      await plantCircle(`c_hop_${n}`, `Hop ${n}`, {
+        parentId: `c_hop_${n + 1}`,
+        linkUnder: "d_amaris",
+      }),
+    );
+  }
+  restore.push(
+    await plantCircle("c_hop_hit", "Hop hit", { parentId: "c_hop_1", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_hop_miss", "Hop miss", { parentId: "c_hop_1", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_hop_hit", "c_hop_miss"], ["c_hop_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_hop_hit");
+    const miss = read.cards.find((b) => b.id === "c_hop_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+test("a contacts ancestor restricts both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle("c_ct_top", "Contacts ancestor", { contacts: true, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_ct_mid", "Contacts middle", { parentId: "c_ct_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_ct_hit", "Contacts hit", { parentId: "c_ct_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_ct_miss", "Contacts miss", { parentId: "c_ct_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_ct_hit", "c_ct_miss"], ["c_ct_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_ct_hit");
+    const miss = read.cards.find((b) => b.id === "c_ct_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+test("an unflagged chain of two hops stays open on the answered card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_open_root", "Open root", { parentId: null, linkUnder: "d_amaris" }));
+  restore.push(
+    await plantCircle("c_open_mid", "Open middle", { parentId: "c_open_root", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_open_hit", "Open hit", { parentId: "c_open_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_open_miss", "Open miss", { parentId: "c_open_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_open_hit", "c_open_miss"], ["c_open_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_open_hit");
+    const miss = read.cards.find((b) => b.id === "c_open_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, false);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, false);
+    assert.equal(read.cards.some((b) => b.id === "c_open_root"), false);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+async function plantAncestorChain(prefix: string, ancestors: number): Promise<() => void> {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle(`${prefix}_${ancestors}`, `${prefix} root`, { parentId: null, linkUnder: "d_amaris" }),
+  );
+  for (let n = ancestors - 1; n >= 1; n -= 1) {
+    restore.push(
+      await plantCircle(`${prefix}_${n}`, `${prefix} ${n}`, {
+        parentId: `${prefix}_${n + 1}`,
+        linkUnder: "d_amaris",
+      }),
+    );
+  }
+  restore.push(
+    await plantCircle(`${prefix}_hit`, `${prefix} hit`, { parentId: `${prefix}_1`, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle(`${prefix}_miss`, `${prefix} miss`, { parentId: `${prefix}_1`, linkUnder: "d_amaris" }),
+  );
+  return () => {
+    restore.reverse().forEach((fn) => fn());
+  };
+}
+
+test("twelve ancestors stay open and thirteen ancestors fail closed", async () => {
+  const restoreTwelve = await plantAncestorChain("c_cap12", 12);
+  const restoreThirteen = await plantAncestorChain("c_cap13", 13);
+  const read = await restrictionOfLeaves(
+    ["c_cap12_hit", "c_cap12_miss", "c_cap13_hit", "c_cap13_miss"],
+    ["c_cap12_miss", "c_cap13_miss"],
+  );
+  try {
+    const openHit = read.cards.find((b) => b.id === "c_cap12_hit");
+    const openMiss = read.cards.find((b) => b.id === "c_cap12_miss");
+    const closedHit = read.cards.find((b) => b.id === "c_cap13_hit");
+    const closedMiss = read.cards.find((b) => b.id === "c_cap13_miss");
+    assert.equal(openHit?.unavailable, undefined);
+    assert.equal(openHit?.restricted, false);
+    assert.equal(openMiss?.unavailable, true);
+    assert.equal(openMiss?.restricted, false);
+    assert.equal(closedHit?.unavailable, undefined);
+    assert.equal(closedHit?.restricted, true);
+    assert.equal(closedMiss?.unavailable, true);
+    assert.equal(closedMiss?.restricted, true);
+  } finally {
+    read.close();
+    restoreThirteen();
+    restoreTwelve();
+  }
+});
+
+async function directPublishSkips(vn: {
+  kind: string;
+  parentId: string | null;
+  restricted?: boolean;
+  nda?: boolean;
+  contacts?: boolean;
+}): Promise<boolean> {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => object;
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const binding = {
+    jurisdiction() {
+      return binding;
+    },
+    idFromName: (name: string) => name,
+    get: () => ({ humanIds: async () => [] }),
+  };
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { directPublish } = (await import(openUrl)) as {
+    directPublish: (c: unknown, w: unknown) => Promise<boolean>;
+  };
+  return directPublish(
+    {
+      get: (key: string) =>
+        key === "session"
+          ? {
+              principal: { id: AUTHOR.id, email: AUTHOR.email, tenantId: TENANT },
+              internal: false,
+              tenantId: TENANT,
+              org,
+              ctx: { now: 1 },
+            }
+          : undefined,
+      env: { ENVIRONMENT: "test", TENANT_POLICY: binding },
+    },
+    {
+      personal: false,
+      vn,
+      stub: {
+        brainConfig: async () => ({ publication: "direct" }),
+        brainRoleOf: async () => null,
+      },
+      can: { edit: true, decide: true },
+    },
+  );
+}
+
+test("twelve ancestors ending on null are open and thirteen are restricted", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null },
+      nodes: { get(id: string): { parentId?: string | null } | undefined },
+    ) => { restricted: boolean };
+  };
+  const chain = (count: number) => {
+    const nodes = new Map<string, { parentId: string | null }>();
+    nodes.set(`a${count}`, { parentId: null });
+    for (let i = count - 1; i >= 1; i -= 1) nodes.set(`a${i}`, { parentId: `a${i + 1}` });
+    return nodes;
+  };
+  assert.equal(restrictionOf({ parentId: "a1" }, chain(12)).restricted, false);
+  assert.equal(restrictionOf({ parentId: "a1" }, chain(13)).restricted, true);
+});
+
+test("direct publish still publishes an unflagged chain that ends at the hop cap", async () => {
+  const restore = await plantAncestorChain("c_deep", 12);
+  try {
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_deep_1", restricted: false, nda: false }),
+      true,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("proposing under a restricted ancestor stays a candidate and an unflagged brain publishes", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { restricted?: boolean }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const parent = org.nodes.get("d_amaris");
+  if (!parent) throw new Error("missing department");
+  const previous = parent.restricted;
+  const held = await openDirectory();
+  const api = await app();
+  const post = (email: string) =>
+    api.request(
+      "http://127.0.0.1/v1/wiki/c_bid/propose",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "Synthetic page", markdown: "Hello" }),
+      },
+      {
+        ...env(held.binding, email),
+        AUDIT: { fetch: async () => new Response(null, { status: 202 }) },
+      },
+    );
+  try {
+    parent.restricted = true;
+    const heldBack = await post(BID.email);
+    assert.equal(heldBack.status, 201);
+    assert.equal(((await heldBack.json()) as { status?: string }).status, "candidate");
+    parent.restricted = false;
+    const published = await post(BID.email);
+    assert.equal(published.status, 201);
+    assert.equal(((await published.json()) as { status?: string }).status, "published");
+  } finally {
+    parent.restricted = previous;
+    held.remove();
+  }
+});
+
+test("a stored direct publication publishes again when the ancestor flag is cleared", async () => {
+  const restore = await plantCircle("c_flip_top", "Flip ancestor", { restricted: true, linkUnder: "d_amaris" });
+  try {
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_flip_top", restricted: false, nda: false }),
+      false,
+    );
+    const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+    const orgMod = (await import(specifier)) as {
+      getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+        nodes: Map<string, { restricted?: boolean }>;
+      };
+    };
+    const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+    const node = org.nodes.get("c_flip_top");
+    if (!node) throw new Error("missing flip ancestor");
+    node.restricted = false;
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_flip_top", restricted: false, nda: false }),
+      true,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("a parent cycle and a self-parent are restricted by the hop cap", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null },
+      nodes: { get(id: string): { parentId?: string | null } | undefined },
+    ) => { restricted: boolean };
+  };
+  const cycle = new Map<string, { parentId: string | null }>([
+    ["a", { parentId: "b" }],
+    ["b", { parentId: "a" }],
+  ]);
+  const self = new Map<string, { parentId: string | null }>([["s", { parentId: "s" }]]);
+  assert.equal(restrictionOf({ parentId: "a" }, cycle).restricted, true);
+  assert.equal(restrictionOf({ parentId: "s" }, self).restricted, true);
+});
+
+test("a non-personal brain with no view node is restricted", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null } | null,
+      nodes: { get(id: string): unknown },
+      scope?: { personal?: boolean },
+    ) => { restricted: boolean };
+  };
+  assert.equal(restrictionOf(null, { get: () => undefined }).restricted, true);
+  assert.equal(restrictionOf(null, { get: () => undefined }, { personal: true }).restricted, false);
+});
+
+test("each reader uses the tenant org, and another tenant's org does not apply", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null } | null,
+      nodes: { get(id: string): { restricted?: boolean; parentId?: string | null } | undefined },
+    ) => { restricted: boolean };
+  };
+  const tenantA = new Map<string, { restricted?: boolean; parentId: string | null }>([
+    ["leaf", { parentId: "parent" }],
+    ["parent", { restricted: true, parentId: null }],
+  ]);
+  const partialView = new Map<string, { restricted?: boolean; parentId: string | null }>([
+    ["leaf", { parentId: "parent" }],
+  ]);
+  const tenantB = new Map<string, { restricted?: boolean; parentId: string | null }>([
+    ["leaf", { parentId: "parent" }],
+    ["parent", { parentId: null }],
+  ]);
+  assert.equal(restrictionOf({ parentId: "parent" }, tenantA).restricted, true);
+  assert.equal(restrictionOf({ parentId: "parent" }, partialView).restricted, true);
+  assert.equal(restrictionOf({ parentId: "parent" }, tenantB).restricted, false);
+});
+
+test("a throwing parent lookup is restricted and direct publish does not throw", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf, directPublish } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null },
+      nodes: { get(id: string): unknown },
+    ) => { restricted: boolean };
+    directPublish: (c: unknown, w: unknown) => Promise<boolean>;
+  };
+  const nodes = {
+    get() {
+      throw new Error("synthetic lookup failed");
+    },
+  };
+  assert.equal(restrictionOf({ parentId: "c_gone" }, nodes).restricted, true);
+  const published = await directPublish(
+    {
+      get: (key: string) =>
+        key === "session"
+          ? {
+              principal: { id: AUTHOR.id, email: AUTHOR.email, tenantId: TENANT },
+              internal: false,
+              tenantId: TENANT,
+              org: { nodes },
+              ctx: { now: 1 },
+            }
+          : undefined,
+      env: {
+        ENVIRONMENT: "test",
+        TENANT_POLICY: {
+          jurisdiction() {
+            return this;
+          },
+          idFromName: (name: string) => name,
+          get: () => ({ humanIds: async () => [] }),
+        },
+      },
+    },
+    {
+      personal: false,
+      vn: { kind: "circle", parentId: "c_gone", restricted: false, nda: false },
+      stub: {
+        brainConfig: async () => ({ publication: "direct" }),
+        brainRoleOf: async () => null,
+      },
+      can: { edit: true, decide: true },
+    },
+  );
+  assert.equal(published, false);
+});
+
+test("direct publish waits when an unflagged brain sits under a restricted or contacts ancestor", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle("c_pub_top", "Publish restricted ancestor", { restricted: true, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_pub_mid", "Publish middle", { parentId: "c_pub_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_pub_hit", "Publish hit", { parentId: "c_pub_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_con_top", "Publish contacts ancestor", { contacts: true, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_con_hit", "Publish contacts hit", { parentId: "c_con_top", linkUnder: "d_amaris" }),
+  );
+  try {
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_pub_mid", restricted: false, nda: false }),
+      false,
+    );
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_con_top", restricted: false, nda: false }),
+      false,
+    );
+  } finally {
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+test("a closed card under a restricted ancestor is restricted", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { parentId: string | null }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const dept = org.nodes.get("d_amaris");
+  if (!dept) throw new Error("missing department");
+  const previous = dept.parentId;
+  const restore = await plantCircle("c_close_top", "Closed ancestor", {
+    restricted: true,
+    parentId: null,
+    linkUnder: "d_amaris",
+  });
+  const held = await openDirectory();
+  const api = await app();
+  try {
+    dept.parentId = "c_close_top";
+    const res = await api.request(
+      "http://127.0.0.1/v1/brains?scope=all",
+      {},
+      env(held.binding, ADMIN.email),
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      brains: { id: string; restricted?: boolean; canOpen?: boolean }[];
+    };
+    const card = body.brains.find((b) => b.id === "d_amaris");
+    assert.equal(card?.canOpen, false);
+    assert.equal(card?.restricted, true);
+    assert.deepEqual(Object.keys(card ?? {}).sort(), [
+      "canOpen",
+      "canRequestAccess",
+      "id",
+      "name",
+      "restricted",
+      "type",
+    ]);
+  } finally {
+    dept.parentId = previous;
+    restore();
+    held.remove();
+  }
+});
+
+test("a missed card under a restricted ancestor is restricted", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { restricted?: boolean }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  assert.equal(org.nodes.has(OVER_NODE), false);
+  const dept = org.nodes.get("d_amaris");
+  if (!dept) throw new Error("missing department");
+  const previous = dept.restricted;
+  dept.restricted = true;
+  const held = await openDirectory();
+  const api = await app({ brainBoundMs: 40 });
+  try {
+    const res = await api.request("http://127.0.0.1/v1/brains", {}, env(held.binding, AUTHOR.email));
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      brains: { id: string; restricted?: boolean; unavailable?: boolean }[];
+    };
+    const card = body.brains.find((b) => b.id === "c_delivery");
+    assert.equal(card?.unavailable, true);
+    assert.equal(card?.restricted, true);
+  } finally {
+    dept.restricted = previous;
     held.remove();
   }
 });
@@ -441,7 +1147,8 @@ function note(title: string): { id: string; title: string; type: string; markdow
 }
 
 test("the tree roots are exactly the admitted brains", async () => {
-  const held = await openDirectory();
+  const restore = await plantCircle(LONG_NODE, "Synthetic long circle");
+  const held = await openDirectory([{ scope_type: "circle", scope_id: LONG_NODE }]);
   const api = await app({ treeBoundMs: 40 });
   try {
     const res = await api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email));
@@ -457,6 +1164,7 @@ test("the tree roots are exactly the admitted brains", async () => {
     }
   } finally {
     held.remove();
+    restore();
   }
 });
 
@@ -478,7 +1186,8 @@ test("a brain the caller cannot open is not read and is not returned degraded", 
   }
 });
 
-test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async () => {
+test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async (t) => {
+  const realSetTimeout = globalThis.setTimeout;
   const held = await openDirectory();
   const api = await app();
   hung.pace.clear();
@@ -486,13 +1195,27 @@ test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async () => 
   hung.pace.set("c_delivery", { ms: 2499, pages: note("On time") });
   hung.pace.set("c_eng", { ms: 2501, pages: note("Late secret") });
   hung.lateOnAbort.add("c_eng");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let armed = 0;
+  const mockedSet = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: Parameters<typeof setTimeout>[0], ms?: number) => {
+    if (ms === 2499) armed += 1;
+    return mockedSet(fn, ms);
+  }) as typeof setTimeout;
   try {
-    const raced = await Promise.race([
-      api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)),
-      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 4000)),
-    ]);
-    assert.notEqual(raced, "hung");
-    const body = (await (raced as Response).json()) as {
+    const pending = api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email));
+    const start = Date.now();
+    while (armed === 0) {
+      if (Date.now() - start > 2000) throw new Error("2499ms read was not armed");
+      await new Promise((resolve) => realSetTimeout(resolve, 10));
+    }
+    await t.mock.timers.tick(2499);
+    await new Promise((resolve) => realSetTimeout(resolve, 20));
+    await t.mock.timers.tick(2);
+    await new Promise((resolve) => realSetTimeout(resolve, 30));
+    const res = await pending;
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
       roots: { id: string; access: string; children?: { children?: { label: string }[] }[] }[];
     };
     const kept = body.roots.find((root) => root.id === "c_delivery");
@@ -506,6 +1229,8 @@ test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async () => 
   } finally {
     hung.pace.clear();
     hung.lateOnAbort.clear();
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
     held.remove();
   }
 });

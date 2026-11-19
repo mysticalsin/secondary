@@ -17,6 +17,7 @@ import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 import {
   absentErasure,
   commitErasure,
+  decodeErasure,
   decodeErasureLedger,
   decodeErasureStatus,
   decodeReceiptCursor,
@@ -25,6 +26,7 @@ import {
   encodeErasure,
   erasurePlan,
   runErasure,
+  scopeIdOfStep,
   stepsForRestore,
   type StoredErasure,
 } from "../../src/state/erasure-request.ts";
@@ -138,6 +140,227 @@ test("erasure request: an order with an unknown step is unreadable", () => {
   });
   assert.equal(row.status.tag, "unreadable");
   assert.deepEqual(row.order, []);
+});
+
+test("erasure request: only the exact step forms are readable", () => {
+  for (const id of ["receipts ", "scope:", "scope: ", "scope:../x", "Scope:c_delivery"]) {
+    const row = decodeErasure({
+      status: "partial_failed",
+      order: [id],
+      mark: { [id]: "pending" },
+    });
+    assert.equal(row.status.tag, "unreadable", id);
+    assert.deepEqual(row.order, [], id);
+  }
+  const kept = decodeErasure({
+    status: "partial_failed",
+    order: ["receipts", "scope:c_delivery"],
+    mark: { receipts: "pending", "scope:c_delivery": "pending" },
+  });
+  assert.deepEqual(kept.order, ["receipts", "scope:c_delivery"]);
+});
+
+test("erasure plan keeps a company scope the grammar accepts", () => {
+  assert.deepEqual(erasurePlan(["c_delivery"]), [
+    "receipts",
+    "tombstone",
+    "scope:c_delivery",
+    "personal",
+    "connector",
+    "directory",
+  ]);
+});
+
+test("erasure plan refuses a company scope the grammar rejects", () => {
+  assert.throws(
+    () => erasurePlan(["c_delivery", "bad id"]),
+    (error: unknown) => error instanceof Error && error.message === "invalid_scope",
+  );
+});
+
+test("erase route refuses a company scope the grammar rejects before it stores", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const { post, audits } = await eraseApp(buildOrg(["bad id"]));
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(res.status, 422);
+    assert.deepEqual(await res.json(), { error: "invalid_scope" });
+    assert.equal(readLedger(file), undefined);
+    assert.equal(tombstones(file), 0);
+    assert.deepEqual(erasureCalls(), []);
+    assert.equal(pendingErase(file), undefined);
+    assert.deepEqual(audits, []);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request stores a known scope and refuses a step the grammar rejects", () => {
+  const refused = requireFail(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["personal", "scope:c_delivery", "scope:bad id", "scope:c_delivery\n", "not-a-step"],
+    }),
+  );
+  assert.equal(refused.reason, "unknown_step");
+  const opened = requireOk(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["personal", "scope:c_delivery"],
+    }),
+  ).state;
+  assert.deepEqual(opened.order, ["personal", "scope:c_delivery"]);
+  assert.equal(scopeIdOfStep("scope:c_delivery"), "c_delivery");
+  assert.equal(scopeIdOfStep("scope:c_delivery\n"), null);
+  assert.equal(scopeIdOfStep(`scope:${"a".repeat(129)}`), null);
+  assert.equal(scopeIdOfStep("scope:café"), null);
+  assert.throws(
+    () => stepsForRestore("workspace", "bad id", "p1"),
+    (error: unknown) => error instanceof Error && error.message === "invalid_scope",
+  );
+  assert.deepEqual(stepsForRestore("workspace", "c_delivery", "p1"), ["scope:c_delivery"]);
+  const openedAgain = requireOk(
+    commitErasure(opened, {
+      type: "request",
+      now: NOW + 1,
+      steps: ["directory", "scope:c_delivery"],
+    }),
+  ).state;
+  assert.deepEqual(openedAgain.order, ["scope:c_delivery", "personal", "directory"]);
+});
+
+test("erasure runner: scope:c_delivery does not match scope:c_delivery_x", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const org = buildOrg(["c_delivery", "c_delivery_x"]);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+    };
+    const order = erasurePlan(rights.companyScopes(org));
+    const stored = encodeErasure({
+      status: { tag: "partial_failed" },
+      order,
+      mark: Object.fromEntries(order.map((id) => [id, id === "receipts" ? "failed" : "pending"])),
+      grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
+      receipts: null,
+    });
+    putLedger(file, stored.status, stored.ledger);
+    const { post } = await eraseApp(org);
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(res.status, 200);
+    const scopes = erasureActors()
+      .filter((actor) => actor.op === "pseudonymise")
+      .map((actor) => actor.scope);
+    assert.deepEqual(scopes, ["c_delivery", "c_delivery_x", "global"]);
+  } finally {
+    remove();
+  }
+});
+
+test("a planned scope runs", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  assert.equal(rights.runnerScopeId("scope:c_delivery", new Set(["c_delivery"])), "c_delivery");
+});
+
+test("an unplanned scope is refused", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  const planned = new Set(["c_delivery"]);
+  assert.equal(rights.runnerScopeId("scope:personal:u_subject", planned), null);
+  assert.equal(rights.runnerScopeId("scope:global", planned), null);
+});
+
+test("a prefix is refused", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  assert.equal(rights.runnerScopeId("scope:c_delivery!", new Set(["c_delivery"])), null);
+});
+
+test("the runner refuses a prefix and a scope the tenant did not plan", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  const planned = new Set(["c_delivery"]);
+  assert.equal(rights.runnerScopeId("scope:c_delivery", planned), "c_delivery");
+  for (const id of ["scope:c_delivery!", `scope:${"a".repeat(129)}`, "scopes:x", "scope:C_delivery", "scope:personal:u_subject", "scope:global"]) {
+    assert.equal(rights.runnerScopeId(id, planned), null, id);
+  }
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const org = buildOrg(["c_delivery"]);
+    const order = ["receipts", "scope:personal:u_subject", "directory"];
+    const stored = encodeErasure({
+      status: { tag: "partial_failed" },
+      order,
+      mark: { receipts: "failed", "scope:personal:u_subject": "pending", directory: "pending" },
+      grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
+      receipts: null,
+    });
+    putLedger(file, stored.status, stored.ledger);
+    const { post } = await eraseApp(org);
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    const body = (await res.json()) as { status?: string; error?: string };
+    assert.equal(body.status === "erased", false);
+    assert.equal(erasureCalls().includes("pseudonymise:personal:u_subject"), false);
+  } finally {
+    remove();
+  }
+});
+
+test("erasure request refuses a step the grammar rejects instead of shortening", () => {
+  const refused = requireFail(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["receipts", "scope:c_delivery!", "directory"],
+    }),
+  );
+  assert.equal(refused.reason, "unknown_step");
+});
+
+test("erasure request refuses a scope step that is not an anchored match", () => {
+  const illegal = [
+    "scope:c_delivery!",
+    `scope:${"a".repeat(129)}`,
+    "scopes:x",
+    "scope:C_delivery",
+  ];
+  for (const id of illegal) {
+    const refused = requireFail(
+      commitErasure(absentErasure(), {
+        type: "request",
+        now: NOW,
+        steps: ["receipts", id, "scope:c_delivery"],
+      }),
+    );
+    assert.equal(refused.reason, "unknown_step", id);
+    assert.equal(scopeIdOfStep(id), null, id);
+  }
+  const opened = requireOk(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["receipts", "scope:c_delivery"],
+    }),
+  ).state;
+  assert.deepEqual(opened.order, ["receipts", "scope:c_delivery"]);
+  const again = requireOk(
+    commitErasure(opened, {
+      type: "request",
+      now: NOW + 1,
+      steps: ["personal", "scope:c_delivery"],
+    }),
+  ).state;
+  assert.deepEqual(again.order, ["receipts", "scope:c_delivery", "personal"]);
 });
 
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {
@@ -699,6 +922,47 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
     assert.equal(stored.mark.directory, "done");
     assert.equal(row?.updated_at, NOW);
     assert.notEqual(row?.updated_at, 5);
+  } finally {
+    remove();
+  }
+});
+
+test("a non-conforming restore scope is skipped instead of treated as done", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+      reapplyErasures: (
+        env: { PSEUDONYM_KEY?: string; AUDIT: { fetch: (url: string) => Promise<Response> } },
+        tenantId: string,
+        kind: "workspace",
+        scope: string,
+        now: number,
+      ) => Promise<{ applied: number; skipped: string[] }>;
+    };
+    const finished = completedLedger(erasurePlan(rights.companyScopes(buildOrg(["acme"]))));
+    putLedger(file, finished.status, finished.ledger);
+    const db = openSqlite(file);
+    db.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, "subject@example.invalid");
+    db.prepare(
+      "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(SUBJECT, "pz_subject", "[]", NOW - 1_000, NOW + 86_400_000);
+    db.close();
+    const applied = await rights.reapplyErasures(
+      { PSEUDONYM_KEY, AUDIT: { fetch: async () => new Response(null, { status: 202 }) } },
+      TENANT,
+      "workspace",
+      "bad id",
+      NOW,
+    );
+    assert.deepEqual(applied, { applied: 0, skipped: [SUBJECT] });
+    const left = openSqlite(file);
+    const person = left.prepare("SELECT id FROM principals WHERE id = ?").get(SUBJECT) as { id: string } | undefined;
+    left.close();
+    assert.equal(person?.id, SUBJECT);
+    assert.deepEqual(erasureCalls(), []);
+    assert.equal(readLedger(file)?.updated_at, 5);
   } finally {
     remove();
   }

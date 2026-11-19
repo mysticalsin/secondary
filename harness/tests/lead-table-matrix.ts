@@ -45,7 +45,7 @@ function leadOf(ids: readonly string[]): boolean {
   return ids.some((id) => id === "acme_lead");
 }
 
-function publishContext(principal: Principal) {
+function publishContext(principal: Principal, org: ReturnType<typeof buildOrg>) {
   const tenant = {
     jurisdiction() {
       return tenant;
@@ -60,7 +60,13 @@ function publishContext(principal: Principal) {
   return {
     get: (key: string) =>
       key === "session"
-        ? { principal, internal: undefined, tenantId: principal.tenantId, ctx: { now: LEAD_TABLE_NOW } }
+        ? {
+            principal,
+            internal: undefined,
+            tenantId: principal.tenantId,
+            ctx: { now: LEAD_TABLE_NOW },
+            org,
+          }
         : undefined,
     env: {
       ENVIRONMENT: "dev",
@@ -193,7 +199,7 @@ export async function collectLeadTable(mayDecide: LeadDecide, directPublish: Lea
     for (const workspace of LEAD_TABLE_WORKSPACES) {
       for (const canDecide of [true, false]) {
         for (const stored of ["none", "editor"] as const) {
-          const allowed = await directPublish(publishContext(caller.principal), {
+          const allowed = await directPublish(publishContext(caller.principal, org), {
             personal: false,
             vn: ref.nodes.get(workspace),
             stub: publishStub(stored),
