@@ -799,6 +799,6 @@
     render();
   }).catch((err) => {
     main.replaceChildren();
-    setStatus(err instanceof AuthError ? "Your sign-in has expired or the brain could not be reached. Reload to sign in again." : `The brain could not be loaded (${err.message}).`, "error");
+    setStatus(err instanceof AuthError ? "Your sign-in has expired or the brain could not be reached. Reload to sign in again." : err instanceof Error && err.message === "offline" ? "The brain could not be loaded." : `The brain could not be loaded (${err.message}).`, "error");
   });
 })();
