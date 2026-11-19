@@ -2,6 +2,7 @@
   "recovered-source/shared/packages/contracts/src/ops-auth.ts": "5f3e148e45cf77dd34313105e1378879236ff32a9df4348bac77120c1624f9a7",
   "recovered-source/shared/packages/contracts/src/signed-call.ts": "4415868787fcc2b751b62be06d45c3ea001a8286cfa6bc8bd122dcd36470e43b",
   "recovered-source/shared/packages/policy/src/roles.ts": "f47d919a04793fbd03dfa6be6bad3b9d23fab6ad84384299b85de4fee547a0d9",
+  "src/state/erasure-request.ts": "9429d7bda63b4dd11821924ecec00021127d2548af7789ef6d73d54cedbbf37c",
   "src/worker/admin/routes.ts": "b34b1d0041e73287a234c279fd2c9dc42bd60aa1bf4e935e1edf6f62135be796",
   "src/worker/admin/store.ts": "fdbb0d37a81fe46ecd59f3a43ab9cf90134fd788f0a145049e6bb50c65a38a9c",
   "src/worker/agent/loop.ts": "bcb0fbe2ace50339f652f006e363854fe2b93e1986e38bb9ed721ea058d5c6de",
