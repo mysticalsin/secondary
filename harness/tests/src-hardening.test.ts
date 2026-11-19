@@ -32,6 +32,9 @@ const hung = {
   cancelled: [] as string[],
   pace: new Map<string, { ms: number; pages: { id: string; title: string; type: string; markdown: string }[] }>(),
   lateOnAbort: new Set<string>(),
+  /** When set, a slow read never settles and does not look at the signal. */
+  deaf: false,
+  deafReads: [] as string[],
 };
 let failScope: string | null = null;
 
@@ -61,6 +64,10 @@ function workspace(name: string) {
         });
       }
       if (!slow) return Promise.resolve([]);
+      if (hung.deaf) {
+        hung.deafReads.push(name);
+        return new Promise<unknown[]>(() => {});
+      }
       return new Promise<unknown[]>((resolve, reject) => {
         const stop = () => {
           hung.cancelled.push(name);
@@ -522,6 +529,29 @@ test("a late resolve after abort does not return that brain's pages", async () =
   } finally {
     hung.pace.clear();
     hung.lateOnAbort.clear();
+    held.remove();
+  }
+});
+
+test("a read that ignores the signal does not hold the tree", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  hung.deaf = true;
+  hung.deafReads = [];
+  hung.cancelled = [];
+  try {
+    const raced = await Promise.race([
+      api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 400)),
+    ]);
+    assert.notEqual(raced, "hung");
+    const body = (await (raced as Response).json()) as { roots: { id: string; access: string }[] };
+    assert.equal(body.roots.find((root) => root.id === "c_delivery")?.access, "degraded");
+    assert.equal(hung.deafReads.some((name) => name.includes("c_delivery")), true);
+    assert.equal(hung.cancelled.some((name) => name.includes("c_delivery")), false);
+  } finally {
+    hung.deaf = false;
+    hung.deafReads = [];
     held.remove();
   }
 });
