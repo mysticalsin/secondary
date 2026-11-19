@@ -2,9 +2,13 @@
 
 The user asked for this log for `deploy/`, and for the guard fix below. Comments were not stripped. Existing tests were not removed.
 
+- Refuse nested symlinks and secret files anywhere under the deploy root.
+  - `lstat` walks `deploy/graph` and `deploy/assets`. Any nested symlink, including `deploy/graph/app.js.txt`, is `assets-symlink`. The same refusal covers `deploy`, `deploy/graph-entry.ts`, `deploy/graph-route.ts`, and `harness/adapters/policy-entry.ts`. A stat error or a readdir error on those paths is `assets-symlink`. The walk does not follow a symlink.
+  - Secret names are matched with `name.toLowerCase()`. `.ENV` and `.Dev.Vars` are refused.
+  - The same names are refused anywhere under the deploy root, for example `deploy/.env` and `src/worker/.env`. `node_modules` and `.git` are not walked. The earlier note that the check was the deploy root only is replaced by this walk.
 - Make a bare `deploy.sh` a dry run, and refuse env files before Wrangler reads them.
   - No arguments and `--dry-run` run the asset guard, then `wrangler deploy --dry-run --assets <tmp> --config wrangler.jsonc`. `--apply` is the only real deploy. `npm run deploy` is `./deploy.sh`. While `NODE_TEST_CONTEXT` is set or `NODE_ENV` is `test`, `--apply` exits 2 with `apply-under-test` and does not start Wrangler. The tests never start Wrangler without `--dry-run`.
-  - Wrangler 4.158.0 loads `.env` and `.env.local` for every command, including a dry run. In the deploy root, `lstat` refuses `.env`, `.env.local`, and `.env.*` with `env-file-present`, and `.dev.vars` plus `.dev.vars.*` with `dev-vars-present`. A file, a symlink, a dangling link, a directory, or a stat error is refused. `.gitignore` contains `.env*`.
+  - Wrangler 4.158.0 loads `.env` and `.env.local` for every command, including a dry run. This entry first checked only the deploy root. The entry above walks the rest of the tree. A file, a symlink, a dangling link, a directory, or a stat error is refused. `.gitignore` contains `.env*`.
   - A directory, FIFO, or device named `wrangler.jsonc` is `config-not-file` and is not read. A hard link of a regular file is a regular file to `lstat` and is accepted. A symlink at `deploy/graph` or `deploy/graph-entry.ts` is `assets-symlink`.
   - Known limit: `lstat` and Wrangler's later read are not atomic. A local writer during the run can change a file after the check. That needs local write access during the run.
   - `deploy.sh` does not check the Wrangler version at deploy time. `package.json` pins `wrangler` at exactly `4.158.0` and the lockfile records that pin. `npm ci` installs it. Devin accepted that pin plus the lockfile, so there is no runtime assert.

@@ -147,12 +147,12 @@
 
 **Goal**: A nested symlink under `deploy/graph` or `deploy/assets` cannot reach Wrangler. Secret file names are refused in any case and anywhere under the deploy root except `node_modules` and `.git`. UI bytes stay pending.
 
-**Independent Test**: T027, T028, and T029 fail before T030. `deploy/assets/` is still only `UNREPRODUCED`.
+**Independent Test**: T027 fails on `fc91346`, T028 fails on `630d628`, and T029 fails on `97238b7`, then T030 passes. `deploy/assets/` is still only `UNREPRODUCED`.
 
-- [ ] T027 [US5] Add failing tests. A symlink at `deploy/graph/app.js.txt`, a symlink nested under `deploy/assets`, a symlink at `deploy/graph-route.ts`, and a symlink at `harness/adapters/policy-entry.ts` reach the stub. An unreadable `deploy/graph` reaches the stub. Covers FR-016.
-- [ ] T028 [US5] Add failing tests. `.ENV`, `.Env.local`, `.Dev.Vars`, and `.DEV.VARS.local` reach the guard's success path. Covers FR-008, FR-016.
-- [ ] T029 [US5] Add failing tests. `deploy/.env`, `src/worker/.env`, and `deploy/graph/.dev.vars` reach the guard's success path. Covers FR-008, FR-016.
-- [ ] T030 [US5] Walk `deploy/graph` and `deploy/assets` with `lstat` and refuse any nested symlink with `assets-symlink`. Check `deploy/graph-route.ts`, `deploy/graph-entry.ts`, and `harness/adapters/policy-entry.ts`. Fail closed on stat and readdir errors. Match secret names with `name.toLowerCase()`. Refuse `.env`, `.env.*`, and `.dev.vars*` anywhere under the deploy root except inside `node_modules` and `.git`. Update the decision log, which said the check was the deploy root only. Do not add UI bytes and do not run a real deploy. Covers FR-008, FR-016.
+- [x] T027 [US5] Add failing tests. A symlink at `deploy/graph/app.js.txt`, a symlink nested under `deploy/assets`, a symlink at `deploy/graph-route.ts`, and a symlink at `harness/adapters/policy-entry.ts` reach the stub. An unreadable `deploy/graph` reaches the stub. Covers FR-016.
+- [x] T028 [US5] Add failing tests. `.ENV`, `.Env.local`, `.Dev.Vars`, and `.DEV.VARS.local` reach the guard's success path. Covers FR-008, FR-016.
+- [x] T029 [US5] Add failing tests. `deploy/.env`, `src/worker/.env`, and `deploy/graph/.dev.vars` reach the guard's success path. Covers FR-008, FR-016.
+- [x] T030 [US5] Walk `deploy/graph` and `deploy/assets` with `lstat` and refuse any nested symlink with `assets-symlink`. Check `deploy/graph-route.ts`, `deploy/graph-entry.ts`, and `harness/adapters/policy-entry.ts`. Fail closed on stat and readdir errors. Match secret names with `name.toLowerCase()`. Refuse `.env`, `.env.*`, and `.dev.vars*` anywhere under the deploy root except inside `node_modules` and `.git`. Update the decision log, which said the check was the deploy root only. Do not add UI bytes and do not run a real deploy. Covers FR-008, FR-016.
 
 ## Dependencies & Execution Order
 

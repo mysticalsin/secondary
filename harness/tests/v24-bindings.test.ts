@@ -779,6 +779,17 @@ test("an unreadable deploy/graph is refused", () => {
   } finally {
     chmodSync(graphDir, 0o755);
   }
+
+  const statErr = matchingAssets();
+  const adapters = join(statErr, "harness", "adapters");
+  mkdirSync(adapters, { recursive: true });
+  writeFileSync(join(adapters, "policy-entry.ts"), "export {}\n");
+  chmodSync(adapters, 0);
+  try {
+    refuseDeploy(statErr, "assets-symlink");
+  } finally {
+    chmodSync(adapters, 0o755);
+  }
 });
 
 test("secret file names are matched case-insensitively", async () => {
@@ -809,7 +820,7 @@ test("nested env files outside node_modules and .git are refused", async () => {
 
   const workerEnv = matchingAssets();
   mkdirSync(join(workerEnv, "src", "worker"), { recursive: true });
-  writeFileSync(join(workerEnv, "src", "worker", ".env.local"), "SECRET=value\n");
+  writeFileSync(join(workerEnv, "src", "worker", ".env"), "SECRET=value\n");
   assert.deepEqual(guard.guardRoot(workerEnv, "dry-run"), { ok: false, reason: "env-file-present" });
 
   const vars = matchingAssets();

@@ -179,21 +179,38 @@ function lstatNode(path: string): "absent" | "file" | "link" | "other" | "error"
   }
 }
 
-function refuseSecretFiles(root: string): { ok: false; reason: string } | null {
+const SKIP_SECRET_DIRS = new Set(["node_modules", ".git"]);
+
+function secretReason(name: string): "dev-vars-present" | "env-file-present" | null {
+  const lower = name.toLowerCase();
+  if (lower.startsWith(".dev.vars")) return "dev-vars-present";
+  if (lower === ".env" || lower.startsWith(".env.")) return "env-file-present";
+  return null;
+}
+
+function refuseSecretFiles(dir: string): { ok: false; reason: string } | null {
   let names: string[];
   try {
-    names = readdirSync(root);
+    names = readdirSync(dir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     return { ok: false, reason: "dev-vars-present" };
   }
   for (const name of names) {
-    if (name !== ".dev.vars" && !name.startsWith(".dev.vars.")) continue;
-    if (lstatNode(join(root, name)) !== "absent") return { ok: false, reason: "dev-vars-present" };
-  }
-  for (const name of names) {
-    if (name !== ".env" && !name.startsWith(".env.")) continue;
-    if (lstatNode(join(root, name)) !== "absent") return { ok: false, reason: "env-file-present" };
+    if (SKIP_SECRET_DIRS.has(name)) continue;
+    const path = join(dir, name);
+    let stat;
+    try {
+      stat = lstatSync(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      return { ok: false, reason: "dev-vars-present" };
+    }
+    const reason = secretReason(name);
+    if (reason !== null) return { ok: false, reason };
+    if (stat.isSymbolicLink() || !stat.isDirectory()) continue;
+    const nested = refuseSecretFiles(path);
+    if (nested !== null) return nested;
   }
   return null;
 }
@@ -206,20 +223,50 @@ function configuredDirectory(root: string, config: Record<string, unknown>): { o
   return { ok: true, path };
 }
 
-function sourceSymlink(root: string): GuardResult | null {
-  for (const rel of ["deploy", SOURCE_DIR, "deploy/graph", "deploy/graph-entry.ts"]) {
-    const path = join(root, rel);
-    try {
-      if (lstatSync(path).isSymbolicLink()) return { ok: false, reason: "assets-symlink" };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      return { ok: false, reason: "assets-symlink" };
-    }
+function assertNoSymlink(root: string, rel: string, recurse: boolean): { ok: false; reason: string } | null {
+  const path = join(root, rel);
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    return { ok: false, reason: "assets-symlink" };
+  }
+  if (stat.isSymbolicLink()) return { ok: false, reason: "assets-symlink" };
+  if (!recurse || !stat.isDirectory()) return null;
+  let names: string[];
+  try {
+    names = readdirSync(path);
+  } catch {
+    return { ok: false, reason: "assets-symlink" };
+  }
+  for (const name of names) {
+    const nested = assertNoSymlink(root, `${rel}/${name}`, true);
+    if (nested !== null) return nested;
+  }
+  return null;
+}
+
+function sourceSymlink(root: string): { ok: false; reason: string } | null {
+  for (const rel of ["deploy", "deploy/graph-entry.ts", "deploy/graph-route.ts", "harness/adapters/policy-entry.ts"]) {
+    const found = assertNoSymlink(root, rel, false);
+    if (found !== null) return found;
+  }
+  for (const rel of ["deploy/graph", SOURCE_DIR]) {
+    const found = assertNoSymlink(root, rel, true);
+    if (found !== null) return found;
   }
   return null;
 }
 
 function readConfig(root: string): { ok: true; config: Record<string, unknown> } | { ok: false; reason: string } {
+  try {
+    readdirSync(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return { ok: false, reason: "dev-vars-present" };
+  }
+  const linked = sourceSymlink(root);
+  if (linked !== null) return linked;
   const secret = refuseSecretFiles(root);
   if (secret !== null) return secret;
   for (const rel of SHADOW_CONFIGS) {
