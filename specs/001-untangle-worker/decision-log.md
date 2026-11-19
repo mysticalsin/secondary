@@ -196,3 +196,7 @@ Four and five trailing slashes stay on the row. HEAD `GET /v1/ai/status` is 503 
 The public routes are reached through `createApp`: `authenticate`, then `switchGate`, then the handler. The token is a synthetic Access JWT. `verifyAccessJwt` checks it with a test JWKS passed in `deps.jwks`. The switch flags come from `TenantPolicy.switchState` on a temporary sqlite file.
 
 `/v1/internal/ops` and `/v1/internal/mcp` do not go through `switchGate`. `createApp` mounts them before `v1Routes` so a machine call skips Access auth and the body limit, and each route checks its own HMAC. `GET /v1/internal/mcp/switches` is how the MCP worker reads the flags, including when one is off, so a 503 from `switchGate` there would hide the state it is meant to report. That bypass stays. The `mcp` flag still refuses an internal *user* session on the public router. The signed MCP allowlist test named above is still deferred: this JWT is an Access token, not an MCP principal signature.
+
+## The ac41dfec 503 note
+
+`docs/auth/mantu-503-classification.md` and `docs/auth/mantu-503-repro.mjs` come from `578de37a` and stay as a record of that bundle. The classification's body is not rewritten. A status note at the top says current `src/worker` does not use `auth_unconfigured`. The repro is not a test.
