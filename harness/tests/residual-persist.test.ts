@@ -32,7 +32,8 @@ test("connector upsert persists through the real workspace, and source access ca
       return tenantReady;
     },
   };
-  const Policy = (await import("../../src/worker/tenant-policy.ts")).TenantPolicy;
+  const policyUrl = new URL("../../src/worker/tenant-policy.ts", import.meta.url).href;
+  const Policy = (await import(policyUrl)).TenantPolicy;
   const directory = new Policy(tenantCtx, {});
   await tenantReady;
 
@@ -51,7 +52,8 @@ test("connector upsert persists through the real workspace, and source access ca
       return wsReady;
     },
   };
-  const Workspace = (await import("../../src/worker/workspace.ts")).Workspace;
+  const workspaceUrl = new URL("../../src/worker/workspace.ts", import.meta.url).href;
+  const Workspace = (await import(workspaceUrl)).Workspace;
   const workspace = new Workspace(wsCtx, { WIKI_ALARMS: "off" });
   await wsReady;
 
@@ -62,12 +64,14 @@ test("connector upsert persists through the real workspace, and source access ca
     idFromName: (name: string) => name,
     get: (id: string) => (String(id).startsWith("synthetic:") ? workspace : directory),
   };
-  const { createApp } = (await import("../../src/worker/index.ts")) as {
+  const appUrl = new URL("../../src/worker/index.ts", import.meta.url).href;
+  const { createApp } = (await import(appUrl)) as {
     createApp: () => {
       request: (input: string, init: RequestInit | undefined, env: unknown) => Promise<Response>;
     };
   };
-  const { signInternalRequest } = await import("../../src/worker/internal-auth.ts");
+  const authUrl = new URL("../../src/worker/internal-auth.ts", import.meta.url).href;
+  const { signInternalRequest } = await import(authUrl);
   const api = createApp();
   const url = "http://127.0.0.1/internal/connector/upsert";
   const body = JSON.stringify({
@@ -123,7 +127,8 @@ test("connector upsert persists through the real workspace, and source access ca
     assert.equal(stored?.body, "note");
 
     let calls = 0;
-    const { checkSourceAccess } = await import("../../src/worker/connector.ts");
+    const connectorUrl = new URL("../../src/worker/connector.ts", import.meta.url).href;
+    const { checkSourceAccess } = await import(connectorUrl);
     const allowed = await checkSourceAccess(
       {
         CONNECTOR_HMAC_KEY: SECRET,

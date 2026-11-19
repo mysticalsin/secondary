@@ -22,7 +22,8 @@ type App = {
 };
 
 async function sign(url: string, secret: string, now?: number): Promise<Record<string, string>> {
-  const mod = (await import("../../packages/contracts/src/ops-auth.ts")) as {
+  const opsUrl = new URL("../../packages/contracts/src/ops-auth.ts", import.meta.url).href;
+  const mod = (await import(opsUrl)) as {
     signOpsRequest: (input: {
       secret: string;
       method: string;
@@ -53,7 +54,8 @@ async function boot(): Promise<{ api: App; env: unknown; remove: () => void }> {
       return ready;
     },
   };
-  const Policy = (await import("../../src/worker/tenant-policy.ts")).TenantPolicy;
+  const policyUrl = new URL("../../src/worker/tenant-policy.ts", import.meta.url).href;
+  const Policy = (await import(policyUrl)).TenantPolicy;
   const directory = new Policy(ctx, {});
   await ready;
   directory.seed(
@@ -75,7 +77,8 @@ async function boot(): Promise<{ api: App; env: unknown; remove: () => void }> {
     idFromName: (name: string) => name,
     get: () => directory,
   };
-  const loaded = (await import("../../src/worker/index.ts")) as {
+  const appUrl = new URL("../../src/worker/index.ts", import.meta.url).href;
+  const loaded = (await import(appUrl)) as {
     createApp: () => App;
   };
   return {

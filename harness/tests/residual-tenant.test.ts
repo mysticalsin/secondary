@@ -30,7 +30,8 @@ async function directory(file: string, tenantId: string, email: string) {
       return ready;
     },
   };
-  const Policy = (await import("../../src/worker/tenant-policy.ts")).TenantPolicy;
+  const policyUrl = new URL("../../src/worker/tenant-policy.ts", import.meta.url).href;
+  const Policy = (await import(policyUrl)).TenantPolicy;
   const object = new Policy(ctx, {});
   await ready;
   object.seed(
@@ -96,7 +97,8 @@ test("a user of tenant B gets 404 for tenant A's candidate", async () => {
       return key === "other" ? away : home;
     },
   };
-  const { createApp } = (await import("../../src/worker/index.ts")) as {
+  const appUrl = new URL("../../src/worker/index.ts", import.meta.url).href;
+  const { createApp } = (await import(appUrl)) as {
     createApp: (deps: { jwks: () => unknown }) => {
       request: (input: string, init: RequestInit | undefined, env: unknown) => Promise<Response>;
     };
