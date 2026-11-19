@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname -- "$0")"
 if [[ $# -gt 1 ]]; then
   echo "deploy.sh: unsupported arguments" >&2
   exit 2
@@ -23,10 +23,10 @@ fi
 set +e
 export WRANGLER_SEND_METRICS=false
 if [[ "$mode" == "dry-run" ]]; then
-  ./node_modules/.bin/wrangler deploy --dry-run --assets "$tmp"
+  ./node_modules/.bin/wrangler deploy --dry-run --assets "$tmp" --config wrangler.jsonc
   status=$?
 else
-  ./node_modules/.bin/wrangler deploy --assets "$tmp"
+  ./node_modules/.bin/wrangler deploy --assets "$tmp" --config wrangler.jsonc
   status=$?
 fi
 exit "$status"

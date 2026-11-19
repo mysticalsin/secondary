@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type GuardMode = "dry-run" | "deploy";
@@ -7,6 +7,7 @@ export type GuardResult = { ok: true } | { ok: false; reason: string };
 
 const MIGRATION_KEYS = ["deleted_classes", "renamed_classes", "transferred_classes", "new_classes"] as const;
 const SOURCE_DIR = "deploy/assets";
+const SHADOW_CONFIGS = ["wrangler.json", "wrangler.toml", ".wrangler/deploy/config.json"] as const;
 
 export function stripJsonc(text: string): string {
   return text
@@ -166,16 +167,42 @@ function verifySource(root: string): { ok: false; reason: string } | { ok: true;
   return { ok: true, files: manifest.files };
 }
 
+function lstatKind(path: string): "absent" | "present" | "error" {
+  try {
+    lstatSync(path);
+    return "present";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+    return "error";
+  }
+}
+
 function configuredDirectory(root: string, config: Record<string, unknown>): { ok: false; reason: string } | { ok: true; path: string } {
   const relativeDir = uploadRelative(config);
   if (relativeDir === null) return { ok: false, reason: "assets-directory-mismatch" };
   const path = join(root, relativeDir);
-  if (existsSync(path)) return { ok: false, reason: "assets-directory-present" };
+  if (lstatKind(path) !== "absent") return { ok: false, reason: "assets-directory-present" };
   return { ok: true, path };
+}
+
+function sourceSymlink(root: string): GuardResult | null {
+  for (const rel of ["deploy", SOURCE_DIR]) {
+    const path = join(root, rel);
+    try {
+      if (lstatSync(path).isSymbolicLink()) return { ok: false, reason: "assets-symlink" };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      return { ok: false, reason: "assets-symlink" };
+    }
+  }
+  return null;
 }
 
 function readConfig(root: string): { ok: true; config: Record<string, unknown> } | { ok: false; reason: string } {
   if (existsSync(join(root, ".dev.vars"))) return { ok: false, reason: "dev-vars-present" };
+  for (const rel of SHADOW_CONFIGS) {
+    if (lstatKind(join(root, rel)) !== "absent") return { ok: false, reason: "config-shadow" };
+  }
   const configPath = join(root, "wrangler.jsonc");
   if (!existsSync(configPath)) return { ok: false, reason: "config-missing" };
   try {
@@ -193,6 +220,8 @@ export function guardRoot(root: string, mode: GuardMode): GuardResult {
   if (Object.hasOwn(config, "vars")) return { ok: false, reason: "vars-present" };
   if (config.keep_vars !== true) return { ok: false, reason: "keep-vars-required" };
   if (!migrationOk(config)) return { ok: false, reason: "migration-shape" };
+  const linked = sourceSymlink(root);
+  if (linked !== null) return linked;
   const configured = configuredDirectory(root, config);
   if (!configured.ok) return configured;
   if (mode === "deploy") {
@@ -209,6 +238,8 @@ export function stageDeploy(root: string, dest: string): GuardResult {
   if (Object.hasOwn(config, "vars")) return { ok: false, reason: "vars-present" };
   if (config.keep_vars !== true) return { ok: false, reason: "keep-vars-required" };
   if (!migrationOk(config)) return { ok: false, reason: "migration-shape" };
+  const linked = sourceSymlink(root);
+  if (linked !== null) return linked;
   const configured = configuredDirectory(root, config);
   if (!configured.ok) return configured;
   if (isInside(configured.path, dest) || isInside(join(root, SOURCE_DIR), dest)) {

@@ -2,6 +2,15 @@
 
 The user asked for this log for `deploy/`, and for the guard fix below. Comments were not stripped. Existing tests were not removed.
 
+- Pin both Wrangler calls to `wrangler.jsonc`, and fail closed on a shadow config or an asset symlink.
+  - Without `--config`, Wrangler 4.158.0 prefers `wrangler.json` over `wrangler.jsonc` and follows `.wrangler/deploy/config.json`.
+  - `deploy.sh` passes `--config wrangler.jsonc` on both calls and uses `dirname -- "$0"`.
+  - `lstat` refuses `wrangler.json`, `wrangler.toml`, or `.wrangler/deploy/config.json` with `config-shadow` when the path is present or the stat errors.
+  - `lstat` of the configured directory fails closed. A dangling symlink, a symlink loop, or a stat error is `assets-directory-present`. `ENOENT` is the only absent result.
+  - `lstat` of `deploy` or `deploy/assets` refuses a symlink with `assets-symlink`.
+  - Evidence, Wrangler 4.158.0, no token, `--dry-run --assets` on an empty temp directory. A `wrangler.json` whose entry is `missing-shadow-entry.ts`, with no `--config`: exit 1, `missing-shadow-entry.ts` was not found. The same file with `--config wrangler.jsonc`: exit 0, `Read 0 files`, `--dry-run: exiting now`. A `.wrangler/deploy/config.json` pointing at `/tmp/redirected-wrangler.jsonc`, with no `--config`: `Using redirected Wrangler configuration` and that path. The same redirect with `--config wrangler.jsonc`: exit 0 and no redirected-configuration line.
+  - Residual: `mktemp` follows `TMPDIR`, so the caller can choose where the `0700` directory is created. Same-user writes during the Wrangler upload remain accepted.
+  - Residual: cleanup is `trap 'rm -rf "$tmp"' EXIT`. Cleanup on a signal is untested.
 - Rehash through `copyThenRehash`, and do not read an environment variable while staging.
   - `DEPLOY_AFTER_COPY` was test scaffolding on the real deploy path. A stray value could replace staged bytes. It is gone. `deploy/guard.ts` does not read `process.env`. `deploy.sh` and the guard CLI call `copyThenRehash` with no hook.
   - The optional `afterCopy` argument runs after the write and before the rehash. The unit test passes a hook that replaces the file and expects `assets-manifest-mismatch`. That call does not start Wrangler.
