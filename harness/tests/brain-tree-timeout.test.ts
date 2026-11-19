@@ -217,3 +217,70 @@ test("a degraded brain is visible and the loading line is gone", async () => {
   assert.equal(graphNames.includes("My Secondary"), true);
   assert.equal(dashboardNames.includes("My Secondary"), true);
 });
+
+test("the graph and the dashboard import one fetch bound", () => {
+  const graph = page("deploy/graph/app.js.txt");
+  const dashboard = page("deploy/graph/dashboard.js.txt");
+  const shared = page("deploy/graph/fetch-bound.js.txt");
+  assert.match(graph, /import \{ boundFetch \} from "\/graph\/fetch-bound\.js"/);
+  assert.match(dashboard, /import \{ boundFetch \} from "\/graph\/fetch-bound\.js"/);
+  assert.match(shared, /export async function boundFetch/);
+  assert.match(shared, /clearTimeout\(timer\)/);
+  assert.equal(graph.includes('new Error("degraded")'), false);
+  assert.equal(dashboard.includes('new Error("degraded")'), false);
+});
+
+test("the shared fetch bound clears its timer on success and on timeout", async () => {
+  const source = page("deploy/graph/fetch-bound.js.txt").replace(
+    "export async function boundFetch",
+    "globalThis.boundFetch = async function boundFetch",
+  );
+  const pending = new Set<number>();
+  let now = 0;
+  let next = 1;
+  const queue: { id: number; at: number; fn: () => void }[] = [];
+  const sandbox: Record<string, unknown> = {
+    console, Promise, Error, TypeError, AbortController,
+    setTimeout: (fn: () => void, ms?: number) => {
+      const id = next++;
+      pending.add(id);
+      queue.push({ id, at: now + Number(ms ?? 0), fn });
+      return id;
+    },
+    clearTimeout: (id: number) => {
+      pending.delete(id);
+    },
+    fetch: (_url: string, init?: { signal?: AbortSignal }) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+    }),
+  };
+  const context = createContext(sandbox);
+  runInContext(source, context);
+  const boundFetch = sandbox.boundFetch as (url: string, init: Record<string, string>, ms: number) => Promise<Response>;
+  const tick = (ms: number) => {
+    now += ms;
+    const due = queue.filter((item) => pending.has(item.id) && item.at <= now).sort((a, b) => a.at - b.at);
+    for (const item of due) {
+      if (!pending.delete(item.id)) continue;
+      item.fn();
+    }
+  };
+
+  sandbox.fetch = async () => Response.json({ ok: true });
+  const success = boundFetch("/v1/brain/tree", {}, 8000);
+  await success;
+  assert.equal(pending.size, 0);
+
+  sandbox.fetch = (_url: string, init?: { signal?: AbortSignal }) => new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+  });
+  const timed = boundFetch("/v1/brain/tree", {}, 8000);
+  const settled = timed.then(
+    () => "resolved",
+    (err: Error) => err.message,
+  );
+  tick(8000);
+  await Promise.resolve();
+  assert.equal(await settled, "degraded");
+  assert.equal(pending.size, 0);
+});

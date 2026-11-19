@@ -31,6 +31,25 @@ test at harness/tests/src-hardening.test.ts:386:1
 
 The tree handler never returns while one workspace's `wikiPages` is pending. The graph stays on `Loading your second brain…` when that fetch does not return. A tree that already marks a brain `degraded` is rendered as `Ready.`
 
+## Loop 2 red output
+
+Command: the same runner, pattern `exactly the admitted|cannot open|2499ms|late resolve|aborts a hung|import one fetch|clears its timer`.
+
+Exit 1. 4 pass, 3 fail. Duration about 4.9s.
+
+```
+✖ the graph and the dashboard import one fetch bound
+  Error: ENOENT: deploy/graph/fetch-bound.js.txt
+
+✖ the shared fetch bound clears its timer on success and on timeout
+  Error: ENOENT: deploy/graph/fetch-bound.js.txt
+
+✖ the tree aborts a hung read
+  AssertionError: actual false, expected true
+```
+
+`a brain at 2499ms is kept and a brain at 2501ms is degraded` passed on the 2500ms bound. The exact root list, the closed-brain check, and the late-page check passed. The hung read is not aborted yet, and the clients do not share a fetch module.
+
 ## Fix
 
 - Bound each brain inside `brainTree` with `treeBoundMs`, default 2500. A miss becomes `{ access: "degraded" }` and the other brains are still returned.
