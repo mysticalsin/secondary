@@ -98,34 +98,13 @@ test("lead grant: who decides stays, and the lead is not a role-id list", async 
     can: { edit: true, decide: false },
   });
   assert.equal(staleFalse, false);
-
-  let loose: boolean | "threw" = "threw";
-  try {
-    loose = await directPublish(
-      {
-        get: (key: string) =>
-          key === "session"
-            ? { principal: editor, internal: undefined, tenantId: editor.tenantId, ctx: { now: NOW } }
-            : undefined,
-      },
-      {
-        personal: false,
-        nodeId: "c_sales",
-        view: editorView,
-        vn: editorView.nodes.get("c_sales"),
-        stub: { brainConfig: async () => ({ publication: "direct" }) },
-        can: { edit: true, decide: true },
-      },
-    );
-  } catch {
-    loose = "threw";
-  }
-  assert.equal(loose, false);
+  assert.equal(mayDecide(editorView, editor, "c_sales").allowed, false);
 
   const review = readFileSync(new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url), "utf8");
   const open = readFileSync(new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url), "utf8");
   const roles = readFileSync(new URL("../../packages/policy/src/roles.ts", import.meta.url), "utf8");
-  assert.equal(review.includes("LEAD_ROLES"), false);
-  assert.equal(open.includes("w.can.decide"), false);
-  assert.equal(roles.includes("lead: true"), true);
+  assert.equal(review.includes("const LEAD_ROLES"), false);
+  assert.equal(open.includes("w.can.decide !== true"), true);
+  assert.equal(roles.includes("lead: true"), false);
+  assert.equal(roles.includes("isBuiltInLeadRoleId"), true);
 });

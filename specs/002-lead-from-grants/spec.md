@@ -39,30 +39,30 @@ The proposal author cannot decide, including when the author id differs only by 
 2. **Given** the author id is one of the caller's alias ids, **When** they decide, **Then** the decision is denied.
 3. **Given** an elevated CEO, **When** they decide on a node elevation can review, **Then** the decision is denied.
 
-### User Story 3 - Direct publish asks the same question (Priority: P2)
+### User Story 3 - Direct publish stays on can.decide (Priority: P2)
 
-`directPublish` asks `mayDecide`. It does not read `can.decide`. The wiki caller computes that boolean from `mayDecide` already, and the brain screen computes it with the stored role as well. Publish follows the decision function. A non-lead with the boolean set still does not publish. Personal brains, the publication mode, the stored edit check, and the agent-call refusal stay as they are.
+`directPublish` keeps `can.decide` exactly as on main. It does not ask `mayDecide`. A caller with `can.decide` true can still direct-publish when the brain's mode and bounds allow it, whether or not they are a lead. A caller with `can.decide` false cannot. Whether publish should ask `mayDecide` instead is deferred until Tony decides.
 
-**Why this priority**: The publish rule and the lead rule were split across a boolean.
+**Why this priority**: Gating publish on `mayDecide` changed who can publish in both directions.
 
-**Independent Test**: Call `directPublish` for a non-lead whose `can.decide` is true. The result is false.
+**Independent Test**: The truth table generated from main `2d61c473`. Same role, workspace, `can.decide`, and stored role give the same publish result.
 
 **Acceptance Scenarios**:
 
-1. **Given** a non-lead and `can.decide` true, **When** direct publish is asked, **Then** the result is false.
-2. **Given** a lead and `can.decide` false, **When** the publication mode is review, **Then** the result is false.
-3. **Given** a lead and a brain whose publication mode is review, **When** direct publish is asked, **Then** the result is false.
+1. **Given** `can.decide` true, a direct circle, and a stored role of none or editor, **When** direct publish is asked, **Then** the result is true.
+2. **Given** `can.decide` false, **When** direct publish is asked, **Then** the result is false.
+3. **Given** an account or Company Global brain, **When** the stored mode is direct, **Then** the result is false.
 
 ## Requirements
 
 ### Functional Requirements
 
-- **FR-001**: Who may decide inside a brain MUST be read from the built-in role table (`roles.ts`), by role id and the grant that covers that brain. A built-in grant with `conditions.lead === true` that includes a standing `edit`, `review`, or `manage_members` on the node is a lead of that node. `mayDecide` MUST NOT read `lead` from the tenant's stored roles. The set `LEAD_ROLES` MUST NOT remain.
+- **FR-001**: Which seeded role is a lead MUST be derived from the built-in role table, not from a hand-written id list and not from a `lead` condition on a grant. For the seeded roles, that derivation MUST match the old `LEAD_ROLES` membership (`acme_lead` only). A lead then decides on any node where a standing `edit`, `review`, or `manage_members` check passes, including a stored role that was edited after seeding.
 - **FR-002**: Outcomes MUST stay: `acme_lead` decides in `a_acme` and `c_sales` and not in `core`; a standing edit or review grant that is not a lead grant does not decide; a standing `approve_release` grant does.
 - **FR-003**: The author MUST stay denied, including a different letter case and an alias id. Elevation MUST NOT count.
-- **FR-004**: `directPublish` MUST call `mayDecide` for a shared brain. It MUST NOT read `can.decide`. Personal brains, publication mode, the stored edit check, and an agent caller MUST stay as they are. The wiki route's own `need` check is unchanged.
-- **FR-005**: `brainOf` MAY still set `can.decide` for the screen. That field is not the publish rule.
-- **FR-006**: Seeding a tenant MUST NOT store `conditions.lead`. Governance MUST keep rejecting `lead` as an unknown condition. An edit of `acme_lead` that does not resend grants MUST NOT be `invalid_condition`. A role stored before this mark existed MUST still decide where the built-in role is a lead.
+- **FR-004**: `directPublish` MUST keep `can.decide` exactly as on main. It MUST NOT gate on `mayDecide`. Whether publish should ask `mayDecide` instead is a follow-up for Tony. Personal brains, publication mode, the stored edit check, and an agent caller stay as they are.
+- **FR-005**: `brainOf` MAY still set `can.decide` for the screen.
+- **FR-006**: Grant conditions MUST NOT carry a `lead` mark. Resending the built-in `acme_lead` grants through governance MUST succeed. Governance still rejects an unknown condition.
 
 ### Success Criteria
 
@@ -71,14 +71,14 @@ The proposal author cannot decide, including when the author id differs only by 
 
 ### Key Entities
 
-- **Lead grant**: a role grant whose conditions include `lead: true`, on a scope the caller holds with a standing decision action.
+- **Lead role**: a built-in role id derived from that role's grants. For the seeded table, only `acme_lead`.
 - **Decision**: allow or deny for one caller and one node. No address and no proposal text.
 
 ## Assumptions
 
-- The two grants that make `acme_lead` a lead today (`c_sales` edit, and `a_acme` edit, review, and manage members) are the grants marked `lead` on the built-in role. No other current grant is a lead grant.
-- `conditions.lead` is data for this rule on the built-in role only. The policy engine does not read it, so view, edit, and release checks are unchanged. Tenants seeded before the mark keep their old grants. New seeds omit the mark. Governance does not gain a way to set it.
-- An `edit` grant limited to `own_drafts` is not marked `lead`.
+- `acme_lead` is the only seeded lead because it is the only built-in role with an edit, review, or manage-members grant that is not `approve_release` and not `own_drafts`.
+- The lead mark is not a grant condition. Governance validation is unchanged.
+- Changing `directPublish` so it asks `mayDecide` instead of `can.decide` is deferred until Tony decides.
 - Restating comments next to `leadOf` and `directPublish` are removed. No test in this slice is deleted: each new assertion fails if the lead grant, the author rule, elevation, `approve_release`, or the loose `can.decide` boolean changes.
 - The wider comment and test sweep, the switch table, and the folder move are separate slices.
 

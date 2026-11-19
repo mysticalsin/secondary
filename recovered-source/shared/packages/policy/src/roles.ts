@@ -84,10 +84,9 @@ export const ROLES: Readonly<Record<RoleId, Role>> = {
     summary: "Works in the Sales & Accounts circle and owns the Acme Synthetic SA workspace.",
     grants: [
       G("global", "core", V),
-      G("circle", "c_sales", [...V, "comment", "contribute", "edit"], { lead: true }),
+      G("circle", "c_sales", [...V, "comment", "contribute", "edit"]),
       G("account", "a_acme", [...V, "comment", "contribute", "edit", "review", "manage_members"], {
         member: true,
-        lead: true,
       }),
       ...MEMBER_GRANTS,
     ],
@@ -158,6 +157,28 @@ export const ROLES: Readonly<Record<RoleId, Role>> = {
     never: ["Item content", "Any change to content"],
   },
 };
+
+const LEAD_DECISION = ["edit", "review", "manage_members"] as const;
+
+/**
+ * A built-in role is a lead when a grant lets it edit, review, or manage members,
+ * and that grant is not an approve_release grant and is not limited to own drafts.
+ * Seeded roles: this is acme_lead and no other role.
+ */
+export function isBuiltInLeadRole(role: Role): boolean {
+  return role.grants.some(
+    (g) =>
+      LEAD_DECISION.some((a) => g.actions.includes(a)) &&
+      !g.actions.includes("approve_release") &&
+      g.conditions.own_drafts !== true,
+  );
+}
+
+/** Exact role-id match against the built-in table. Stored grants are not consulted. */
+export function isBuiltInLeadRoleId(id: string): boolean {
+  if (!Object.hasOwn(ROLES, id)) return false;
+  return isBuiltInLeadRole(ROLES[id as RoleId]);
+}
 
 export const ACTION_LABEL: Partial<Record<Action, string>> = {
   comment: "Comment",

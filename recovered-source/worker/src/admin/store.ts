@@ -183,19 +183,6 @@ export interface StoreHost {
   journal?: SecurityJournal;
 }
 
-/** The lead mark stays on the built-in role. Stored grants are what governance can validate. */
-function roleForStore(role: Role): Role {
-  return {
-    ...role,
-    grants: role.grants.map((grant) => {
-      if (grant.conditions.lead !== true) return grant;
-      const conditions = { ...grant.conditions };
-      delete conditions.lead;
-      return { ...grant, conditions };
-    }),
-  };
-}
-
 export class GovStore {
   private readonly sql: SqlStorage;
   private readonly tx: StoreHost["tx"];
@@ -267,17 +254,16 @@ export class GovStore {
   private seedRoles(now: number): void {
     if (this.sql.exec("SELECT 1 FROM gov_roles LIMIT 1").toArray().length) return;
     for (const r of this.defaults) {
-      const body = JSON.stringify(roleForStore(r));
       this.sql.exec(
         "INSERT INTO gov_roles (role_id, version, body, updated_at, updated_by) VALUES (?, 1, ?, ?, 'system')",
         r.id,
-        body,
+        JSON.stringify(r),
         now,
       );
       this.sql.exec(
         "INSERT INTO gov_role_history (role_id, version, body, at, proposed_by) VALUES (?, 1, ?, ?, 'system')",
         r.id,
-        body,
+        JSON.stringify(r),
         now,
       );
     }

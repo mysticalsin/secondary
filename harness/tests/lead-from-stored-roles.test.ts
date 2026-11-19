@@ -31,7 +31,7 @@ function preseeded(role: Role): Role {
   };
 }
 
-test("stored roles: an old acme_lead still decides and direct-publishes", async () => {
+test("stored roles: an old acme_lead still decides, and can.decide false does not publish", async () => {
   const specifier = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
   const openSpecifier = new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url).href;
   const { mayDecide } = (await import(specifier)) as {
@@ -56,42 +56,6 @@ test("stored roles: an old acme_lead still decides and direct-publishes", async 
   assert.equal(mayDecide(view, lead, "a_acme").allowed, true);
   assert.equal(mayDecide(view, lead, "c_sales").allowed, true);
   assert.equal(mayDecide(view, lead, "core").allowed, false);
-
-  const editorRole: Role = {
-    id: "circle_editor",
-    label: "Circle editor",
-    summary: "Edits the sales circle and is not its lead.",
-    grants: [
-      {
-        scope_type: "circle",
-        scope_id: "c_sales",
-        actions: ["view_structure", "view_content", "comment", "contribute", "edit", "review"],
-        conditions: {},
-      },
-    ],
-    exclusions: [],
-    never: [],
-  };
-  const editor = { ...persona("consultant"), id: "u_editor", roleIds: ["circle_editor"], memberships: [] };
-  const editorOrg = buildOrg({ roles: { ...stored, circle_editor: editorRole } });
-  const editorView = admittedView(editor, editorOrg, { now: NOW });
-  const refused = await directPublish(
-    {
-      get: (key: string) =>
-        key === "session"
-          ? { principal: editor, internal: undefined, tenantId: editor.tenantId, ctx: { now: NOW } }
-          : undefined,
-    },
-    {
-      personal: false,
-      nodeId: "c_sales",
-      view: editorView,
-      vn: editorView.nodes.get("c_sales"),
-      stub: { brainConfig: async () => ({ publication: "direct" }) },
-      can: { edit: true, decide: true },
-    },
-  );
-  assert.equal(refused, false);
 
   const tenant = {
     jurisdiction() {
@@ -129,7 +93,7 @@ test("stored roles: an old acme_lead still decides and direct-publishes", async 
       can: { edit: true, decide: false },
     },
   );
-  assert.equal(published, true);
+  assert.equal(published, false);
 });
 
 test("governance: editing acme_lead without resending grants is not invalid_condition", async () => {
@@ -164,13 +128,8 @@ test("governance: editing acme_lead without resending grants is not invalid_cond
     assert.equal(base === undefined, false);
     const built = buildRole({ label: "Account lead, Acme (edited)" }, buildOrg(), base ?? null);
     assert.equal(built.ok, true, built.ok ? "" : `${built.code}: ${built.message}`);
-    const sent = buildRole(
-      { grants: ROLES.acme_lead.grants },
-      buildOrg(),
-      base ?? null,
-    );
-    assert.equal(sent.ok, false);
-    if (!sent.ok) assert.equal(sent.code, "invalid_condition");
+    const sent = buildRole({ grants: ROLES.acme_lead.grants }, buildOrg(), base ?? null);
+    assert.equal(sent.ok, true, sent.ok ? "" : `${sent.code}: ${sent.message}`);
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
