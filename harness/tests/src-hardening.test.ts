@@ -745,6 +745,45 @@ test("direct publish waits when an unflagged brain sits under a restricted or co
   }
 });
 
+test("a closed card under a restricted ancestor is restricted", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { parentId: string | null }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const dept = org.nodes.get("d_amaris");
+  if (!dept) throw new Error("missing department");
+  const previous = dept.parentId;
+  const restore = await plantCircle("c_close_top", "Closed ancestor", {
+    restricted: true,
+    parentId: null,
+    linkUnder: "d_amaris",
+  });
+  const held = await openDirectory();
+  const api = await app();
+  try {
+    dept.parentId = "c_close_top";
+    const res = await api.request(
+      "http://127.0.0.1/v1/brains?scope=all",
+      {},
+      env(held.binding, ADMIN.email),
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      brains: { id: string; restricted?: boolean; canOpen?: boolean }[];
+    };
+    const card = body.brains.find((b) => b.id === "d_amaris");
+    assert.equal(card?.canOpen, false);
+    assert.equal(card?.restricted, true);
+  } finally {
+    dept.parentId = previous;
+    restore();
+    held.remove();
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
