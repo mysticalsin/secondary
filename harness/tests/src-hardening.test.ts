@@ -614,6 +614,57 @@ test("an unflagged chain of two hops stays open on the answered card and the mis
   }
 });
 
+async function plantAncestorChain(prefix: string, ancestors: number): Promise<() => void> {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle(`${prefix}_${ancestors}`, `${prefix} root`, { parentId: null, linkUnder: "d_amaris" }),
+  );
+  for (let n = ancestors - 1; n >= 1; n -= 1) {
+    restore.push(
+      await plantCircle(`${prefix}_${n}`, `${prefix} ${n}`, {
+        parentId: `${prefix}_${n + 1}`,
+        linkUnder: "d_amaris",
+      }),
+    );
+  }
+  restore.push(
+    await plantCircle(`${prefix}_hit`, `${prefix} hit`, { parentId: `${prefix}_1`, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle(`${prefix}_miss`, `${prefix} miss`, { parentId: `${prefix}_1`, linkUnder: "d_amaris" }),
+  );
+  return () => {
+    restore.reverse().forEach((fn) => fn());
+  };
+}
+
+test("twelve ancestors stay open and thirteen ancestors fail closed", async () => {
+  const restoreTwelve = await plantAncestorChain("c_cap12", 12);
+  const restoreThirteen = await plantAncestorChain("c_cap13", 13);
+  const read = await restrictionOfLeaves(
+    ["c_cap12_hit", "c_cap12_miss", "c_cap13_hit", "c_cap13_miss"],
+    ["c_cap12_miss", "c_cap13_miss"],
+  );
+  try {
+    const openHit = read.cards.find((b) => b.id === "c_cap12_hit");
+    const openMiss = read.cards.find((b) => b.id === "c_cap12_miss");
+    const closedHit = read.cards.find((b) => b.id === "c_cap13_hit");
+    const closedMiss = read.cards.find((b) => b.id === "c_cap13_miss");
+    assert.equal(openHit?.unavailable, undefined);
+    assert.equal(openHit?.restricted, false);
+    assert.equal(openMiss?.unavailable, true);
+    assert.equal(openMiss?.restricted, false);
+    assert.equal(closedHit?.unavailable, undefined);
+    assert.equal(closedHit?.restricted, true);
+    assert.equal(closedMiss?.unavailable, true);
+    assert.equal(closedMiss?.restricted, true);
+  } finally {
+    read.close();
+    restoreThirteen();
+    restoreTwelve();
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
