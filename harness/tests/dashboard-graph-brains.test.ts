@@ -30,11 +30,11 @@ class Element extends Node {
   }
   setAttribute(name, value) { this[name] = value; }
   getAttribute(name) { return this[name]; }
-  addEventListener() {}
+  addEventListener(type, fn) { if (!this.listeners) this.listeners = {}; this.listeners[type] = fn; }
   removeEventListener() {}
   replaceChildren(...xs) { this.childNodes = xs.flat(); }
   append(...xs) { this.childNodes.push(...xs); }
-  querySelector() { return null; }
+  querySelector() { return new Element("hit"); }
   querySelectorAll() { return []; }
   focus() {}
   click() {}
@@ -79,15 +79,16 @@ globalThis.requestAnimationFrame = () => 0;
 globalThis.__elements = elements;
 `;
 
-function treeFor(cards: Card[], pagesById: Record<string, Page[]>): { roots: unknown[] } {
+function treeFor(cards: Card[], pagesById: Record<string, Page[]>, folder = "Notes"): { roots: unknown[] } {
+  const source = cards.length ? cards : Object.keys(pagesById).map((id) => ({ id, name: id, pages: (pagesById[id] || []).length }));
   return {
-    roots: cards.map((card) => ({
+    roots: source.map((card) => ({
       id: card.id,
       label: card.name,
       access: "full",
       count: card.pages,
       children: (pagesById[card.id] || []).length
-        ? [{ id: `${card.id}#Notes`, label: "Notes", children: pagesById[card.id] }]
+        ? [{ id: `${card.id}#${folder}`, label: folder, children: pagesById[card.id] }]
         : [],
     })),
   };
@@ -106,15 +107,17 @@ function wiki(page: Page, links: WikiLink[] = []): Record<string, unknown> {
   };
 }
 
-async function load(file: string, cards: Card[], pagesById: Record<string, Page[]>, extra: { links?: Record<string, WikiLink[]>; settle?: boolean } = {}): Promise<{
+async function load(file: string, cards: Card[], pagesById: Record<string, Page[]>, extra: { links?: Record<string, WikiLink[]>; settle?: boolean; folder?: string; brainsStatus?: number } = {}): Promise<{
   urls: URL[];
   value: string;
   options: { value: string; text: string }[];
   texts: string[];
   stats: string;
+  main?: { textContent?: string; childNodes?: unknown[]; listeners?: Record<string, () => void> };
+  drawer?: { textContent?: string; childNodes?: unknown[] };
 }> {
   const urls: URL[] = [];
-  const tree = treeFor(cards, pagesById);
+  const tree = treeFor(cards, pagesById, extra.folder);
   const sandbox: Record<string, unknown> = {
     console,
     URL,
@@ -149,7 +152,10 @@ async function load(file: string, cards: Card[], pagesById: Record<string, Page[
     fetch: async (input: string | URL) => {
       const url = new URL(String(input), "http://127.0.0.1");
       urls.push(url);
-      if (url.pathname === "/v1/brains") return Response.json({ brains: cards });
+      if (url.pathname === "/v1/brains") {
+        if (extra.brainsStatus) return new Response("no", { status: extra.brainsStatus, headers: { "content-type": "text/plain" } });
+        return Response.json({ brains: cards });
+      }
       if (url.pathname === "/v1/brain/tree") return Response.json(tree);
       const match = url.pathname.match(/^\/v1\/wiki\/([^/]+)\/pages\/([^/]+)$/);
       if (match) {
@@ -165,10 +171,10 @@ async function load(file: string, cards: Card[], pagesById: Record<string, Page[
   runInContext(readFileSync(join(root, file), "utf8"), context);
   const elements = sandbox.__elements as Record<string, { value: string; textContent?: string; childNodes: { value?: string; textContent?: string; childNodes?: unknown[] }[] }>;
   const selectId = file.endsWith("dashboard.js.txt") ? "brain" : "workspace";
-  const deadline = Date.now() + 1000;
+  const deadline = Date.now() + (cards.length === 0 ? 50 : 1000);
   while (Date.now() < deadline) {
     const select = elements[selectId];
-    if (select && select.childNodes.length > 0) break;
+    if (cards.length === 0 || (select && select.childNodes.length > 0)) break;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -184,12 +190,15 @@ async function load(file: string, cards: Card[], pagesById: Record<string, Page[
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
   const select = elements[selectId];
+  const view = file.endsWith("dashboard.js.txt") ? elements.main : elements.status;
   return {
     urls,
     value: select?.value ?? "",
     options: (select?.childNodes || []).map((node) => ({ value: String(node.value ?? ""), text: String(node.textContent ?? "") })),
-    texts: collect(file.endsWith("dashboard.js.txt") ? elements.main : elements.status),
+    texts: collect(view),
     stats: String(elements.stats?.textContent || ""),
+    main: elements.main,
+    drawer: elements.drawer,
   };
 }
 
@@ -295,5 +304,105 @@ test("counters stay on the chosen brain", async () => {
   if (graph.value !== "c_delivery") problems.push(`graph selected ${graph.value}`);
   if (!/^2 notes/.test(graph.stats)) problems.push(`graph stats ${graph.stats}`);
   if (graph.stats.includes("unresolved")) problems.push(`graph unresolved ${graph.stats}`);
+  assert.deepEqual(problems, []);
+});
+
+function stringsOf(node: unknown, out: string[] = []): string[] {
+  if (typeof node === "string") {
+    out.push(node);
+    return out;
+  }
+  if (!node || typeof node !== "object") return out;
+  const item = node as { textContent?: string; childNodes?: unknown[] };
+  if (typeof item.textContent === "string" && item.textContent) out.push(item.textContent);
+  for (const child of item.childNodes || []) stringsOf(child, out);
+  return out;
+}
+
+function clickLabeled(root: { childNodes?: unknown[]; listeners?: Record<string, () => void>; textContent?: string } | undefined, label: string): boolean {
+  const nodes: { childNodes?: unknown[]; listeners?: Record<string, () => void>; textContent?: string }[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    const item = node as { childNodes?: unknown[]; listeners?: Record<string, () => void>; textContent?: string };
+    nodes.push(item);
+    for (const child of item.childNodes || []) walk(child);
+  };
+  walk(root);
+  const hit = nodes.find((item) => item.textContent === label || (item.childNodes || []).includes(label));
+  if (!hit?.listeners?.click) return false;
+  hit.listeners.click();
+  return true;
+}
+
+test("a same-brain link still counts and a cross-brain link does not", async () => {
+  const cards: Card[] = [
+    { id: "me", name: "My Secondary", pages: 0 },
+    { id: "c_delivery", name: "Delivery", pages: 2 },
+    { id: "c_eng", name: "Engineering", pages: 1 },
+  ];
+  const pages = {
+    c_delivery: [
+      { id: "c_delivery/kickoff", label: "Kickoff" },
+      { id: "c_delivery/retro", label: "Retro" },
+    ],
+    c_eng: [{ id: "c_eng/rfc", label: "RFC" }],
+  };
+  const links = {
+    "c_delivery/kickoff": [{ id: "retro", title: "Retro" }, { id: "global:rfc", title: "RFC" }],
+  };
+  const dashboard = await load("deploy/graph/dashboard.js.txt", cards, pages, { links, settle: true, folder: "Project" });
+  const linkAt = dashboard.texts.indexOf("Links");
+  const opened = clickLabeled(dashboard.main, "Kickoff");
+  const drawer = stringsOf(dashboard.drawer);
+  const problems: string[] = [];
+  if (dashboard.texts[linkAt + 1] !== "1") problems.push(`dashboard Links ${dashboard.texts[linkAt + 1]}`);
+  if (!dashboard.texts.includes("1 link")) problems.push("missing same-brain tile count");
+  if (dashboard.texts.includes("2 links")) problems.push("tile counted the cross-brain edge");
+  if (!opened) problems.push("Kickoff drawer did not open");
+  if (!drawer.includes("Links to 1")) problems.push(`drawer ${drawer.filter((text) => text.startsWith("Links to")).join(",")}`);
+  if (drawer.includes("RFC")) problems.push("drawer listed the other brain");
+  if (!drawer.includes("Retro")) problems.push("drawer missed the same-brain page");
+  assert.deepEqual(problems, []);
+});
+
+test("an empty brain list shows the empty state instead of every page", async () => {
+  const pages = {
+    me: [{ id: "me/note", label: "Personal note" }],
+    c_eng: [{ id: "c_eng/rfc", label: "RFC" }],
+  };
+  const dashboard = await load("deploy/graph/dashboard.js.txt", [], pages, { settle: true });
+  const graph = await load("deploy/graph/app.js.txt", [], pages, { settle: true });
+  const problems: string[] = [];
+  if (dashboard.options.length !== 0) problems.push(`dashboard options ${JSON.stringify(dashboard.options)}`);
+  if (!dashboard.texts.some((text) => text.includes("Your second brain has no pages yet"))) problems.push(`dashboard empty ${dashboard.texts.slice(0, 6).join(" | ")}`);
+  if (dashboard.texts.includes("All brains")) problems.push("dashboard labeled All brains");
+  if (dashboard.texts.includes("Personal note") || dashboard.texts.includes("RFC")) problems.push("dashboard showed tree pages");
+  if (graph.options.some((option) => option.text === "All brains" || option.value === "")) problems.push(`graph options ${JSON.stringify(graph.options)}`);
+  if (!/^0 notes/.test(graph.stats)) problems.push(`graph stats ${graph.stats}`);
+  if (!graph.texts.includes("No pages yet.")) problems.push(`graph status ${graph.texts.join(" | ")}`);
+  assert.deepEqual(problems, []);
+});
+
+test("a failed brain list still renders the tree", async () => {
+  const cards: Card[] = [
+    { id: "c_delivery", name: "Delivery", pages: 2 },
+    { id: "c_eng", name: "Engineering", pages: 1 },
+  ];
+  const pages = {
+    c_delivery: [
+      { id: "c_delivery/kickoff", label: "Kickoff" },
+      { id: "c_delivery/retro", label: "Retro" },
+    ],
+    c_eng: [{ id: "c_eng/rfc", label: "RFC" }],
+  };
+  const dashboard = await load("deploy/graph/dashboard.js.txt", cards, pages, { settle: true, brainsStatus: 500 });
+  const graph = await load("deploy/graph/app.js.txt", cards, pages, { settle: true, brainsStatus: 500 });
+  const problems: string[] = [];
+  if (!dashboard.texts.includes("Kickoff")) problems.push(`dashboard missed the tree ${dashboard.texts.slice(0, 8).join(" | ")}`);
+  if (dashboard.texts.some((text) => /could not be loaded|sign-in/i.test(text))) problems.push("dashboard treated the brain list as fatal");
+  if (dashboard.texts.includes("All brains")) problems.push("dashboard labeled All brains");
+  if (graph.value !== "c_delivery") problems.push(`graph selected ${graph.value}`);
+  if (!/^2 notes/.test(graph.stats)) problems.push(`graph stats ${graph.stats}`);
+  if (graph.texts.some((text) => /could not be loaded|sign-in/i.test(text))) problems.push(`graph status ${graph.texts.join(" | ")}`);
   assert.deepEqual(problems, []);
 });
