@@ -478,6 +478,32 @@ test("grandparent restriction reaches both the open card and the missed card", a
   }
 });
 
+test("an NDA on a grandparent reaches both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_nda_top", "NDA grandparent", { nda: true, linkUnder: "d_amaris" }));
+  restore.push(
+    await plantCircle("c_nda_mid", "NDA middle", { parentId: "c_nda_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_nda_hit", "NDA hit", { parentId: "c_nda_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_nda_miss", "NDA miss", { parentId: "c_nda_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_nda_hit", "c_nda_miss"], ["c_nda_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_nda_hit");
+    const miss = read.cards.find((b) => b.id === "c_nda_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
