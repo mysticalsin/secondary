@@ -9,19 +9,44 @@ import {
   type Principal,
   personalRootId,
 } from "@secondary/policy";
+import { asciiLower } from "../../../../src/state/actor.ts";
 import type { ItemRecord } from "../workspace.ts";
 import type { Proposal } from "./types.ts";
 
 export type Right = { allowed: boolean; reason: string };
 
-/** Review, release or edit rights on the workspace node are what let someone decide a wiki proposal. */
-export function mayDecide(view: AdmittedView, p: Principal, nodeId: string): Right {
+/** Roles that lead a brain. A standing edit or review grant on any other role is not a decision. */
+const LEAD_ROLES = new Set(["acme_lead"]);
+
+const sameId = (a: string, b: string): boolean => asciiLower(a.trim()) === asciiLower(b.trim());
+
+/**
+ * A lead may decide inside a brain they lead. Anyone else needs a standing approve_release grant.
+ * Elevation does not count. The author, including a different letter case or an alias id, cannot decide.
+ */
+export function mayDecide(
+  view: AdmittedView,
+  p: Principal,
+  nodeId: string,
+  authorId?: string | null,
+  aliasIds: readonly string[] = [],
+): Right {
   if (nodeId === personalRootId(p.id)) return { allowed: true, reason: "Your Personal Brain" };
-  for (const a of ["review", "approve_release", "edit"] as const) {
-    const d = canDoInView(view, p, nodeId, a);
-    if (d.allowed) return d;
+  if (
+    authorId != null &&
+    (sameId(authorId, p.id) || aliasIds.some((id) => sameId(id, p.id)))
+  )
+    return { allowed: false, reason: "You cannot approve your own proposal" };
+  const standing: AdmittedView = { ...view, ctx: { ...view.ctx, elevatedUntil: undefined } };
+  const release = canDoInView(standing, p, nodeId, "approve_release");
+  if (release.allowed) return release;
+  if (p.roleIds.some((id) => LEAD_ROLES.has(id))) {
+    for (const action of ["review", "edit", "manage_members"] as const) {
+      const decision = canDoInView(standing, p, nodeId, action);
+      if (decision.allowed) return { allowed: true, reason: "Lead of this brain" };
+    }
   }
-  return canDoInView(view, p, nodeId, "review");
+  return canDoInView(view, p, nodeId, "approve_release");
 }
 
 /** The sources a proposal's own text rests on (what the queue row would show). */

@@ -47,11 +47,35 @@ export function normalizedEmailSql(column: string): string {
   return `nullif(lower(trim(${expr})), '')`;
 }
 
-/** Fold `EMAIL_FOLD` to spaces, trim, and lowercase. Empty becomes null. */
+/** A–Z only, the same letters SQLite lower() changes. U+212A and U+0130 stay put. */
+export const asciiLower = (value: string): string =>
+  value.replace(/[A-Z]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) + 32));
+
+/** Escapes a non-ASCII address so U+212A is not shown as an ASCII k. */
+export function principalEmailLabel(email: string): string {
+  let marked = false;
+  let label = "";
+  for (const ch of email) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code > 127) {
+      marked = true;
+      label += `\\u${code.toString(16).padStart(4, "0")}`;
+    } else label += ch;
+  }
+  return marked ? label : email;
+}
+
+/**
+ * Fold `EMAIL_FOLD` to spaces, trim, and lowercase ASCII A–Z.
+ * Empty, more than one `@`, or an empty local part or domain becomes null.
+ */
 export function normalEmail(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.replace(FOLD, " ").trim().toLowerCase();
-  return trimmed === "" ? null : trimmed;
+  const trimmed = asciiLower(value.replace(FOLD, " ").trim());
+  if (trimmed === "") return null;
+  const at = trimmed.indexOf("@");
+  if (at <= 0 || at !== trimmed.lastIndexOf("@") || at === trimmed.length - 1) return null;
+  return trimmed;
 }
 
 /** Trim and drop NBSP and other padding. Empty becomes null. Case stays. */

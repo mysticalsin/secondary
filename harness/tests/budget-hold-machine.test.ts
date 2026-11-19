@@ -141,8 +141,8 @@ test("budget hold: a failed adjust is logged without amounts", async () => {
     assert.ok(hold);
     await hold.settle(7);
     await hold.settle(1);
-    assert.deepEqual(adds, [10, -3]);
-    assert.match(lines[0] ?? "", /budget_adjust_failed/);
+    assert.deepEqual(adds, [10, -3, -3]);
+    assert.match(lines[0] ?? "", /budget_refund_failed/);
     assert.equal((lines[0] ?? "").includes("-3"), false);
     assert.equal((lines[0] ?? "").includes("7"), false);
     logIfRefundFailed(null);

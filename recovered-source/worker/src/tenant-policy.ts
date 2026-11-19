@@ -154,6 +154,10 @@ export class TenantPolicy extends DurableObject<Env> {
   private readonly identity: IdentityStore;
   private readonly journal: SecurityJournal;
   private govStore!: GovStore;
+  /** Names seen by this object. A restart clears it. It is not stored. */
+  private readonly seenUnknownSwitch = new Set<string>();
+  private capWarned = false;
+  private static readonly UNKNOWN_SWITCH_CAP = 256;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -279,11 +283,9 @@ export class TenantPolicy extends DurableObject<Env> {
         String(now),
       );
       for (const p of principals) {
-        this.sql.exec(
-          "INSERT INTO principals (id, email) VALUES (?, ?)",
-          p.id,
-          p.email.toLowerCase(),
-        );
+        const email = normalEmail(p.email);
+        if (!email) continue;
+        this.sql.exec("INSERT INTO principals (id, email) VALUES (?, ?)", p.id, email);
         for (const r of p.roleIds)
           this.sql.exec(
             "INSERT INTO role_assignments (principal_id, role_id) VALUES (?, ?)",
@@ -641,10 +643,12 @@ export class TenantPolicy extends DurableObject<Env> {
     )
       return "too_many";
     if (!create && !exists) return "not_found";
-    const members = [...new Set(c.members.map((m) => m.trim().toLowerCase()))].slice(
-      0,
-      MAX_COHORT_MEMBERS,
-    );
+    const members = [
+      ...new Set(c.members.flatMap((m) => {
+        const email = normalEmail(m);
+        return email ? [email] : [];
+      })),
+    ].slice(0, MAX_COHORT_MEMBERS);
     this.sql.exec(
       `INSERT INTO pilot_cohorts (id, name, members, flags, created_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, members = excluded.members, flags = excluded.flags`,
@@ -675,13 +679,14 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** Flags for one address: a key is managed once any cohort sets it, and is then on only for its members. */
   flagsFor(email: string): Record<FlagKey, boolean> {
-    const e = email.trim().toLowerCase();
+    const e = normalEmail(email);
     const cohorts = this.pilotList();
     const out = {} as Record<FlagKey, boolean>;
     for (const k of FLAG_KEYS) {
       const setBy = cohorts.filter((c) => Object.hasOwn(c.flags, k));
       out[k] =
-        setBy.length === 0 || setBy.some((c) => c.flags[k] === true && c.members.includes(e));
+        setBy.length === 0 ||
+        setBy.some((c) => c.flags[k] === true && e !== null && c.members.includes(e));
     }
     return out;
   }
@@ -842,7 +847,20 @@ export class TenantPolicy extends DurableObject<Env> {
   private switchState(): SwitchState {
     const out = allOn();
     for (const r of this.sql.exec("SELECT name, enabled FROM switches").toArray()) {
-      if (!isSwitchName(r.name)) continue;
+      if (!isSwitchName(r.name)) {
+        const key = typeof r.name === "string" ? r.name : "";
+        if (this.seenUnknownSwitch.has(key)) continue;
+        if (this.seenUnknownSwitch.size >= TenantPolicy.UNKNOWN_SWITCH_CAP) {
+          if (!this.capWarned) {
+            this.capWarned = true;
+            console.warn(JSON.stringify({ at: "kill_switch", reason: "cap" }));
+          }
+          continue;
+        }
+        this.seenUnknownSwitch.add(key);
+        commit(reject("kill_switch", "unreadable", "read", "unknown_name"));
+        continue;
+      }
       const flag = decodeSwitchEnabled(r.enabled);
       if (flag.tag === "corrupt") {
         commit(reject("kill_switch", "corrupt", "read", "corrupt_value"));
@@ -1048,8 +1066,8 @@ export class TenantPolicy extends DurableObject<Env> {
 
   /** Remember which address a principal id acted with, so one human holding two ids is recognised (N-01). */
   private rememberAddress(principalId: string, email: string): void {
-    const e = email.trim().toLowerCase();
-    if (!e.includes("@")) return;
+    const e = normalEmail(email);
+    if (!e) return;
     this.sql.exec(
       "INSERT INTO gov_identity (principal_id, email) VALUES (?, ?) ON CONFLICT(principal_id) DO UPDATE SET email = excluded.email",
       principalId,
@@ -1290,13 +1308,7 @@ export class TenantPolicy extends DurableObject<Env> {
     now: number,
     managed: boolean,
   ) {
-    return this.identity.sessionCreate(
-      idHash,
-      { ...who, email: who.email.trim().toLowerCase() },
-      groups,
-      now,
-      managed,
-    );
+    return this.identity.sessionCreate(idHash, who, groups, now, managed);
   }
   sessionValidate(idHash: string, now: number) {
     return this.identity.sessionValidate(idHash, now);

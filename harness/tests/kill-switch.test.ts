@@ -393,3 +393,112 @@ test("kill switch route: replay and refused are 409, and pending is the only 202
   const pendingAt = route.indexOf('res.status === "pending"');
   assert.equal(refusedAt >= 0 && pendingAt > refusedAt, true);
 });
+
+test("kill switch: a stored unknown name is logged once and is not echoed", async () => {
+  const { file, remove } = tempFile();
+  const warn = captureWarn();
+  try {
+    const { policy, db } = await openPolicy(file);
+    db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    ).run("not-a-switch", 0, "ada", NOW);
+    db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    ).run("also-unknown", 1, "bea", NOW);
+    const status = policy.switchStatus(NOW);
+    assert.equal(status.switches.mcp.enabled, true);
+    assert.equal(status.switches.connector.enabled, true);
+    assert.equal(status.switches.ai.enabled, true);
+    assert.equal(status.switches.contribute.enabled, true);
+    const unknownLines = () =>
+      warn.lines
+        .map((line) => JSON.parse(line) as { reason?: string; machine?: string })
+        .filter((line) => line.reason === "unknown_name");
+    const first = unknownLines();
+    assert.equal(first.length, 2);
+    assert.equal(first.every((line) => line.machine === "kill_switch"), true);
+    const text = warn.lines.join("\n");
+    assert.equal(text.includes("not-a-switch"), false);
+    assert.equal(text.includes("also-unknown"), false);
+    const marked = warn.lines.length;
+    policy.switchStatus(NOW + 1);
+    assert.equal(warn.lines.length, marked);
+    assert.equal(unknownLines().length, 2);
+    db.close();
+  } finally {
+    warn.restore();
+    remove();
+  }
+});
+
+test("kill switch: each tenant logs an unknown name even after another tenant saw it", async () => {
+  const warn = captureWarn();
+  const first = tempFile();
+  const second = tempFile();
+  try {
+    const a = await openPolicy(first.file);
+    a.db
+      .prepare("INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)")
+      .run("tenant-only-a", 0, "ada", NOW);
+    a.policy.switchStatus(NOW);
+    const marked = warn.lines.filter((line) => line.includes("unknown_name")).length;
+    assert.equal(marked >= 1, true);
+    const b = await openPolicy(second.file);
+    b.db
+      .prepare("INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)")
+      .run("tenant-only-a", 0, "ada", NOW);
+    b.policy.switchStatus(NOW);
+    assert.equal(warn.lines.filter((line) => line.includes("unknown_name")).length, marked + 1);
+    a.db.close();
+    b.db.close();
+  } finally {
+    warn.restore();
+    first.remove();
+    second.remove();
+  }
+});
+
+test("kill switch: unknown names stop being logged after 256", async () => {
+  const warn = captureWarn();
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    const insert = db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    );
+    for (let i = 0; i < 257; i += 1) insert.run(`cap-name-${i}`, 0, "ada", NOW);
+    policy.switchStatus(NOW);
+    const first = warn.lines.filter((line) => line.includes("unknown_name")).length;
+    assert.equal(first, 256);
+    const marked = warn.lines.length;
+    policy.switchStatus(NOW + 1);
+    assert.equal(warn.lines.length, marked);
+    db.close();
+  } finally {
+    warn.restore();
+    remove();
+  }
+});
+
+test("kill switch: hitting the unknown-name cap logs one warning", async () => {
+  const warn = captureWarn();
+  const { file, remove } = tempFile();
+  try {
+    const { policy, db } = await openPolicy(file);
+    const insert = db.prepare(
+      "INSERT INTO switches (name, enabled, changed_by, changed_at) VALUES (?, ?, ?, ?)",
+    );
+    for (let i = 0; i < 257; i += 1) insert.run(`cap-warn-${i}`, 0, "ada", NOW);
+    policy.switchStatus(NOW);
+    const caps = warn.lines.filter((line) => line.includes('"reason":"cap"'));
+    assert.equal(caps.length, 1);
+    assert.equal(caps[0]?.includes("@"), false);
+    const marked = warn.lines.length;
+    policy.switchStatus(NOW + 1);
+    assert.equal(warn.lines.length, marked);
+    db.close();
+  } finally {
+    warn.restore();
+    remove();
+  }
+});

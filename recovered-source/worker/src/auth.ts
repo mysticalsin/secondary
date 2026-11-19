@@ -3,6 +3,7 @@
 // the X-Demo-Persona header and the localhost-only DEV_AUTH_BYPASS_EMAIL.
 
 import { type AdmittedView, admittedView } from "@secondary/policy";
+import { normalEmail } from "../../../src/state/actor.ts";
 import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
@@ -64,7 +65,7 @@ export async function verifyAccessJwt(
     });
     const email = payload.email;
     if (typeof email !== "string" || email.length > 254 || !email.includes("@")) return null;
-    return email.trim().toLowerCase();
+    return normalEmail(email);
   } catch {
     return null;
   }
@@ -80,7 +81,7 @@ export const isLocalHost = (url: string): boolean => {
 
 /** The local-dev sign-in: dev environment, a configured email, and a localhost request host. */
 export const devBypassEmail = (env: Env, url: string): string | null => {
-  const email = env.DEV_AUTH_BYPASS_EMAIL?.trim().toLowerCase();
+  const email = normalEmail(env.DEV_AUTH_BYPASS_EMAIL);
   return env.ENVIRONMENT === "dev" && email && isLocalHost(url) ? email : null;
 };
 
@@ -186,7 +187,8 @@ export const authenticate =
         console.warn(JSON.stringify({ at: "internal_auth", reason: r.reason }));
         return c.json({ error: "unauthorized" }, 401);
       }
-      email = r.principal.email.trim().toLowerCase();
+      email = normalEmail(r.principal.email);
+      if (!email) return c.json({ error: "unauthorized" }, 401);
       internal = {
         clientId: r.principal.client_id,
         tool: r.principal.tool,
@@ -237,7 +239,9 @@ export const authenticate =
     if (asked !== undefined) {
       if (!isRoleId(asked)) return c.json({ error: "unknown_persona" }, 400);
       persona = asked;
-      const p = personaPrincipal(asked, tenantId, email, await personaId(asked, email));
+      const personaKey = await personaId(asked, email);
+      if (!personaKey) return c.json({ error: "unauthorized" }, 401);
+      const p = personaPrincipal(asked, tenantId, email, personaKey);
       actAs = { id: p.id, roleIds: p.roleIds, memberships: p.memberships };
     }
 

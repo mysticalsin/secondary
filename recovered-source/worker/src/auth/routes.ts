@@ -128,14 +128,10 @@ export function authRoutes(deps: AppDeps): Hono<AppEnv> {
     const step = commitLoginRecord({ tag: "issued" }, event);
     const stub = tenantStub(c.env, dir);
     let saved: { nonce: string; verifier: string; returnTo: string | null } | null = null;
-    if (step.ok && step.effects.some((effect) => effect.type === "take")) {
-      const seen = new Set<string>();
-      for (const raw of [cookieState, state]) {
-        if (!raw || seen.has(raw)) continue;
-        seen.add(raw);
-        const row = await stub.loginStateTake(await sha256Hex(raw), now);
-        if (row && raw === cookieState) saved = row;
-      }
+    // The query state is not a key. A leaked state must not cancel another person's pending login.
+    if (step.ok && step.effects.some((effect) => effect.type === "take") && cookieState) {
+      const row = await stub.loginStateTake(await sha256Hex(cookieState), now);
+      if (row) saved = row;
     }
     if (event.type === "idp_error") {
       log("idp_error");

@@ -25,6 +25,35 @@ import type { AppDeps, AppEnv, Session } from "./types.ts";
 
 const envName = (env: Env): string => env.ENVIRONMENT;
 const isProd = (env: Env): boolean => envName(env) === "prod";
+const AUDIT_WAIT_MS = 1_000;
+
+type AuditOutcome = "succeeded" | "refused" | "timed_out";
+
+/** The off path must return even when the audit call does not. */
+function boundedAudit(run: Promise<boolean>): Promise<AuditOutcome> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve("timed_out");
+    }, AUDIT_WAIT_MS);
+    run.then(
+      (ok) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(ok ? "succeeded" : "refused");
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve("refused");
+      },
+    );
+  });
+}
 
 // ---- kill switch gate ----
 
@@ -126,9 +155,19 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       isProd(c.env),
       s.principal.email,
     );
-    // Turning a switch off must never wait for the audit log (incident response).
-    if (!enabled) await audit(c, s, "switch_disable", `${name} off`);
-    if (res.status === "refused" || res.status === "replay")
+    // Turning a switch off must never wait on a stuck audit log (incident response).
+    if (!enabled) {
+      const auditOutcome = await boundedAudit(audit(c, s, "switch_disable", `${name} off`));
+      if (auditOutcome !== "succeeded" || res.status !== "applied")
+        console.warn(
+          JSON.stringify({
+            at: "switch_disable",
+            audit: auditOutcome,
+            switch: res.status,
+          }),
+        );
+    }
+    if (res.status === "refused" || res.status === "replay" || res.sameActor === true)
       return c.json({ error: "switch_refused" }, 409);
     if (res.status === "pending")
       return c.json({ ok: true, status: "pending", switch: name, needs: "second_person" }, 202);

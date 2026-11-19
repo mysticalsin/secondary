@@ -3,7 +3,7 @@
 // constructs one and exposes thin RPC methods. Nothing here holds organisation content.
 
 import { ROLE_ORDER, ROLES } from "@secondary/policy";
-import { normalEmail, normalizedEmailSql } from "../../../../src/state/actor.ts";
+import { asciiLower, normalEmail, normalizedEmailSql } from "../../../../src/state/actor.ts";
 import type { SecurityJournal } from "../security-journal.ts";
 import {
   ABSOLUTE_MS,
@@ -29,7 +29,7 @@ const PRIVILEGED_ROLES: ReadonlySet<string> = new Set(
 );
 
 /** Group ids are Entra object ids (GUIDs). They compare case-insensitively. */
-export const groupKey = (s: string): string => s.trim().toLowerCase();
+export const groupKey = (s: string): string => asciiLower(s.trim());
 
 const GROUP_KEY = /^[a-z0-9][a-z0-9_.:-]{0,63}$/;
 const MAX_OIDC_GROUPS = 500;
@@ -159,6 +159,17 @@ export class IdentityStore {
   // ---- principals ----
 
   /** Principal rows whose stored email folds to `email`. Blank matches nothing. The column is not rewritten. */
+  /** True when another SCIM row already folds to this user name. The stored bytes are not rewritten. */
+  private userNameTaken(userName: string, exceptId?: string): boolean {
+    const folded = normalEmail(userName);
+    if (!folded) return false;
+    const sql = exceptId
+      ? `SELECT 1 FROM scim_users WHERE ${normalizedEmailSql("user_name")} = ? AND id <> ?`
+      : `SELECT 1 FROM scim_users WHERE ${normalizedEmailSql("user_name")} = ?`;
+    const args: SqlStorageValue[] = exceptId ? [folded, exceptId] : [folded];
+    return this.sql.exec(sql, ...args).toArray().length > 0;
+  }
+
   private emailRows(email: string): { id: string; subject: string | null }[] {
     const normalized = normalEmail(email);
     if (!normalized) return [];
@@ -408,13 +419,14 @@ export class IdentityStore {
       const viaOid = this.sql
         .exec("SELECT principal_id FROM scim_users WHERE lower(external_id) = ?", w.oid)
         .toArray()[0];
+      const foldedName = normalEmail(w.email);
       const viaName =
-        viaOid || w.guest || !w.emailIsUpn
+        viaOid || w.guest || !w.emailIsUpn || !foldedName
           ? undefined
           : this.sql
               .exec(
-                "SELECT principal_id FROM scim_users WHERE external_id IS NULL AND user_name = ?",
-                w.email,
+                `SELECT principal_id FROM scim_users WHERE external_id IS NULL AND ${normalizedEmailSql("user_name")} = ?`,
+                foldedName,
               )
               .toArray()[0];
       const row = viaOid ?? viaName;
@@ -571,8 +583,8 @@ export class IdentityStore {
     const where: string[] = [];
     const args: SqlStorageValue[] = [];
     if (f.userName !== undefined) {
-      where.push("u.user_name = ?");
-      args.push(f.userName.toLowerCase());
+      where.push(`${normalizedEmailSql("u.user_name")} = ?`);
+      args.push(normalEmail(f.userName) ?? "");
     }
     if (f.externalId !== undefined) {
       where.push("u.external_id = ?");
@@ -607,10 +619,9 @@ export class IdentityStore {
     },
     now: number,
   ): Promise<Ok<{ user: ScimUserRec }> | Fail> {
-    const userName = input.userName.trim().toLowerCase();
-    if (!userName.includes("@") || userName.length > 254) return fail("invalid");
-    if (this.sql.exec("SELECT 1 FROM scim_users WHERE user_name = ?", userName).toArray().length)
-      return fail("uniqueness");
+    const userName = asciiLower(input.userName.trim());
+    if (!userName.includes("@") || userName.length > 254 || !normalEmail(userName)) return fail("invalid");
+    if (this.userNameTaken(userName)) return fail("uniqueness");
     const principalId = await this.ensurePrincipal(userName);
     if (typeof principalId !== "string") return principalId;
     // One SCIM record per principal: a second userName cannot claim the same login.
@@ -651,14 +662,12 @@ export class IdentityStore {
     const principalId = s(row.principal_id);
     let renamed = false;
     if (c.userName !== undefined) {
-      const userName = c.userName.trim().toLowerCase();
-      if (!userName.includes("@") || userName.length > 254) return fail("invalid");
+      const userName = asciiLower(c.userName.trim());
+      if (!userName.includes("@") || userName.length > 254 || !normalEmail(userName)) return fail("invalid");
       if (userName !== row.user_name) {
         const twins = this.emailRows(userName).filter((row) => row.id !== principalId);
         if (twins.length > 1) this.warnAmbiguous(twins.map((row) => row.id));
-        const taken =
-          this.sql.exec("SELECT 1 FROM scim_users WHERE user_name = ?", userName).toArray().length > 0 ||
-          twins.length > 0;
+        const taken = this.userNameTaken(userName, id) || twins.length > 0;
         if (taken) return fail("uniqueness");
         this.storage.transactionSync(() => {
           this.sql.exec(

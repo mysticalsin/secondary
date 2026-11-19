@@ -19,6 +19,7 @@ import {
   type ErasureEvent,
   type StoredErasure,
 } from "../../../src/state/erasure-request.ts";
+import { normalEmail } from "../../../src/state/actor.ts";
 import { fetchReceipts, pseudonymiseReceipts } from "./audit.ts";
 import { forgetSourceAccess } from "./connector.ts";
 import { scopeOfNode } from "./scope.ts";
@@ -231,7 +232,8 @@ export async function eraseSubject(
   now: number,
 ): Promise<ErasureRun | PseudonymRefusal> {
   const email = await tenantStub(env, tenantId).emailOfPrincipal(principalId);
-  const aliases = email ? [email, email.toLowerCase()] : [];
+  const folded = email ? normalEmail(email) : null;
+  const aliases = email ? [...new Set([email, ...(folded ? [folded] : [])])] : [];
   return runErasure(env, tenantId, principalId, pseudonym, aliases, email, {
     type: "request",
     now,

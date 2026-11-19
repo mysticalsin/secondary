@@ -102,7 +102,10 @@ const receipt = (
 
 /** A refusal on authority: a deny receipt, then 403 with the reason. */
 async function deny(c: C, action: string, reason: string, scopeId: string | null = null) {
-  await audit(c, receipt(action, "deny", reason.slice(0, 280), scopeId));
+  const wrote = await audit(c, receipt(action, "deny", reason.slice(0, 280), scopeId));
+  if (!wrote) {
+    console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
+  }
   return refuse(c, 403, "forbidden", reason);
 }
 
@@ -392,6 +395,21 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
     const id = c.req.param("id");
     const chg = ID.test(id) ? await w.gov.change(id, w.now) : null;
     if (!chg) return refuse(c, 404, "not_found", "No such change");
+    if (chg.proposedBy !== w.s.principal.id) {
+      const action = `gov.${chg.kind}.withdraw`;
+      const wrote = await audit(
+        c,
+        receipt(action, "rejected", "Only the proposer can withdraw a change", chg.scopeKey),
+      );
+      if (!wrote)
+        return refuse(
+          c,
+          503,
+          "audit_unavailable",
+          "The audit service is not answering, so nothing was changed.",
+        );
+      return refuse(c, 403, "not_proposer", "Only the proposer can withdraw a change");
+    }
     return mutate(
       c,
       { action: `gov.${chg.kind}.withdraw`, scopeId: chg.scopeKey, reason: `withdraw ${chg.id}` },

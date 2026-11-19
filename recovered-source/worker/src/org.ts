@@ -11,6 +11,7 @@ import {
   type RoleId,
   TENANT_ID,
 } from "@secondary/policy";
+import { normalEmail } from "../../../src/state/actor.ts";
 import type { SeedPrincipal, TenantConfig } from "./tenant-policy.ts";
 
 const CACHE_LIMIT = 8;
@@ -37,8 +38,9 @@ export const isRoleId = (v: unknown): v is RoleId =>
  * two principals with separate Personal Brains. The seeded persona addresses (`<role>@...`) keep the
  * canonical id `u_<role>`, because the synthetic items name those ids as their authors.
  */
-export async function personaId(roleId: RoleId, email: string): Promise<string> {
-  const e = email.trim().toLowerCase();
+export async function personaId(roleId: RoleId, email: string): Promise<string | null> {
+  const e = normalEmail(email);
+  if (!e) return null;
   if (e.split("@")[0] === roleId) return PERSONAS[roleId].id;
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(e));
   const h = Array.from(new Uint8Array(d).slice(0, 5), (b) => b.toString(16).padStart(2, "0")).join(

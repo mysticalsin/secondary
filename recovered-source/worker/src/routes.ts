@@ -2,6 +2,7 @@
 // first, answer only from it, and fan out only to the workspaces that view reaches. A node outside
 // the view is indistinguishable from a node that does not exist.
 
+import { asciiLower, normalEmail, principalEmailLabel } from "../../../src/state/actor.ts";
 import {
   ACTIONS,
   type Action,
@@ -205,10 +206,14 @@ export function parseUserValidated(
 ): UserValidated {
   if (!v || typeof v !== "object") throw bad("user_validation_required", 422);
   const o = v as Record<string, unknown>;
-  const by = typeof o.by === "string" ? o.by.toLowerCase() : "";
+  const byRaw = typeof o.by === "string" ? o.by.trim() : "";
+  const byId = asciiLower(byRaw);
+  const byEmail = normalEmail(byRaw);
   const at = typeof o.at === "string" ? Date.parse(o.at) : Number.NaN;
-  if (by !== s.principal.id.toLowerCase() && by !== s.principal.email.toLowerCase())
-    throw bad("user_validation_required", 422);
+  const idMatch = byId !== "" && byId === asciiLower(s.principal.id.trim());
+  const principalEmail = normalEmail(s.principal.email);
+  const emailMatch = byEmail !== null && principalEmail !== null && byEmail === principalEmail;
+  if (!idMatch && !emailMatch) throw bad("user_validation_required", 422);
   if (!Number.isFinite(at) || at > s.ctx.now + 300_000 || s.ctx.now - at > VALIDATION_MAX_AGE_MS)
     throw bad("user_validation_required", 422);
   if (o.revision !== expectedRevision) throw bad("user_validation_required", 422);
@@ -239,7 +244,7 @@ export async function submitCandidate(
   const d = canDoInView(view, s.principal, i.targetNodeId, "contribute");
   const scopeId = scopeOfNode(target);
   if (!d.allowed || !scopeId) {
-    await audit(c, {
+    const wrote = await audit(c, {
       action: "contribute",
       nodeId: i.targetNodeId,
       scopeId,
@@ -247,6 +252,8 @@ export async function submitCandidate(
       reason: d.reason,
       revision: null,
     });
+    if (!wrote.ok)
+      console.warn(JSON.stringify({ at: "audit_unavailable", action: "contribute", decision: "deny" }));
     return forbidden(c, d.reason);
   }
   const receipt = await audit(c, {
@@ -462,7 +469,12 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     };
     const d = s.org ? describe(s.principal, s.org) : { see: [], do: [], never: [] };
     return c.json({
-      principal: { id: s.principal.id, email: s.principal.email, roleIds: s.principal.roleIds },
+      principal: {
+        id: s.principal.id,
+        email: s.principal.email,
+        emailLabel: principalEmailLabel(s.principal.email),
+        roleIds: s.principal.roleIds,
+      },
       tenantId: s.tenantId,
       persona: s.persona,
       describe: d,
@@ -886,7 +898,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     );
     const scopeId = vn ? scopeOfNode(vn) : null;
     if (!vn || !d.allowed) {
-      await audit(c, {
+      const wrote = await audit(c, {
         action,
         nodeId,
         scopeId,
@@ -894,6 +906,8 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
         reason: d.reason,
         revision: null,
       });
+      if (!wrote.ok)
+        console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
       return forbidden(c, d.reason);
     }
     if (action === "manage_members" || action === "configure")
