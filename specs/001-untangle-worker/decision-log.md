@@ -70,3 +70,14 @@ These are recommendations. Phase 1 does not apply them. A larger refactor is for
 ## First slice
 
 The deny-receipt warning only. One function, the four call sites, the same 403, no new status, no change to switch-off. The other rows wait for the owner.
+
+## Slice result
+
+`routes.ts` imports `warnAuditDenied` from `ux/util.ts`. That file imports `audit.ts` and `types.ts` only. Neither imports `routes.ts`, so the import does not cycle. The four deny sites call that one function. Status codes are unchanged.
+
+The four `audit` wrappers stay. They are not the same function:
+
+- `ux/util.ts` `audit` uses the wall clock (`new Date().toISOString()`), defaults `decision` to `allow` and `reason` to `owner`, returns a boolean, and writes the receipt fields by name.
+- `admin/routes.ts` `audit` uses the session clock (`new Date(s.ctx.now).toISOString()`), spreads the whole intent (the caller supplies `decision` and `reason`; there is no `owner` default), and returns a boolean.
+- `routes.ts` `audit` uses the wall clock, spreads the whole intent, and returns `{ receiptId, ok }`. Callers read `.ok`, and some also read `receiptId`.
+- `ops-admin.ts` `audit` takes `(c, session, action, reason)`, stamps `deps.now()`, always writes `decision: "allow"`, and always writes `nodeId` and `scopeId` as null. Enable still waits and answers 503 when the receipt fails. Switch-off still uses `boundedAudit` and logs `{ at: "switch_disable", audit, switch }` with `succeeded`, `refused`, or `timed_out`.
