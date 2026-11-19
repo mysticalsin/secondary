@@ -18,7 +18,7 @@ Home's list is `GET /v1/brains` with no `scope=all` (`src/worker/brains/routes.t
 
 Both pages fetch `GET /v1/brains` and `GET /v1/brain/tree` (still with no `root`). The dropdown options are those cards, in that order, using `name` and `id`. There is no "All brains" option. The selected id is the first card with `pages > 0`, otherwise the first card. My Secondary is present whenever the list includes it.
 
-The empty copy stays, and it is shown only when the selected brain has no pages. That is the case when every admitted brain has `pages === 0`, and when the list itself is empty.
+The empty copy stays, and it is shown only when the selected brain has no pages. That is the case when every admitted brain has `pages === 0`, and when the list itself is empty. An empty `/v1/brains` list does not show the pages from the tree and does not label the view "All brains".
 
 No wiki pages are seeded. The API stays as it is: the tree already returns company roots when `root` is omitted, and `/v1/brains` already returns the Home list.
 

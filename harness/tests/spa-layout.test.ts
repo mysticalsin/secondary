@@ -197,10 +197,15 @@ async function stop(chrome: ChildProcess, session: Session | undefined, browser:
 }
 
 async function evalJson<T>(session: Session, expression: string): Promise<T | undefined> {
-  const result = await session.call("Runtime.evaluate", { expression, returnByValue: true });
-  const value = (result.result as { value?: string } | undefined)?.value;
-  if (typeof value !== "string") return undefined;
-  return JSON.parse(value) as T;
+  try {
+    const result = await session.call("Runtime.evaluate", { expression, returnByValue: true });
+    if (result.exceptionDetails) return undefined;
+    const value = (result.result as { value?: string } | undefined)?.value;
+    if (typeof value !== "string") return undefined;
+    return JSON.parse(value) as T;
+  } catch {
+    return undefined;
+  }
 }
 
 async function size(session: Session, width: number, height: number) {
@@ -219,13 +224,15 @@ test("phone tap targets are at least 44px at 390 and at least 24px on desktop", 
       await size(launched.session, width, height);
       await launched.session.call("Page.navigate", { url: `${origin}/graph` });
       let reading: { font: string; brand: number; close: { w: number; h: number }; links: { text: string; h: number }[]; overflow: number } | undefined;
-      for (let i = 0; i < 40; i += 1) {
+      for (let i = 0; i < 80; i += 1) {
         reading = await evalJson(launched.session, `(() => {
+          if (document.readyState !== "complete") return JSON.stringify(null);
           const panel = document.getElementById("panel");
           if (panel) panel.hidden = false;
           const links = [...document.querySelectorAll(".capsule a")];
           const brand = document.querySelector(".brand");
           const close = document.getElementById("panel-close");
+          if (!links.length || !brand || !close) return JSON.stringify(null);
           const de = document.documentElement;
           const box = (el) => el ? el.getBoundingClientRect() : { width: 0, height: 0 };
           const b = box(brand);
@@ -250,10 +257,12 @@ test("phone tap targets are at least 44px at 390 and at least 24px on desktop", 
       }
       await launched.session.call("Page.navigate", { url: `${origin}/dashboard` });
       let dash: { font: string; brand: number; links: { text: string; h: number }[] } | undefined;
-      for (let i = 0; i < 40; i += 1) {
+      for (let i = 0; i < 80; i += 1) {
         dash = await evalJson(launched.session, `(() => {
+          if (document.readyState !== "complete") return JSON.stringify(null);
           const links = [...document.querySelectorAll(".capsule a")];
           const brand = document.querySelector(".brand");
+          if (!links.length || !brand) return JSON.stringify(null);
           return JSON.stringify({
             font: links[0] ? getComputedStyle(links[0]).fontSize : "",
             brand: Math.round((brand ? brand.getBoundingClientRect().height : 0) * 100) / 100,
@@ -342,6 +351,7 @@ test("zoom stays on screen at 390 while the graph panel is open", async () => {
         const panel = document.getElementById("panel");
         if (panel) panel.hidden = false;
         const el = document.getElementById("zoom-in");
+        if (!el) return JSON.stringify(null);
         const rect = el.getBoundingClientRect();
         return JSON.stringify({ x: rect.x, w: rect.width, width: innerWidth });
       })()`);
@@ -364,6 +374,7 @@ test("the search field shows a visible focus ring", async () => {
     for (let i = 0; i < 40; i += 1) {
       ring = await evalJson(launched.session, `(() => {
         const input = document.getElementById("search");
+        if (!input) return JSON.stringify(null);
         input.focus();
         const style = getComputedStyle(input);
         return JSON.stringify({ style: style.outlineStyle, width: style.outlineWidth });
@@ -465,8 +476,8 @@ test("an offline load does not say the sign-in expired", async () => {
   const dashboard = await boot("deploy/graph/dashboard.js.txt", reject);
   const hits = [graph, dashboard].filter((text) => /sign-in/i.test(text));
   assert.deepEqual(hits, [], `offline said sign-in: ${hits.join(" | ")}`);
-  assert.match(graph, /could not be loaded/);
-  assert.match(dashboard, /could not be loaded/);
+  assert.equal(graph, "The brain could not be loaded.");
+  assert.equal(dashboard, "The brain could not be loaded.");
 });
 
 test("a page HTTP 500 does not leave the graph status as Ready", async () => {
