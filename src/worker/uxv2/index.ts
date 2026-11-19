@@ -13,7 +13,7 @@ import { usageRoutes } from "./usage.ts";
 export function uxv2Routes(deps: AppDeps): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
   r.route("/", askRoutes(deps));
-  r.route("/", treeRoutes());
+  r.route("/", treeRoutes(deps));
   r.route("/", questionRoutes());
   r.route("/", routineRoutes(deps));
   r.route("/", usageRoutes());

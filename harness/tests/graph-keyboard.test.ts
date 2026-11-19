@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createContext, runInContext } from "node:vm";
+import { runGraphScript } from "./run-graph-script.ts";
 
 const repo = fileURLToPath(new URL("../..", import.meta.url));
 const page = readFileSync(join(repo, "deploy/graph/page.html"), "utf8");
@@ -101,7 +102,7 @@ test("arrow keys move between graph nodes and Enter selects the current one", as
   };
   const context = createContext(sandbox);
   runInContext(PRELUDE, context);
-  runInContext(readFileSync(join(repo, "deploy/graph/app.js.txt"), "utf8"), context);
+  runGraphScript(repo, "deploy/graph/app.js.txt", context);
   const elements = sandbox.__elements as Record<string, { textContent?: string; tabIndex?: number; hidden?: boolean; listeners?: Record<string, (event: { key: string; preventDefault: () => void }) => void> }>;
   const deadline = Date.now() + 1500;
   while (Date.now() < deadline && !/note/.test(elements.stats?.textContent || "")) {
@@ -148,7 +149,7 @@ test("modified arrow keys do not move the graph", async () => {
   };
   const context = createContext(sandbox);
   runInContext(PRELUDE, context);
-  runInContext(readFileSync(join(repo, "deploy/graph/app.js.txt"), "utf8"), context);
+  runGraphScript(repo, "deploy/graph/app.js.txt", context);
   const elements = sandbox.__elements as Record<string, { textContent?: string; hidden?: boolean; listeners?: Record<string, (event: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; preventDefault: () => void }) => void> }>;
   const deadline = Date.now() + 1500;
   while (Date.now() < deadline && !/note/.test(elements.stats?.textContent || "")) {
@@ -217,7 +218,7 @@ test("the graph name has no key tutorial and announces the selected page", async
   if (/\baria-live="polite"/.test(selection)) {
     runInContext("(() => { const live = element(\"graph-selection\"); live.setAttribute(\"aria-live\", \"polite\"); })()", context);
   }
-  runInContext(readFileSync(join(repo, "deploy/graph/app.js.txt"), "utf8"), context);
+  runGraphScript(repo, "deploy/graph/app.js.txt", context);
   const elements = sandbox.__elements as Record<string, { textContent?: string; listeners?: Record<string, (event: { key: string; preventDefault: () => void }) => void> }>;
   const deadline = Date.now() + 1500;
   while (Date.now() < deadline && !/note/.test(elements.stats?.textContent || "")) {
