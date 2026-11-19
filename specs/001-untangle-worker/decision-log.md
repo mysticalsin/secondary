@@ -87,3 +87,22 @@ The four `audit` wrappers stay. They are not the same function:
 `harness/tests/intake.test.ts` gained one allowlist line, `recovered-source/worker/src/ux/util.ts`, so the intake byte check accepts the edited helper. No assertion in that test changed.
 
 The contribute deny (`routes.ts` `warnAuditDenied("contribute")`) and the question deny (`uxv2/questions.ts` `warnAuditDenied(action)`) now have request tests. Each expects 403 and `{ at: "audit_unavailable", action, decision: "deny" }` with action `contribute` or `question.ingest`. On `3656037a` those tests already passed. Removing each call, and not committing that removal, failed only its own test: the warning line was absent. Restoring both calls made both tests pass again. The production calls did not need a change.
+
+## Owner, 01:16 BRT
+
+Tony, via Jarvis: the three larger refactors are approved ("A, all three"). Comments that only restate the code, and tests that cannot fail, are approved to delete ("Yes, delete them"). Each larger refactor is its own slice. The lead slice is `specs/002-lead-from-grants/`. The switch table and the folder move are not that slice. Restating comments in the lead check are part of that slice. A repo-wide deletion is not.
+
+## Lead slice
+
+`LEAD_ROLES` is no longer a hand-written id list. `isBuiltInLeadRole` reads the built-in role table: a role is a lead when a grant can edit, review, or manage members, and that grant is not `approve_release` and not `own_drafts`. For every seeded role that is `acme_lead` and no other role, the same answer as the old set. `mayDecide` then uses that role id the way main did: any node where a standing edit, review, or manage-members check passes, including a stored `acme_lead` whose grants were edited later. The lookup is `Object.hasOwn` on the built-in table, so letter case does not widen it. Elevation still does not count, and `approve_release` is still absent from elevation actions.
+
+The lead mark is not a grant condition. Resending the built-in grants through governance succeeds, as it did on main. Governance still rejects an unknown condition.
+
+`directPublish` keeps `can.decide` exactly as on main. It does not call `mayDecide`. Devin's pre-merge check on `d9ad3ab1` showed that gating publish on `mayDecide` both blocked a non-lead with `can.decide` true and let `acme_lead` publish with `can.decide` false. Whether publish should ask `mayDecide` is deferred until Tony decides. The stored edit check at the end of `directPublish` stays.
+
+Inspector's review of `a30305a7` is the same decide gap: an `acme_lead` with an extra edit, review, or manage-members grant, or a second role that carries one, was denied, and so was `pb:<id>:n`. Main allows those because the role id is a lead and the standing action check passes. `cc3a0864` restored that loop. The truth table from main `2d61c473` now names the governance-edit grants, the second role, and `pb:u_acme_lead:1`, `:2`, and `:3`.
+
+Comments removed because they only repeated the code:
+
+- The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
+- The `directPublish` note said the mode must be direct and the caller must be allowed to edit. Those are the `publication` and `can.edit` checks. It also said publish asks the stored brain role, which this function does not do.

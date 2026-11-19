@@ -5,6 +5,7 @@
 import {
   type AdmittedView,
   canDoInView,
+  isBuiltInLeadRoleId,
   opensBrain,
   type Principal,
   personalRootId,
@@ -14,9 +15,6 @@ import type { ItemRecord } from "../workspace.ts";
 import type { Proposal } from "./types.ts";
 
 export type Right = { allowed: boolean; reason: string };
-
-/** Roles that lead a brain. A standing edit or review grant on any other role is not a decision. */
-const LEAD_ROLES = new Set(["acme_lead"]);
 
 const sameId = (a: string, b: string): boolean => asciiLower(a.trim()) === asciiLower(b.trim());
 
@@ -40,7 +38,7 @@ export function mayDecide(
   const standing: AdmittedView = { ...view, ctx: { ...view.ctx, elevatedUntil: undefined } };
   const release = canDoInView(standing, p, nodeId, "approve_release");
   if (release.allowed) return release;
-  if (p.roleIds.some((id) => LEAD_ROLES.has(id))) {
+  if (p.roleIds.some((id) => isBuiltInLeadRoleId(id))) {
     for (const action of ["review", "edit", "manage_members"] as const) {
       const decision = canDoInView(standing, p, nodeId, action);
       if (decision.allowed) return { allowed: true, reason: "Lead of this brain" };
