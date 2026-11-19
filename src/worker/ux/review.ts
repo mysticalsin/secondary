@@ -9,6 +9,7 @@ import { humanIdsOf } from "../human.ts";
 import { parseCandidateId, scopeOfNode } from "../scope.ts";
 import { workspaceStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
+import { isAdmin } from "../uxv2/shared.ts";
 import { notifyChangesRequested } from "./notify.ts";
 import {
   audit,
@@ -48,6 +49,28 @@ export function reviewRoutes(): Hono<AppEnv> {
     if (!item || item.authorId === s.principal.id) throw notFound();
     return { s, id, scope, stub, item };
   };
+
+  r.get("/ux/candidates/:id", async (c) => {
+    const s = sess(c);
+    const id = c.req.param("id") ?? "";
+    const parsed = parseCandidateId(id);
+    if (!parsed) throw notFound();
+    const view = viewOf(s);
+    const vn = view.nodes.get(parsed.targetNodeId);
+    const scope = vn ? scopeOfNode(vn) : null;
+    if (!vn || !scope) throw notFound();
+    const item = await workspaceStub(c.env, s.tenantId, scope).get(id);
+    if (!item || item.kind !== "candidate") throw notFound();
+    if (item.authorId !== s.principal.id && !isAdmin(view)) throw notFound();
+    return c.json({
+      id,
+      title: item.label,
+      body: item.body ?? "",
+      status: item.status,
+      revision: item.revision,
+      targetNodeId: parsed.targetNodeId,
+    });
+  });
 
   r.get("/ux/review/:id", async (c) => {
     const { s, id, stub, item } = await open(c);

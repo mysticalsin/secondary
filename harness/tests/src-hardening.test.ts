@@ -130,7 +130,7 @@ async function openDirectory(): Promise<{ binding: unknown; remove: () => void }
       {
         id: STRANGER.id,
         email: STRANGER.email,
-        roleIds: ["reviewer"],
+        roleIds: ["consultant"],
         memberships: [{ scope_type: "circle", scope_id: "c_delivery" }],
       },
       {

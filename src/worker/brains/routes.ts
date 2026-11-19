@@ -43,7 +43,7 @@ import {
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
 import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag, reconcileStoredMembers } from "./open.ts";
 import { placeScopedMember } from "./store.ts";
-import { cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
+import { type BrainCard, cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
 
 const WEEK = 7 * DAY;
 const COACH_TTL = 60 * 60_000;
@@ -87,7 +87,45 @@ function templateForRole(role: string, fallback: TemplateId): TemplateId {
   return fallback;
 }
 
-export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
+const BRAIN_BOUND_MS = 2_500;
+
+function within(ms: number, work: Promise<BrainCard | null>): Promise<BrainCard | null | "miss"> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve("miss"), ms);
+    work.then(
+      (card) => {
+        clearTimeout(timer);
+        resolve(card);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve("miss");
+      },
+    );
+  });
+}
+
+function missedCard(p: { param: string; vn: { kind: string; label: string } | null }): BrainCard & {
+  unavailable: true;
+} {
+  return {
+    id: p.param,
+    type: p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal"),
+    name: p.param === "me" ? "My Secondary" : (p.vn?.label ?? p.param),
+    template: "blank",
+    readers: 0,
+    manages: false,
+    restricted: false,
+    publication: "review",
+    role: "reader",
+    pages: 0,
+    health: { score: 0 },
+    lastActivityAt: null,
+    unavailable: true,
+  };
+}
+
+export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
 
   // The whole family can be limited to a pilot cohort.
@@ -97,13 +135,29 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
   // ---- directory ----
 
   /** The cards of these brains, for a caller the view admits to all of them. */
-  async function cardsOf(c: C, params: { param: string }[], keep: (b: Brain) => boolean) {
+  async function cardsOf(
+    c: C,
+    params: { param: string; vn: { kind: string; label: string } | null }[],
+    keep: (b: Brain) => boolean,
+  ) {
     const humanIds = await humanIdsOf(c.env, sess(c));
-    const opened = (await Promise.all(params.map((p) => brainOf(c, p.param, humanIds)))).filter(
-      (b): b is Brain => b !== null && keep(b),
+    const ms = deps.brainBoundMs ?? BRAIN_BOUND_MS;
+    const cards = await Promise.all(
+      params.map(async (p) => {
+        const result = await within(
+          ms,
+          (async () => {
+            const b = await brainOf(c, p.param, humanIds);
+            if (!b || !keep(b)) return null;
+            const [seen] = await seeBrains(c, [b]);
+            if (!seen) return null;
+            return cardOf(c, seen);
+          })(),
+        );
+        return result === "miss" ? missedCard(p) : result;
+      }),
     );
-    const seen = await seeBrains(c, opened);
-    return Promise.all(seen.map((x) => cardOf(c, x)));
+    return cards.filter((x): x is BrainCard => x !== null);
   }
 
   r.get("/brains", async (c) => {
@@ -153,7 +207,13 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
       })
       .sort((a, z) => a.name.localeCompare(z.name));
     return c.json({
-      brains: [...cards.map((x) => ({ ...x, canOpen: true as const })), ...closed],
+      brains: [
+        ...cards.map((x) => ({
+          ...x,
+          canOpen: (x as { unavailable?: boolean }).unavailable ? (false as const) : (true as const),
+        })),
+        ...closed,
+      ],
     });
   });
 
