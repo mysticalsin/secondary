@@ -775,7 +775,7 @@ test("a throwing parent lookup is restricted and direct publish does not throw",
       throw new Error("synthetic lookup failed");
     },
   };
-  assert.equal(restrictionOf({ parentId: "c_gone", restricted: false }, nodes).restricted, true);
+  assert.equal(restrictionOf({ parentId: "c_gone" }, nodes).restricted, true);
   const published = await directPublish(
     {
       get: (key: string) =>
