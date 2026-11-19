@@ -190,3 +190,9 @@ These are tests, not a new matcher. The app under test sets a session, runs `swi
 `/v1//sources/s1` is 404 with the connector switch off or on. The router has no such route, and the path is not the connector prefix. `/v1/sources/s1//x` is 503 when the connector switch is off, because the path still starts with `/v1/sources/`, and 404 when the switch is on, because no route matches. That 503 is the current gate. It is not a defect to remove from `switches.ts`.
 
 Four and five trailing slashes stay on the row. HEAD `GET /v1/ai/status` is 503 when the ai switch is off and 200 when it is on, the same status as GET. A strip loop capped at three slashes, a catch-all in place of the router, and a HEAD skip in the gate each turn their own test red. Those edits are restored.
+
+## Real v1 wiring
+
+The public routes are reached through `createApp`: `authenticate`, then `switchGate`, then the handler. The token is a synthetic Access JWT. `verifyAccessJwt` checks it with a test JWKS passed in `deps.jwks`. The switch flags come from `TenantPolicy.switchState` on a temporary sqlite file.
+
+`/v1/internal/ops` and `/v1/internal/mcp` do not go through `switchGate`. `createApp` mounts them before `v1Routes` so a machine call skips Access auth and the body limit, and each route checks its own HMAC. `GET /v1/internal/mcp/switches` is how the MCP worker reads the flags, including when one is off, so a 503 from `switchGate` there would hide the state it is meant to report. That bypass stays. The `mcp` flag still refuses an internal *user* session on the public router. The signed MCP allowlist test named above is still deferred: this JWT is an Access token, not an MCP principal signature.
