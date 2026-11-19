@@ -20,7 +20,7 @@ A candidate stored for tenant A is 404 for a user of tenant B, including when th
 
 ## Missed card
 
-A brain card, whether the workspace answered or missed the bound, is restricted when the node or an ancestor is restricted, under NDA, or a contacts subspace. Direct publish uses that same walk: an unflagged brain under a restricted or contacts ancestor does not publish without review. A closed card on `scope=all` uses it for the restricted badge. The same walk serves both cards. It is finished only when a parent id is null. A missing parent, or a chain that is still open after twelve hops, fails closed: the card is restricted. The real org's longest chain is five, so a chain of thirteen ancestors is a synthetic cap, not a production shape.
+A brain card, whether the workspace answered or missed the bound, is restricted when the node or an ancestor is restricted, under NDA, or a contacts subspace. Direct publish uses that same walk: an unflagged brain under a restricted or contacts ancestor does not publish without review. A closed card on `scope=all` uses it for the restricted badge. The same walk serves both cards. It is finished only when a parent id is null. Twelve ancestors that end on a null parent are not restricted, and direct publish still publishes that chain. Thirteen ancestors is the first length past the cap, and the card is restricted. A parent cycle and a self-parent hit that cap and return restricted. A parent lookup that throws returns restricted, and direct publish then leaves the page in review instead of answering 5xx. A missing parent fails closed the same way. The real org's longest chain is five, so a chain of thirteen ancestors is a synthetic cap, not a production shape.
 
 ## Erasure steps
 
