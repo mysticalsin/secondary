@@ -90,4 +90,17 @@ The contribute deny (`routes.ts` `warnAuditDenied("contribute")`) and the questi
 
 ## Owner, 01:16 BRT
 
-Tony, via Jarvis: the three larger refactors are approved ("A, all three"). Comments that only restate the code, and tests that cannot fail, are approved to delete ("Yes, delete them"). Each is its own slice. The lead slice is `specs/002-lead-from-grants/`. The switch table, the folder move, and the comment and test deletion are not that slice.
+Tony, via Jarvis: the three larger refactors are approved ("A, all three"). Comments that only restate the code, and tests that cannot fail, are approved to delete ("Yes, delete them"). Each larger refactor is its own slice. The lead slice is `specs/002-lead-from-grants/`. The switch table and the folder move are not that slice. Restating comments in the lead check are part of that slice. A repo-wide deletion is not.
+
+## Lead slice
+
+`mayDecide` reads `conditions.lead` on the caller's grants. `LEAD_ROLES` is gone. `acme_lead` still decides in `a_acme` and `c_sales`, and not in `core`. A standing edit or review grant that is not marked `lead` does not decide. A standing `approve_release` grant does. The author, including letter case and an alias id, stays denied. Elevation does not count.
+
+`directPublish` calls `mayDecide` and does not read `can.decide`. The first green required a stored `role` argument. `wiki/routes.ts` passes a workspace that has no stored role, so `npm run typecheck:worker` failed. Propose opens with `contribute` and sets `can.decide` from `mayDecide` alone. Requiring a stored review role would have refused publishes that path allows. The argument is gone. The stored edit check at the end of `directPublish` stays.
+
+Comments removed because they only repeated the code:
+
+- The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
+- The `directPublish` note said the mode must be direct and the caller must be allowed to edit. Those are the `publication` and `can.edit` checks. It also said publish asks the stored brain role, which this function does not do.
+
+No test was deleted. In `harness/tests/lead-from-grants.test.ts`, the lead, author, alias, letter-case, elevation, and `approve_release` assertions fail if those outcomes change. The loose `can.decide: true` case fails if a non-lead publishes. The review-mode cases fail if a lead publishes while the mode is review. The source checks fail if `LEAD_ROLES` returns, `directPublish` reads `w.can.decide`, or the grants lose `lead: true`.

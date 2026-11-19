@@ -83,23 +83,21 @@ test("lead grant: who decides stays, and the lead is not a role-id list", async 
     personal: false,
     nodeId: "c_sales",
     view: leadView,
-    role: null,
     vn: leadView.nodes.get("c_sales"),
     stub: { brainConfig: async () => ({ publication: "review" }) },
     can: { edit: true, decide: true },
   });
   assert.equal(held, false);
 
-  const narrowed = await directPublish(session, {
+  const staleFalse = await directPublish(session, {
     personal: false,
     nodeId: "c_sales",
     view: leadView,
-    role: "editor",
     vn: leadView.nodes.get("c_sales"),
-    stub: { brainConfig: async () => ({ publication: "direct" }) },
+    stub: { brainConfig: async () => ({ publication: "review" }) },
     can: { edit: true, decide: false },
   });
-  assert.equal(narrowed, false);
+  assert.equal(staleFalse, false);
 
   let loose: boolean | "threw" = "threw";
   try {
@@ -107,7 +105,6 @@ test("lead grant: who decides stays, and the lead is not a role-id list", async 
       personal: false,
       nodeId: "c_sales",
       view: editorView,
-      role: null,
       vn: editorView.nodes.get("c_sales"),
       stub: { brainConfig: async () => ({ publication: "direct" }) },
       can: { edit: true, decide: true },

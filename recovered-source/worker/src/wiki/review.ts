@@ -19,7 +19,6 @@ const LEAD_ACTIONS = ["review", "edit", "manage_members"] as const;
 
 const sameId = (a: string, b: string): boolean => asciiLower(a.trim()) === asciiLower(b.trim());
 
-/** A grant marked `lead` that still allows a standing decision action on this node. */
 function leadOf(view: AdmittedView, p: Principal, nodeId: string): Right | null {
   for (const role of view.roles) {
     for (const grant of role.grants) {

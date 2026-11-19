@@ -41,7 +41,7 @@ The proposal author cannot decide, including when the author id differs only by 
 
 ### User Story 3 - Direct publish asks the same question (Priority: P2)
 
-`directPublish` decides from `mayDecide` and the stored brain role. It does not trust the `can.decide` boolean that `brainOf` computed for the screen. A non-lead with that boolean set still does not publish. A stored role that cannot review still does not publish. Personal brains, the publication mode, and the agent-call refusal stay as they are.
+`directPublish` asks `mayDecide`. It does not read `can.decide`. The wiki caller computes that boolean from `mayDecide` already, and the brain screen computes it with the stored role as well. Publish follows the decision function. A non-lead with the boolean set still does not publish. Personal brains, the publication mode, the stored edit check, and the agent-call refusal stay as they are.
 
 **Why this priority**: The publish rule and the lead rule were split across a boolean.
 
@@ -50,7 +50,7 @@ The proposal author cannot decide, including when the author id differs only by 
 **Acceptance Scenarios**:
 
 1. **Given** a non-lead and `can.decide` true, **When** direct publish is asked, **Then** the result is false.
-2. **Given** a lead whose stored brain role cannot review, **When** direct publish is asked, **Then** the result is false.
+2. **Given** a lead and `can.decide` false, **When** the publication mode is review, **Then** the result is false.
 3. **Given** a lead and a brain whose publication mode is review, **When** direct publish is asked, **Then** the result is false.
 
 ## Requirements
@@ -60,7 +60,7 @@ The proposal author cannot decide, including when the author id differs only by 
 - **FR-001**: Who may decide inside a brain MUST be read from that caller's role grants. A grant with `conditions.lead === true` that includes a standing `edit`, `review`, or `manage_members` on the node is a lead of that node. The set `LEAD_ROLES` MUST NOT remain.
 - **FR-002**: Outcomes MUST stay: `acme_lead` decides in `a_acme` and `c_sales` and not in `core`; a standing edit or review grant that is not a lead grant does not decide; a standing `approve_release` grant does.
 - **FR-003**: The author MUST stay denied, including a different letter case and an alias id. Elevation MUST NOT count.
-- **FR-004**: `directPublish` MUST call `mayDecide` for a shared brain. It MUST NOT read `can.decide`. A stored brain role that does not allow `review` MUST still refuse. Personal brains, publication mode, and an agent caller MUST stay as they are.
+- **FR-004**: `directPublish` MUST call `mayDecide` for a shared brain. It MUST NOT read `can.decide`. Personal brains, publication mode, the stored edit check, and an agent caller MUST stay as they are. The wiki route's own `need` check is unchanged.
 - **FR-005**: `brainOf` MAY still set `can.decide` for the screen. That field is not the publish rule.
 
 ### Success Criteria
@@ -78,9 +78,9 @@ The proposal author cannot decide, including when the author id differs only by 
 - The two grants that make `acme_lead` a lead today (`c_sales` edit, and `a_acme` edit, review, and manage members) are the grants marked `lead`. No other current grant is a lead grant.
 - `conditions.lead` is data for this rule. The policy engine does not read it, so view, edit, and release checks are unchanged.
 - An `edit` grant limited to `own_drafts` is not marked `lead`.
-- Comment deletion and test deletion are a separate slice. This spec does not remove them.
-- The switch table and the folder move are separate slices.
+- Restating comments next to `leadOf` and `directPublish` are removed. No test in this slice is deleted: each new assertion fails if the lead grant, the author rule, elevation, `approve_release`, or the loose `can.decide` boolean changes.
+- The wider comment and test sweep, the switch table, and the folder move are separate slices.
 
 ## Out of scope
 
-Switch route lists, moving `recovered-source/worker` next to `src/state`, and deleting comments or tests that only restate the code.
+Switch route lists, moving `recovered-source/worker` next to `src/state`, and a repo-wide deletion of restating comments or tests. This slice only removes restating comments beside the lead check and direct publish.

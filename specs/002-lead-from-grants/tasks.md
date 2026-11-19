@@ -25,4 +25,4 @@ T002 after T001. T003 after T002. T004 after T003.
 
 ## Not in this task list
 
-Switch route lists, the folder move, comment deletion, and test deletion.
+Switch route lists, the folder move, and a repo-wide deletion of restating comments or tests. The lead check only drops comments that repeat its code.

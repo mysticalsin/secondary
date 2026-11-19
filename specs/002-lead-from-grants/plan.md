@@ -6,7 +6,7 @@
 
 ## Summary
 
-Mark the two `acme_lead` grants that already confer a decision with `conditions.lead`. `mayDecide` allows a lead when one of those grants covers the node and a standing `edit`, `review`, or `manage_members` check passes. Delete `LEAD_ROLES`. `directPublish` calls `mayDecide` and still applies the stored brain role. It stops reading `can.decide`.
+Mark the two `acme_lead` grants that already confer a decision with `conditions.lead`. `mayDecide` allows a lead when one of those grants covers the node and a standing `edit`, `review`, or `manage_members` check passes. Delete `LEAD_ROLES`. `directPublish` calls `mayDecide` and stops reading `can.decide`. The stored edit check at the end of `directPublish` stays.
 
 ## Technical Context
 
