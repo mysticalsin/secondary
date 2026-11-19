@@ -35,6 +35,7 @@ type Policy = {
     now: number,
     twoPerson: boolean,
   ) => { status: string };
+  exportAll: () => Record<string, unknown>;
   seed: (
     config: { tenantId: string; seed: number; personalOwners: string[] },
     principals: {
@@ -65,7 +66,7 @@ async function token(): Promise<{ jwt: string; jwks: (team: string) => unknown }
 async function policy(
   off: readonly string[],
   seeded = false,
-): Promise<{ binding: unknown; remove: () => void }> {
+): Promise<{ binding: unknown; directory: Policy; remove: () => void }> {
   const dir = mkdtempSync(path.join(tmpdir(), "real-route-"));
   const db = openSqlite(path.join(dir, "tenant.sqlite"));
   const sql = sqliteStorage(db);
@@ -121,10 +122,10 @@ async function policy(
       return object;
     },
   };
-  return { binding, remove: () => rmSync(dir, { recursive: true, force: true }) };
+  return { binding, directory: object, remove: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function workspace(ready: boolean) {
+function workspace(ready: boolean, stored?: { status?: string }) {
   const store = {
     jurisdiction() {
       return store;
@@ -152,7 +153,10 @@ function workspace(ready: boolean) {
                 syncedAt: NOW,
               }
             : null,
-        create: async () => ({ id: "cand:c_delivery:abcd1234", status: "candidate", revision: 1 }),
+        create: async (item: { status?: string }) => {
+          if (stored) stored.status = item.status;
+          return { id: "cand:c_delivery:abcd1234", status: item.status, revision: 1 };
+        },
         addContribution: async () => undefined,
       };
     },
@@ -160,9 +164,13 @@ function workspace(ready: boolean) {
   return store;
 }
 
-function env(binding: unknown, ready = false) {
-  return {
-    ENVIRONMENT: "test",
+function env(
+  binding: unknown,
+  ready = false,
+  opts?: { stored?: { status?: string }; workspace?: unknown; connectorAllowed?: boolean; restore?: boolean },
+) {
+  const bindings: Record<string, unknown> = {
+    ENVIRONMENT: opts?.restore ? "dev" : "test",
     AUTH_MODE: "access",
     ACCESS_TEAM_DOMAIN: TEAM,
     ACCESS_AUD: AUD,
@@ -172,12 +180,17 @@ function env(binding: unknown, ready = false) {
     INTERNAL_HMAC_KEY: MCP_SECRET,
     CONNECTOR_HMAC_KEY: CONNECTOR_SECRET,
     TENANT_POLICY: binding,
-    WORKSPACE: workspace(ready),
     AUDIT: { fetch: async () => new Response(null, { status: 202 }) },
     CONNECTOR: {
-      fetch: async () => Response.json({ results: { [SOURCE_ID]: { allowed: true } } }),
+      fetch: async () =>
+        Response.json({
+          results: { [SOURCE_ID]: { allowed: opts?.connectorAllowed !== false } },
+        }),
     },
   };
+  if (opts?.restore) bindings.RESTORE_ENABLED = "yes";
+  if (opts?.workspace !== null) bindings.WORKSPACE = opts?.workspace ?? workspace(ready, opts?.stored);
+  return bindings;
 }
 
 async function app(jwks: (team: string) => unknown, now?: () => number): Promise<App> {
@@ -192,21 +205,27 @@ async function json(res: Response): Promise<Record<string, unknown>> {
   return JSON.parse(await res.text()) as Record<string, unknown>;
 }
 
-async function signedOps(url: string, secret: string): Promise<Record<string, string>> {
+async function signedOps(
+  url: string,
+  secret: string,
+  init?: { method?: string; body?: string; now?: number },
+): Promise<Record<string, string>> {
   const specifier = new URL("../../packages/contracts/src/ops-auth.ts", import.meta.url).href;
   const ops = (await import(specifier)) as {
     signOpsRequest: (input: {
       secret: string;
       method: string;
       url: string;
+      body?: string;
       now: number;
     }) => Promise<Record<string, string>>;
   };
   return ops.signOpsRequest({
     secret,
-    method: "GET",
+    method: init?.method ?? "GET",
     url,
-    now: Math.floor(Date.now() / 1000),
+    ...(init?.body !== undefined ? { body: init.body } : {}),
+    now: init?.now ?? Math.floor(Date.now() / 1000),
   });
 }
 
@@ -336,9 +355,13 @@ test("internal ops and mcp skip switchGate and answer with their own HMAC", asyn
     const unsignedOps = await api.request(opsUrl, {}, bindings);
     assert.equal(unsignedOps.status, 401);
     assert.equal((await json(unsignedOps)).error, "unauthorized");
-    const doubledOps = await api.request("http://127.0.0.1/v1/internal//ops/targets", {}, bindings);
-    assert.equal(doubledOps.status, 401);
-    assert.equal((await json(doubledOps)).error, "unauthorized");
+    const doubledOps = await api.request(
+      "http://127.0.0.1/v1/internal//ops/targets",
+      { headers: { "Cf-Access-Jwt-Assertion": signed.jwt } },
+      bindings,
+    );
+    assert.equal(doubledOps.status, 404);
+    assert.equal((await json(doubledOps)).error, "not_found");
     const unsignedMcp = await api.request(mcpUrl, {}, bindings);
     assert.equal(unsignedMcp.status, 401);
     assert.equal((await json(unsignedMcp)).error, "unauthorized");
@@ -391,6 +414,7 @@ test("the real handlers return the source and the contribution when the switches
   const api = await app(signed.jwks, () => NOW);
   const held = await policy([], true);
   const seen = captureRoutes();
+  const stored: { status?: string } = {};
   try {
     const auth = { "Cf-Access-Jwt-Assertion": signed.jwt };
     const source = await api.request(
@@ -415,16 +439,157 @@ test("the real handlers return the source and the contribution when the switches
           user_validated: { by: PRINCIPAL, at: new Date(NOW).toISOString(), revision: 1 },
         }),
       },
-      env(held.binding, true),
+      env(held.binding, true, { stored }),
     );
     assert.equal(seen.routes.at(-1), "/v1/personal/items/:id/contribute");
     assert.equal(post.status, 201);
     const made = await json(post);
     assert.equal(made.ok, true);
     assert.equal(made.status, "candidate");
+    assert.equal(stored.status, "candidate");
     assert.equal(typeof made.candidateId, "string");
   } finally {
     seen.restore();
+    held.remove();
+  }
+});
+
+test("a bad ops signature, a stale or missing timestamp, and a different body are rejected", async () => {
+  const signed = await token();
+  const api = await app(signed.jwks);
+  const held = await policy([]);
+  try {
+    const url = "http://127.0.0.1/v1/internal/ops/targets";
+    const bindings = env(held.binding);
+    const bad = await signedOps(url, OPS_SECRET);
+    const sig = Object.keys(bad).find((key) => key.includes("signature"));
+    assert.equal(typeof sig, "string");
+    bad[sig as string] = `v2=${"00".repeat(32)}`;
+    const forged = await api.request(url, { headers: bad }, bindings);
+    assert.equal(forged.status, 401);
+    assert.deepEqual(await json(forged), { error: "unauthorized" });
+
+    const stale = await signedOps(url, OPS_SECRET, { now: Math.floor(Date.now() / 1000) - 120 });
+    const old = await api.request(url, { headers: stale }, bindings);
+    assert.equal(old.status, 401);
+    assert.deepEqual(await json(old), { error: "unauthorized" });
+
+    const bare = await signedOps(url, OPS_SECRET);
+    const stamp = Object.keys(bare).find((key) => key.includes("timestamp"));
+    assert.equal(typeof stamp, "string");
+    delete bare[stamp as string];
+    const missing = await api.request(url, { headers: bare }, bindings);
+    assert.equal(missing.status, 401);
+    assert.deepEqual(await json(missing), { error: "unauthorized" });
+
+    const post = "http://127.0.0.1/v1/internal/ops/retention";
+    const headers = await signedOps(post, OPS_SECRET, { method: "POST", body: "{}" });
+    const swapped = await api.request(
+      post,
+      { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: "{\"no\":true}" },
+      bindings,
+    );
+    assert.equal(swapped.status, 401);
+    assert.deepEqual(await json(swapped), { error: "unauthorized" });
+  } finally {
+    held.remove();
+  }
+});
+
+test("restore requires a signature, refuses while disabled, and accepts the tenant snapshot in dev", async () => {
+  const signed = await token();
+  const api = await app(signed.jwks);
+  const held = await policy([]);
+  try {
+    const url = "http://127.0.0.1/v1/internal/ops/restore?tenant=synthetic&kind=tenant";
+    const body = JSON.stringify({ tables: held.directory.exportAll() });
+    const unsigned = await api.request(
+      url,
+      { method: "POST", headers: { "content-type": "application/json" }, body },
+      env(held.binding),
+    );
+    assert.equal(unsigned.status, 401);
+    assert.deepEqual(await json(unsigned), { error: "unauthorized" });
+
+    const offHeaders = await signedOps(url, OPS_SECRET, { method: "POST", body });
+    const disabled = await api.request(
+      url,
+      { method: "POST", headers: { ...offHeaders, "content-type": "application/json" }, body },
+      env(held.binding),
+    );
+    assert.equal(disabled.status, 403);
+    assert.deepEqual(await json(disabled), { error: "restore_disabled" });
+
+    const onHeaders = await signedOps(url, OPS_SECRET, { method: "POST", body });
+    const restored = await api.request(
+      url,
+      { method: "POST", headers: { ...onHeaders, "content-type": "application/json" }, body },
+      env(held.binding, false, { restore: true }),
+    );
+    assert.equal(restored.status, 200);
+    const done = await json(restored);
+    assert.equal(done.ok, true);
+    assert.equal(typeof done.rows, "number");
+  } finally {
+    held.remove();
+  }
+});
+
+test("a missing workspace binding is internal_error", async () => {
+  const signed = await token();
+  const api = await app(signed.jwks, () => NOW);
+  const held = await policy([], true);
+  try {
+    const res = await api.request(
+      `http://127.0.0.1/v1/sources/${SOURCE_ID}`,
+      { headers: { "Cf-Access-Jwt-Assertion": signed.jwt } },
+      env(held.binding, true, { workspace: null }),
+    );
+    assert.equal(res.status, 500);
+    const body = await json(res);
+    assert.deepEqual(Object.keys(body).sort(), ["error", "requestId"]);
+    assert.equal(body.error, "internal_error");
+    assert.equal(typeof body.requestId, "string");
+  } finally {
+    held.remove();
+  }
+});
+
+test("a connector that denies the file is forbidden", async () => {
+  const signed = await token();
+  const api = await app(signed.jwks, () => NOW);
+  const held = await policy([], true);
+  try {
+    const res = await api.request(
+      `http://127.0.0.1/v1/sources/${SOURCE_ID}`,
+      { headers: { "Cf-Access-Jwt-Assertion": signed.jwt } },
+      env(held.binding, true, { connectorAllowed: false }),
+    );
+    assert.equal(res.status, 403);
+    assert.deepEqual(await json(res), {
+      error: "forbidden",
+      reason: "source permission could not be confirmed",
+    });
+  } finally {
+    held.remove();
+  }
+});
+
+test("a bad HMAC is 401 even with a valid Access token", async () => {
+  const signed = await token();
+  const api = await app(signed.jwks);
+  const held = await policy([]);
+  try {
+    const url = "http://127.0.0.1/v1/internal/ops/targets";
+    const headers = await signedOps(url, OPS_SECRET);
+    const sig = Object.keys(headers).find((key) => key.includes("signature"));
+    assert.equal(typeof sig, "string");
+    headers[sig as string] = `v2=${"11".repeat(32)}`;
+    headers["Cf-Access-Jwt-Assertion"] = signed.jwt;
+    const res = await api.request(url, { headers }, env(held.binding));
+    assert.equal(res.status, 401);
+    assert.deepEqual(await json(res), { error: "unauthorized" });
+  } finally {
     held.remove();
   }
 });
