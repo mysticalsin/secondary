@@ -29,7 +29,11 @@ One entry. Tag `v3`. `new_sqlite_classes` is `TenantPolicy` then `Workspace`. No
 
 ## Asset directory
 
-`deploy/assets/` contains one marker file, `UNREPRODUCED`. It is not a recovered SPA file. The live SPA bytes are not a row in this model.
+`deploy/assets/` contains one marker file, `UNREPRODUCED`. It is not a recovered SPA file. The live SPA bytes are not a row in this model. A path segment that case-folds to `unreproduced` is the same sentinel.
+
+## Upload directory
+
+`deploy/.staged` is the directory named by `assets.directory`. It is not committed. The guard writes the listed source bytes there and hashes those writes. Wrangler reads that directory and no other asset path.
 
 ## Asset manifest
 

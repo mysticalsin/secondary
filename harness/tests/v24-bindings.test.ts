@@ -86,7 +86,7 @@ test("v24 bindings: names, types, and no values", () => {
     run_worker_first: boolean;
     base_path: string;
   };
-  assert.equal(assets.directory.replace(/^\.\//, ""), "deploy/assets");
+  assert.equal(assets.directory.replace(/^\.\//, ""), "deploy/.staged");
   assert.equal(assets.binding, "ASSETS");
   assert.equal(assets.not_found_handling, "single-page-application");
   assert.equal(assets.run_worker_first, true);

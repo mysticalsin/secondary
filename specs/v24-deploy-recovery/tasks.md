@@ -80,6 +80,15 @@
 
 - [x] T012 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. All exit 0. `npm test` is 460 passed and 0 failed. Existing tests stay as they are. Do not run `wrangler deploy`. Covers FR-012, SC-006.
 
+## Phase 10: Close the guard bypasses (Priority: P1)
+
+**Goal**: A direct Wrangler deploy has no staging directory, a case-variant sentinel is refused, and the bytes Wrangler reads are the copies the guard hashed.
+
+**Independent Test**: T013 fails on `da7297c`, then T014 passes. `deploy/assets/` is still only `UNREPRODUCED`.
+
+- [x] T013 [US5] Add the four failing tests in `harness/tests/v24-bindings.test.ts`. `npm run deploy` must be `./deploy.sh` and `deploy/.staged` must be absent. A file named `unreproduced` with its real hash is refused. `assets.directory` of `./deploy/assets` or `../outside` is refused. A matching fixture staged at the directory named in the config keeps those bytes after the source changes, and a later `deploy.sh` does not start Wrangler. Covers FR-006, FR-008, FR-016.
+- [x] T014 [US5] Point `assets.directory` at `deploy/.staged`, gitignore it, and add the npm `deploy` script. The guard reads that directory from the config, copies the listed bytes, and rehashes the copies. `deploy.sh` removes the directory after Wrangler returns. Do not invent UI bytes and do not run Wrangler. Covers FR-006, FR-008, FR-016.
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -97,6 +106,8 @@
 - T010 depends on T009a and must fail before T011.
 - T011 depends on the red run of T010.
 - T012 depends on T011.
+- T013 is a failing test and depends on T012.
+- T014 depends on the red run of T013.
 
 ### Parallel Opportunities
 

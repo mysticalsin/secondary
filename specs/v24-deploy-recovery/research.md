@@ -56,6 +56,14 @@
 
 **Alternatives considered**: Put a guessed `index.html` in `deploy/assets/`. Rejected. The task forbids inventing UI assets. Fetch the live Worker assets. Rejected. This run does not call Cloudflare. Make `--dry-run` refuse while the marker exists. Rejected. The existing dry run is how the bundle was shown to compile, and the new refusal is the real deploy path.
 
+## Decision: stage the bytes Wrangler uploads
+
+**Decision**: `wrangler.jsonc` `assets.directory` is `deploy/.staged`, gitignored, and absent by default. The guard reads that field, refuses it when it is the source tree or escapes the repo, copies the listed `deploy/assets` bytes into it, and hashes the copies. `npm run deploy` is `./deploy.sh`. `deploy.sh` removes the directory after Wrangler returns. A path segment that case-folds to `unreproduced` is refused.
+
+**Rationale**: Direct `wrangler deploy` never called the guard, because the guard and the config were two strings for the same directory. Hashing the source and then letting Wrangler read it again allowed the bytes to change in between. A case-sensitive sentinel name misses the same file on a case-insensitive disk. One upload path, written only by the guard, closes those three.
+
+**Alternatives considered**: Wrap the Wrangler binary so every invocation runs the guard. Rejected. Wrangler can be started by a path the wrapper does not own. Keep `deploy/assets` as the upload directory and only add the npm script. Rejected. `npx wrangler deploy` would still skip the guard.
+
 ## Decision: alias the existing policy adapter
 
 **Decision**: `alias["@secondary/policy"]` is `./harness/adapters/policy-entry.ts`.

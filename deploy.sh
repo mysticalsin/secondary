@@ -14,8 +14,14 @@ if [[ $# -eq 1 ]]; then
   mode="dry-run"
 fi
 node --experimental-strip-types deploy/guard.ts "$mode"
+set +e
 if [[ "$mode" == "dry-run" ]]; then
   export WRANGLER_SEND_METRICS=false
-  exec ./node_modules/.bin/wrangler deploy --dry-run
+  ./node_modules/.bin/wrangler deploy --dry-run
+  status=$?
+else
+  ./node_modules/.bin/wrangler deploy
+  status=$?
 fi
-exec ./node_modules/.bin/wrangler deploy
+node --experimental-strip-types deploy/guard.ts cleanup
+exit "$status"

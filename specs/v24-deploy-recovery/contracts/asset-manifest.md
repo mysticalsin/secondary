@@ -4,7 +4,7 @@
 
 A real deploy (`deploy.sh` with no arguments) checks the asset directory in this order:
 
-1. If `deploy/assets/UNREPRODUCED` exists, the result is `assets-unreproduced`. The process exits 2. The manifest is not consulted.
+1. If any path segment under `deploy/assets` case-folds to `unreproduced`, the result is `assets-unreproduced`. The process exits 2. The manifest is not consulted.
 2. If `MANIFEST.sha256` is absent, the result is `assets-manifest-missing`. The process exits 2.
 3. Otherwise every rule below must hold. A failure is `assets-manifest-mismatch` and exit 2.
 4. When every rule holds, the asset check passes. Exit from the guard is 0. This contract does not start Wrangler.
@@ -25,6 +25,10 @@ A real deploy (`deploy.sh` with no arguments) checks the asset directory in this
 - Every file under `deploy/assets/` other than `MANIFEST.sha256` is listed. Subdirectories are part of the relative path.
 - A symlink, or anything that is not a regular file or a directory, is a mismatch.
 
+## Upload directory
+
+`assets.directory` in `wrangler.jsonc` is the only upload path. In this repo it is `deploy/.staged`. The guard copies the listed files there and hashes the copies. A configured path that is missing, absolute, escapes the repo, or is `deploy/assets` or inside it is `assets-directory-mismatch`.
+
 ## What this repo contains
 
-`deploy/assets/UNREPRODUCED` only. `--dry-run` does not apply this contract.
+`deploy/assets/UNREPRODUCED` only. `deploy/.staged` is gitignored and absent. `--dry-run` does not apply this contract.

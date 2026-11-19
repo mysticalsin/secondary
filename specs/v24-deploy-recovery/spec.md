@@ -27,6 +27,14 @@ Answers below are facts checked against the v24 reference, Wrangler 4.158.0's co
 - Q: When does `deploy.sh` refuse because of assets? → A: Without `--dry-run`, it exits 2 before Wrangler while `deploy/assets/UNREPRODUCED` exists. It also exits 2 when that marker is absent and the manifest is missing, or any listed file is missing or hashes differently, or the directory contains a file the manifest does not name. The guard passes only when the marker is absent and the manifest matches the files. `--dry-run` does not apply this asset check.
 - Q: Where do the pass and fail fixtures live? → A: Only in the test, under a temporary directory. The repo's `deploy/assets/` stays the single marker file. The pass case runs the guard and does not start Wrangler.
 
+### Session 2026-11-19 review
+
+- Q: What does a direct `wrangler deploy` upload? → A: Only `assets.directory` from `wrangler.jsonc`. That field is `deploy/.staged`. It is gitignored and absent unless the guard has just written it. `npm run deploy` is `./deploy.sh`. The guard is the only writer of that directory.
+- Q: Which directory does the guard read? → A: The upload directory comes from `assets.directory` and from nowhere else. `deploy/assets` is the drop-in source, not the upload directory. If the configured directory is missing, absolute, escapes the repo, or is `deploy/assets` or inside it, the result is `assets-directory-mismatch`.
+- Q: How is the check tied to the bytes Wrangler reads? → A: The guard copies the listed source bytes into the configured directory and hashes those copies. Wrangler is started only after that. A later edit to the source is not what those copies contain. `deploy.sh` removes the directory after Wrangler returns.
+- Q: What counts as the unreproduced sentinel? → A: Any path segment that case-folds to `unreproduced`. A file named `unreproduced` is refused even when the manifest lists its real hash.
+- Q: Why is `b15efb94` between the merge and the red test? → A: That commit is the asset-manifest spec. The red test is the next commit, `48daa28`. History is not rewritten.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Binding parity by name (Priority: P1)
@@ -129,6 +137,9 @@ A reviewer can see that `pending_role` and `pending_at` do not require a new Dur
 - A path with an empty, `.`, or `..` segment, a leading slash, a backslash, or a space is a mismatch. So is `MANIFEST.sha256`, `UNREPRODUCED`, or a duplicate path.
 - An empty manifest, a symlink under `deploy/assets/`, and a directory that is not the manifest plus the listed files are mismatches.
 - `--dry-run` does not read the marker or the manifest.
+- A direct Wrangler deploy, while `deploy/.staged` is absent, has no asset directory to upload.
+- `npm run deploy` is `./deploy.sh`. A case-variant of `unreproduced` exits 2.
+- The spec commit `b15efb94` sits between the merge and the red test `48daa28`. It stays in the history.
 
 ## Requirements *(mandatory)*
 
@@ -139,9 +150,9 @@ A reviewer can see that `pending_role` and `pending_at` do not require a new Dur
 - **FR-003**: The nine secret names are `secrets.required` and nowhere else. The config, specs, tests, and logs contain no secret values. No `.dev.vars` file is created.
 - **FR-004**: The eleven plain-text names are a comment in `wrangler.jsonc` and are not given values. The config has no `vars` key. `keep_vars` is true.
 - **FR-005**: `AUDIT` binds to service `secondary-audit-dev`. `CONNECTOR` binds to service `secondary-connector-dev`. `BLOBS` binds to bucket `secondary-blobs-dev` with jurisdiction `eu`. `TENANT_POLICY` and `WORKSPACE` bind to classes `TenantPolicy` and `Workspace`.
-- **FR-006**: The `ASSETS` binding uses directory `deploy/assets`, `not_found_handling` `single-page-application`, `run_worker_first` true, and `base_path` `/`.
+- **FR-006**: The `ASSETS` binding uses directory `deploy/.staged`, `not_found_handling` `single-page-application`, `run_worker_first` true, and `base_path` `/`. That directory is gitignored and absent by default. The drop-in source remains `deploy/assets`.
 - **FR-007**: `migrations` is exactly one object: tag `v3` and `new_sqlite_classes` `["TenantPolicy", "Workspace"]`. The keys `deleted_classes`, `renamed_classes`, `transferred_classes`, and `new_classes` are absent.
-- **FR-008**: `deploy.sh` is the deploy entry. With `--dry-run` it runs local Wrangler `deploy --dry-run` and no `--secrets-file`, and it does not apply the asset check. Without `--dry-run`, while `deploy/assets/UNREPRODUCED` exists, it exits 2 before an upload. It rejects a present `.dev.vars`, a `vars` object, and any migration shape other than FR-007.
+- **FR-008**: `deploy.sh` is the deploy entry, and `npm run deploy` runs it. With `--dry-run` it runs local Wrangler `deploy --dry-run` and no `--secrets-file`, and it does not apply the asset check. Without `--dry-run`, while a `deploy/assets` path segment case-folds to `unreproduced`, it exits 2 before an upload. It rejects a present `.dev.vars`, a `vars` object, and any migration shape other than FR-007.
 - **FR-009**: The graph wrapper serves the eight files and applies the rewrite rules in User Story 2. `deploy/graph-entry.ts` re-exports `recovered-source/worker/src/index.ts` and does not define a second Durable Object class.
 - **FR-010**: The pending-column verdict is no new Durable Object migration and no storage rewrite. This feature does not change `recovered-source/worker/src/brains/store.ts` and does not add a tag other than `v3`.
 - **FR-011**: SPA bytes are not invented, reconstructed, or fetched. `deploy/assets/UNREPRODUCED` remains the only file in that directory. This change does not add `MANIFEST.sha256` to the repo. The unreproduced list in the Assumptions stays in this spec.
@@ -149,6 +160,7 @@ A reviewer can see that `pending_role` and `pending_at` do not require a new Dur
 - **FR-013**: This feature does not deploy, does not merge the pull request, does not force-push, does not push `main`, does not call the Cloudflare API, does not create a paid resource, does not open a tunnel, and does not read an API token. The one merge of main into this branch is the owner's 2026-11-19 instruction.
 - **FR-014**: `workers_dev` is true, `preview_urls` is false, `logpush` is false, and the config has no `routes`, no `account_id`, and no `observability` object.
 - **FR-015**: Without `--dry-run`, `deploy.sh` exits 2 when `deploy/assets/MANIFEST.sha256` is missing, or when any file named there mismatches the rule in `contracts/asset-manifest.md`. The guard passes that check only for a matching manifest and the files it names. The pass case is a temporary fixture. It does not start Wrangler.
+- **FR-016**: On a real deploy the guard reads `assets.directory`, refuses `assets-directory-mismatch` when that value is not a relative upload directory outside `deploy/assets`, copies the listed source bytes into it, and hashes the copies before Wrangler can read them. A source edit after that copy does not change the copies. `deploy.sh` deletes the directory after Wrangler returns. A direct Wrangler deploy, while the directory is absent, has nothing to upload.
 
 ### Key Entities
 

@@ -6,7 +6,7 @@ Names and types only. No plain-text values and no secret values.
 |---|---|---|
 | ACCESS_AUD | plain-text setting | name only |
 | ACCESS_TEAM_DOMAIN | plain-text setting | name only |
-| ASSETS | assets | directory `deploy/assets`, SPA not-found handling, `run_worker_first` true, `base_path` `/` |
+| ASSETS | assets | upload directory `deploy/.staged`, SPA not-found handling, `run_worker_first` true, `base_path` `/` |
 | AUDIT | service | `secondary-audit-dev` |
 | AUDIT_KEY_API | secret | name only |
 | AUDIT_KEY_ERASE | secret | name only |
