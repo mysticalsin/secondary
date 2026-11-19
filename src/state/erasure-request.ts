@@ -83,10 +83,11 @@ export function decodeStepMark(value: unknown): StepMark | null {
 }
 
 const FIXED_STEPS = new Set(["receipts", "tombstone", "personal", "connector", "directory"]);
+const SCOPE_STEP = /^scope:[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
 
-/** A step the erasure plan can name. Company scopes use the `scope:` prefix. */
+/** A step the erasure plan can name: a fixed name, or scope: plus one scope id. */
 function knownErasureStep(id: string): boolean {
-  return FIXED_STEPS.has(id) || (id.startsWith("scope:") && id.length > "scope:".length);
+  return FIXED_STEPS.has(id) || SCOPE_STEP.test(id);
 }
 
 export function absentErasure(): StoredErasure {

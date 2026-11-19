@@ -139,12 +139,34 @@ type MissedCard = {
   role?: BrainRole;
 };
 
+type FlagNode = { restricted?: boolean; nda?: boolean; parentId?: string | null };
+
+/** Own flags, then each ancestor. A missing parent stops the walk. */
+function ancestorFlags(
+  vn: FlagNode | null,
+  nodes: { get(id: string): FlagNode | undefined },
+): { restricted: boolean; nda: boolean } {
+  let restricted = !!vn?.restricted;
+  let nda = !!vn?.nda;
+  let id = vn?.parentId ?? null;
+  for (let hop = 0; id && hop < 12; hop += 1) {
+    const node = nodes.get(id);
+    if (!node) break;
+    restricted ||= !!node.restricted;
+    nda ||= !!node.nda;
+    id = node.parentId ?? null;
+  }
+  return { restricted, nda };
+}
+
 /** A card for a brain that missed the bound. Role is included only when the view already produced it. Template is not: it lives in the workspace this read did not finish. */
 function missedCard(
-  p: { param: string; vn: { kind: string; label: string; restricted?: boolean; nda?: boolean } | null },
+  p: { param: string; vn: { kind: string; label: string } & FlagNode | null },
   brain: Brain | null,
+  nodes: { get(id: string): FlagNode | undefined },
 ): MissedCard {
   const type = p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal");
+  const flags = ancestorFlags(p.vn, nodes);
   const card: MissedCard = {
     id: p.param,
     type,
@@ -153,8 +175,8 @@ function missedCard(
     manages: false,
     restricted: isRestrictedBrain({
       type,
-      restricted: p.vn?.restricted,
-      nda: p.vn?.nda,
+      restricted: flags.restricted,
+      nda: flags.nda,
     }),
     publication: "review",
     pages: 0,
@@ -213,7 +235,7 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
         // type and q apply to a miss as well as a card that arrived. The check is here, after the
         // bound, so a hung workspace cannot skip it.
         if (known ? !keep(known) : !listed(p, query.type, query.q)) return null;
-        if (result === "miss") return missedCard(p, known);
+        if (result === "miss") return missedCard(p, known, requireOrg(sess(c)).nodes);
         return result;
       }),
     );

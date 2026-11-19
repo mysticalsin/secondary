@@ -23,6 +23,8 @@ const OTHER_CIRCLE = "cand:c_eng:abcd1234";
 const NDA_CANDIDATE = "cand:a_calypso:abcd1234";
 const LONG_NODE = `n${"a".repeat(113)}`;
 const LONG_CANDIDATE = `cand:${LONG_NODE}:abcd1234`;
+const OVER_NODE = `n${"b".repeat(120)}`;
+const OVER_CANDIDATE = `cand:${OVER_NODE}:abcd1234`;
 const NOT_FOUND = { error: "not_found" };
 
 const hung = {
@@ -55,7 +57,11 @@ function workspace(name: string) {
     wikiMeta: async () => null,
     wikiHealth: async () => null,
     get: async (id: string) =>
-      id === CANDIDATE || id === OTHER_CIRCLE || id === NDA_CANDIDATE || id === LONG_CANDIDATE
+      id === CANDIDATE ||
+      id === OTHER_CIRCLE ||
+      id === NDA_CANDIDATE ||
+      id === LONG_CANDIDATE ||
+      id === OVER_CANDIDATE
         ? {
             id,
             kind: "candidate",
@@ -124,19 +130,16 @@ type Directory = {
 
 let directory: Directory;
 
-/** Put a 114-character circle on the synthetic org so a 128-character candidate id can name it. */
-async function plantLongNode(): Promise<void> {
+/** Add one circle for this test and return a function that takes it back off the shared org. */
+async function plantCircle(
+  id: string,
+  label: string,
+  flags: { restricted?: boolean; parentId?: string } = {},
+): Promise<() => void> {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
     getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
-      nodes: Map<
-        string,
-        {
-          id: string;
-          childIds: string[];
-          plane: string;
-        }
-      >;
+      nodes: Map<string, { id: string; childIds: string[]; plane: string }>;
     };
   };
   const org = orgMod.getOrg({
@@ -144,26 +147,35 @@ async function plantLongNode(): Promise<void> {
     seed: 20261104,
     personalOwners: [AUTHOR.id],
   });
-  if (org.nodes.has(LONG_NODE)) return;
-  const parent = org.nodes.get("d_amaris");
+  const parentId = flags.parentId ?? "d_amaris";
+  const parent = org.nodes.get(parentId);
   if (!parent) throw new Error("missing department");
-  org.nodes.set(LONG_NODE, {
-    id: LONG_NODE,
-    label: "Synthetic long circle",
-    kind: "circle",
-    plane: parent.plane,
-    parentId: parent.id,
-    childIds: [],
-    dept: parent.id,
-    circle: LONG_NODE,
-    facts: {},
-    leaf: null,
-  } as never);
-  parent.childIds.push(LONG_NODE);
+  if (!org.nodes.has(id)) {
+    org.nodes.set(id, {
+      id,
+      label,
+      kind: "circle",
+      plane: parent.plane,
+      parentId,
+      childIds: [],
+      dept: "d_amaris",
+      circle: id,
+      ...(flags.restricted ? { restricted: true } : {}),
+      facts: {},
+      leaf: null,
+    } as never);
+    parent.childIds.push(id);
+  }
+  return () => {
+    org.nodes.delete(id);
+    const still = org.nodes.get(parentId);
+    if (still) still.childIds = still.childIds.filter((child) => child !== id);
+  };
 }
 
-async function openDirectory(): Promise<{ binding: unknown; remove: () => void }> {
-  await plantLongNode();
+async function openDirectory(
+  extra: { scope_type: "circle"; scope_id: string }[] = [],
+): Promise<{ binding: unknown; remove: () => void }> {
   const made = policy();
   const specifier = new URL("../../src/worker/tenant-policy.ts", import.meta.url).href;
   const mod = (await import(specifier)) as {
@@ -181,7 +193,7 @@ async function openDirectory(): Promise<{ binding: unknown; remove: () => void }
         memberships: [
           { scope_type: "circle", scope_id: "c_delivery" },
           { scope_type: "circle", scope_id: "c_eng" },
-          { scope_type: "circle", scope_id: LONG_NODE },
+          ...extra,
         ],
       },
       {
@@ -364,7 +376,8 @@ test("bad candidate ids share one 404 body", async () => {
 });
 
 test("an author can read a 128-character candidate id", async () => {
-  const held = await openDirectory();
+  const restore = await plantCircle(LONG_NODE, "Synthetic long circle");
+  const held = await openDirectory([{ scope_type: "circle", scope_id: LONG_NODE }]);
   const api = await app();
   try {
     const res = await candidate(api, held.binding, AUTHOR.email, LONG_CANDIDATE);
@@ -378,6 +391,64 @@ test("an author can read a 128-character candidate id", async () => {
       targetNodeId: LONG_NODE,
     });
   } finally {
+    restore();
+    held.remove();
+  }
+});
+
+test("a planted candidate node is gone before the next test", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: { has(id: string): boolean };
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  assert.equal(org.nodes.has(LONG_NODE), false);
+});
+
+test("an id longer than 128 characters is not found even when it names a real node", async () => {
+  assert.equal(OVER_NODE.length > 114, true);
+  assert.equal(OVER_CANDIDATE.length > 128, true);
+  const restore = await plantCircle(OVER_NODE, "Synthetic overlong circle");
+  const held = await openDirectory([{ scope_type: "circle", scope_id: OVER_NODE }]);
+  const api = await app();
+  try {
+    const res = await candidate(api, held.binding, AUTHOR.email, OVER_CANDIDATE);
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), NOT_FOUND);
+  } finally {
+    restore();
+    held.remove();
+  }
+});
+
+test("a missed card under a restricted ancestor is restricted", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { restricted?: boolean }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  assert.equal(org.nodes.has(OVER_NODE), false);
+  const dept = org.nodes.get("d_amaris");
+  if (!dept) throw new Error("missing department");
+  const previous = dept.restricted;
+  dept.restricted = true;
+  const held = await openDirectory();
+  const api = await app({ brainBoundMs: 40 });
+  try {
+    const res = await api.request("http://127.0.0.1/v1/brains", {}, env(held.binding, AUTHOR.email));
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      brains: { id: string; restricted?: boolean; unavailable?: boolean }[];
+    };
+    const card = body.brains.find((b) => b.id === "c_delivery");
+    assert.equal(card?.unavailable, true);
+    assert.equal(card?.restricted, true);
+  } finally {
+    dept.restricted = previous;
     held.remove();
   }
 });
