@@ -504,6 +504,31 @@ test("an NDA on a grandparent reaches both the open card and the missed card", a
   }
 });
 
+test("a missing parent fails closed on both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle("c_gap_hit", "Missing parent hit", { parentId: "c_gap_gone", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_gap_miss", "Missing parent miss", {
+      parentId: "c_gap_gone",
+      linkUnder: "d_amaris",
+    }),
+  );
+  const read = await restrictionOfLeaves(["c_gap_hit", "c_gap_miss"], ["c_gap_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_gap_hit");
+    const miss = read.cards.find((b) => b.id === "c_gap_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
