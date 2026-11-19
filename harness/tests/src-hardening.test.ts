@@ -588,6 +588,32 @@ test("a contacts ancestor restricts both the open card and the missed card", asy
   }
 });
 
+test("an unflagged chain of two hops stays open on the answered card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_open_root", "Open root", { parentId: null, linkUnder: "d_amaris" }));
+  restore.push(
+    await plantCircle("c_open_mid", "Open middle", { parentId: "c_open_root", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_open_hit", "Open hit", { parentId: "c_open_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_open_miss", "Open miss", { parentId: "c_open_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_open_hit", "c_open_miss"], ["c_open_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_open_hit");
+    const miss = read.cards.find((b) => b.id === "c_open_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, false);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, false);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
