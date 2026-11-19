@@ -768,7 +768,7 @@ test("a symlinked graph-route.ts or policy-entry.ts is refused", () => {
   refuseDeploy(policy, "assets-symlink");
 });
 
-test("an unreadable deploy/graph is refused", () => {
+test("an unreadable deploy/graph is refused", { skip: typeof process.getuid === "function" && process.getuid() === 0 ? "root can still read a mode-0 directory" : false }, () => {
   const dir = matchingAssets();
   const graphDir = join(dir, "deploy", "graph");
   mkdirSync(graphDir);

@@ -397,8 +397,9 @@ test("a failed brain list still renders the tree", async () => {
   };
   const dashboard = await load("deploy/graph/dashboard.js.txt", cards, pages, { settle: true, brainsStatus: 500 });
   const graph = await load("deploy/graph/app.js.txt", cards, pages, { settle: true, brainsStatus: 500 });
+  const shown = stringsOf(dashboard.main);
   const problems: string[] = [];
-  if (!dashboard.texts.includes("Kickoff")) problems.push(`dashboard missed the tree ${dashboard.texts.slice(0, 8).join(" | ")}`);
+  if (!shown.includes("Kickoff")) problems.push(`dashboard missed the tree ${shown.slice(0, 8).join(" | ")}`);
   if (dashboard.texts.some((text) => /could not be loaded|sign-in/i.test(text))) problems.push("dashboard treated the brain list as fatal");
   if (dashboard.texts.includes("All brains")) problems.push("dashboard labeled All brains");
   if (graph.value !== "c_delivery") problems.push(`graph selected ${graph.value}`);
