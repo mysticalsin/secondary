@@ -34,6 +34,17 @@ test("decide and direct publish match the table taken from main", async () => {
   const table = await collectLeadTable(mayDecide, directPublish);
   assert.deepEqual(table.mayDecide, fixture.mayDecide);
   assert.deepEqual(table.directPublish, fixture.directPublish);
-  assert.equal(table.mayDecide.length, fixture.mayDecide.length);
-  assert.equal(table.directPublish.length, fixture.directPublish.length);
+  const named = (who: string, node: string) =>
+    table.mayDecide.find((row) => row.who === who && row.node === node);
+  for (const node of ["c_bid", "c_delivery", "c_sales", "a_acme", "pb:u_acme_lead:1", "pb:u_acme_lead:2", "pb:u_acme_lead:3"]) {
+    assert.equal(named("acme_lead+governance_grants", node)?.allowed, true, node);
+  }
+  assert.equal(named("acme_lead+governance_grants", "core")?.allowed, false);
+  for (const node of ["c_bid", "c_sales", "a_acme", "pb:u_acme_lead:1"]) {
+    assert.equal(named("acme_lead+second_role", node)?.allowed, true, node);
+  }
+  for (const node of ["pb:u_acme_lead:1", "pb:u_acme_lead:2", "pb:u_acme_lead:3"]) {
+    assert.equal(named("acme_lead", node)?.allowed, true, node);
+  }
+  assert.equal(named("consultant", "pb:u_consultant:1")?.allowed, false);
 });

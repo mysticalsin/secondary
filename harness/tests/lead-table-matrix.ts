@@ -113,6 +113,12 @@ export async function collectLeadTable(mayDecide: LeadDecide, directPublish: Lea
         actions: ["view_structure", "view_content", "comment", "contribute", "edit"],
         conditions: {},
       },
+      {
+        scope_type: "circle",
+        scope_id: "c_bid",
+        actions: ["view_structure", "view_content", "edit", "review", "manage_members"],
+        conditions: {},
+      },
     ],
   };
   const editedPrincipal = persona("acme_lead");
@@ -121,10 +127,37 @@ export async function collectLeadTable(mayDecide: LeadDecide, directPublish: Lea
     buildOrg({ roles: { ...ROLES, acme_lead: edited } }),
     { now: LEAD_TABLE_NOW },
   );
-  record("acme_lead+edit_c_delivery", editedPrincipal.roleIds, editedPrincipal, editedView);
+  record("acme_lead+governance_grants", editedPrincipal.roleIds, editedPrincipal, editedView);
+
+  const secondRole: Role = {
+    id: "circle_steward",
+    label: "Circle steward",
+    summary: "Edits, reviews, and manages one circle. Not a built-in lead.",
+    grants: [
+      {
+        scope_type: "circle",
+        scope_id: "c_bid",
+        actions: ["view_structure", "view_content", "edit", "review", "manage_members"],
+        conditions: {},
+      },
+    ],
+    exclusions: [],
+    never: [],
+  };
+  const lead = persona("acme_lead");
+  const withSecond: Principal = {
+    ...lead,
+    roleIds: ["acme_lead", "circle_steward"],
+    memberships: lead.memberships,
+  };
+  const secondView = admittedView(
+    withSecond,
+    buildOrg({ roles: { ...ROLES, circle_steward: secondRole } }),
+    { now: LEAD_TABLE_NOW },
+  );
+  record("acme_lead+second_role", withSecond.roleIds, withSecond, secondView);
 
   const consultant = persona("consultant");
-  const lead = persona("acme_lead");
   const both: Principal = {
     ...lead,
     roleIds: ["acme_lead", "consultant"],
@@ -151,7 +184,8 @@ export async function collectLeadTable(mayDecide: LeadDecide, directPublish: Lea
     return { who: id, ids: principal.roleIds, principal };
   });
   callers.push(
-    { who: "acme_lead+edit_c_delivery", ids: editedPrincipal.roleIds, principal: editedPrincipal },
+    { who: "acme_lead+governance_grants", ids: editedPrincipal.roleIds, principal: editedPrincipal },
+    { who: "acme_lead+second_role", ids: withSecond.roleIds, principal: withSecond },
     { who: "acme_lead+consultant", ids: both.roleIds, principal: both },
     { who: "circle_editor", ids: editor.roleIds, principal: editor },
   );

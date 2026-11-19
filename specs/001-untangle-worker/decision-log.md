@@ -100,6 +100,8 @@ The lead mark is not a grant condition. Resending the built-in grants through go
 
 `directPublish` keeps `can.decide` exactly as on main. It does not call `mayDecide`. Devin's pre-merge check on `d9ad3ab1` showed that gating publish on `mayDecide` both blocked a non-lead with `can.decide` true and let `acme_lead` publish with `can.decide` false. Whether publish should ask `mayDecide` is deferred until Tony decides. The stored edit check at the end of `directPublish` stays.
 
+Inspector's review of `a30305a7` is the same decide gap: an `acme_lead` with an extra edit, review, or manage-members grant, or a second role that carries one, was denied, and so was `pb:<id>:n`. Main allows those because the role id is a lead and the standing action check passes. `cc3a0864` restored that loop. The truth table from main `2d61c473` now names the governance-edit grants, the second role, and `pb:u_acme_lead:1`, `:2`, and `:3`.
+
 Comments removed because they only repeated the code:
 
 - The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
