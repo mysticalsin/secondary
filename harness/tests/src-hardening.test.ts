@@ -665,6 +665,86 @@ test("twelve ancestors stay open and thirteen ancestors fail closed", async () =
   }
 });
 
+async function directPublishSkips(vn: {
+  kind: string;
+  parentId: string | null;
+  restricted?: boolean;
+  nda?: boolean;
+  contacts?: boolean;
+}): Promise<boolean> {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => object;
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const binding = {
+    jurisdiction() {
+      return binding;
+    },
+    idFromName: (name: string) => name,
+    get: () => ({ humanIds: async () => [] }),
+  };
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { directPublish } = (await import(openUrl)) as {
+    directPublish: (c: unknown, w: unknown) => Promise<boolean>;
+  };
+  return directPublish(
+    {
+      get: (key: string) =>
+        key === "session"
+          ? {
+              principal: { id: AUTHOR.id, email: AUTHOR.email, tenantId: TENANT },
+              internal: false,
+              tenantId: TENANT,
+              org,
+              ctx: { now: 1 },
+            }
+          : undefined,
+      env: { ENVIRONMENT: "test", TENANT_POLICY: binding },
+    },
+    {
+      personal: false,
+      vn,
+      stub: {
+        brainConfig: async () => ({ publication: "direct" }),
+        brainRoleOf: async () => null,
+      },
+      can: { edit: true, decide: true },
+    },
+  );
+}
+
+test("direct publish waits when an unflagged brain sits under a restricted or contacts ancestor", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle("c_pub_top", "Publish restricted ancestor", { restricted: true, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_pub_mid", "Publish middle", { parentId: "c_pub_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_pub_hit", "Publish hit", { parentId: "c_pub_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_con_top", "Publish contacts ancestor", { contacts: true, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_con_hit", "Publish contacts hit", { parentId: "c_con_top", linkUnder: "d_amaris" }),
+  );
+  try {
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_pub_mid", restricted: false, nda: false }),
+      false,
+    );
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_con_top", restricted: false, nda: false }),
+      false,
+    );
+  } finally {
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
