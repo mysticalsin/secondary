@@ -173,10 +173,21 @@ test("modified arrow keys do not move the graph", async () => {
   assert.deepEqual(prevented, ["ArrowRight"]);
 });
 
+function politeRegions(html: string): string[] {
+  return [...html.matchAll(/<[^>]*\baria-live="polite"[^>]*>/g)].map((match) => match[0]);
+}
+
+test("the page has one polite live region and it is the hidden selection title", () => {
+  assert.deepEqual(politeRegions(page), ['<p id="graph-selection" class="sr" aria-live="polite">']);
+});
+
 test("the graph name has no key tutorial and announces the selected page", async () => {
   const canvas = page.match(/<canvas\b[^>]*>/)?.[0] || "";
   const label = canvas.match(/aria-label="([^"]*)"/)?.[1] || "";
   assert.equal(/\b(arrow|enter|key|keyboard)\b/i.test(label), false, label);
+  const selection = page.match(/<p\b[^>]*\bid="graph-selection"[^>]*>/)?.[0] || "";
+  assert.match(selection, /\baria-live="polite"/, selection || "missing #graph-selection");
+  assert.equal(politeRegions(page).length, 1, politeRegions(page).join("\n"));
   const sandbox: Record<string, unknown> = {
     console, URL, Response, Headers, setTimeout, clearTimeout, queueMicrotask, TextEncoder, Math, Date, JSON,
     Object, Array, Map, Set, WeakMap, Promise, Number, String, Boolean, RegExp, Error, TypeError, Symbol,
@@ -198,7 +209,14 @@ test("the graph name has no key tutorial and announces the selected page", async
     },
   };
   const context = createContext(sandbox);
-  runInContext(PRELUDE, context);
+  const prelude = PRELUDE.replace(
+    "querySelector: (sel) => element(String(sel).replace(/^#/, \"\")),",
+    "querySelector: (sel) => { const id = String(sel).replace(/^#/, \"\"); if (id === \"graph-selection\") return elements[\"graph-selection\"] || null; return element(id); },",
+  );
+  runInContext(prelude, context);
+  if (/\baria-live="polite"/.test(selection)) {
+    runInContext("(() => { const live = element(\"graph-selection\"); live.setAttribute(\"aria-live\", \"polite\"); })()", context);
+  }
   runInContext(readFileSync(join(repo, "deploy/graph/app.js.txt"), "utf8"), context);
   const elements = sandbox.__elements as Record<string, { textContent?: string; listeners?: Record<string, (event: { key: string; preventDefault: () => void }) => void> }>;
   const deadline = Date.now() + 1500;
