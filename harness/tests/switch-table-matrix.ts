@@ -24,6 +24,17 @@ export const SWITCH_PATHS: { method: string; path: string }[] = [
   { method: "GET", path: "/sources/s1" },
   { method: "GET", path: "/v1/map" },
   { method: "POST", path: "/v1/admin/switches" },
+  { method: "POST", path: "/v1/personal/items/pi:abcd1234/contribute/" },
+  { method: "GET", path: "/v1/sources/s1/" },
+  { method: "GET", path: "/v1/Sources/s1" },
+  { method: "GET", path: "/V1/sources/s1" },
+  { method: "GET", path: "/v1/%73ources/s1" },
+  { method: "GET", path: "/v1//sources/s1" },
+  { method: "GET", path: "/v1/sources/s1?x=1" },
+  { method: "HEAD", path: "/v1/sources/s1" },
+  { method: "OPTIONS", path: "/v1/sources/s1" },
+  { method: "GET", path: "/v1x/sources/s1" },
+  { method: "GET", path: "/v10/sources/s1" },
 ];
 
 const allOn = (): Switches => ({ mcp: true, connector: true, ai: true, contribute: true });
@@ -71,7 +82,8 @@ export async function collectSwitchTable(): Promise<SwitchRow[]> {
       app.all("*", (c) => c.json({ ok: true }));
       for (const route of SWITCH_PATHS) {
         const res = await app.request(`http://127.0.0.1${route.path}`, { method: route.method });
-        const body = (await res.json()) as unknown;
+        const text = await res.text();
+        const body = text.length ? (JSON.parse(text) as unknown) : null;
         rows.push({
           method: route.method,
           path: route.path,

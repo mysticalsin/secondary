@@ -115,6 +115,14 @@ Comments removed because they only repeated the code:
 - The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
 - The `directPublish` note said the mode must be direct and the caller must be allowed to edit. Those are the `publication` and `can.edit` checks. It also said publish asks the stored brain role, which this function does not do.
 
+## Switch follow-up
+
+PR #9 merged as `8c2ede3`. The table still matches the first HTTP row, so a later overlapping row that is off would be skipped. This follow-up refuses when any matching row is off. Today's rows are disjoint, so the 228 answers from main `8d8ab548` stay.
+
+The disjoint test now walks a probe list stored on every HTTP row. A row with no probe fails. A probe that another row also matches fails. The eight handler keys each resolve to a row; removing `sharepoint` fails that test and no other test in the file.
+
+These paths were pinned on that head to the matcher as it stood: a trailing slash on contribute is not that row, a trailing slash on `/v1/sources/s1/` is the connector row, `/v1/Sources/s1` and `/V1/sources/s1` are not, `/v1//sources/s1` is not, a query string on `/v1/sources/s1` is the connector row, HEAD and OPTIONS on that path are the connector row, and `/v1x/sources/s1` and `/v10/sources/s1` are not. `/v1/%73ources/s1` was not a connector row there, because the gate read the encoded pathname. After this branch merges that main, the same row is 503 when the connector switch is off.
+
 ## Encoded source path
 
 `switchGate` used to read `new URL(c.req.url).pathname`. On Hono `4.13.17` that pathname keeps `%73`, so `/v1/%73ources/s1` did not match the connector row, while Hono routed it to `GET /sources/:id`. The gate now matches `c.req.path`, the path Hono already used to choose the route. An encoded path for a switched-off route is 503. A percent sequence `decodeURI` rejects (`%`, `%ZZ`, `%C0%80`) is 400 `{ error: "bad_request" }` and does not continue. A valid encoding of a path that is not a kill-switch row still continues: `/v1/%6dap` reaches `/v1/map`.
