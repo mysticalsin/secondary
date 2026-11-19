@@ -174,3 +174,9 @@ The intake archive is still 99 Worker files plus 18 shared-package files, 117 in
 Nothing in those notes was deleted. The sentences that pointed the old 99 at `src/worker` were rewritten.
 
 The MCP allowlist call site still passes `new URL(c.req.url).pathname`. The pin now also rejects `decodeURI`, `unescape`, `toLowerCase`, `c.req.path`, and `replace(` in that call. A signed-request test of `authenticate` is deferred. Reaching that line needs a signed internal principal, a replay store, and a tenant session. That is a later test, not this docs pass. The allowlist function itself is already pinned: an encoded path is `no`.
+
+## Switch path variants
+
+Tony, via Jarvis: "A, make the switches catch those variants too." The unmatched forms recorded here are `/v1/ai` with no further slash, `/v1/sources` with no id, and a trailing slash on `/v1/personal/items/:id/contribute`. The same rule covers `/v1/connectors`, because a prefix row matches the prefix or `prefix/…` with no extra case for one name. Percent-encoding and letter case go through that one path. `%2F`, a double slash, `/v1x`, and `/v10` stay unmatched. Publish and the Backlog folder download stay as they are. `auth.ts` and `isImport` stay on the raw pathname.
+
+Tracked, and not this change: a signed `authenticate` request that proves the MCP call site. The string pin cannot see a rewrite that avoids those spellings. Inspector's evasion list for that call is `decodeURI`, `decodeURIComponent`, `unescape`, `toLowerCase`, `toUpperCase`, a trailing-slash `replace` or `slice`, and reading `c.req.path` instead of the raw pathname. A helper with another name would slip the string pin. The signed request is what would catch that helper.
