@@ -28,7 +28,7 @@
   "src/worker/observe.ts": "b73a384af81adc5e84e619d92e5a1f1cc40efd2c553bd583c0b577b101f6dae3",
   "src/worker/ops-admin.ts": "af36b9797b8cfec61d3adedc760b50cd99a945e87eece4fb4b87e82a649aa1b6",
   "src/worker/ops-internal.ts": "2c6d9f9c4f0e7fb655c703141954b73d1df8d511237319fccc20f5cd8d78cfb3",
-  "src/worker/ops-rights.ts": "409c81edccce10def83895467336a94cb8cf8f63418822ba0bf45011c35cc2e0",
+  "src/worker/ops-rights.ts": "bb9afbacbe1c15c9e95369ad7795fe3c96490dd7f6b115cc2f2bd84d49b6bf32",
   "src/worker/org.ts": "85e56620309d5181ed972cf43294557dbce34dfdf501782e630c45e465f41293",
   "src/worker/replay.ts": "1b26e087d6901fb74dfc153f3d4c681e1174d08d01a2d475bed7d6ec87af4da0",
   "src/worker/routes.ts": "5b0f392c17787ad0e0320963b17ed57a087b9d07cc7c2f35b7c0810416ce6a70",

@@ -142,6 +142,13 @@ export type EraseSummary = {
 
 export type ErasureRun = EraseSummary & { status: string; step: string | null };
 
+/** A scope step the runner may touch: an anchored scope id that this tenant's plan already names. */
+export function runnerScopeId(step: string, planned: ReadonlySet<string>): string | null {
+  const scopeId = scopeIdOfStep(step);
+  if (!scopeId || !planned.has(scopeId)) return null;
+  return scopeId;
+}
+
 async function runErasure(
   env: Parameters<typeof exportSubject>[0],
   tenantId: string,
@@ -149,6 +156,7 @@ async function runErasure(
   pseudonym: string,
   aliases: string[],
   email: string | null,
+  planned: ReadonlySet<string>,
   event: ErasureEvent,
 ): Promise<ErasureRun | PseudonymRefusal> {
   const key = await pseudonymKey(env, tenantId, principalId);
@@ -195,7 +203,7 @@ async function runErasure(
         await tenant.erasePrincipal(principalId, pseudonym);
         return true;
       }
-      const scopeId = scopeIdOfStep(step);
+      const scopeId = runnerScopeId(step, planned);
       if (scopeId) {
         const r = await workspaceStub(env, tenantId, scopeId).pseudonymise(
           principalId,
@@ -236,7 +244,7 @@ export async function eraseSubject(
   const email = await tenantStub(env, tenantId).emailOfPrincipal(principalId);
   const folded = email ? normalEmail(email) : null;
   const aliases = email ? [...new Set([email, ...(folded ? [folded] : [])])] : [];
-  return runErasure(env, tenantId, principalId, pseudonym, aliases, email, {
+  return runErasure(env, tenantId, principalId, pseudonym, aliases, email, new Set(companyScopes(org)), {
     type: "request",
     now,
     steps: erasurePlan(companyScopes(org)),
@@ -274,7 +282,9 @@ export async function reapplyErasures(
     const steps = wanted.filter((step) => grant.steps.includes(step));
     if (steps.length === 0) continue;
     const email = await t.emailOfPrincipal(s.principalId);
-    const outcome = await runErasure(env, tenantId, s.principalId, s.pseudonym, s.aliases, email, {
+    const planned = new Set<string>();
+    if (kind === "workspace" && !scope.startsWith("personal:")) planned.add(scope);
+    const outcome = await runErasure(env, tenantId, s.principalId, s.pseudonym, s.aliases, email, planned, {
       type: "restore",
       now,
       steps,

@@ -18,6 +18,7 @@ const STRANGER = { id: "u_reviewer", email: "reviewer@synthetic.example" };
 const REVIEWER = { id: "u_content_reviewer", email: "content-reviewer@synthetic.example" };
 const ADMIN = { id: "u_platform_admin", email: "platform_admin@synthetic.example" };
 const LEAD = { id: "u_acme_lead", email: "acme@synthetic.example" };
+const BID = { id: "u_head_bid", email: "head_bid@synthetic.example" };
 const CANDIDATE = "cand:c_delivery:abcd1234";
 const OTHER_CIRCLE = "cand:c_eng:abcd1234";
 const NDA_CANDIDATE = "cand:a_calypso:abcd1234";
@@ -25,6 +26,10 @@ const LONG_NODE = `n${"a".repeat(113)}`;
 const LONG_CANDIDATE = `cand:${LONG_NODE}:abcd1234`;
 const OVER_NODE = `n${"b".repeat(120)}`;
 const OVER_CANDIDATE = `cand:${OVER_NODE}:abcd1234`;
+const EDGE_NODE = `n${"c".repeat(114)}`;
+const EDGE_CANDIDATE = `cand:${EDGE_NODE}:abcd1234`;
+const HIDDEN_NODE = "c_hidden_author";
+const HIDDEN_CANDIDATE = "cand:c_hidden_author:abcd1234";
 const NOT_FOUND = { error: "not_found" };
 
 const hung = {
@@ -55,15 +60,31 @@ function workspace(name: string) {
         hung.release.set(name, resolve);
       });
     },
-    brainConfig: async () => ({ template: null, publication: "review", everyone: null, fields: [] }),
+    brainConfig: async () => ({
+      template: null,
+      publication: name.includes("c_bid") ? "direct" : "review",
+      everyone: null,
+      fields: [],
+    }),
     wikiMeta: async () => null,
     wikiHealth: async () => null,
+    wikiTouch: async () => {},
+    wikiSchema: async () => ({ types: { topic: { label: "Topic" } } }),
+    wikiPage: async () => null,
+    wikiPropose: async (_proposal: unknown, _author: string, _now: number, opts?: { publishDirect?: boolean }) => ({
+      ok: true,
+      created: true,
+      id: "prop-synthetic",
+      autoAccepted: opts?.publishDirect === true,
+    }),
     get: async (id: string) =>
       id === CANDIDATE ||
       id === OTHER_CIRCLE ||
       id === NDA_CANDIDATE ||
       id === LONG_CANDIDATE ||
-      id === OVER_CANDIDATE
+      id === OVER_CANDIDATE ||
+      id === EDGE_CANDIDATE ||
+      id === HIDDEN_CANDIDATE
         ? {
             id,
             kind: "candidate",
@@ -230,6 +251,12 @@ async function openDirectory(
         email: LEAD.email,
         roleIds: ["acme_lead"],
         memberships: [{ scope_type: "account", scope_id: "a_acme" }],
+      },
+      {
+        id: BID.id,
+        email: BID.email,
+        roleIds: ["head_bid"],
+        memberships: [{ scope_type: "circle", scope_id: "c_bid" }],
       },
     ],
     1_700_000_000_000,
@@ -401,6 +428,43 @@ test("an author can read a 128-character candidate id", async () => {
       revision: 1,
       targetNodeId: LONG_NODE,
     });
+  } finally {
+    restore();
+    held.remove();
+  }
+});
+
+test("a 129-character candidate id is not found and a 128-character id is", async () => {
+  assert.equal(LONG_CANDIDATE.length, 128);
+  assert.equal(EDGE_CANDIDATE.length, 129);
+  const restoreLong = await plantCircle(LONG_NODE, "Synthetic long circle");
+  const restoreEdge = await plantCircle(EDGE_NODE, "Synthetic edge circle");
+  const held = await openDirectory([
+    { scope_type: "circle", scope_id: LONG_NODE },
+    { scope_type: "circle", scope_id: EDGE_NODE },
+  ]);
+  const api = await app();
+  try {
+    const kept = await candidate(api, held.binding, AUTHOR.email, LONG_CANDIDATE);
+    assert.equal(kept.status, 200);
+    const edge = await candidate(api, held.binding, AUTHOR.email, EDGE_CANDIDATE);
+    assert.equal(edge.status, 404);
+    assert.deepEqual(await edge.json(), NOT_FOUND);
+  } finally {
+    restoreEdge();
+    restoreLong();
+    held.remove();
+  }
+});
+
+test("the author of a candidate on a node they cannot view gets 404", async () => {
+  const restore = await plantCircle(HIDDEN_NODE, "Hidden author circle");
+  const held = await openDirectory();
+  const api = await app();
+  try {
+    const res = await candidate(api, held.binding, AUTHOR.email, HIDDEN_CANDIDATE);
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), NOT_FOUND);
   } finally {
     restore();
     held.remove();
@@ -745,6 +809,73 @@ test("direct publish still publishes an unflagged chain that ends at the hop cap
   }
 });
 
+test("proposing under a restricted ancestor stays a candidate and an unflagged brain publishes", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { restricted?: boolean }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const parent = org.nodes.get("d_amaris");
+  if (!parent) throw new Error("missing department");
+  const previous = parent.restricted;
+  const held = await openDirectory();
+  const api = await app();
+  const post = (email: string) =>
+    api.request(
+      "http://127.0.0.1/v1/wiki/c_bid/propose",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "Synthetic page", markdown: "Hello" }),
+      },
+      {
+        ...env(held.binding, email),
+        AUDIT: { fetch: async () => new Response(null, { status: 202 }) },
+      },
+    );
+  try {
+    parent.restricted = true;
+    const heldBack = await post(BID.email);
+    assert.equal(heldBack.status, 201);
+    assert.equal(((await heldBack.json()) as { status?: string }).status, "candidate");
+    parent.restricted = false;
+    const published = await post(BID.email);
+    assert.equal(published.status, 201);
+    assert.equal(((await published.json()) as { status?: string }).status, "published");
+  } finally {
+    parent.restricted = previous;
+    held.remove();
+  }
+});
+
+test("a stored direct publication publishes again when the ancestor flag is cleared", async () => {
+  const restore = await plantCircle("c_flip_top", "Flip ancestor", { restricted: true, linkUnder: "d_amaris" });
+  try {
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_flip_top", restricted: false, nda: false }),
+      false,
+    );
+    const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+    const orgMod = (await import(specifier)) as {
+      getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+        nodes: Map<string, { restricted?: boolean }>;
+      };
+    };
+    const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+    const node = org.nodes.get("c_flip_top");
+    if (!node) throw new Error("missing flip ancestor");
+    node.restricted = false;
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_flip_top", restricted: false, nda: false }),
+      true,
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("a parent cycle and a self-parent are restricted by the hop cap", async () => {
   const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { restrictionOf } = (await import(openUrl)) as {
@@ -913,6 +1044,14 @@ test("a closed card under a restricted ancestor is restricted", async () => {
     const card = body.brains.find((b) => b.id === "d_amaris");
     assert.equal(card?.canOpen, false);
     assert.equal(card?.restricted, true);
+    assert.deepEqual(Object.keys(card ?? {}).sort(), [
+      "canOpen",
+      "canRequestAccess",
+      "id",
+      "name",
+      "restricted",
+      "type",
+    ]);
   } finally {
     dept.parentId = previous;
     restore();

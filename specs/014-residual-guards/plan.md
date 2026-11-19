@@ -60,6 +60,28 @@ How many current brains change publish path: not measured. No private vault data
 
 Contacts restrict their descendants because the open card already counts `contacts` as restricted, and spec 014 takes Sentinel X-2 / Y-1 as the residual ruling that the other readers use that same rule instead of a second walk. The decision log states the result: a contacts ancestor does not skip review.
 
+## Flag consumers
+
+`isRestrictedBrain`, `effectivePublication`, `everyoneBound` and `publicationBound` read `BrainFacts` after `restrictionOf`. Brain config (`routes.ts`, the publication block) reads those facts, not the raw node flags. Direct `.restricted`, `.nda` and `.contacts` reads are pinned in `harness/tests/flag-reads.txt`. A new one fails `a new direct flag read is listed before it lands`.
+
+`underRestriction` does not treat contacts. That file is intake bytes. The Everyone-open lift of a child under a contacts ancestor stays as it is, and `a contacts ancestor does not block the everyone-open lift` locks it. `restrictionOf` does treat contacts, which is the badge and the publish decision.
+
+## Named mutants
+
+| Guard | Mutant | Test |
+|---|---|---|
+| Missing parent | `nodes.get` returns undefined and the walk continues | `a missing parent fails closed on both the open card and the missed card` |
+| Cap | the final return uses the accumulated flags | `a parent cycle and a self-parent are restricted by the hop cap` |
+| Contacts or NDA dropped | the walk does not OR `contacts` or `nda` | `a contacts ancestor restricts both the open card and the missed card` and `an NDA on a grandparent reaches both the open card and the missed card` |
+| Null node | `restrictionOf(null)` returns open for a company brain | `a non-personal brain with no view node is restricted` |
+| Own flags only | `directPublish` uses `vn.restricted` and `vn.nda` | `direct publish waits when an unflagged brain sits under a restricted or contacts ancestor` |
+| Hop off-by-one | cap 11, and cap 13 | `twelve ancestors ending on null are open and thirteen are restricted` |
+| Erasure grammar | `startsWith("scope:")` in `scopeIdOfStep` or in `runnerScopeId` | `erasure request drops a scope step that is not an anchored match` and `the runner refuses a prefix and a scope the tenant did not plan` |
+
+## Not in this pull request
+
+Refusing a whole erasure when one scope id is bad, instead of dropping that step, and a repair for old rows that are now unreadable, change the erasure machine and stored ledgers. They are split out. The runner already refuses a scope the tenant plan did not name, including `scope:personal:<id>` and `scope:global` when those are not in the plan.
+
 ## Security & data
 
 Wrong keys, replays, and tampered queries stay 401. A second tenant cannot read the first tenant's candidate. No live token or cookie is written.

@@ -38,6 +38,20 @@ test("ancestor walks stay inside restrictionOf and underRestriction", () => {
   assert.deepEqual(found.sort(), [...ALLOWED].sort());
 });
 
+test("a new direct flag read is listed before it lands", () => {
+  const hits: string[] = [];
+  for (const dir of ["src", "packages/policy/src"]) {
+    for (const full of filesUnder(path.join(root, dir))) {
+      const rel = path.relative(root, full).split(path.sep).join("/");
+      for (const line of readFileSync(full, "utf8").split("\n")) {
+        if (/\.(restricted|nda|contacts)\b(?!\s*\()/.test(line)) hits.push(`${rel} | ${line.trim()}`);
+      }
+    }
+  }
+  const pinned = readFileSync(path.join(root, "harness/tests/flag-reads.txt"), "utf8").trim().split("\n");
+  assert.deepEqual(hits.sort(), pinned);
+});
+
 test("erasure scope matching does not use a prefix", () => {
   const rights = readFileSync(path.join(root, "src/worker/ops-rights.ts"), "utf8");
   const request = readFileSync(path.join(root, "src/state/erasure-request.ts"), "utf8");
