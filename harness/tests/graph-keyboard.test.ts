@@ -172,3 +172,46 @@ test("modified arrow keys do not move the graph", async () => {
   assert.equal(elements["panel-title"].textContent, "My Secondary");
   assert.deepEqual(prevented, ["ArrowRight"]);
 });
+
+test("the graph name has no key tutorial and announces the selected page", async () => {
+  const canvas = page.match(/<canvas\b[^>]*>/)?.[0] || "";
+  const label = canvas.match(/aria-label="([^"]*)"/)?.[1] || "";
+  assert.equal(/\b(arrow|enter|key|keyboard)\b/i.test(label), false, label);
+  const sandbox: Record<string, unknown> = {
+    console, URL, Response, Headers, setTimeout, clearTimeout, queueMicrotask, TextEncoder, Math, Date, JSON,
+    Object, Array, Map, Set, WeakMap, Promise, Number, String, Boolean, RegExp, Error, TypeError, Symbol,
+    parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
+    fetch: async (input: string | URL) => {
+      const url = new URL(String(input), "http://127.0.0.1");
+      if (url.pathname === "/v1/brains") return Response.json({ brains: [{ id: "me", name: "My Secondary", pages: 2 }] });
+      if (url.pathname === "/v1/brain/tree") {
+        return Response.json({
+          roots: [{
+            id: "me",
+            label: "My Secondary",
+            access: "full",
+            children: [{ id: "me#Notes", label: "Notes", children: [{ id: "me/alpha", label: "Alpha" }] }],
+          }],
+        });
+      }
+      return new Response("no", { status: 404, headers: { "content-type": "text/plain" } });
+    },
+  };
+  const context = createContext(sandbox);
+  runInContext(PRELUDE, context);
+  runInContext(readFileSync(join(repo, "deploy/graph/app.js.txt"), "utf8"), context);
+  const elements = sandbox.__elements as Record<string, { textContent?: string; listeners?: Record<string, (event: { key: string; preventDefault: () => void }) => void> }>;
+  const deadline = Date.now() + 1500;
+  while (Date.now() < deadline && !/note/.test(elements.stats?.textContent || "")) {
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+  const handler = elements.graph.listeners?.keydown;
+  assert.equal(typeof handler, "function");
+  const press = (key: string) => handler?.({ key, preventDefault() {} });
+  press("ArrowRight");
+  assert.equal(elements["graph-selection"]?.textContent, "My Secondary");
+  press("ArrowRight");
+  assert.equal(elements["graph-selection"]?.textContent, "Notes");
+  press("ArrowDown");
+  assert.equal(elements["graph-selection"]?.textContent, "Alpha");
+});
