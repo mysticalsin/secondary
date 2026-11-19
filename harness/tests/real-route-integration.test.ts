@@ -355,6 +355,9 @@ test("internal ops and mcp skip switchGate and answer with their own HMAC", asyn
     const unsignedOps = await api.request(opsUrl, {}, bindings);
     assert.equal(unsignedOps.status, 401);
     assert.equal((await json(unsignedOps)).error, "unauthorized");
+    const doubledAnon = await api.request("http://127.0.0.1/v1/internal//ops/targets", {}, bindings);
+    assert.equal(doubledAnon.status, 401);
+    assert.deepEqual(await json(doubledAnon), { error: "unauthorized" });
     const doubledOps = await api.request(
       "http://127.0.0.1/v1/internal//ops/targets",
       { headers: { "Cf-Access-Jwt-Assertion": signed.jwt } },

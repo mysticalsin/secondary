@@ -11,7 +11,7 @@
 - `GET /v1/sources/:id` with a real session and no workspace binding is 500 `{ error: "internal_error" }`.
 - The same route, when the connector answers `allowed: false`, is 403 `{ error: "forbidden", reason: "source permission could not be confirmed" }`.
 - A contribution records `status: "candidate"` on the workspace object the handler passed to `create`, not only in the JSON.
-- `GET /v1/internal/ops/targets` with a valid Access token and a bad HMAC is 401. That 401 is the HMAC check. `GET /v1/internal//ops/targets` with a valid Access token is 404, because that path never reaches the ops HMAC middleware.
+- `GET /v1/internal/ops/targets` with a valid Access token and a bad HMAC is 401. That 401 is the HMAC check. `GET /v1/internal//ops/targets` with no credentials is 401 from `authenticate`. The same path with a valid Access token is 404 from the v1 catch-all, whatever the HMAC, because it never reaches the ops middleware.
 
 ## What stays
 
