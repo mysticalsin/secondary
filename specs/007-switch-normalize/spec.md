@@ -10,16 +10,16 @@ When the matching switch is off, these are 503 `{ error: "switched_off", switch:
 
 - The path with no further segment: `/v1/ai`, `/v1/sources`, and `/v1/connectors`.
 - The same path with a trailing slash.
-- The contribute path with a trailing slash.
+- The contribute path with a trailing slash, including more than one slash (`/contribute//`, `/v1/genui/plan//`).
 - Those paths with percent-encoding, and with a different letter case.
 
-One function normalizes the path. The rows do not each special-case a variant.
+One function normalizes the path: lower case, then every trailing slash. A prefix matches that path or `prefix/…`. It does not match a longer sibling such as `/v1/aix`. The rows do not each special-case a variant.
 
 A percent sequence `decodeURI` rejects stays 400 `{ error: "bad_request" }`.
 
 ## Behaviour that stays
 
-`/v1x`, `/v10`, a double slash (`/v1//sources/s1`), and `%2F` are not extra slashes. `%2573` is not decoded twice. GET of the contribute path is not the contribute row. Publish still reads `can.decide`. The Backlog folder download is unchanged. `auth.ts` and `isImport` still read the raw pathname.
+`/v1x`, `/v10`, an interior double slash (`/v1//sources/s1`), and `%2F` / `%2f` are not extra slashes. `%2573` is not decoded twice. A dot segment that the URL parser collapses onto a switched path is that path; one that leaves the prefix is not. Unicode letter case that `toLowerCase` does not fold onto the ASCII prefix stays open. GET of the contribute path is not the contribute row. A bad percent sequence stays 400. Publish still reads `can.decide`. The Backlog folder download is unchanged. `auth.ts` and `isImport` still read the raw pathname.
 
 ## Independent test
 

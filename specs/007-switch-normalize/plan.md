@@ -5,7 +5,7 @@
 ## Steps
 
 1. Tests for each recorded variant in plain, percent-encoded, and mixed-case form. They fail on main.
-2. `normalizedSwitchPath` lowercases and drops one trailing slash. Every prefix row matches the prefix itself or `prefix/…`. `switchGate` still returns 400 when `decodeURI` throws, then matches the normalized path.
+2. `normalizedSwitchPath` lowercases and drops every trailing slash. Every prefix row matches the prefix itself or `prefix/…`, not a longer sibling. `switchGate` still returns 400 when `decodeURI` throws, then matches the normalized path.
 3. Regenerate the pinned switch table for the rows whose status changes.
 
 ## Security & data
