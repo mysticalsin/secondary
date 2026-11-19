@@ -75,6 +75,9 @@ const PATCHED_RECOVERED = new Set<string>([
   "src/worker/brains/open.ts",
 ]);
 
+/** Hashed here, and not an intake file, so it stays out of PATCHED_RECOVERED. */
+const EXTRA_PINS = ["src/state/erasure-request.ts"];
+
 function sha256(file: string): string {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
 }
@@ -200,8 +203,16 @@ test("every recovered file matches the manifest, and nothing else is in recovere
     readFileSync(new URL("./patched-sha256.json", import.meta.url), "utf8"),
   ) as Record<string, string>;
   const patched = [...new Set(PATCHED_RECOVERED)].sort();
-  assert.deepEqual(Object.keys(pinned).sort(), patched);
-  for (const rel of patched) assert.equal(sha256(path.join(root, rel)), pinned[rel], rel);
+  const pinnedKeys = [...patched, ...EXTRA_PINS].sort();
+  assert.deepEqual(Object.keys(pinned).sort(), pinnedKeys);
+  for (const rel of pinnedKeys) assert.equal(sha256(path.join(root, rel)), pinned[rel], rel);
+  for (const rel of EXTRA_PINS) {
+    assert.equal(PATCHED_RECOVERED.has(rel), false, rel);
+    const manifestPath = rel.startsWith("src/worker/")
+      ? `${WORKER_PREFIX}${rel.slice("src/worker/".length)}`
+      : rel;
+    assert.equal(expected.has(manifestPath), false, rel);
+  }
 
   const present = recoveredWalk();
   const stayed = [...expected].filter((rel) => !rel.startsWith(WORKER_PREFIX));
