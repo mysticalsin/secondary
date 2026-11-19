@@ -52,8 +52,6 @@ import { ensureWikiSeed } from "./wiki/seed.ts";
 import { isWikiKind } from "./wiki/types.ts";
 import type { Fail, ItemRecord, UserValidated } from "./workspace.ts";
 
-export const VERSION = "0.1.0";
-
 type C = Context<AppEnv>;
 
 const NODE_ID = /^[a-z0-9][a-z0-9_.:-]{0,127}$/;
@@ -404,7 +402,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
   v1.use("*", limitBody, mutationGuard);
 
   // Unauthenticated: liveness only, no data.
-  v1.get("/health", (c) => c.json({ ok: true, env: c.env.ENVIRONMENT, version: VERSION }));
+  v1.get("/health", (c) => c.json({ ok: true }));
 
   // Readiness: Durable Object and R2 reachability. No data, no identity, answers are cached for 5 s.
   v1.get("/ready", async (c) => {
