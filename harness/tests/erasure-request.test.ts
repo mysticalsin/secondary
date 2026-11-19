@@ -211,7 +211,10 @@ test("erasure request stores a known scope and drops a step the grammar rejects"
   assert.equal(scopeIdOfStep("scope:c_delivery\n"), null);
   assert.equal(scopeIdOfStep(`scope:${"a".repeat(129)}`), null);
   assert.equal(scopeIdOfStep("scope:café"), null);
-  assert.deepEqual(stepsForRestore("workspace", "bad id", "p1"), []);
+  assert.throws(
+    () => stepsForRestore("workspace", "bad id", "p1"),
+    (error: unknown) => error instanceof Error && error.message === "invalid_scope",
+  );
   assert.deepEqual(stepsForRestore("workspace", "c_delivery", "p1"), ["scope:c_delivery"]);
   const openedAgain = requireOk(
     commitErasure(opened, {

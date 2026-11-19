@@ -285,7 +285,8 @@ export function stepsForRestore(
 ): string[] {
   if (kind === "tenant") return ["directory"];
   if (scope === `personal:${principalId}`) return ["personal"];
-  if (scope.startsWith("personal:") || !SCOPE_ID.test(scope)) return [];
+  if (scope.startsWith("personal:")) return [];
+  if (!SCOPE_ID.test(scope)) throw new Error("invalid_scope");
   return [`scope:${scope}`];
 }
 
