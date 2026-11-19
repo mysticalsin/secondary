@@ -75,4 +75,9 @@ export {
 export { PERSONAS, TENANT_ID } from "../../recovered-source/shared/packages/policy/src/personas.ts";
 
 export type { RoleId } from "../../recovered-source/shared/packages/policy/src/roles.ts";
-export { ROLE_ORDER, ROLES } from "../../recovered-source/shared/packages/policy/src/roles.ts";
+export {
+  ROLE_ORDER,
+  ROLES,
+  isBuiltInLeadRole,
+  isBuiltInLeadRoleId,
+} from "../../recovered-source/shared/packages/policy/src/roles.ts";
