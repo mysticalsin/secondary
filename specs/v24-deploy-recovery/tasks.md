@@ -125,6 +125,15 @@
 - [x] T021 [US5] Add failing tests. `deploy.sh` does not pass `--config wrangler.jsonc`. `wrangler.json`, `wrangler.toml`, and `.wrangler/deploy/config.json` each reach the stub. A dangling `deploy/.staged` symlink reaches the stub. A symlink `deploy` or `deploy/assets` reaches the stub. Covers FR-016.
 - [x] T022 [US5] Pass `--config wrangler.jsonc` on both Wrangler calls. Use `dirname -- "$0"`. Refuse the three shadow paths and the symlink cases with `lstat`. Record the Wrangler 4.158.0 `--dry-run` evidence and the `TMPDIR` and signal-cleanup residuals. Assert the installed Wrangler version is 4.158.0. Do not invent UI bytes and do not run a real deploy. Covers FR-016.
 
+## Phase 15: Refuse a linked config (Priority: P1)
+
+**Goal**: A symlinked `wrangler.jsonc` and a dangling `.dev.vars` link are refused. UI bytes stay pending.
+
+**Independent Test**: T023 fails on `7ff4589`, then T024 passes. `deploy/assets/` is still only `UNREPRODUCED`.
+
+- [x] T023 [US5] Add failing tests. A symlink to `wrangler.jsonc` reaches the stub. A symlink loop is `config-missing`. A dangling `.dev.vars` link reaches the stub. Covers FR-016.
+- [x] T024 [US5] Classify `wrangler.jsonc` and `.dev.vars` with `lstat`. A link is `config-symlink`. A stat error is `config-unreadable`. Any non-absent `.dev.vars` is `dev-vars-present`. Record that deploy time does not check the Wrangler version and that `.env` files are not checked. Do not add UI bytes and do not run a real deploy. Covers FR-016.
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -152,6 +161,8 @@
 - T020 depends on the red run of T019.
 - T021 is a failing test and depends on T020.
 - T022 depends on the red run of T021.
+- T023 is a failing test and depends on T022.
+- T024 depends on the red run of T023.
 
 ### Parallel Opportunities
 
@@ -160,4 +171,4 @@
 
 ## Implementation Strategy
 
-T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. T017 lands as a failing test. T018 makes that test pass, drops the extra chmod, and records the rehash deletion proof. T019 lands as a failing test. T020 removes the env seam and records the hook-test deletion proof. T021 lands as a failing test. T022 pins `--config` and records the Wrangler evidence. No task deploys, and no task writes live UI bytes.
+T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. T017 lands as a failing test. T018 makes that test pass, drops the extra chmod, and records the rehash deletion proof. T019 lands as a failing test. T020 removes the env seam and records the hook-test deletion proof. T021 lands as a failing test. T022 pins `--config` and records the Wrangler evidence. T023 lands as a failing test. T024 refuses a linked config. No task deploys, and no task writes live UI bytes.

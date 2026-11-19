@@ -167,10 +167,9 @@ function verifySource(root: string): { ok: false; reason: string } | { ok: true;
   return { ok: true, files: manifest.files };
 }
 
-function lstatKind(path: string): "absent" | "present" | "error" {
+function lstatNode(path: string): "absent" | "file" | "link" | "error" {
   try {
-    lstatSync(path);
-    return "present";
+    return lstatSync(path).isSymbolicLink() ? "link" : "file";
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
     return "error";
@@ -181,7 +180,7 @@ function configuredDirectory(root: string, config: Record<string, unknown>): { o
   const relativeDir = uploadRelative(config);
   if (relativeDir === null) return { ok: false, reason: "assets-directory-mismatch" };
   const path = join(root, relativeDir);
-  if (lstatKind(path) !== "absent") return { ok: false, reason: "assets-directory-present" };
+  if (lstatNode(path) !== "absent") return { ok: false, reason: "assets-directory-present" };
   return { ok: true, path };
 }
 
@@ -199,12 +198,15 @@ function sourceSymlink(root: string): GuardResult | null {
 }
 
 function readConfig(root: string): { ok: true; config: Record<string, unknown> } | { ok: false; reason: string } {
-  if (existsSync(join(root, ".dev.vars"))) return { ok: false, reason: "dev-vars-present" };
+  if (lstatNode(join(root, ".dev.vars")) !== "absent") return { ok: false, reason: "dev-vars-present" };
   for (const rel of SHADOW_CONFIGS) {
-    if (lstatKind(join(root, rel)) !== "absent") return { ok: false, reason: "config-shadow" };
+    if (lstatNode(join(root, rel)) !== "absent") return { ok: false, reason: "config-shadow" };
   }
   const configPath = join(root, "wrangler.jsonc");
-  if (!existsSync(configPath)) return { ok: false, reason: "config-missing" };
+  const configNode = lstatNode(configPath);
+  if (configNode === "absent") return { ok: false, reason: "config-missing" };
+  if (configNode === "link") return { ok: false, reason: "config-symlink" };
+  if (configNode === "error") return { ok: false, reason: "config-unreadable" };
   try {
     const config = JSON.parse(stripJsonc(readFileSync(configPath, "utf8"))) as Record<string, unknown>;
     return { ok: true, config };

@@ -586,11 +586,19 @@ test("a symlinked wrangler.jsonc is refused", () => {
   refuseDeploy(dir, "config-symlink");
 });
 
-test("a stat error on wrangler.jsonc is refused", () => {
+test("a stat error on wrangler.jsonc is refused", async () => {
   const dir = matchingAssets();
   unlinkSync(join(dir, "wrangler.jsonc"));
-  symlinkSync("wrangler.jsonc", join(dir, "wrangler.jsonc"));
+  mkdirSync(join(dir, "wrangler.jsonc"));
   refuseDeploy(dir, "config-unreadable");
+
+  const guard = (await import("../../deploy/guard.ts")) as {
+    guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
+  };
+  const base = mkdtempSync(join(tmpdir(), "v24-eloop-"));
+  symlinkSync("link", join(base, "link"));
+  const root = join(base, ...Array(50).fill("link"));
+  assert.deepEqual(guard.guardRoot(root, "deploy"), { ok: false, reason: "dev-vars-present" });
 });
 
 test("a dangling or symlinked .dev.vars is refused", () => {

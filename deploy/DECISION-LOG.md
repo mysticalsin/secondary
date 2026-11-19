@@ -2,6 +2,11 @@
 
 The user asked for this log for `deploy/`, and for the guard fix below. Comments were not stripped. Existing tests were not removed.
 
+- Refuse a symlinked `wrangler.jsonc` and a linked `.dev.vars`.
+  - `existsSync` follows a symlink to `wrangler.jsonc` and treats a dangling `.dev.vars` link as absent.
+  - `lstat` now refuses a symlink with `config-symlink`. A `wrangler.jsonc` that is not a file, such as a directory, is `config-unreadable`. A path `lstat` cannot walk is refused at the first check. A `.dev.vars` file, symlink, dangling link, or stat error is `dev-vars-present`.
+  - `deploy.sh` does not check the Wrangler version at deploy time. `package.json` pins `wrangler` at exactly `4.158.0`.
+  - `.env` files are not checked.
 - Pin both Wrangler calls to `wrangler.jsonc`, and fail closed on a shadow config or an asset symlink.
   - Without `--config`, Wrangler 4.158.0 prefers `wrangler.json` over `wrangler.jsonc` and follows `.wrangler/deploy/config.json`.
   - `deploy.sh` passes `--config wrangler.jsonc` on both calls and uses `dirname -- "$0"`.
