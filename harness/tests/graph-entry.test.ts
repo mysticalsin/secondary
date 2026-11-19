@@ -16,7 +16,7 @@ function rewrite(response: Response): Response {
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
 const FILES: { path: string; repo: string; type: string; sha256: string }[] = [
-  [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "1240e2f26b6087263f0c9d93a8efc228aeead76e6fdf4063151e0095fae05833"],
+  [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "5fae8dbc9ae5a999ddedd8e3b558d173196814cf33d3554383226b3a97f91940"],
   ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "d00201705a0070333591d0fc18efc824550653bb5433b078f21471dd81469d3b"],
   ["/graph/app.css", "deploy/graph/app.css", "text/css; charset=utf-8", "58a84df162b081c856a185f0f147838f2351ee604a359f47e0c0e927d89f20a3"],
   ["/graph/nav.js", "deploy/graph/nav.js.txt", "text/javascript; charset=utf-8", "ae5dc4a2b01105c7f0cad18246d140423b6eb366defc133127c4f82a0aacfb4a"],
