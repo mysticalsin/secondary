@@ -66,12 +66,23 @@ function boundedAudit(run: Promise<boolean>): Promise<AuditOutcome> {
 
 export { switchedOff };
 
+/** The pathname Hono used to pick the route. A bad percent sequence does not continue. */
+function routedPath(url: string, honoPath: string): string | null {
+  try {
+    decodeURI(new URL(url).pathname);
+  } catch {
+    return null;
+  }
+  return honoPath;
+}
+
 /** Runs after authentication. An internal call is refused on mcp before any path row. */
 export const switchGate: MiddlewareHandler<AppEnv> = async (c, next) => {
   const s = c.get("session");
   const mcp = internalSwitch();
   if (s.internal && !s.switches[mcp]) return c.json(switchedOff(mcp), 503);
-  const path = new URL(c.req.url).pathname;
+  const path = routedPath(c.req.url, c.req.path);
+  if (path === null) return c.json({ error: "bad_request" }, 400);
   const name = httpSwitch(c.req.method, path, s.switches);
   if (name) return c.json(switchedOff(name), 503);
   await next();

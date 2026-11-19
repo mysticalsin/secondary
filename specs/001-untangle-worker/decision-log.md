@@ -121,4 +121,31 @@ PR #9 merged as `8c2ede3`. The table still matches the first HTTP row, so a late
 
 The disjoint test now walks a probe list stored on every HTTP row. A row with no probe fails. A probe that another row also matches fails. The eight handler keys each resolve to a row; removing `sharepoint` fails that test and no other test in the file.
 
-These paths are pinned to the current matcher and are not retuned: a trailing slash on contribute is not that row, a trailing slash on `/v1/sources/s1/` is the connector row, `/v1/Sources/s1` and `/V1/sources/s1` are not, `/v1/%73ources/s1` is not (the middleware reads the encoded pathname), `/v1//sources/s1` is not, a query string on `/v1/sources/s1` is the connector row, HEAD and OPTIONS on that path are the connector row, and `/v1x/sources/s1` and `/v10/sources/s1` are not. Whether the encoded source path should be blocked once Hono has decoded it is a separate slice.
+These paths were pinned on that head to the matcher as it stood: a trailing slash on contribute is not that row, a trailing slash on `/v1/sources/s1/` is the connector row, `/v1/Sources/s1` and `/V1/sources/s1` are not, `/v1//sources/s1` is not, a query string on `/v1/sources/s1` is the connector row, HEAD and OPTIONS on that path are the connector row, and `/v1x/sources/s1` and `/v10/sources/s1` are not. `/v1/%73ources/s1` was not a connector row there, because the gate read the encoded pathname. After this branch merges that main, the same row is 503 when the connector switch is off.
+
+## Encoded source path
+
+`switchGate` used to read `new URL(c.req.url).pathname`. On Hono `4.13.17` that pathname keeps `%73`, so `/v1/%73ources/s1` did not match the connector row, while Hono routed it to `GET /sources/:id`. The gate now matches `c.req.path`, the path Hono already used to choose the route. An encoded path for a switched-off route is 503. A percent sequence `decodeURI` rejects (`%`, `%ZZ`, `%C0%80`) is 400 `{ error: "bad_request" }` and does not continue. A valid encoding of a path that is not a kill-switch row still continues: `/v1/%6dap` reaches `/v1/map`.
+
+`GET /v1/%2573ources/s1` stays `/v1/%2573ources/s1`. Hono does not decode `%25` a second time, so the connector row does not match and the catch-all runs. `GET /v1/sources/%25s1` is a real sources route that still contains `%25`: with the connector switch on, the handler runs and the id is `%s1`; with it off, the answer is 503. That is the same answer as main, whose raw pathname for that URL already starts with `/v1/sources/`. `%2F` is not a slash (`/v1/sources%2Fs1` is the catch-all). Uppercase hex `%6F` is `o`, so `/v1/s%6Furces/s1` is the connector row. An encoded `/v1` prefix (`/%76%31/sources/s1`) and an encoded trailing slash (`/v1/%73ources/s1/`) are the connector row too.
+
+`/v1/map/%2e%2e/sources/s1` is already `/v1/sources/s1` in `new URL().pathname` before the gate reads it, and Hono routes it to `GET /sources/:id`. The old pathname gate and `c.req.path` give the same 503. That test does not separate them. Replacing `c.req.path` with the raw pathname left it green and turned the encoded name, the uppercase hex, the encoded `/v1` prefix, and the encoded trailing slash red.
+
+These paths are not matched, on main `8c2ede3` and here: `/v1/ai` with no further slash, `/v1/sources` with no id, and a trailing slash on `/v1/personal/items/:id/contribute`. Whether they should be matched is a question for Tony. This slice does not change the matchers.
+
+`securityHeaders` now reads `c.req.path`, so `/%76%31/health` and `/%69nternal/ping` get `Cache-Control: no-store`. Two checks stay on the raw pathname because each fails closed (Sentinel R-2 and R-3, Info). This slice does not change them:
+
+- `auth.ts` `internalRouteVerdict` matches the MCP allowlist against `new URL(c.req.url).pathname`. An encoded path misses the allowlist and is 403.
+- `security.ts` `isImport` uses that same pathname, so an encoded `/v1/brains/:id/import` gets the 32 KB JSON limit instead of the 5 MB import limit.
+
+`observe.ts` already reads `c.req.path`. `internal-auth.ts` `pathAndQuery` uses the raw pathname as the signed string, not as a route gate. `brains/unzip.ts` checks archive entry names, not the request URL.
+
+PR #10's `httpSwitch` still has an optional switches argument and, without it, returns the first match. Sentinel R-1 on that PR asks for the argument to be required. That waits for refactor 3, the move of the Worker HTTP code next to `src/state`. This PR does not change that signature.
+
+Mutations, restored before commit:
+
+- `decodeURI(decodeURI(pathname))` in `routedPath`: `switch-decode.test.ts` exit 1, 4 pass, 1 fail, duration_ms 236.565992. `GET /v1/%2573ources/s1` was `503 !== 200`. The same mutation answered 400 for `GET /v1/sources/%25s1` with the connector switch on and off. Main reaches the handler when the switch is on (200, id `%s1`) and returns 503 when it is off.
+- The 400 removed, so a bad percent sequence continues on `c.req.path`: exit 1, 4 pass, 1 fail, duration_ms 242.127086. `/v1/%ZZ` was `200 !== 400`.
+- `routedPath` returned `new URL().pathname`: exit 1, 3 pass, 2 fail, duration_ms 240.904142. `/v1/%73ources/s1` was `200 !== 503`, and `/%76%31/sources/s1` was `200 !== 503`. Under that same mutation `/v1/s%6Furces/s1` was 200, `/v1/%73ources/s1/` was 200, `/v1/sources%2Fs1` stayed the catch-all, and the dot segment stayed 503.
+- `decodeURIComponent` in place of `c.req.path`: exit 1, 4 pass, 1 fail, duration_ms 251.618101. `/v1/sources%2Fs1` was `503 !== 200`.
+- `securityHeaders` put back on the raw pathname: `switch-cache.test.ts` exit 1, 0 pass, 1 fail, duration_ms 121.291043, `null !== 'no-store'`. The red commit before the fix failed the same way, duration_ms 132.272536.

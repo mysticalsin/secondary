@@ -8,7 +8,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const SOURCE = "8c2ede3df2a18ea154647ca3ace16f156c4a4132";
+const SOURCE = "53bc34e0901591d4c7a64c063e239a9c3aaf9992";
 
 test("switch gate matches the table taken from main", async () => {
   const fixture = JSON.parse(
