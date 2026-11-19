@@ -1,6 +1,9 @@
+import { boundFetch } from "/graph/fetch-bound.js";
+
 (() => {
   "use strict";
 
+  const FETCH_BOUND_MS = Number(document.documentElement.dataset.fetchBound) || 8000;
   const MAX_DETAILS = 400;
   const CONCURRENCY = 6;
   const DAY = 86400000;
@@ -73,12 +76,7 @@
   class AuthError extends Error {}
 
   async function getJson(path) {
-    let res;
-    try {
-      res = await fetch(path, { credentials: "same-origin", headers: { accept: "application/json" } });
-    } catch {
-      throw new Error("offline");
-    }
+    const res = await boundFetch(path, { credentials: "same-origin", headers: { accept: "application/json" } }, FETCH_BOUND_MS);
     if (res.status === 401 || res.status === 403) throw new AuthError(String(res.status));
     if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
     if (!(res.headers.get("content-type") || "").includes("application/json")) throw new AuthError("not_json");
@@ -163,7 +161,8 @@
       brainsFailed = true;
     }
     const roots = Array.isArray(tree.roots) ? tree.roots : [];
-    const workspaces = roots.filter((r) => r.access !== "locked" && Array.isArray(r.children));
+    const degradedRoots = roots.filter((r) => r.access === "degraded");
+    const workspaces = roots.filter((r) => r.access !== "locked" && r.access !== "degraded" && Array.isArray(r.children));
     const locked = roots.filter((r) => r.access === "locked").length;
     const pages = [];
     const byKey = new Map();
@@ -222,7 +221,7 @@
         .trim();
       if (p.text.startsWith(p.title)) p.text = p.text.slice(p.title.length).trim();
     }
-    return { pages, workspaces, locked, failed, capped: pages.length > MAX_DETAILS ? pages.length : 0, cards: brainsFailed ? cardsFromTree(workspaces) : brainCards(listed) };
+    return { pages, workspaces, locked, failed, degraded: degradedRoots.length > 0, degradedRoots, capped: pages.length > MAX_DETAILS ? pages.length : 0, cards: brainsFailed ? cardsFromTree(workspaces) : brainCards(listed) };
   }
 
   function parseNum(str) {
@@ -791,14 +790,19 @@
   loadBrain().then((b) => {
     brain = b;
     fillBrainSelect(brainEl, b.cards);
+    for (const root of b.degradedRoots || []) brainEl.append(new Option(root.label, root.id));
     const notes = [];
     if (b.capped) notes.push(`Read the first ${MAX_DETAILS} of ${b.capped} pages.`);
     if (b.failed) notes.push(`${plural(b.failed, "page")} could not be read.`);
     if (b.locked) notes.push(`${plural(b.locked, "brain")} visible by name only.`);
-    setStatus(notes.join(" "), "");
+    setStatus(b.degraded ? "Degraded" : notes.join(" "), b.degraded ? "degraded" : "");
     render();
   }).catch((err) => {
     main.replaceChildren();
+    if (err instanceof Error && err.message === "degraded") {
+      setStatus("Degraded", "degraded");
+      return;
+    }
     setStatus(err instanceof AuthError ? "Your sign-in has expired or the brain could not be reached. Reload to sign in again." : err instanceof Error && err.message === "offline" ? "The brain could not be loaded." : `The brain could not be loaded (${err.message}).`, "error");
   });
 })();

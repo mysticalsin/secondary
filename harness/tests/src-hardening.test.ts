@@ -35,6 +35,13 @@ const NOT_FOUND = { error: "not_found" };
 const hung = {
   release: new Map<string, (pages: unknown[]) => void>(),
   members: [] as string[],
+  reads: [] as string[],
+  cancelled: [] as string[],
+  pace: new Map<string, { ms: number; pages: { id: string; title: string; type: string; markdown: string }[] }>(),
+  lateOnAbort: new Set<string>(),
+  /** When set, a slow read never settles and does not look at the signal. */
+  deaf: false,
+  deafReads: [] as string[],
 };
 let failScope: string | null = null;
 const hangIds = new Set<string>();
@@ -53,11 +60,37 @@ function workspace(name: string) {
       hung.members.push(name);
       return [];
     },
-    wikiPages: () => {
+    wikiPages: (signal?: AbortSignal) => {
+      hung.reads.push(name);
       if (failScope && name.includes(failScope)) return Promise.reject(new Error("synthetic read failed"));
+      const paceKey = [...hung.pace.keys()].find((key) => name.includes(key));
+      if (paceKey) {
+        const pace = hung.pace.get(paceKey);
+        return new Promise<unknown[]>((resolve) => {
+          const finish = () => resolve(pace?.pages ?? []);
+          if (hung.lateOnAbort.has(paceKey)) signal?.addEventListener("abort", () => finish(), { once: true });
+          setTimeout(finish, pace?.ms ?? 0);
+        });
+      }
       if (!slow) return Promise.resolve([]);
-      return new Promise<unknown[]>((resolve) => {
-        hung.release.set(name, resolve);
+      if (hung.deaf) {
+        hung.deafReads.push(name);
+        return new Promise<unknown[]>(() => {});
+      }
+      return new Promise<unknown[]>((resolve, reject) => {
+        const stop = () => {
+          hung.cancelled.push(name);
+          reject(new DOMException("The operation was aborted", "AbortError"));
+        };
+        if (signal?.aborted) {
+          stop();
+          return;
+        }
+        signal?.addEventListener("abort", stop, { once: true });
+        hung.release.set(name, (pages) => {
+          signal?.removeEventListener("abort", stop);
+          resolve(pages);
+        });
       });
     },
     brainConfig: async () => ({
@@ -291,10 +324,10 @@ function env(binding: unknown, email: string) {
   };
 }
 
-async function app(extra?: { brainBoundMs?: number }): Promise<App> {
+async function app(extra?: { brainBoundMs?: number; treeBoundMs?: number }): Promise<App> {
   const specifier = new URL("../../src/worker/index.ts", import.meta.url).href;
   const loaded = (await import(specifier)) as {
-    createApp: (deps?: { brainBoundMs?: number }) => App;
+    createApp: (deps?: { brainBoundMs?: number; treeBoundMs?: number }) => App;
   };
   return loaded.createApp(extra);
 }
@@ -1085,6 +1118,193 @@ test("a missed card under a restricted ancestor is restricted", async () => {
     assert.equal(card?.restricted, true);
   } finally {
     dept.restricted = previous;
+    held.remove();
+  }
+});
+
+const AUTHOR_ROOTS = [
+  { id: "me", label: "My Secondary", access: "full" },
+  { id: "d_af", label: "A&F", access: "locked" },
+  { id: "d_amaris", label: "Amaris", access: "locked" },
+  { id: "core", label: "Company Global", access: "full" },
+  { id: "d_ci", label: "Creative Intelligence", access: "locked" },
+  { id: "c_delivery", label: "Delivery", access: "degraded" },
+  { id: "d_eleven", label: "Eleven VMS", access: "locked" },
+  { id: "c_eng", label: "Engineering Practices", access: "full" },
+  { id: "d_hr", label: "HR, Legal and Hub Operations", access: "locked" },
+  { id: "d_it", label: "IT", access: "locked" },
+  { id: "d_lbc", label: "LittleBig Connection", access: "locked" },
+  { id: "d_mkt", label: "Marketing & Communication", access: "locked" },
+  { id: "d_perf", label: "Performance", access: "locked" },
+  { id: "d_recruit", label: "Recruitment", access: "locked" },
+  { id: "d_sia", label: "Strategy, Innovation & AI", access: "locked" },
+  { id: "d_sus", label: "Sustainability", access: "locked" },
+  { id: LONG_NODE, label: "Synthetic long circle", access: "full" },
+];
+
+function note(title: string): { id: string; title: string; type: string; markdown: string }[] {
+  return [{ id: title.toLowerCase().replace(/ /g, "-"), title, type: "note", markdown: title }];
+}
+
+test("the tree roots are exactly the admitted brains", async () => {
+  const restore = await plantCircle(LONG_NODE, "Synthetic long circle");
+  const held = await openDirectory([{ scope_type: "circle", scope_id: LONG_NODE }]);
+  const api = await app({ treeBoundMs: 40 });
+  try {
+    const res = await api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email));
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { roots: { id: string; label: string; access: string; children?: unknown }[] };
+    assert.deepEqual(
+      body.roots.map((root) => ({ id: root.id, label: root.label, access: root.access })),
+      AUTHOR_ROOTS,
+    );
+    for (const root of body.roots) {
+      if (root.access === "degraded" || root.access === "locked") assert.equal("children" in root, false, root.id);
+      else assert.equal(Array.isArray(root.children), true, root.id);
+    }
+  } finally {
+    held.remove();
+    restore();
+  }
+});
+
+test("a brain the caller cannot open is not read and is not returned degraded", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  hung.reads = [];
+  try {
+    const res = await api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email));
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { roots: { id: string; label: string; access: string }[] };
+    const text = JSON.stringify(body);
+    assert.equal(text.includes("a_calypso"), false);
+    assert.equal(text.includes("Calypso Demo Srl"), false);
+    assert.equal(body.roots.find((root) => root.id === "d_af")?.access, "locked");
+    assert.equal(hung.reads.some((name) => name.includes("a_calypso") || name.includes("d_af")), false);
+  } finally {
+    held.remove();
+  }
+});
+
+test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async () => {
+  const held = await openDirectory();
+  const api = await app();
+  hung.pace.clear();
+  hung.lateOnAbort.clear();
+  hung.pace.set("c_delivery", { ms: 2499, pages: note("On time") });
+  hung.pace.set("c_eng", { ms: 2501, pages: note("Late secret") });
+  hung.lateOnAbort.add("c_eng");
+  try {
+    const raced = await Promise.race([
+      api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 4000)),
+    ]);
+    assert.notEqual(raced, "hung");
+    const body = (await (raced as Response).json()) as {
+      roots: { id: string; access: string; children?: { children?: { label: string }[] }[] }[];
+    };
+    const kept = body.roots.find((root) => root.id === "c_delivery");
+    const late = body.roots.find((root) => root.id === "c_eng");
+    const text = JSON.stringify(body);
+    assert.equal(kept?.access, "full");
+    assert.equal(text.includes("On time"), true);
+    assert.equal(late?.access, "degraded");
+    assert.equal("children" in (late ?? {}), false);
+    assert.equal(text.includes("Late secret"), false);
+  } finally {
+    hung.pace.clear();
+    hung.lateOnAbort.clear();
+    held.remove();
+  }
+});
+
+test("a late resolve after abort does not return that brain's pages", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 30 });
+  hung.pace.clear();
+  hung.lateOnAbort.clear();
+  hung.pace.set("c_eng", { ms: 200, pages: note("Late secret") });
+  hung.lateOnAbort.add("c_eng");
+  try {
+    const raced = await Promise.race([
+      api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 400)),
+    ]);
+    assert.notEqual(raced, "hung");
+    const body = (await (raced as Response).json()) as { roots: { id: string; access: string }[] };
+    assert.equal(body.roots.find((root) => root.id === "c_eng")?.access, "degraded");
+    assert.equal(JSON.stringify(body).includes("Late secret"), false);
+  } finally {
+    hung.pace.clear();
+    hung.lateOnAbort.clear();
+    held.remove();
+  }
+});
+
+test("a read that ignores the signal does not hold the tree", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  hung.deaf = true;
+  hung.deafReads = [];
+  hung.cancelled = [];
+  try {
+    const raced = await Promise.race([
+      api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 400)),
+    ]);
+    assert.notEqual(raced, "hung");
+    const body = (await (raced as Response).json()) as { roots: { id: string; access: string }[] };
+    assert.equal(body.roots.find((root) => root.id === "c_delivery")?.access, "degraded");
+    assert.equal(hung.deafReads.some((name) => name.includes("c_delivery")), true);
+    assert.equal(hung.cancelled.some((name) => name.includes("c_delivery")), false);
+  } finally {
+    hung.deaf = false;
+    hung.deafReads = [];
+    held.remove();
+  }
+});
+
+test("the wait marks its signal aborted when a brain does not answer", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  hung.cancelled = [];
+  try {
+    const raced = await Promise.race([
+      api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 400)),
+    ]);
+    assert.notEqual(raced, "hung");
+    const body = (await (raced as Response).json()) as { roots: { id: string; access: string }[] };
+    assert.equal(body.roots.find((root) => root.id === "c_delivery")?.access, "degraded");
+    assert.equal(hung.cancelled.some((name) => name.includes("c_delivery")), true);
+  } finally {
+    held.remove();
+  }
+});
+
+test("one hung brain does not stall the tree", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  try {
+    const bindings = env(held.binding, AUTHOR.email);
+    const raced = await Promise.race([
+      api.request("http://127.0.0.1/v1/brain/tree", {}, bindings),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 400)),
+    ]);
+    assert.notEqual(raced, "hung");
+    const res = raced as Response;
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      roots: { id: string; label: string; access: string; children?: unknown }[];
+    };
+    const slow = body.roots.find((root) => root.id === "c_delivery");
+    const mine = body.roots.find((root) => root.id === "me");
+    assert.equal(slow?.access, "degraded");
+    assert.equal(typeof slow?.label === "string" && slow.label.length > 0, true);
+    assert.equal("children" in (slow ?? {}), false);
+    assert.equal(mine?.access === "full" || mine?.access === "partial", true);
+    assert.equal(Array.isArray(mine?.children), true);
+  } finally {
     held.remove();
   }
 });
