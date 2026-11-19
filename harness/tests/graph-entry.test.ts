@@ -17,12 +17,12 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 
 const FILES: { path: string; repo: string; type: string; sha256: string }[] = [
   [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "5fae8dbc9ae5a999ddedd8e3b558d173196814cf33d3554383226b3a97f91940"],
-  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "d00201705a0070333591d0fc18efc824550653bb5433b078f21471dd81469d3b"],
+  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "b1129fa57d4b1b8a40084628f60e793b0a31ac0fc0c0aa146b73a09bd476e4d1"],
   ["/graph/app.css", "deploy/graph/app.css", "text/css; charset=utf-8", "58a84df162b081c856a185f0f147838f2351ee604a359f47e0c0e927d89f20a3"],
   ["/graph/nav.js", "deploy/graph/nav.js.txt", "text/javascript; charset=utf-8", "ae5dc4a2b01105c7f0cad18246d140423b6eb366defc133127c4f82a0aacfb4a"],
   ["/graph/nav.css", "deploy/graph/nav.css", "text/css; charset=utf-8", "581e4d30582f5b1415b694a165e155b1b9b1ec54e5050484be3a51dac3c404af"],
   ["/dashboard", "deploy/graph/dashboard.html", "text/html; charset=utf-8", "32a9b9b9860026fa1581ede4b238c857f8ff0d1d954dc87c75a218e0a07ef345"],
-  ["/graph/dashboard.js", "deploy/graph/dashboard.js.txt", "text/javascript; charset=utf-8", "b891973870f7c81165a545f3727c793b99f61a828dcc939e53e1ae310c49f4eb"],
+  ["/graph/dashboard.js", "deploy/graph/dashboard.js.txt", "text/javascript; charset=utf-8", "4da716f1714ba0a92dfbde145875b46f40cd0c5eab88e184ee5140c35965bece"],
   ["/graph/dashboard.css", "deploy/graph/dashboard.css", "text/css; charset=utf-8", "f2ed6925ef5e781b2e4930d1ab5a00f9e5560170d3c37b273b40cafa3d098db8"],
 ].map(([path, repo, type, sha256]) => ({ path: path.trim(), type, repo, sha256 }));
 

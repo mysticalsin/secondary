@@ -29,6 +29,8 @@ export interface AppDeps {
   now?: () => number;
   /** How long one brain may take in the directory before it is returned as unavailable. */
   brainBoundMs?: number;
+  /** How long one brain may take while the tree is built before it is returned as degraded. */
+  treeBoundMs?: number;
   jwks?: (team: string) => JWTVerifyGetKey;
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
