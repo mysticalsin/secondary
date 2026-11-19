@@ -60,7 +60,9 @@ export async function collectSwitchTable(): Promise<SwitchRow[]> {
   const rows: SwitchRow[] = [];
   for (const internal of [false, true]) {
     for (const state of states()) {
-      const app = new Hono();
+      const app = new Hono<{
+        Variables: { session: { switches: Switches; internal: { clientId: string } | null } };
+      }>();
       app.use("*", async (c, next) => {
         c.set("session", { switches: state.switches, internal: internal ? { clientId: "c" } : null });
         await next();
