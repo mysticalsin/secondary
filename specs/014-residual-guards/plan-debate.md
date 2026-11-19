@@ -52,11 +52,27 @@ Sentinel endorses C1–C8 and would block on C2, C3, C4 and C7. Those are met at
 - S3. Met by `a new direct flag read is listed before it lands` and `harness/tests/flag-reads.txt`. Brain config at `routes.ts` reads `effectivePublication(b.facts)`, which is the walk's result, not a raw flag. Export, search and ops read flags on directory rows for two-person rules. Those reads are in the inventory.
 - S4. Met by `proposing under a restricted ancestor stays a candidate and an unflagged brain publishes` (201 candidate, then 201 published) and by the closed card's six keys: `canOpen`, `canRequestAccess`, `id`, `name`, `restricted`, `type`.
 - S5. The mutant table is in the report for this head. Each guard names its test in `plan.md`.
-- S6. The runner now refuses a scope that is not an anchored id in the tenant plan (`runnerScopeId`). A request that drops a bad step, a grant that must cover every step, and a failure that must not mark the subject erased are a larger machine change. Not built here. Split into its own pull request.
+- S6. Round 1 left the refuse-not-drop work split. Round 2 below brings the three silent drops back. The ledger rewrite and the old-row repair stay split.
 - S7. `a stored direct publication publishes again when the ancestor flag is cleared` locks the flip back. A repair path for old erasure rows with bad scope steps is a stored-ledger migration. Not built here. Split with S6.
 
 ## Devin advisory mutants
 
 Not a verdict and not a gate loop. V1 is killed by `a parent cycle and a self-parent are restricted by the hop cap`. V2 is killed by `a throwing parent lookup is restricted and direct publish does not throw`. V3 is killed by `the runner refuses a prefix and a scope the tenant did not plan`. V4 is killed by `a 129-character candidate id is not found and a 128-character id is`. V5 is killed by `the author of a candidate on a node they cannot view gets 404`.
+
+The named runner cases are `a planned scope runs`, `an unplanned scope is refused`, and `a prefix is refused`. An omitted company scope still runs. That is `erasure append T010: a pending scope the current plan omits stays and runs, and directory is last`.
+
+## Devin round 2
+
+CONSENSUS (Devin): AGREED
+
+His notes: the S6/S7 split is OK as its own HIGH-risk PR; #24 must not worsen today's drop behaviour; the gate re-runs the named mutants for C2/C3/C4-V1/C6/V3/V4/V5; the S2 residual is accepted; C8 not measured is accepted.
+
+## Sentinel round 2
+
+OBJECTIONS on S6 refuse-not-drop only. S1, S3, S4, S5 and C7 are closed. S2 is an accepted residual. The S7 repair splits once fixes 1-3 land. The ledger rewrite and old-row repair stay out of this pull request.
+
+- Fix 1. `erasurePlan` refuses a company scope the grammar rejects, and `POST /v1/admin/rights/erase` returns 422 `invalid_scope` before a ledger row or a side effect. Red `a0bb4de6b93d88411df2fa8ce3e942413078d108`: `Missing expected exception` and `202 !== 422`. Fix `9e5450709315c1161a089bc62577294e99a4a40b`. Mutant `filter-instead-of-refuse` fails the same two assertions. Restored.
+- Fix 2. A restore scope the grammar rejects is listed in `skipped`. An empty step list is not treated as done. Red `9219ba14d5ada1105e68aef0ed11f1f876b2a764`: `skipped: []` against `skipped: [subject-1]`. Fix `57aecd180cf7838127121aff51955cee1b660a3f`. Mutant `return-empty` fails the same assertion. Restored.
+- Fix 3. `requestedFrom` refuses a step the grammar rejects. The transition reason is `unknown_step`. A grant built from those steps is unreadable. Red `355e9efbc7acdbc870aa9b732beadbd50e76d3f2`: `true !== false`. Fix `003338085e04569d5952757f807eb5de5948f074`. Mutant `filter-and-shorten` fails the same assertion. Restored.
 
 CONSENSUS: OPEN
