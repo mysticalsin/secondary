@@ -18,8 +18,8 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const storeSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
-const utilSpecifier = "../../recovered-source/worker/src/ux/util.ts";
+const storeSpecifier = "../../src/worker/wiki/store.ts";
+const utilSpecifier = "../../src/worker/ux/util.ts";
 
 type PageWrite = { ok: true; wrote: boolean } | { ok: false; code: string; message: string };
 

@@ -18,7 +18,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const storeSpecifier = "../../recovered-source/worker/src/brains/store.ts";
+const storeSpecifier = "../../src/worker/brains/store.ts";
 
 type Store = {
   brainRoleOf(principalIds: string[]): string | null;
@@ -76,7 +76,7 @@ test("brain member grant: a claimed or pending row grants nothing, and an active
 
 test("brain access: the member list and the reader count reconcile through the one predicate", () => {
   const root = path.resolve(import.meta.dirname, "../..");
-  const routes = readFileSync(path.join(root, "recovered-source/worker/src/brains/routes.ts"), "utf8");
+  const routes = readFileSync(path.join(root, "src/worker/brains/routes.ts"), "utf8");
   const access = routes.slice(
     routes.indexOf('r.get("/brains/:id/access"'),
     routes.indexOf('r.put("/brains/:id/access"'),
@@ -84,7 +84,7 @@ test("brain access: the member list and the reader count reconcile through the o
   assert.equal(access.includes("reconcileStoredMembers"), true);
   const extra = access.slice(access.indexOf("for (const m of stored)"));
   assert.equal(extra.includes("grantsMemberRole"), true);
-  const shared = readFileSync(path.join(root, "recovered-source/worker/src/brains/shared.ts"), "utf8");
+  const shared = readFileSync(path.join(root, "src/worker/brains/shared.ts"), "utf8");
   const card = shared.slice(shared.indexOf("export async function cardOf"), shared.indexOf("export async function rateLimit"));
   assert.equal(card.includes("reconcileStoredMembers"), true);
   assert.equal(shared.includes("grantsMemberRole"), true);
@@ -93,9 +93,9 @@ test("brain access: the member list and the reader count reconcile through the o
 test("brain member grant: access reads call grantsMemberRole and do not compare the state word", () => {
   const root = path.resolve(import.meta.dirname, "../..");
   const files = [
-    "recovered-source/worker/src/brains/store.ts",
-    "recovered-source/worker/src/brains/routes.ts",
-    "recovered-source/worker/src/brains/shared.ts",
+    "src/worker/brains/store.ts",
+    "src/worker/brains/routes.ts",
+    "src/worker/brains/shared.ts",
   ];
   for (const rel of files) {
     const text = readFileSync(path.join(root, rel), "utf8");

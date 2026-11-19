@@ -17,8 +17,8 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 
 const NOW = 1_700_000_000_000;
 const SOURCE = "src_1";
-const storeSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
-const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
+const storeSpecifier = "../../src/worker/wiki/store.ts";
+const workspaceSpecifier = "../../src/worker/workspace.ts";
 
 type Wiki = {
   sql: ReturnType<typeof sqliteStorage>;

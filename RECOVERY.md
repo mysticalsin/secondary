@@ -14,8 +14,8 @@ The archive `intake/secondary-api-private-source-candidate.tar.gz` is the review
 | `candidate-manifest.json` SHA-256 | `330452d57b8704a69da263b64342b26c8b7fb1d828f111590a256ddff76cea77` |
 | Manifest files | 117, all present, byte counts and SHA-256 match |
 | Source bytes | 1227833 |
-| Layout | 99 files under `recovered-source/worker/src`, 18 under `recovered-source/shared/packages` |
-| Extensions | 116 `.ts`, 1 generated `.js` |
+| Layout | Intake split: 99 Worker files and 18 shared-package files (117). `src/worker` now holds 102 files (101 `.ts`, including 2 `.d.ts`, and 1 `.js`). `recovered-source/shared/packages` now holds 20 `.ts` files. |
+| Extensions | Intake: 116 `.ts`, 1 generated `.js` |
 
 The manifest says the bytes came from `sourcesContent` in a source map of the deployed `secondary-api-dev` Worker (map SHA-256 `fbbb2928d9aa8ea9cfd043e1b1ea0226323784e9a71ff27a407e1d6571737985`). This repo does not contain that map, so that hash was not recomputed. Original git history and build config were not in the archive. Paths are the archive's safe mapping. Imports were left as recovered.
 
@@ -29,7 +29,7 @@ Durable Object classes in this Worker are `TenantPolicy` (`src/tenant-policy.ts`
 
 ## Layout adapter
 
-Recovered imports were not edited. From `recovered-source/worker/src/*.ts`, `../../../packages/...` and from `recovered-source/worker/src/*/*.ts`, `../../../../packages/...` both resolve to a `packages/` directory at the repo root. The archive stored those packages at `recovered-source/shared/packages/`. The new symlink `packages` -> `recovered-source/shared/packages` makes the existing import strings resolve. It is not a claim about the original directory names above `src`.
+The Worker tree now lives at `src/worker`. From `src/worker/*.ts`, `../../packages/...` and from `src/worker/*/*.ts`, `../../../packages/...` both resolve to a `packages/` directory at the repo root. The archive stored those packages at `recovered-source/shared/packages/`. The symlink `packages` -> `recovered-source/shared/packages` makes those import strings resolve. It is not a claim about the original directory names above `src`.
 
 `@secondary/policy` had no recovered `package.json` or barrel. `harness/adapters/policy-entry.ts` re-exports names that the recovered policy files already declare. `tsconfig.json` maps the package name to that adapter.
 
@@ -37,7 +37,7 @@ Recovered imports were not edited. From `recovered-source/worker/src/*.ts`, `../
 
 These paths are imported and are not in the archive:
 
-- `recovered-source/worker/src/types.ts` (`AppDeps`, `AppEnv`, `Session`, and the re-export of `AppDeps`)
+- `src/worker/types.ts` (`AppDeps`, `AppEnv`, `Session`, and the re-export of `AppDeps`)
 - `packages/contracts/src/agent-ui/index.ts`
 - `packages/contracts/src/view-plan.ts`
 

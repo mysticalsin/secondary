@@ -21,7 +21,7 @@ const THROUGH = "2023-11-13";
 const NOW = Date.parse("2023-11-15T12:00:00Z");
 const AT = Date.parse(`${DAY}T12:00:00Z`);
 const BRAIN = "brain-ada";
-const storeSpecifier = "../../recovered-source/worker/src/brains/store.ts";
+const storeSpecifier = "../../src/worker/brains/store.ts";
 
 type Brain = {
   sql: SqlStorage;

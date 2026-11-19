@@ -102,7 +102,75 @@ The lead mark is not a grant condition. Resending the built-in grants through go
 
 Inspector's review of `a30305a7` is the same decide gap: an `acme_lead` with an extra edit, review, or manage-members grant, or a second role that carries one, was denied, and so was `pb:<id>:n`. Main allows those because the role id is a lead and the standing action check passes. `cc3a0864` restored that loop. The truth table from main `2d61c473` now names the governance-edit grants, the second role, and `pb:u_acme_lead:1`, `:2`, and `:3`.
 
+## Switch table
+
+The HTTP kill switches are declared twice. `ops-admin.ts` `GATES` matches `POST /v1/personal/items/:id/contribute` for `contribute`, `/v1/ai/*`, `/v1/genui/plan`, and `/v1/briefs` for `ai`, and `/v1/connectors` and `/v1/sources` for `connector`. Handlers then re-check the same names: `submitCandidate` and routine runs for `contribute`, `gate()` and brief save for `ai`, and search, wiki sources, and sharepoint for `connector`. An internal call checks `mcp` before any path.
+
+This slice puts those names, path matchers, and handler keys in one table. `switchGate` and the handlers read it. The matchers stay, including the `/v1` prefix and the `POST`-only contribute matcher. An internal `mcp` off still wins.
+
+These answers are not the middleware 503, so they stay at the call site: search and wiki sources omit connector hits, a sharepoint routine returns `{ error: "switched_off" }` and the route returns 409, a routine ingest returns a reason string, a personal routine target is not blocked, `gate()` returns `ai_disabled`, and the wiki ingest job reads the tenant switch with no session and fails closed when that read throws. Folding those into the 503 would change behaviour. The publish-rule question from the lead slice is still deferred.
+
 Comments removed because they only repeated the code:
 
 - The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
 - The `directPublish` note said the mode must be direct and the caller must be allowed to edit. Those are the `publication` and `can.edit` checks. It also said publish asks the stored brain role, which this function does not do.
+
+## Switch follow-up
+
+PR #9 merged as `8c2ede3`. The table still matches the first HTTP row, so a later overlapping row that is off would be skipped. This follow-up refuses when any matching row is off. Today's rows are disjoint, so the 228 answers from main `8d8ab548` stay.
+
+The disjoint test now walks a probe list stored on every HTTP row. A row with no probe fails. A probe that another row also matches fails. The eight handler keys each resolve to a row; removing `sharepoint` fails that test and no other test in the file.
+
+These paths were pinned on that head to the matcher as it stood: a trailing slash on contribute is not that row, a trailing slash on `/v1/sources/s1/` is the connector row, `/v1/Sources/s1` and `/V1/sources/s1` are not, `/v1//sources/s1` is not, a query string on `/v1/sources/s1` is the connector row, HEAD and OPTIONS on that path are the connector row, and `/v1x/sources/s1` and `/v10/sources/s1` are not. `/v1/%73ources/s1` was not a connector row there, because the gate read the encoded pathname. After this branch merges that main, the same row is 503 when the connector switch is off.
+
+## Encoded source path
+
+`switchGate` used to read `new URL(c.req.url).pathname`. On Hono `4.13.17` that pathname keeps `%73`, so `/v1/%73ources/s1` did not match the connector row, while Hono routed it to `GET /sources/:id`. The gate now matches `c.req.path`, the path Hono already used to choose the route. An encoded path for a switched-off route is 503. A percent sequence `decodeURI` rejects (`%`, `%ZZ`, `%C0%80`) is 400 `{ error: "bad_request" }` and does not continue. A valid encoding of a path that is not a kill-switch row still continues: `/v1/%6dap` reaches `/v1/map`.
+
+`GET /v1/%2573ources/s1` stays `/v1/%2573ources/s1`. Hono does not decode `%25` a second time, so the connector row does not match and the catch-all runs. `GET /v1/sources/%25s1` is a real sources route that still contains `%25`: with the connector switch on, the handler runs and the id is `%s1`; with it off, the answer is 503. That is the same answer as main, whose raw pathname for that URL already starts with `/v1/sources/`. `%2F` is not a slash (`/v1/sources%2Fs1` is the catch-all). Uppercase hex `%6F` is `o`, so `/v1/s%6Furces/s1` is the connector row. An encoded `/v1` prefix (`/%76%31/sources/s1`) and an encoded trailing slash (`/v1/%73ources/s1/`) are the connector row too.
+
+`/v1/map/%2e%2e/sources/s1` is already `/v1/sources/s1` in `new URL().pathname` before the gate reads it, and Hono routes it to `GET /sources/:id`. The old pathname gate and `c.req.path` give the same 503. That test does not separate them. Replacing `c.req.path` with the raw pathname left it green and turned the encoded name, the uppercase hex, the encoded `/v1` prefix, and the encoded trailing slash red.
+
+These paths are not matched, on main `8c2ede3` and here: `/v1/ai` with no further slash, `/v1/sources` with no id, and a trailing slash on `/v1/personal/items/:id/contribute`. Whether they should be matched is a question for Tony. This slice does not change the matchers.
+
+`securityHeaders` now reads `c.req.path`, so `/%76%31/health` and `/%69nternal/ping` get `Cache-Control: no-store`. Two checks stay on the raw pathname because each fails closed (Sentinel R-2 and R-3, Info). This slice does not change them:
+
+- `auth.ts` `internalRouteVerdict` matches the MCP allowlist against `new URL(c.req.url).pathname`. An encoded path misses the allowlist and is 403.
+- `security.ts` `isImport` uses that same pathname, so an encoded `/v1/brains/:id/import` gets the 32 KB JSON limit instead of the 5 MB import limit.
+
+`observe.ts` already reads `c.req.path`. `internal-auth.ts` `pathAndQuery` uses the raw pathname as the signed string, not as a route gate. `brains/unzip.ts` checks archive entry names, not the request URL.
+
+PR #10's `httpSwitch` still has an optional switches argument and, without it, returns the first match. Sentinel R-1 on that PR asks for the argument to be required. That waits for refactor 3, the move of the Worker HTTP code next to `src/state`. This PR does not change that signature.
+
+Mutations, restored before commit:
+
+- `decodeURI(decodeURI(pathname))` in `routedPath`: `switch-decode.test.ts` exit 1, 4 pass, 1 fail, duration_ms 236.565992. `GET /v1/%2573ources/s1` was `503 !== 200`. The same mutation answered 400 for `GET /v1/sources/%25s1` with the connector switch on and off. Main reaches the handler when the switch is on (200, id `%s1`) and returns 503 when it is off.
+- The 400 removed, so a bad percent sequence continues on `c.req.path`: exit 1, 4 pass, 1 fail, duration_ms 242.127086. `/v1/%ZZ` was `200 !== 400`.
+- `routedPath` returned `new URL().pathname`: exit 1, 3 pass, 2 fail, duration_ms 240.904142. `/v1/%73ources/s1` was `200 !== 503`, and `/%76%31/sources/s1` was `200 !== 503`. Under that same mutation `/v1/s%6Furces/s1` was 200, `/v1/%73ources/s1/` was 200, `/v1/sources%2Fs1` stayed the catch-all, and the dot segment stayed 503.
+- `decodeURIComponent` in place of `c.req.path`: exit 1, 4 pass, 1 fail, duration_ms 251.618101. `/v1/sources%2Fs1` was `503 !== 200`.
+- `securityHeaders` put back on the raw pathname: `switch-cache.test.ts` exit 1, 0 pass, 1 fail, duration_ms 121.291043, `null !== 'no-store'`. The red commit before the fix failed the same way, duration_ms 132.272536.
+
+## Folder move
+
+The Worker HTTP code lived in `recovered-source/worker/src` and the decisions it calls live in `src/state`. Tony approved this move ("A, all three"). The tree is now `src/worker`, beside `src/state`. HTTP answers stay as on main `e8e7ef63`. The pin in `harness/tests/worker-pin.test.ts` passed on that main (exit 0, 1 pass). Skipping the off-switch return made `GET /v1/sources/s1` with the connector switch off `200 !== 503` (exit 1, 0 pass, 1 fail, duration_ms 249.61952). That edit was restored.
+
+Queued with that move, and not a behaviour change:
+
+- Inspector I-1: the switch-table test must not say the fixture was taken from main.
+- Inspector I-2: label the dot-segment assertion. `new URL().pathname` already collapses it, so it does not separate the two path readers.
+- Inspector I-4: an encoded path fails the MCP allowlist.
+- Inspector I-5: unit tests for a different letter case and a trailing slash.
+- PR #10 R-1: `httpSwitch` requires the switch map. The first-match fallback goes away.
+- Sentinel Info: a malformed percent-encoding that is 400 still gets `Cache-Control: no-store` when the routed path is under `/v1/`.
+
+`internalRouteVerdict` and `isImport` stay on the raw pathname. Publish still reads `can.decide`. Those are not this slice.
+
+Comment removed because it only repeated the code: the note on `blockingSwitch` said it returns the first matching row whose switch is off. The function walks the rows and returns that row.
+
+## Docs and tests after the move
+
+The intake archive is still 99 Worker files plus 18 shared-package files, 117 in all. That split stays in `candidate-manifest.json`. It is not the live tree. `src/worker` now holds 102 files: 101 `.ts`, including 2 `.d.ts`, and 1 `.js`. `recovered-source/shared/packages` now holds 20 `.ts` files. `RECOVERY.md` and `docs/state-machines.md` name those current counts. The intake 99 and 18 stay labeled as the archive split.
+
+Nothing in those notes was deleted. The sentences that pointed the old 99 at `src/worker` were rewritten.
+
+The MCP allowlist call site still passes `new URL(c.req.url).pathname`. The pin now also rejects `decodeURI`, `unescape`, `toLowerCase`, `c.req.path`, and `replace(` in that call. A signed-request test of `authenticate` is deferred. Reaching that line needs a signed internal principal, a replay store, and a tenant session. That is a later test, not this docs pass. The allowlist function itself is already pinned: an encoded path is `no`.

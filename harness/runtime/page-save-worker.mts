@@ -32,7 +32,7 @@ const gated = {
   },
 };
 
-const mod = await import("../../recovered-source/worker/src/wiki/store.ts");
+const mod = await import("../../src/worker/wiki/store.ts");
 const wiki = Object.create(mod.WikiBase.prototype) as {
   sql: SqlStorage;
   savePage(

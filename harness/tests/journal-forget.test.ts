@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import { SecurityJournal } from "../../recovered-source/worker/src/security-journal.ts";
+import { SecurityJournal } from "../../src/worker/security-journal.ts";
 import { sqliteStorage } from "../runtime/sqlite-storage.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
@@ -60,7 +60,7 @@ test("journal forget removes the person, keeps a switch, and redacts an NDA deta
 const KEY = "0123456789abcdef0123456789abcdef";
 
 async function pseudonym(id: string): Promise<string> {
-  const spec = "../../recovered-source/worker/src/ops-rights.ts";
+  const spec = "../../src/worker/ops-rights.ts";
   const { pseudonymFor } = (await import(spec)) as {
     pseudonymFor: (
       env: { PSEUDONYM_KEY?: string },

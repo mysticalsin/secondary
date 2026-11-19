@@ -26,8 +26,8 @@ type NonceHost = {
   pruneNonces(now: number): number;
 };
 
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
-const authSpecifier = "../../recovered-source/worker/src/internal-auth.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
+const authSpecifier = "../../src/worker/internal-auth.ts";
 const opsSpecifier = "../../recovered-source/shared/packages/contracts/src/ops-auth.ts";
 
 const SECRET = "synthetic-test-secret-not-a-key!!";

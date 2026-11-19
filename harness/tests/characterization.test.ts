@@ -32,7 +32,7 @@ const walk = (dir: string): string[] => {
 };
 
 test("STATUSES contains no approval word, so a record update cannot release an item", () => {
-  const records = read("recovered-source/worker/src/ux/records.ts");
+  const records = read("src/worker/ux/records.ts");
   const statuses = between(records, "const STATUSES", "const SETTLED");
   for (const word of [
     "approved",
@@ -48,7 +48,7 @@ test("STATUSES contains no approval word, so a record update cannot release an i
 });
 
 test("workspace update rejects a status outside the allow-list", () => {
-  const src = read("recovered-source/worker/src/workspace.ts");
+  const src = read("src/worker/workspace.ts");
   const body = between(src, "update(", "scratch(");
   assert.match(body, /commitItem/);
   assert.match(body, /invalid_status/);
@@ -58,7 +58,7 @@ test("workspace update rejects a status outside the allow-list", () => {
 });
 
 test("CHARACTERIZATION: no API route can pass approved into workspace update", () => {
-  const worker = path.join(root, "recovered-source/worker/src");
+  const worker = path.join(root, "src/worker");
   const callers: string[] = [];
   for (const file of walk(worker)) {
     const text = readFileSync(file, "utf8");
@@ -72,9 +72,9 @@ test("CHARACTERIZATION: no API route can pass approved into workspace update", (
       from = at + ".update(".length;
     }
   }
-  assert.deepEqual(callers, ["recovered-source/worker/src/ux/records.ts"]);
+  assert.deepEqual(callers, ["src/worker/ux/records.ts"]);
 
-  const records = read("recovered-source/worker/src/ux/records.ts");
+  const records = read("src/worker/ux/records.ts");
   const statuses = between(records, "const STATUSES", "const SETTLED");
   assert.equal(statuses.includes("approved"), false);
   assert.match(records, /!STATUSES\[section\]\.includes\(b\.status\)/);
@@ -88,7 +88,7 @@ test("CHARACTERIZATION: no API route can pass approved into workspace update", (
 });
 
 test("CHARACTERIZATION: savePage does not republish an archived page", () => {
-  const src = read("recovered-source/worker/src/wiki/store.ts");
+  const src = read("src/worker/wiki/store.ts");
   const save = between(src, "protected savePage(", "protected unarchivePage(");
   assert.match(save, /decodePageStatus\(cur\.status\)/);
   assert.match(save, /commitPage\(from, \{ type: "save", now \}\)/);
@@ -114,7 +114,7 @@ test("CHARACTERIZATION: savePage does not republish an archived page", () => {
 });
 
 test("wikiDecide partial approval reports pending and leaves the item candidate", () => {
-  const src = read("recovered-source/worker/src/wiki/store.ts");
+  const src = read("src/worker/wiki/store.ts");
   const pending = between(src, "if (!releasing)", "let applied");
   assert.match(pending, /status: "pending"/);
   assert.doesNotMatch(pending, /UPDATE items SET status/);
@@ -130,8 +130,8 @@ test("wikiDecide partial approval reports pending and leaves the item candidate"
 });
 
 test("dry-run import and a personal auto-accept both stay a draft", () => {
-  const data = read("recovered-source/worker/src/brains/data.ts");
-  const propose = read("recovered-source/worker/src/wiki/store.ts");
+  const data = read("src/worker/brains/data.ts");
+  const propose = read("src/worker/wiki/store.ts");
   assert.match(data, /const reported = publishMode\(false\)/);
   assert.equal(data.match(/state: reported/g)?.length, 2);
   assert.doesNotMatch(data, /const publishDirect = b\.personal && verdict\.verdict === "ingest" && !cur/);
@@ -142,7 +142,7 @@ test("dry-run import and a personal auto-accept both stay a draft", () => {
 });
 
 test("replay nonce source does not delete a seen key when it expires", () => {
-  const src = read("recovered-source/worker/src/tenant-policy.ts");
+  const src = read("src/worker/tenant-policy.ts");
   const body = between(src, "nonceFirst(", "pruneNonces(");
   assert.doesNotMatch(body, /DELETE FROM nonces/);
   assert.match(body, /INSERT OR IGNORE INTO nonces \(key, expires_at\)/);
@@ -150,7 +150,7 @@ test("replay nonce source does not delete a seen key when it expires", () => {
 });
 
 test("OIDC callback consumes the login row before it reports failure", () => {
-  const src = read("recovered-source/worker/src/auth/routes.ts");
+  const src = read("src/worker/auth/routes.ts");
   const callback = between(src, 'app.get("/callback"', 'app.post("/logout"');
   const takeAt = callback.indexOf("loginStateTake(");
   const failedAt = callback.indexOf("sign_in_failed");
@@ -163,7 +163,7 @@ test("OIDC callback consumes the login row before it reports failure", () => {
   assert.match(callback, /exchange_failed/);
   assert.doesNotMatch(callback, /idp_\$\{/);
 
-  const take = between(read("recovered-source/worker/src/auth/identity-store.ts"), "loginStateTake(", "private async resolveEntra");
+  const take = between(read("src/worker/auth/identity-store.ts"), "loginStateTake(", "private async resolveEntra");
   assert.match(take, /DELETE FROM login_state WHERE state_hash = \?/);
   assert.doesNotMatch(take, /DELETE FROM login_state WHERE state_hash = \? AND expires_at/);
   assert.match(take, /n\(r\.expires_at\) <= now\) return null/);

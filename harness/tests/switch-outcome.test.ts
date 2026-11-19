@@ -18,7 +18,7 @@ test("switch disable: a refused switch is not logged as an allow", async () => {
     lines.push(String(message));
   };
   try {
-    const specifier = new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href;
+    const specifier = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
     const mod = (await import(specifier)) as {
       opsAdminRoutes: (deps: { now: () => number }) => Hono;
     };

@@ -13,8 +13,8 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const wikiSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
-const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
+const wikiSpecifier = "../../src/worker/wiki/store.ts";
+const workspaceSpecifier = "../../src/worker/workspace.ts";
 const SECRET = "Keep\nSecret {src:src_1}";
 
 type RevisionTarget = { pageId: string; revision: number; markdown: string };

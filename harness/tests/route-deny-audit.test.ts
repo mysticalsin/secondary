@@ -16,7 +16,7 @@ test("route deny: a failed receipt logs a warning with no address", async () => 
     lines.push(String(message));
   };
   try {
-    const specifier = new URL("../../recovered-source/worker/src/routes.ts", import.meta.url).href;
+    const specifier = new URL("../../src/worker/routes.ts", import.meta.url).href;
     const { v1Routes } = (await import(specifier)) as {
       v1Routes: (deps: { now: () => number }) => { request: Function };
     };

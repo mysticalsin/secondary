@@ -7,7 +7,7 @@
     }
   },
   "include": [
-    "recovered-source/worker/src/**/*.ts",
+    "src/worker/**/*.ts",
     "recovered-source/shared/packages/**/*.ts",
     "harness/adapters/**/*.ts"
   ]

@@ -16,7 +16,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 
 const NOW = 1_700_000_000_000;
 const HOUR = 3_600_000;
-const storeSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
+const storeSpecifier = "../../src/worker/wiki/store.ts";
 
 type Decide = { ok: true; status: string } | { ok: false; code: string; message: string };
 

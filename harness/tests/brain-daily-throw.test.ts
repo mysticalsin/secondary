@@ -17,7 +17,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const DAY_MS = 86_400_000;
-const storeSpecifier = "../../recovered-source/worker/src/brains/store.ts";
+const storeSpecifier = "../../src/worker/brains/store.ts";
 
 type JournalRun = { pageId: string | null; created: boolean } | { ok: false; code: string; message: string };
 

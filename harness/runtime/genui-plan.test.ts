@@ -9,7 +9,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planView, validateViewPlan } from "../../recovered-source/worker/src/genui.ts";
+import { planView, validateViewPlan } from "../../src/worker/genui.ts";
 
 test("a deterministic account plan is a catalog query and copies no node text", () => {
   const view = {

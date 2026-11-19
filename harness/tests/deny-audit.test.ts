@@ -18,7 +18,7 @@ test("governance deny stays 403 and logs a warning with no address when the rece
     lines.push(String(message));
   };
   try {
-    const specifier = new URL("../../recovered-source/worker/src/admin/routes.ts", import.meta.url).href;
+    const specifier = new URL("../../src/worker/admin/routes.ts", import.meta.url).href;
     const mod = (await import(specifier)) as { adminRoutes: (deps: object) => Hono };
     const app = new Hono<{ Variables: { session: unknown } }>();
     const principal = persona("consultant");

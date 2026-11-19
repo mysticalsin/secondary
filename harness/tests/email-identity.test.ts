@@ -18,7 +18,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
 
 /** The padding set, plus the ASCII whitespace SQLite trim() keeps and String.trim() strips. */
 const FOLD = [

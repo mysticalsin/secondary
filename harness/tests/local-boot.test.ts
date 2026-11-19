@@ -29,7 +29,7 @@ type BootApp = {
 
 async function app(): Promise<BootApp> {
   // A variable specifier keeps this file from pulling the Worker graph into the root typecheck.
-  const entry = new URL("../../recovered-source/worker/src/index.ts", import.meta.url).href;
+  const entry = new URL("../../src/worker/index.ts", import.meta.url).href;
   const loaded = (await import(entry)) as { createApp: () => BootApp };
   return loaded.createApp();
 }

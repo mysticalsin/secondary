@@ -32,8 +32,8 @@ const editorRole: Role = {
 };
 
 test("wiki decide: a standing edit or review grant is not enough to decide or direct-publish", async () => {
-  const specifier = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
-  const openSpecifier = new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/wiki/review.ts", import.meta.url).href;
+  const openSpecifier = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { mayDecide } = (await import(specifier)) as {
     mayDecide: (
       view: ReturnType<typeof admittedView>,
@@ -83,7 +83,7 @@ test("wiki decide: a standing edit or review grant is not enough to decide or di
 type Decide = { ok: true; status: string } | { ok: false; code: string };
 
 test("wiki decide: an alias, a different letter case, and a reject are still the author's", async () => {
-  const storeSpecifier = new URL("../../recovered-source/worker/src/wiki/store.ts", import.meta.url).href;
+  const storeSpecifier = new URL("../../src/worker/wiki/store.ts", import.meta.url).href;
   const mod = (await import(storeSpecifier)) as { WikiBase: { prototype: object } };
   const body = JSON.stringify({
     v: 1,

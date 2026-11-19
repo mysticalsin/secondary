@@ -17,7 +17,7 @@ register(new URL("../harness/runtime/register-worker-hooks.mjs", import.meta.url
 
 const html = readFileSync(new URL("./synthetic-shell.html", import.meta.url), "utf8");
 const css = readFileSync(new URL("./synthetic-shell.css", import.meta.url), "utf8");
-const { createApp } = await import("../recovered-source/worker/src/index.ts");
+const { createApp } = await import("../src/worker/index.ts");
 
 const app = createApp();
 const env = {

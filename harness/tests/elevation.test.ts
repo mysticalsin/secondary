@@ -18,7 +18,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const storeSpecifier = "../../recovered-source/worker/src/admin/store.ts";
+const storeSpecifier = "../../src/worker/admin/store.ts";
 
 type ElevationResult =
   | { ok: true; elevation: { id: string; status: string; until: number | null } }
@@ -198,7 +198,7 @@ test("elevation: an active row with a null until grants nothing and is not rewri
     const db = openSqlite(file);
     const sql = sqliteStorage(db);
     let ready: Promise<void> = Promise.resolve();
-    const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+    const policySpecifier = "../../src/worker/tenant-policy.ts";
     const mod = (await import(policySpecifier)) as {
       TenantPolicy: new (ctx: unknown, env: unknown) => {
         session(input: { email: string; actAs: null; now: number; limit: number }): Promise<{

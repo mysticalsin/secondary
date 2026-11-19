@@ -14,7 +14,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
 
 type Policy = {
   erasureSave(principalId: string, status: string, ledger: string, updatedAt: number): void;

@@ -17,7 +17,7 @@ const data = workerData as {
 
 const db = openSqlite(data.file);
 const sql = sqliteStorage(db);
-const mod = await import("../../recovered-source/worker/src/tenant-policy.ts");
+const mod = await import("../../src/worker/tenant-policy.ts");
 const policy = Object.create(mod.TenantPolicy.prototype) as {
   sql: SqlStorage;
   nonceFirst(key: string, now: number, ttlMs: number): boolean;

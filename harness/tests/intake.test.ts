@@ -23,49 +23,55 @@ const MANIFEST_SHA256 = "330452d57b8704a69da263b64342b26c8b7fb1d828f111590a256dd
  * and must no longer match those bytes. Every other recovered file must match.
  */
 const PATCHED_RECOVERED = new Set<string>([
-  "recovered-source/worker/src/ai/anthropic.ts",
-  "recovered-source/worker/src/agent/stream.ts",
-  "recovered-source/worker/src/ai/budget.ts",
-  "recovered-source/worker/src/tenant-policy.ts",
-  "recovered-source/worker/src/wiki/seed.ts",
-  "recovered-source/worker/src/agent/loop.ts",
-  "recovered-source/worker/src/workspace.ts",
-  "recovered-source/worker/src/internal-auth.ts",
-  "recovered-source/worker/src/replay.ts",
+  "src/worker/ai/anthropic.ts",
+  "src/worker/agent/stream.ts",
+  "src/worker/ai/budget.ts",
+  "src/worker/tenant-policy.ts",
+  "src/worker/wiki/seed.ts",
+  "src/worker/agent/loop.ts",
+  "src/worker/workspace.ts",
+  "src/worker/internal-auth.ts",
+  "src/worker/replay.ts",
   "recovered-source/shared/packages/contracts/src/signed-call.ts",
   "recovered-source/shared/packages/contracts/src/ops-auth.ts",
   "recovered-source/shared/packages/policy/src/roles.ts",
-  "recovered-source/worker/src/auth/routes.ts",
-  "recovered-source/worker/src/auth.ts",
-  "recovered-source/worker/src/connector.ts",
-  "recovered-source/worker/src/ops-internal.ts",
-  "recovered-source/worker/src/brains/data.ts",
-  "recovered-source/worker/src/brains/routes.ts",
-  "recovered-source/worker/src/brains/store.ts",
-  "recovered-source/worker/src/brains/shared.ts",
-  "recovered-source/worker/src/brains/open.ts",
-  "recovered-source/worker/src/brains/fields.ts",
-  "recovered-source/worker/src/wiki/routes.ts",
-  "recovered-source/worker/src/wiki/store.ts",
-  "recovered-source/worker/src/uxv2/questions.ts",
-  "recovered-source/worker/src/observe.ts",
-  "recovered-source/worker/src/ops-admin.ts",
-  "recovered-source/worker/src/ops-rights.ts",
-  "recovered-source/worker/src/audit.ts",
-  "recovered-source/worker/src/security-journal.ts",
-  "recovered-source/worker/src/admin/store.ts",
-  "recovered-source/worker/src/admin/routes.ts",
-  "recovered-source/worker/src/auth/identity-store.ts",
-  "recovered-source/worker/src/scim/routes.ts",
-  "recovered-source/worker/src/auth/oidc.ts",
-  "recovered-source/worker/src/auth/config.ts",
-  "recovered-source/worker/src/org.ts",
-  "recovered-source/worker/src/routes.ts",
-  "recovered-source/worker/src/brains/agents.ts",
-  "recovered-source/worker/src/ux/personal.ts",
-  "recovered-source/worker/src/ux/util.ts",
-  "recovered-source/worker/src/wiki/review.ts",
-  "recovered-source/worker/src/brains/open.ts",
+  "src/worker/auth/routes.ts",
+  "src/worker/auth.ts",
+  "src/worker/connector.ts",
+  "src/worker/ops-internal.ts",
+  "src/worker/brains/data.ts",
+  "src/worker/brains/routes.ts",
+  "src/worker/brains/store.ts",
+  "src/worker/brains/shared.ts",
+  "src/worker/brains/open.ts",
+  "src/worker/brains/fields.ts",
+  "src/worker/wiki/routes.ts",
+  "src/worker/wiki/store.ts",
+  "src/worker/uxv2/questions.ts",
+  "src/worker/observe.ts",
+  "src/worker/ops-admin.ts",
+  "src/worker/switches.ts",
+  "src/worker/ai/routes.ts",
+  "src/worker/agent/turn.ts",
+  "src/worker/uxv2/routines.ts",
+  "src/worker/uxv2/ask.ts",
+  "src/worker/ops-rights.ts",
+  "src/worker/audit.ts",
+  "src/worker/security-journal.ts",
+  "src/worker/security.ts",
+  "src/worker/admin/store.ts",
+  "src/worker/admin/routes.ts",
+  "src/worker/auth/identity-store.ts",
+  "src/worker/scim/routes.ts",
+  "src/worker/auth/oidc.ts",
+  "src/worker/auth/config.ts",
+  "src/worker/org.ts",
+  "src/worker/routes.ts",
+  "src/worker/brains/agents.ts",
+  "src/worker/ux/personal.ts",
+  "src/worker/ux/util.ts",
+  "src/worker/wiki/review.ts",
+  "src/worker/brains/open.ts",
 ]);
 
 function sha256(file: string): string {
@@ -93,7 +99,24 @@ type ReconstructedEntry = {
 
 type ReconstructedManifest = { files: ReconstructedEntry[] };
 
-const UNLISTED_RECOVERED = "recovered-source/worker/src/__unlisted__.ts";
+const UNLISTED_RECOVERED = "recovered-source/shared/__unlisted__.ts";
+const WORKER_PREFIX = "recovered-source/worker/src/";
+
+function located(manifestPath: string): string {
+  if (manifestPath.startsWith(WORKER_PREFIX)) return `src/worker/${manifestPath.slice(WORKER_PREFIX.length)}`;
+  return manifestPath;
+}
+
+function asIntakeBytes(manifestPath: string, data: Buffer): Buffer {
+  if (!manifestPath.startsWith(WORKER_PREFIX)) return data;
+  const rel = manifestPath.slice(WORKER_PREFIX.length);
+  const depth = rel.split("/").length - 1;
+  const text = data.toString("utf8");
+  const restored = text
+    .split("../".repeat(depth + 1) + "state/").join("../".repeat(depth + 3) + "src/state/")
+    .split("../".repeat(depth + 2) + "packages/").join("../".repeat(depth + 3) + "packages/");
+  return Buffer.from(restored);
+}
 
 function loadReconstructed(): ReconstructedManifest {
   return JSON.parse(readFileSync(path.join(root, "reconstructed-manifest.json"), "utf8")) as ReconstructedManifest;
@@ -110,11 +133,18 @@ function assertRecoveredUnion(
   candidatePaths: readonly string[],
   reconstructed: ReconstructedManifest,
 ): void {
-  const reconstructedPaths = reconstructed.files.map((file) => file.path);
+  const reconstructedPaths = reconstructed.files
+    .map((file) => file.path)
+    .filter((file) => file.startsWith("recovered-source/"));
   const candidate = new Set(candidatePaths);
   const overlap = reconstructedPaths.filter((rel) => candidate.has(rel));
   assert.deepEqual(overlap, []);
   for (const file of reconstructed.files) {
+    if (!file.path.startsWith("recovered-source/")) continue;
+    assert.equal(sha256(path.join(root, file.path)), file.sha256, file.path);
+  }
+  for (const file of reconstructed.files) {
+    if (!file.path.startsWith("src/worker/")) continue;
     assert.equal(sha256(path.join(root, file.path)), file.sha256, file.path);
   }
   const union = [...candidatePaths, ...reconstructedPaths];
@@ -144,23 +174,37 @@ test("every recovered file matches the manifest, and nothing else is in recovere
   const expected = new Set<string>();
   for (const file of manifest.files) {
     expected.add(file.path);
-    const full = path.join(root, file.path);
+    const full = path.join(root, located(file.path));
     const data = readFileSync(full);
-    if (PATCHED_RECOVERED.has(file.path)) {
+    if (PATCHED_RECOVERED.has(located(file.path))) {
       const hash = createHash("sha256").update(data).digest("hex");
       assert.notEqual(hash, file.sha256, `${file.path} still matches the intake bytes`);
       bytes += file.bytes;
       continue;
     }
-    bytes += data.length;
-    assert.equal(data.length, file.bytes, file.path);
-    assert.equal(createHash("sha256").update(data).digest("hex"), file.sha256, file.path);
+    const intake = asIntakeBytes(file.path, data);
+    bytes += intake.length;
+    assert.equal(intake.length, file.bytes, file.path);
+    assert.equal(createHash("sha256").update(intake).digest("hex"), file.sha256, file.path);
   }
-  for (const rel of PATCHED_RECOVERED) assert.equal(expected.has(rel), true, rel);
+  for (const rel of PATCHED_RECOVERED) {
+    const manifestPath = rel.startsWith("src/worker/")
+      ? `${WORKER_PREFIX}${rel.slice("src/worker/".length)}`
+      : rel;
+    assert.equal(expected.has(manifestPath), true, rel);
+  }
   assert.equal(bytes, manifest.counts.source_bytes);
 
+  const pinned = JSON.parse(
+    readFileSync(new URL("./patched-sha256.json", import.meta.url), "utf8"),
+  ) as Record<string, string>;
+  const patched = [...new Set(PATCHED_RECOVERED)].sort();
+  assert.deepEqual(Object.keys(pinned).sort(), patched);
+  for (const rel of patched) assert.equal(sha256(path.join(root, rel)), pinned[rel], rel);
+
   const present = recoveredWalk();
-  assertRecoveredUnion(present, [...expected], loadReconstructed());
+  const stayed = [...expected].filter((rel) => !rel.startsWith(WORKER_PREFIX));
+  assertRecoveredUnion(present, stayed, loadReconstructed());
 });
 
 test("the packages symlink resolves unchanged Worker import paths onto recovered contracts", () => {
@@ -168,13 +212,13 @@ test("the packages symlink resolves unchanged Worker import paths onto recovered
   assert.equal(lstatSync(link).isSymbolicLink(), true);
   const fromAudit = path.resolve(
     root,
-    "recovered-source/worker/src",
-    "../../../packages/contracts/src/audit-receipt.ts",
+    "src/worker",
+    "../../packages/contracts/src/audit-receipt.ts",
   );
   const fromAgent = path.resolve(
     root,
-    "recovered-source/worker/src/agent",
-    "../../../../packages/contracts/src/agent-ui/schemas.ts",
+    "src/worker/agent",
+    "../../../packages/contracts/src/agent-ui/schemas.ts",
   );
   assert.equal(sha256(fromAudit), sha256(path.join(root, "recovered-source/shared/packages/contracts/src/audit-receipt.ts")));
   assert.equal(sha256(fromAgent), sha256(path.join(root, "recovered-source/shared/packages/contracts/src/agent-ui/schemas.ts")));
@@ -190,8 +234,8 @@ test("the packages symlink resolves unchanged Worker import paths onto recovered
       listed: "recovered-source/shared/packages/contracts/src/view-plan.ts",
     },
     {
-      read: "recovered-source/worker/src/types.ts",
-      listed: "recovered-source/worker/src/types.ts",
+      read: "src/worker/types.ts",
+      listed: "src/worker/types.ts",
     },
   ];
   for (const item of missing) {

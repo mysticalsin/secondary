@@ -4,7 +4,7 @@ Last reviewed: 2026-11-11 at `5d147727b70c0c5f7af08128f3377e88354735b2`
 
 Standard: Implicit state machine standard v1 (2026-11-11), sha256 `c62dff48dc032e70df170c3161709ae7bfb79f1e25db473b730a300cedb82f0c`. No XState or other state-machine dependency. A plain reducer is the intended fix shape.
 
-This repository is the recovered Secondary API Worker plus shared policy and contracts packages. It is not the static UI, not a LaunchAgent, and not the connector, ops, audit, or MCP workers. `recovered-source/` is byte-checked against `candidate-manifest.json` by `harness/tests/intake.test.ts`. This commit does not change those bytes. Later Low and Medium fixes, if they patch a recovered file, must keep the manifest as the intake record and list the patched path in that test. Canonical note text in `recovered-source/worker/src/wiki/seed-content.ts` stays untouched.
+This repository is the recovered Secondary API Worker plus shared policy and contracts packages. It is not the static UI, not a LaunchAgent, and not the connector, ops, audit, or MCP workers. `recovered-source/` is byte-checked against `candidate-manifest.json` by `harness/tests/intake.test.ts`. This commit does not change those bytes. Later Low and Medium fixes, if they patch a recovered file, must keep the manifest as the intake record and list the patched path in that test. Canonical note text in `src/worker/wiki/seed-content.ts` stays untouched.
 
 Risk used here:
 
@@ -123,7 +123,7 @@ Residuals, each one table row:
 
 ## Named areas that are not in this repo
 
-Searches were `rg` over the repo for `LaunchAgent`, `launchd`, `recorder`, `calendarRefresh`, `refreshCalendar`, `CalDAV`, and `ical`, plus a file listing of `recovered-source/worker/src` (99 TypeScript files) and the root docs. `RECOVERY.md` says the static UI is not here and that ops, MCP, audit, and connector workers are not here. `PROVENANCE.md` says the archive has no calendar, event, mail, or transcript data.
+Searches were `rg` over the repo for `LaunchAgent`, `launchd`, `recorder`, `calendarRefresh`, `refreshCalendar`, `CalDAV`, and `ical`, plus a file listing of `src/worker` (102 files: 101 `.ts`, including 2 `.d.ts`, and 1 `.js`) and the root docs. `RECOVERY.md` says the static UI is not here and that ops, MCP, audit, and connector workers are not here. `PROVENANCE.md` says the archive has no calendar, event, mail, or transcript data.
 
 **Home dashboard adaptive states.** There is no Home screen and no client store with `loading` / `empty` / `error` / `stale` / `partial` / `populated`. The closest server values are pure mappings, listed as #24. `ai/planner.ts` names callout templates (`empty`, `stale`, `gap`, and others). Those are component kinds a model may pick, not a screen lifecycle. `uxv2/tree.ts` and `packages/policy/src/types.ts` derive `full` / `partial` / `locked` from what the viewer may read. That is a projection, not a machine. `brains/insights.ts` builds the Home sparkline as twelve counts. No status is stored.
 
