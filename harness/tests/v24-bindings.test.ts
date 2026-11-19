@@ -798,3 +798,28 @@ test("secret file names are matched case-insensitively", async () => {
     assert.deepEqual(guard.guardRoot(dir, "deploy"), { ok: false, reason }, name);
   }
 });
+
+test("nested env files outside node_modules and .git are refused", async () => {
+  const guard = (await import("../../deploy/guard.ts")) as {
+    guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
+  };
+  const deployEnv = matchingAssets();
+  writeFileSync(join(deployEnv, "deploy", ".env"), "SECRET=value\n");
+  assert.deepEqual(guard.guardRoot(deployEnv, "dry-run"), { ok: false, reason: "env-file-present" });
+
+  const workerEnv = matchingAssets();
+  mkdirSync(join(workerEnv, "src", "worker"), { recursive: true });
+  writeFileSync(join(workerEnv, "src", "worker", ".env.local"), "SECRET=value\n");
+  assert.deepEqual(guard.guardRoot(workerEnv, "dry-run"), { ok: false, reason: "env-file-present" });
+
+  const vars = matchingAssets();
+  mkdirSync(join(vars, "deploy", "graph"), { recursive: true });
+  writeFileSync(join(vars, "deploy", "graph", ".dev.vars"), "SECRET=value\n");
+  assert.deepEqual(guard.guardRoot(vars, "dry-run"), { ok: false, reason: "dev-vars-present" });
+
+  const skipped = matchingAssets();
+  mkdirSync(join(skipped, ".git"));
+  writeFileSync(join(skipped, ".git", ".env"), "SECRET=value\n");
+  writeFileSync(join(skipped, "node_modules", ".env"), "SECRET=value\n");
+  assert.deepEqual(guard.guardRoot(skipped, "dry-run"), { ok: true });
+});
