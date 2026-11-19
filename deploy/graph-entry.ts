@@ -1,4 +1,4 @@
-import app from "../recovered-source/worker/src/index.ts";
+import app from "../src/worker/index.ts";
 import dashboardCss from "./graph/dashboard.css";
 import dashboard from "./graph/dashboard.html";
 import dashboardJs from "./graph/dashboard.js.txt";
@@ -9,7 +9,7 @@ import navJs from "./graph/nav.js.txt";
 import page from "./graph/page.html";
 import { graphFetch, type GraphFiles } from "./graph-route.ts";
 
-export * from "../recovered-source/worker/src/index.ts";
+export * from "../src/worker/index.ts";
 
 const files: GraphFiles = {
   "/graph": [page, "text/html; charset=utf-8"],

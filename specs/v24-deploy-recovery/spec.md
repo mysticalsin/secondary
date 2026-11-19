@@ -78,7 +78,7 @@ A request to `/graph` is served by the wrapper, and the Worker still exports `Te
 4. **Given** `POST /graph`, or a path that is not one of the eight, **When** the wrapper runs, **Then** the inner app receives the request.
 5. **Given** a `GET` of HTML outside the API prefixes, **When** the inner app returns 200 HTML, **Then** the Graph view link is appended in `head`, `ETag` and `Last-Modified` are removed, and `Cache-Control` is `no-cache`.
 6. **Given** a `GET` whose path starts with `/v1/`, `/auth/`, `/scim/`, `/internal/`, or `/graph/`, **When** the inner app returns HTML, **Then** the body is not rewritten.
-7. **Given** `deploy/graph-entry.ts`, **When** it is read, **Then** it imports the default export of `recovered-source/worker/src/index.ts`, re-exports that module, and does not declare a second `TenantPolicy` or `Workspace` class.
+7. **Given** `deploy/graph-entry.ts`, **When** it is read, **Then** it imports the default export of `src/worker/index.ts`, re-exports that module, and does not declare a second `TenantPolicy` or `Workspace` class.
 
 ---
 
@@ -123,7 +123,7 @@ A reviewer can see that `pending_role` and `pending_at` do not require a new Dur
 
 **Why this priority**: A new migration tag, or a delete-class migration, can destroy stored Durable Object data. The question has to be answered before any later deploy.
 
-**Independent Test**: Compare v24 `src/brains/store.ts` from the source map with `recovered-source/worker/src/brains/store.ts`. Confirm this feature adds no migration file and does not change that constructor.
+**Independent Test**: Compare v24 `src/brains/store.ts` from the source map with `src/worker/brains/store.ts`. Confirm this feature adds no migration file and does not change that constructor.
 
 **Acceptance Scenarios**:
 
@@ -163,8 +163,8 @@ A reviewer can see that `pending_role` and `pending_at` do not require a new Dur
 - **FR-006**: The `ASSETS` binding uses directory `deploy/.staged`, `not_found_handling` `single-page-application`, `run_worker_first` true, and `base_path` `/`. That directory is gitignored and absent by default. The drop-in source remains `deploy/assets`.
 - **FR-007**: `migrations` is exactly one object: tag `v3` and `new_sqlite_classes` `["TenantPolicy", "Workspace"]`. The keys `deleted_classes`, `renamed_classes`, `transferred_classes`, and `new_classes` are absent.
 - **FR-008**: `deploy.sh` is the deploy entry, and `npm run deploy` runs it. With `--dry-run` it runs local Wrangler `deploy --dry-run` and no `--secrets-file`, and it does not apply the asset check. Without `--dry-run`, while a `deploy/assets` path segment case-folds to `unreproduced`, it exits 2 before an upload. It rejects a present `.dev.vars`, a `vars` object, and any migration shape other than FR-007.
-- **FR-009**: The graph wrapper serves the eight files and applies the rewrite rules in User Story 2. `deploy/graph-entry.ts` re-exports `recovered-source/worker/src/index.ts` and does not define a second Durable Object class.
-- **FR-010**: The pending-column verdict is no new Durable Object migration and no storage rewrite. This feature does not change `recovered-source/worker/src/brains/store.ts` and does not add a tag other than `v3`.
+- **FR-009**: The graph wrapper serves the eight files and applies the rewrite rules in User Story 2. `deploy/graph-entry.ts` re-exports `src/worker/index.ts` and does not define a second Durable Object class.
+- **FR-010**: The pending-column verdict is no new Durable Object migration and no storage rewrite. This feature does not change `src/worker/brains/store.ts` and does not add a tag other than `v3`.
 - **FR-011**: SPA bytes are not invented, reconstructed, or fetched. `deploy/assets/UNREPRODUCED` remains the only file in that directory. This change does not add `MANIFEST.sha256` to the repo. The unreproduced list in the Assumptions stays in this spec.
 - **FR-012**: On the implementation head, `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` exit 0. The merge head `e2149c2335a3610ad3d6dedee054fe358724c16f` is 459 passed and 0 failed. Worker typecheck stays at 0 errors. One new test is added. Existing tests are not rewritten.
 - **FR-013**: This feature does not deploy, does not merge the pull request, does not force-push, does not push `main`, does not call the Cloudflare API, does not create a paid resource, does not open a tunnel, and does not read an API token. The one merge of main into this branch is the owner's 2026-11-19 instruction.
@@ -212,4 +212,4 @@ Evidence:
 
 - The reference migration tag is `v3`. Both classes are already SQLite on this Worker. Cloudflare's Durable Object migration document says updating how an existing class uses storage does not require a migration, including changes to persistent storage, and that a delete migration deletes stored data. This feature adds no tag and no delete.
 - v24 `src/brains/store.ts` in source map `fbbb2928d9aa8ea9cfd043e1b1ea0226323784e9a71ff27a407e1d6571737985` contains `pending_role` zero times and `pending_at` zero times, and it contains no `ALTER TABLE brain_members`.
-- Main's `ensureMemberClaimColumns` in `recovered-source/worker/src/brains/store.ts` adds `pending_role TEXT` and `pending_at INTEGER` only when `PRAGMA table_info` does not already list them. The existing test `brain schema: an old member table gains the pending columns once` stores a row, opens the constructor, and requires the row's previous values to remain. A second open does not change the table. That is the storage change. It is already in main. This feature does not add another one.
+- Main's `ensureMemberClaimColumns` in `src/worker/brains/store.ts` adds `pending_role TEXT` and `pending_at INTEGER` only when `PRAGMA table_info` does not already list them. The existing test `brain schema: an old member table gains the pending columns once` stores a row, opens the constructor, and requires the row's previous values to remain. A second open does not change the table. That is the storage change. It is already in main. This feature does not add another one.

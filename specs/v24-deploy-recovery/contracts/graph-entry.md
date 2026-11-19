@@ -1,6 +1,6 @@
 # Contract: graph wrapper
 
-The wrapper's main module is `deploy/graph-entry.ts`. It imports the default export of `recovered-source/worker/src/index.ts` and re-exports that module with `export *`.
+The wrapper's main module is `deploy/graph-entry.ts`. It imports the default export of `src/worker/index.ts` and re-exports that module with `export *`.
 
 ## Files
 

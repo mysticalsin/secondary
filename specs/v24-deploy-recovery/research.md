@@ -34,7 +34,7 @@
 
 ## Decision: graph wrapper as the main module
 
-**Decision**: `main` is `deploy/graph-entry.ts`. It imports and re-exports `recovered-source/worker/src/index.ts`. The eight files are extracted from v24 `graph-entry.js` and served by `deploy/graph-route.ts`.
+**Decision**: `main` is `deploy/graph-entry.ts`. It imports and re-exports `src/worker/index.ts`. The eight files are extracted from v24 `graph-entry.js` and served by `deploy/graph-route.ts`.
 
 **Rationale**: v24's inferred main module serves `/graph` and re-exports `./index.js`. Putting `index.ts` itself as `main` would drop that behavior. The wrapper is outside `recovered-source/` so recovered bytes stay unchanged. JavaScript files are stored as `.js.txt` so the bundler takes them as text under a Text rule.
 

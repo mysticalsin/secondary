@@ -90,7 +90,7 @@ package.json
 package-lock.json
 ```
 
-**Structure Decision**: The deploy entry is `deploy/`, outside `recovered-source/`, so the recovered Worker bytes stay put. `deploy/graph-entry.ts` imports `recovered-source/worker/src/index.ts` and re-exports it. Wrangler bundles that graph. Root `tsconfig.json` already includes `harness/tests/**/*.ts`, so the new tests and the modules they import are typechecked. `deploy/graph-entry.ts` is bundled by Wrangler and is not added to `tsconfig.worker.json`, so the worker error count stays 0.
+**Structure Decision**: The deploy entry is `deploy/`, outside `recovered-source/`, so the recovered Worker bytes stay put. `deploy/graph-entry.ts` imports `src/worker/index.ts` and re-exports it. Wrangler bundles that graph. Root `tsconfig.json` already includes `harness/tests/**/*.ts`, so the new tests and the modules they import are typechecked. `deploy/graph-entry.ts` is bundled by Wrangler and is not added to `tsconfig.worker.json`, so the worker error count stays 0.
 
 ## Complexity Tracking
 
