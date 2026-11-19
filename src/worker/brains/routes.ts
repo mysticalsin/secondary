@@ -43,7 +43,7 @@ import {
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
 import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag, reconcileStoredMembers } from "./open.ts";
 import { placeScopedMember } from "./store.ts";
-import { cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
+import { type BrainCard, cardOf, lineReadable, rateLimit, roleOfBrain, SKIP_TYPES, seeBrains } from "./shared.ts";
 
 const WEEK = 7 * DAY;
 const COACH_TTL = 60 * 60_000;
@@ -87,7 +87,96 @@ function templateForRole(role: string, fallback: TemplateId): TemplateId {
   return fallback;
 }
 
-export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
+const BRAIN_BOUND_MS = 2_500;
+
+function aborted(): DOMException {
+  return new DOMException("The operation was aborted", "AbortError");
+}
+
+/**
+ * One brain has this long to answer. On the way out the signal aborts, so a late workspace
+ * reply does not continue into cardOf and further subrequests. clearTimeout runs when the
+ * read finishes first, so a brain that answered is not aborted when the bound elapses.
+ *
+ * A Durable Object call that has already been sent cannot be cancelled from this isolate.
+ * The in-flight set is that one brain's fixed fan-out, not a retry loop.
+ */
+function within(
+  ms: number,
+  work: (signal: AbortSignal) => Promise<BrainCard | null>,
+): Promise<BrainCard | null | "miss"> {
+  const ac = new AbortController();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      ac.abort();
+      resolve("miss");
+    }, ms);
+    work(ac.signal).then(
+      (card) => {
+        clearTimeout(timer);
+        resolve(card);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve("miss");
+      },
+    );
+  });
+}
+
+type MissedCard = {
+  id: string;
+  type: string;
+  name: string;
+  readers: number;
+  manages: boolean;
+  restricted: boolean;
+  publication: Publication;
+  pages: number;
+  health: { score: number };
+  lastActivityAt: null;
+  unavailable: true;
+  role?: BrainRole;
+};
+
+/** A card for a brain that missed the bound. Role is included only when the view already produced it. Template is not: it lives in the workspace this read did not finish. */
+function missedCard(
+  p: { param: string; vn: { kind: string; label: string; restricted?: boolean; nda?: boolean } | null },
+  brain: Brain | null,
+): MissedCard {
+  const type = p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal");
+  const card: MissedCard = {
+    id: p.param,
+    type,
+    name: p.param === "me" ? "My Secondary" : (p.vn?.label ?? p.param),
+    readers: 0,
+    manages: false,
+    restricted: isRestrictedBrain({
+      type,
+      restricted: p.vn?.restricted,
+      nda: p.vn?.nda,
+    }),
+    publication: "review",
+    pages: 0,
+    health: { score: 0 },
+    lastActivityAt: null,
+    unavailable: true,
+  };
+  if (brain) card.role = roleOfBrain(brain);
+  return card;
+}
+
+function listed(
+  p: { param: string; vn: { kind: string; label: string } | null },
+  type: string | undefined,
+  q: string,
+): boolean {
+  const kind = p.param === "me" ? "personal" : brainTypeOf(p.vn?.kind as never);
+  const name = p.param === "me" ? "My Secondary" : (p.vn?.label ?? p.param);
+  return (!type || kind === type) && (!q || name.toLowerCase().includes(q));
+}
+
+export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
 
   // The whole family can be limited to a pilot cohort.
@@ -97,13 +186,38 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
   // ---- directory ----
 
   /** The cards of these brains, for a caller the view admits to all of them. */
-  async function cardsOf(c: C, params: { param: string }[], keep: (b: Brain) => boolean) {
+  async function cardsOf(
+    c: C,
+    params: {
+      param: string;
+      vn: { kind: string; label: string; restricted?: boolean; nda?: boolean } | null;
+    }[],
+    keep: (b: Brain) => boolean,
+    query: { type?: string; q: string },
+  ): Promise<(BrainCard | MissedCard)[]> {
     const humanIds = await humanIdsOf(c.env, sess(c));
-    const opened = (await Promise.all(params.map((p) => brainOf(c, p.param, humanIds)))).filter(
-      (b): b is Brain => b !== null && keep(b),
+    const ms = deps.brainBoundMs ?? BRAIN_BOUND_MS;
+    const cards = await Promise.all(
+      params.map(async (p) => {
+        let known: Brain | null = null;
+        const result = await within(ms, async (signal) => {
+          const b = await brainOf(c, p.param, humanIds);
+          known = b;
+          if (signal.aborted) throw aborted();
+          if (!b) return null;
+          const [seen] = await seeBrains(c, [b], signal);
+          if (signal.aborted) throw aborted();
+          if (!seen) return null;
+          return cardOf(c, seen);
+        });
+        // type and q apply to a miss as well as a card that arrived. The check is here, after the
+        // bound, so a hung workspace cannot skip it.
+        if (known ? !keep(known) : !listed(p, query.type, query.q)) return null;
+        if (result === "miss") return missedCard(p, known);
+        return result;
+      }),
     );
-    const seen = await seeBrains(c, opened);
-    return Promise.all(seen.map((x) => cardOf(c, x)));
+    return cards.filter((x): x is BrainCard | MissedCard => x !== null);
   }
 
   r.get("/brains", async (c) => {
@@ -116,6 +230,7 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
       c,
       admittedBrainParams(c),
       (b) => (!type || b.facts.type === type) && (!q || b.label.toLowerCase().includes(q)),
+      { type, q },
     );
     cards.sort(
       (a, b) => Number(b.id === "me") - Number(a.id === "me") || a.name.localeCompare(b.name),
@@ -153,7 +268,13 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
       })
       .sort((a, z) => a.name.localeCompare(z.name));
     return c.json({
-      brains: [...cards.map((x) => ({ ...x, canOpen: true as const })), ...closed],
+      brains: [
+        ...cards.map((x) => ({
+          ...x,
+          canOpen: (x as { unavailable?: boolean }).unavailable ? (false as const) : (true as const),
+        })),
+        ...closed,
+      ],
     });
   });
 
@@ -170,9 +291,10 @@ export function brainRoutes(_deps: AppDeps): Hono<AppEnv> {
           NAV_NODE_IDS.has(p.param),
       ),
       () => true,
+      { q: "" },
     );
     c.header("Cache-Control", "no-store");
-    return c.json({ items: buildNav(cards) });
+    return c.json({ items: buildNav(cards as BrainCard[]) });
   });
 
   // ---- home ----

@@ -174,3 +174,37 @@ The intake archive is still 99 Worker files plus 18 shared-package files, 117 in
 Nothing in those notes was deleted. The sentences that pointed the old 99 at `src/worker` were rewritten.
 
 The MCP allowlist call site still passes `new URL(c.req.url).pathname`. The pin now also rejects `decodeURI`, `unescape`, `toLowerCase`, `c.req.path`, and `replace(` in that call. A signed-request test of `authenticate` is deferred. Reaching that line needs a signed internal principal, a replay store, and a tenant session. That is a later test, not this docs pass. The allowlist function itself is already pinned: an encoded path is `no`.
+
+## Switch path variants
+
+Tony, via Jarvis: "A, make the switches catch those variants too." The unmatched forms recorded here are `/v1/ai` with no further slash, `/v1/sources` with no id, and a trailing slash on `/v1/personal/items/:id/contribute`. The same rule covers `/v1/connectors`, because a prefix row matches the prefix or `prefix/…` with no extra case for one name. Percent-encoding and letter case go through that one path. `%2F`, a double slash, `/v1x`, and `/v10` stay unmatched. Publish and the Backlog folder download stay as they are. `auth.ts` and `isImport` stay on the raw pathname.
+
+Tracked, and not this change: a signed `authenticate` request that proves the MCP call site. The string pin cannot see a rewrite that avoids those spellings. Inspector's evasion list for that call is `decodeURI`, `decodeURIComponent`, `unescape`, `toLowerCase`, `toUpperCase`, a trailing-slash `replace` or `slice`, and reading `c.req.path` instead of the raw pathname. A helper with another name would slip the string pin. The signed request is what would catch that helper.
+
+The prefix check is `path === prefix || path.startsWith(prefix + "/")`. Replacing that with `startsWith(prefix)` would treat `/v1/aix` as `/v1/ai`. The normalizer drops every trailing slash, so `/v1/genui/plan//` and `/contribute//` are the same row as the path without those slashes. An interior `//`, `%2F`, `%2f`, `%2573`, `/v1x`, and `/v10` stay off the rows. A bad percent sequence stays 400.
+
+## Real router, extra slashes, and HEAD
+
+These are tests, not a new matcher. The app under test sets a session, runs `switchGate`, then the same paths the Worker registers: `aiRoutes`, `GET /sources/:id`, and `POST /personal/items/:id/contribute`. There is no catch-all.
+
+`/v1//sources/s1` is 404 with the connector switch off or on. The router has no such route, and the path is not the connector prefix. `/v1/sources/s1//x` is 503 when the connector switch is off, because the path still starts with `/v1/sources/`, and 404 when the switch is on, because no route matches. That 503 is the current gate. It is not a defect to remove from `switches.ts`.
+
+Four and five trailing slashes stay on the row. HEAD `GET /v1/ai/status` is 503 when the ai switch is off and 200 when it is on, the same status as GET. A strip loop capped at three slashes, a catch-all in place of the router, and a HEAD skip in the gate each turn their own test red. Those edits are restored.
+
+## Real v1 wiring
+
+The public routes are reached through `createApp`: `authenticate`, then `switchGate`, then the handler. The token is a synthetic Access JWT. `verifyAccessJwt` checks it with a test JWKS passed in `deps.jwks`. The switch flags come from `TenantPolicy.switchState` on a temporary sqlite file.
+
+`/v1/internal/ops` and `/v1/internal/mcp` do not go through `switchGate`. `createApp` mounts them before `v1Routes` so a machine call skips Access auth and the body limit, and each route checks its own HMAC. `GET /v1/internal/mcp/switches` is how the MCP worker reads the flags, including when one is off, so a 503 from `switchGate` there would hide the state it is meant to report. That bypass stays. The `mcp` flag still refuses an internal *user* session on the public router. The signed MCP allowlist test named above is still deferred: this JWT is an Access token, not an MCP principal signature.
+
+## The ac41dfec 503 note
+
+`docs/auth/mantu-503-classification.md` and `docs/auth/mantu-503-repro.mjs` come from `578de37a` and stay as a record of that bundle. The classification's body is not rewritten. A status note at the top says current `src/worker` does not use `auth_unconfigured`. The repro is not a test.
+
+## Route test gaps
+
+These are tests on the app that is already on main. A bad ops signature, a stale or missing timestamp, and a body that does not match the signature are 401. Restore without a signature is 401, restore while it is turned off is 403, and a dev restore of the tenant's own snapshot is 200. A missing workspace binding is 500 `internal_error`. A connector that says the file is not allowed is 403. The contribution test reads the status stored by `create`, not only the JSON. `GET /v1/internal//ops/targets` with no credentials is 401 from `authenticate`. The same path with a valid Access token is 404 from the v1 catch-all, whatever the HMAC, because it never reaches the ops middleware. The HMAC 401 is proved on `/v1/internal/ops/targets` with that same token and a bad signature.
+
+## Source hardening
+
+The contributor can read one candidate by id while the target node is still in their view. An author who has lost that node gets the same 404: policy wins over authorship. A non-author needs `review` or `approve_release` on that node through `canDoInView`. `configure`, including a platform admin's structure-only grant, is not enough, and a content-excluded, break-glass or NDA target stays hidden. Missing, foreign, unparsable and over-length ids (past 128 characters) share that 404. An id of exactly 128 characters that names a node still in the author's view is returned. A missed card's restricted flag uses the node's own flags. Ancestor restriction that is not on the node is a residual. `GET /v1/nodes` is not that door. The brain directory gives each workspace its own 2,500 ms bound. A miss is a name-only card with `unavailable: true`, the view node's real restricted flag, the caller's real role when the view already has it, and no invented template. `type` and `q` still apply. The bound aborts the local read and clears its timer when the brain answers first. A Durable Object call already sent is not cancelled; the leftover work is that one brain's fixed fan-out. Health answers `{ ok: true }` only. The 503 repro script resolves the directory and `worker/entry.js` and refuses a path outside the repo, including a symlink. `GET /v1/internal/mcp//switches` stays on the MCP mount, so a valid Access token does not make it a v1 route. The mount requires the internal HMAC on every path. Unsigned is 401, with or without an Access token. A signed path that is not a route is 404. The personal wiki seed is unchanged.

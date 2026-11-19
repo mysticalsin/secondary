@@ -29,7 +29,7 @@ Stop the process with Ctrl-C when finished. Nothing in this recipe needs a publi
 
 | Request | Status | Body |
 |---|---|---|
-| `GET /v1/health` | 200 | `{"ok":true,"env":"dev","version":"0.1.0"}` |
+| `GET /v1/health` | 200 | `{"ok":true}` |
 | `GET /v1/ready` | 503 | `{"ready":false,"checks":{"do":"fail","r2":"fail"}}` |
 | `GET /v1/me` | 401 | `{"error":"unauthorized"}` |
 | `GET /auth/providers` | 200 | `{"entra":false,"access":true,"loginUrl":"/auth/login"}` |
@@ -104,7 +104,7 @@ Unsigned expected result is 401 unless the row says otherwise. Signed-in behavio
 
 | Method and path | Expected unsigned or unauthenticated | Harness |
 |---|---|---|
-| `GET /v1/health` | 200 `{ok:true,env,version}` | `local-boot.test.ts` |
+| `GET /v1/health` | 200 `{ok:true}` | `local-boot.test.ts` |
 | `GET /v1/ready` | 503 `{ready:false,checks:{do:"fail",r2:"fail"}}` on this boot; 200 when both checks pass | `local-boot.test.ts` on the fix branch |
 | `GET /auth/providers` | 200 provider flags | `local-boot.test.ts` |
 | `GET /auth/login` | 404 `entra_disabled` on this boot | `oidc-login.test.ts` for the callback |

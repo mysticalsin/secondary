@@ -65,17 +65,43 @@ export interface BrainCard {
   lastActivityAt: string | null;
 }
 
+function aborted(): DOMException {
+  return new DOMException("The operation was aborted", "AbortError");
+}
+
+/** Stop waiting when the directory bound aborts. A reply that arrives later is ignored. */
+function watch<T>(signal: AbortSignal | undefined, work: Promise<T>): Promise<T> {
+  if (!signal) return work;
+  if (signal.aborted) return Promise.reject(aborted());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(aborted());
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        if (signal.aborted) reject(aborted());
+        else resolve(value);
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      },
+    );
+  });
+}
+
 /** Everything a card and a home need from one brain, read once and filtered for this caller. */
-export async function seeBrains(c: C, brains: Brain[]): Promise<Seen[]> {
+export async function seeBrains(c: C, brains: Brain[], signal?: AbortSignal): Promise<Seen[]> {
   const s = sess(c);
   const raw = await Promise.all(
     brains.map(async (b) => {
       const [pages, config, meta, h] = await Promise.all([
-        b.stub.wikiPages(),
-        b.stub.brainConfig(),
-        b.stub.wikiMeta(),
-        b.stub.wikiHealth(s.ctx.now),
+        watch(signal, b.stub.wikiPages()),
+        watch(signal, b.stub.brainConfig()),
+        watch(signal, b.stub.wikiMeta()),
+        watch(signal, b.stub.wikiHealth(s.ctx.now)),
       ]);
+      if (signal?.aborted) throw aborted();
       return { b, pages, config, meta, h };
     }),
   );

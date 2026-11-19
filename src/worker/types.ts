@@ -27,6 +27,8 @@ export interface Session {
 /** Test seams recovered routes already read. Absent members use the real runtime. */
 export interface AppDeps {
   now?: () => number;
+  /** How long one brain may take in the directory before it is returned as unavailable. */
+  brainBoundMs?: number;
   jwks?: (team: string) => JWTVerifyGetKey;
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;

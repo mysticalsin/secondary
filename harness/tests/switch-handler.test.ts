@@ -199,11 +199,11 @@ test("a later off row still refuses", () => {
   );
 });
 
-test("a different letter case is not the row, and a trailing slash on sources is", () => {
+test("letter case and a trailing slash are the same switch row", () => {
   const off = { mcp: true, connector: false, ai: true, contribute: false };
   assert.equal(httpSwitch("GET", "/v1/sources/s1", off), "connector");
-  assert.equal(httpSwitch("GET", "/v1/Sources/s1", off), null);
+  assert.equal(httpSwitch("GET", "/v1/Sources/s1", off), "connector");
   assert.equal(httpSwitch("GET", "/v1/sources/s1/", off), "connector");
   assert.equal(httpSwitch("POST", "/v1/personal/items/pi:abcd1234/contribute", off), "contribute");
-  assert.equal(httpSwitch("POST", "/v1/personal/items/pi:abcd1234/contribute/", off), null);
+  assert.equal(httpSwitch("POST", "/v1/personal/items/pi:abcd1234/contribute/", off), "contribute");
 });
