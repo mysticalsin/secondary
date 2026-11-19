@@ -287,6 +287,17 @@ test("the runner refuses a prefix and a scope the tenant did not plan", async ()
   }
 });
 
+test("erasure request refuses a step the grammar rejects instead of shortening", () => {
+  const refused = requireFail(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["receipts", "scope:c_delivery!", "directory"],
+    }),
+  );
+  assert.equal(refused.reason, "unknown_step");
+});
+
 test("erasure request drops a scope step that is not an anchored match", () => {
   const illegal = [
     "scope:c_delivery!",
