@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -576,4 +576,31 @@ test("an empty unreproduced directory in any case is refused", () => {
     });
     refuseDeploy(dir, "assets-unreproduced");
   }
+});
+
+test("a symlinked wrangler.jsonc is refused", () => {
+  const dir = matchingAssets();
+  const held = join(dir, "held-wrangler.jsonc");
+  renameSync(join(dir, "wrangler.jsonc"), held);
+  symlinkSync(held, join(dir, "wrangler.jsonc"));
+  refuseDeploy(dir, "config-symlink");
+});
+
+test("a stat error on wrangler.jsonc is refused", () => {
+  const dir = matchingAssets();
+  unlinkSync(join(dir, "wrangler.jsonc"));
+  symlinkSync("wrangler.jsonc", join(dir, "wrangler.jsonc"));
+  refuseDeploy(dir, "config-unreadable");
+});
+
+test("a dangling or symlinked .dev.vars is refused", () => {
+  const dangling = matchingAssets();
+  symlinkSync(join(dangling, "missing-vars"), join(dangling, ".dev.vars"));
+  refuseDeploy(dangling, "dev-vars-present");
+
+  const linked = matchingAssets();
+  const target = join(linked, "vars-target");
+  writeFileSync(target, "NAME=value\n");
+  symlinkSync(target, join(linked, ".dev.vars"));
+  refuseDeploy(linked, "dev-vars-present");
 });
