@@ -4,13 +4,15 @@
 
 This note and the Historical markers are the only additions. The classification text is otherwise unchanged. It describes the ac41dfec home bundle, not `src/worker` on this commit.
 
-That bundle's `worker/entry.js` answered 503 `auth_unconfigured` when issuer and audience were empty, before it looked at a session. Current `src/worker` has no `auth_unconfigured` guard and does not read `AUTH_ISSUER` or `AUTH_AUDIENCE`. `GET /` is the static shell. An API request with no Access token is 401 `{ error: "unauthorized" }`. A missing Access team domain or audience makes `verifyAccessJwt` return null, which is the same 401.
+That bundle's `worker/entry.js` answered 503 `auth_unconfigured` when issuer and audience were empty, before it looked at a session. Current `src/worker` has no `auth_unconfigured` guard and does not read `AUTH_ISSUER` or `AUTH_AUDIENCE`. `GET /` is the static shell. A route behind `authenticate`, such as `GET /v1/sources/s1`, is 401 `{ error: "unauthorized" }` without an Access token. `GET /v1/health` and `GET /v1/ready` do not require one.
 
 `docs/auth/mantu-503-repro.mjs` still drives `<bundle>/worker/entry.js`. `npm test` runs only `harness/tests/*.test.ts` and `harness/runtime/*.test.ts`. Neither typecheck includes `docs/`. The script is not part of the gates, and it was not rewritten to call `createApp`.
 
 Classified by Devin (senior engineer), 2026-11-09 ~01:00 BRT (America/Sao_Paulo). I only read files and ran a box-local repro. I made no repo writes, used no real credentials and made no network calls.
 
 ## Verdict: a script expectation error combined with a harness gap. It is NOT a product defect.
+
+Historical: describes the ac41dfec bundle only, not current main.
 
 The 503 is the guard doing what it was designed to do. The harness started the worker with the config that ships in `wrangler.jsonc`, where issuer and audience are empty. In that state the worker refuses every request before it looks at any session. Q09's 401 expectation only holds when auth is configured. The runner cannot produce "configured auth with no token" today: when a persona is set it injects a bearer, and when no persona is set auth is unconfigured.
 
@@ -54,9 +56,8 @@ Historical: describes the ac41dfec bundle only, not current main.
    - unconfigured env with a bad bearer gives 503, which pins config-before-session;
    - configured env with no token gives 401 `unauthorized`, which exists today;
    - configured env with a bad bearer gives 401 `invalid_token`.
-Historical: describes the ac41dfec bundle only, not current main.
-
 4. **Product note:** this is informational, not a defect. The shipped `wrangler.jsonc` has empty issuer and audience, so a deploy that does not supply vars or secrets would return 503 to all users. That is safe, because it fails closed and exposes no shell. The file says it is local-only and that `npm run deploy` does not upload it. Before any real deploy, the deploy gate must check that the issuer, audience and JWKS vars are set.
+   Historical: this is the ac41dfec bundle's worker/wrangler.jsonc. This repo has no wrangler config.
 
 ## Separate blocker (the main reason the hands-on gate did not run)
 Hands-on Q01–Q15 were NOT RUN because the box Chrome managed policy `/etc/opt/chrome/policies/managed/zz-sand-loopback-network.json` sets `LoopbackNetworkBlockedForUrls ["*"]`. Atlas hit the same block. This is a platform-wide blocker for box-loopback hands-on Q&A and is not related to the 503.
