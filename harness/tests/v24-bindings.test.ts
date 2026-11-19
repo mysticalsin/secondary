@@ -612,3 +612,43 @@ test("a dangling or symlinked .dev.vars is refused", () => {
   symlinkSync(target, join(linked, ".dev.vars"));
   refuseDeploy(linked, "dev-vars-present");
 });
+
+test("bare deploy.sh is a dry run and npm test cannot apply", () => {
+  const here = readFileSync(join(root, "harness/tests/v24-bindings.test.ts"), "utf8");
+  assert.equal((here.match(/\[\"deploy\.sh\", \"--apply\"\]/g) ?? []).length, 2);
+  for (const name of readdirSync(join(root, "harness/tests"))) {
+    if (!name.endsWith(".test.ts") || name === "v24-bindings.test.ts") continue;
+    const text = readFileSync(join(root, "harness/tests", name), "utf8");
+    assert.equal(text.includes("--apply"), false, name);
+  }
+
+  const dir = matchingAssets();
+  const record = join(dir, "wrangler-args");
+  const stub = join(dir, "node_modules", ".bin", "wrangler");
+  writeFileSync(stub, `#!/bin/sh\nprintf '%s\\n' "$@" > '${record}'\necho wrangler-invoked >&2\nexit 0\n`);
+  chmodSync(stub, 0o755);
+
+  const apply = spawnSync("bash", ["deploy.sh", "--apply"], { cwd: dir, encoding: "utf8" });
+  assert.equal(apply.status, 2);
+  assert.match(apply.stderr, /apply-under-test/);
+  assert.equal(apply.stderr.includes("wrangler-invoked"), false);
+  assert.equal(existsSync(record), false);
+
+  const envApply = spawnSync("bash", ["deploy.sh", "--apply"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, NODE_ENV: "test", NODE_TEST_CONTEXT: "" },
+  });
+  assert.equal(envApply.status, 2);
+  assert.match(envApply.stderr, /apply-under-test/);
+  assert.equal(envApply.stderr.includes("wrangler-invoked"), false);
+
+  const bare = spawnSync("bash", ["deploy.sh"], { cwd: dir, encoding: "utf8" });
+  assert.equal(bare.status, 0);
+  assert.equal(bare.stderr.includes("wrangler-invoked"), true);
+  assert.match(readFileSync(record, "utf8"), /(^|\n)--dry-run(\n|$)/);
+
+  const flagged = spawnSync("bash", ["deploy.sh", "--dry-run"], { cwd: dir, encoding: "utf8" });
+  assert.equal(flagged.status, 0);
+  assert.match(readFileSync(record, "utf8"), /(^|\n)--dry-run(\n|$)/);
+});
