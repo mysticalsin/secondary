@@ -81,3 +81,9 @@ The four `audit` wrappers stay. They are not the same function:
 - `admin/routes.ts` `audit` uses the session clock (`new Date(s.ctx.now).toISOString()`), spreads the whole intent (the caller supplies `decision` and `reason`; there is no `owner` default), and returns a boolean.
 - `routes.ts` `audit` uses the wall clock, spreads the whole intent, and returns `{ receiptId, ok }`. Callers read `.ok`, and some also read `receiptId`.
 - `ops-admin.ts` `audit` takes `(c, session, action, reason)`, stamps `deps.now()`, always writes `decision: "allow"`, and always writes `nodeId` and `scopeId` as null. Enable still waits and answers 503 when the receipt fails. Switch-off still uses `boundedAudit` and logs `{ at: "switch_disable", audit, switch }` with `succeeded`, `refused`, or `timed_out`.
+
+## Request coverage and intake
+
+`harness/tests/intake.test.ts` gained one allowlist line, `recovered-source/worker/src/ux/util.ts`, so the intake byte check accepts the edited helper. No assertion in that test changed.
+
+The contribute deny (`routes.ts` `warnAuditDenied("contribute")`) and the question deny (`uxv2/questions.ts` `warnAuditDenied(action)`) now have request tests. Each expects 403 and `{ at: "audit_unavailable", action, decision: "deny" }` with action `contribute` or `question.ingest`. On `3656037a` those tests already passed. Removing each call, and not committing that removal, failed only its own test: the warning line was absent. Restoring both calls made both tests pass again. The production calls did not need a change.
