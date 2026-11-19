@@ -160,6 +160,18 @@ test("erasure request: only the exact step forms are readable", () => {
   assert.deepEqual(kept.order, ["receipts", "scope:c_delivery"]);
 });
 
+test("erasure request: a newline, an over-long id, and a non-ASCII id are unreadable", () => {
+  for (const id of ["scope:c_delivery\n", `scope:${"a".repeat(129)}`, "scope:café"]) {
+    const row = decodeErasure({
+      status: "partial_failed",
+      order: [id],
+      mark: { [id]: "pending" },
+    });
+    assert.equal(row.status.tag, "unreadable", id);
+    assert.deepEqual(row.order, [], id);
+  }
+});
+
 test("erasure plan keeps only a scope id the step grammar accepts", () => {
   const plan = erasurePlan(["c_delivery", "bad id", "a\nb", "café", "a".repeat(129), ""]);
   assert.equal(plan.includes("scope:c_delivery"), true);
