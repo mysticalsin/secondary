@@ -75,4 +75,22 @@ OBJECTIONS on S6 refuse-not-drop only. S1, S3, S4, S5 and C7 are closed. S2 is a
 - Fix 2. A restore scope the grammar rejects is listed in `skipped`. An empty step list is not treated as done. Red `9219ba14d5ada1105e68aef0ed11f1f876b2a764`: `skipped: []` against `skipped: [subject-1]`. Fix `57aecd180cf7838127121aff51955cee1b660a3f`. Mutant `return-empty` fails the same assertion. Restored.
 - Fix 3. `requestedFrom` refuses a step the grammar rejects. The transition reason is `unknown_step`. A grant built from those steps is unreadable. Red `355e9efbc7acdbc870aa9b732beadbd50e76d3f2`: `true !== false`. Fix `003338085e04569d5952757f807eb5de5948f074`. Mutant `filter-and-shorten` fails the same assertion. Restored.
 
-CONSENSUS: OPEN
+## Devin round 3
+
+CONSENSUS (Devin): AGREED, on head 27805a0e03d17a660986e0569e0278367c81b764 (tree fdaf82fd) and #25 b42e4249b69c3f07c8cd57f896c1eb914be4fde3 (tree 847a0590). Read against plan-debate.md blob 42be7825.
+
+1. Fixes 1-3 close S6 refuse-not-drop as I understand it. A grammar-rejected scope is refused with 422 invalid_scope before any ledger row or side effect, a rejected restore scope goes into skipped, and requestedFrom refuses with unknown_step. The loop-3 gate re-runs the three named mutants (filter-instead-of-refuse, return-empty, filter-and-shorten) and asserts that no ledger row exists after the 422.
+2. T010 stays as decided: a grammar-valid company scope that the current plan omits still runs. A grammar-invalid scope is refused. Those are two different cases, and both are tested.
+3. The ledger rewrite and the S7 old-row repair split into their own HIGH-risk PR, with a debate and a dry-run of the row rewrite.
+4. My round 2 text is in Devin's file CHALLENGE-devin-round2-ef648c39.md (sha256 fc7b3ad2). The "Devin round 1 Met" lines are the writer's mapping, not my words. They are proven only by my gate's mutants.
+5. This is not merge approval. Loop 3 of 3 runs on one bundle at these exact heads, with mutants V1-V5, C2, C3, C4, C6 and C7, and fixes 1-3.
+
+## Sentinel final binding read
+
+CONSENSUS (Sentinel): AGREED, bound to head 27805a0e03d17a660986e0569e0278367c81b764 (tree fdaf82fd, merge-base 9bdb3646), debate blob 42be7825, bundle e7a8325b. Report plan-debate-msb-pr24-27805a0e-final-20261119.md (sha256 a204ec87). Plan agreement only, not merge approval. Security Q&A NOT RUN.
+
+Q1 (the silent skip I raised) is closed: a grammar-failing company scope is refused with 422 before any write, a restore scope is listed as skipped, and a request is refused rather than shortened, each with a tests-only red and a refusal-plus-no-side-effect test. The earlier debate conditions S1 to S5, S7 (flip-back), C7 and Devin C1 to C8 were accepted at 088774c5 on the writer's claims and are unchanged in this delta. The ledger repair of old stored rows stays split, as agreed. Q2 (contacts versus underRestriction) stays an accepted Info residual.
+
+Residuals, none blocking #24, going to the follow-up SB-ERASURE-LEDGER-REPAIR: R-1 (Low) no test calls erasureWithGrant with a bad step, and recordErasureGrant (tenant-policy.ts:1190) would persist an unreadable state over a row; R-2 (Info) addSteps and reopen skip unknown steps silently; R-3 (Info) the second erasurePlan call at ops-rights.ts:251 is not wrapped (fails closed with 500).
+
+CONSENSUS: AGREED
