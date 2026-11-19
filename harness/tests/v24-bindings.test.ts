@@ -652,3 +652,41 @@ test("bare deploy.sh is a dry run and npm test cannot apply", () => {
   assert.equal(flagged.status, 0);
   assert.match(readFileSync(record, "utf8"), /(^|\n)--dry-run(\n|$)/);
 });
+
+test("dotenv files and .dev.vars.* are refused like .dev.vars", async () => {
+  const guard = (await import("../../deploy/guard.ts")) as {
+    guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
+  };
+  const cases: Array<{ name: string; reason: string; kind: "file" | "link" | "dangling" | "self" }> = [
+    { name: ".env", reason: "env-file-present", kind: "file" },
+    { name: ".env", reason: "env-file-present", kind: "link" },
+    { name: ".env", reason: "env-file-present", kind: "dangling" },
+    { name: ".env", reason: "env-file-present", kind: "self" },
+    { name: ".env.local", reason: "env-file-present", kind: "file" },
+    { name: ".env.local", reason: "env-file-present", kind: "link" },
+    { name: ".env.local", reason: "env-file-present", kind: "dangling" },
+    { name: ".env.production", reason: "env-file-present", kind: "file" },
+    { name: ".env.production", reason: "env-file-present", kind: "dangling" },
+    { name: ".dev.vars.local", reason: "dev-vars-present", kind: "file" },
+    { name: ".dev.vars.local", reason: "dev-vars-present", kind: "link" },
+    { name: ".dev.vars.local", reason: "dev-vars-present", kind: "dangling" },
+    { name: ".dev.vars", reason: "dev-vars-present", kind: "self" },
+  ];
+  for (const item of cases) {
+    const dir = matchingAssets();
+    const path = join(dir, item.name);
+    if (item.kind === "file") writeFileSync(path, "SECRET=value\n");
+    else if (item.kind === "dangling") symlinkSync(join(dir, `${item.name}.missing`), path);
+    else if (item.kind === "self") symlinkSync(item.name, path);
+    else {
+      const target = join(dir, `${item.name}.target`);
+      writeFileSync(target, "SECRET=value\n");
+      symlinkSync(target, path);
+    }
+    assert.deepEqual(guard.guardRoot(dir, "dry-run"), { ok: false, reason: item.reason }, `${item.name} ${item.kind}`);
+    assert.deepEqual(guard.guardRoot(dir, "deploy"), { ok: false, reason: item.reason }, `${item.name} ${item.kind}`);
+    refuseDeploy(dir, item.reason);
+  }
+  const ignore = readFileSync(join(root, ".gitignore"), "utf8");
+  assert.match(ignore, /(^|\n)\.env\*(?:\n|$)/);
+});
