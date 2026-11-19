@@ -52,10 +52,7 @@ export const SWITCH_TABLE: readonly Row[] = [
     // Planner, /v1/ai/*, and briefs (H-05). `gate()` still checks the processor contract.
     name: "ai",
     http: (_m, p) =>
-      p === "/v1/genui/plan" ||
-      p.startsWith("/v1/ai/") ||
-      p === "/v1/briefs" ||
-      p.startsWith("/v1/briefs/"),
+      p === "/v1/genui/plan" || onPrefix(p, "/v1/ai") || onPrefix(p, "/v1/briefs"),
     probes: [
       { method: "POST", path: "/v1/genui/plan" },
       { method: "GET", path: "/v1/ai/status" },
@@ -67,7 +64,7 @@ export const SWITCH_TABLE: readonly Row[] = [
   {
     // /v1/sources and /v1/connectors (M-04). Search and wiki citations omit hits instead of 503.
     name: "connector",
-    http: (_m, p) => p.startsWith("/v1/connectors/") || p.startsWith("/v1/sources/"),
+    http: (_m, p) => onPrefix(p, "/v1/connectors") || onPrefix(p, "/v1/sources"),
     probes: [
       { method: "GET", path: "/v1/connectors/acme" },
       { method: "GET", path: "/v1/sources/s1" },
@@ -77,6 +74,17 @@ export const SWITCH_TABLE: readonly Row[] = [
 ];
 
 type MatchRow = { name: SwitchName; http?: (method: string, path: string) => boolean };
+
+/** Lower case and every trailing slash. Every row matches this form. */
+export function normalizedSwitchPath(path: string): string {
+  let lower = path.toLowerCase();
+  while (lower.length > 1 && lower.endsWith("/")) lower = lower.slice(0, -1);
+  return lower;
+}
+
+function onPrefix(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
 
 export function blockingSwitch(
   rows: readonly MatchRow[],
@@ -91,7 +99,7 @@ export function blockingSwitch(
 }
 
 export function httpSwitch(method: string, path: string, switches: SwitchState): SwitchName | null {
-  return blockingSwitch(SWITCH_TABLE, method, path, switches);
+  return blockingSwitch(SWITCH_TABLE, method, normalizedSwitchPath(path), switches);
 }
 
 export function handlerSwitch(key: HandlerKey): SwitchName {

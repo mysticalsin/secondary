@@ -8,9 +8,8 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-// Fixture label only. These rows were reconciled at 53bc34e0; that sha is not the current main.
-// The encoded /v1/%73ources/s1 row is 503, which 53bc34e0 did not answer.
-const SOURCE = "53bc34e0901591d4c7a64c063e239a9c3aaf9992";
+// Pinned after normalized switch paths. Bare prefixes and a trailing contribute slash are 503 when that switch is off.
+const SOURCE = "normalized-switch-path";
 
 test("switch gate matches the pinned table", async () => {
   const fixture = JSON.parse(

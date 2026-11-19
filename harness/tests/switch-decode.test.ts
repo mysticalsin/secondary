@@ -155,7 +155,7 @@ test("a dot segment Hono has already collapsed is still the connector route", as
   assert.deepEqual(await open.json(), { hit: "sources", id: "s1" });
 });
 
-test("the switch gate call site keeps letter case and a trailing slash", async () => {
+test("the switch gate call site folds letter case and a trailing slash", async () => {
   const ops = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const { switchGate } = (await import(ops)) as {
     switchGate: (c: never, next: () => Promise<void>) => Promise<Response | void>;
@@ -176,8 +176,8 @@ test("the switch gate call site keeps letter case and a trailing slash", async (
   app.route("/v1", v1);
 
   const upper = await app.request("http://127.0.0.1/v1/Sources/s1");
-  assert.equal(upper.status, 200);
-  assert.deepEqual(await upper.json(), { hit: "fall" });
+  assert.equal(upper.status, 503);
+  assert.deepEqual(await upper.json(), { error: "switched_off", switch: "connector" });
 
   const slash = await app.request("http://127.0.0.1/v1/sources/s1/");
   assert.equal(slash.status, 503);
@@ -186,6 +186,6 @@ test("the switch gate call site keeps letter case and a trailing slash", async (
   const trailed = await app.request("http://127.0.0.1/v1/personal/items/pi:abcd1234/contribute/", {
     method: "POST",
   });
-  assert.equal(trailed.status, 200);
-  assert.deepEqual(await trailed.json(), { hit: "fall" });
+  assert.equal(trailed.status, 503);
+  assert.deepEqual(await trailed.json(), { error: "switched_off", switch: "contribute" });
 });
