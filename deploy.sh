@@ -14,7 +14,6 @@ if [[ $# -eq 1 ]]; then
   mode="dry-run"
 fi
 tmp=$(mktemp -d)
-chmod 0700 "$tmp"
 trap 'rm -rf "$tmp"' EXIT
 if [[ "$mode" == "deploy" ]]; then
   node --experimental-strip-types deploy/guard.ts deploy "$tmp"

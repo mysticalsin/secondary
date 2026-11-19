@@ -96,7 +96,16 @@
 **Independent Test**: T015 fails on `8de81a4`, then T016 passes. `deploy/.staged` stays absent.
 
 - [x] T015 [US5] Add failing tests: a pre-existing or empty configured directory is refused and left in place; `deploy.sh` passes `--assets` to a `0700` directory outside that path and removes it when the stub exits 7; an empty `unreproduced`, `UNREPRODUCED`, or `keep/Unreproduced` directory is refused. Covers FR-016.
-- [x] T016 [US5] Stage with `mktemp -d`, `chmod 0700`, and `trap 'rm -rf "$tmp"' EXIT`. Run `wrangler deploy --assets "$tmp"`. Refuse when the configured path exists. Treat every `unreproduced` directory name as the sentinel. Record the Wrangler 4.158.0 `--dry-run` evidence. Do not invent UI bytes and do not run a real deploy. Covers FR-016.
+- [x] T016 [US5] Stage with `mktemp -d`, `chmod 0700`, and `trap 'rm -rf "$tmp"' EXIT`. Run `wrangler deploy --assets "$tmp"`. Refuse when the configured path exists. Treat every `unreproduced` directory name as the sentinel. Record the Wrangler 4.158.0 `--dry-run` evidence. Do not invent UI bytes and do not run a real deploy. Covers FR-016. T018 drops the redundant chmod.
+
+## Phase 12: Rehash the staged copy (Priority: P1)
+
+**Goal**: A change to a staged copy after the write and before the rehash refuses the deploy, and `deploy.sh` does not chmod the temp directory.
+
+**Independent Test**: T017 fails on `5dbf2ba`, then T018 passes. Deleting the rehash turns only that test red.
+
+- [x] T017 [US5] Add one failing test. `DEPLOY_AFTER_COPY` replaces the temp copy after the write and before the rehash. `deploy.sh` exits 2 with `assets-manifest-mismatch` and does not start Wrangler. Covers FR-016.
+- [x] T018 [US5] Honor `DEPLOY_AFTER_COPY` between the write and the rehash. Drop the `chmod 0700` after `mktemp -d`. Record the proof that deleting the rehash fails only this test. Do not invent UI bytes and do not run a real deploy. Covers FR-016.
 
 ## Dependencies & Execution Order
 
@@ -119,6 +128,8 @@
 - T014 depends on the red run of T013.
 - T015 is a failing test and depends on T014.
 - T016 depends on the red run of T015.
+- T017 is a failing test and depends on T016.
+- T018 depends on the red run of T017.
 
 ### Parallel Opportunities
 
@@ -127,4 +138,4 @@
 
 ## Implementation Strategy
 
-T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. No task deploys, and no task writes live UI bytes.
+T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. T017 lands as a failing test. T018 makes that test pass, drops the extra chmod, and records the rehash deletion proof. No task deploys, and no task writes live UI bytes.

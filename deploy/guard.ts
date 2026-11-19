@@ -120,6 +120,8 @@ function stageCopies(destRoot: string, assets: string, files: Map<string, string
     const dest = assetPath(destRoot, rel);
     mkdirSync(join(dest, ".."), { recursive: true });
     writeFileSync(dest, bytes);
+    const replacement = process.env.DEPLOY_AFTER_COPY;
+    if (replacement !== undefined) writeFileSync(dest, replacement);
     const copy = readFileSync(dest);
     if (!bytes.equals(copy) || createHash("sha256").update(copy).digest("hex") !== expected) {
       return { ok: false, reason: "assets-manifest-mismatch" };
