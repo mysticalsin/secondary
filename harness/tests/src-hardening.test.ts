@@ -714,6 +714,57 @@ async function directPublishSkips(vn: {
   );
 }
 
+test("a throwing parent lookup is restricted and direct publish does not throw", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf, directPublish } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null },
+      nodes: { get(id: string): unknown },
+    ) => { restricted: boolean };
+    directPublish: (c: unknown, w: unknown) => Promise<boolean>;
+  };
+  const nodes = {
+    get() {
+      throw new Error("synthetic lookup failed");
+    },
+  };
+  assert.equal(restrictionOf({ parentId: "c_gone", restricted: false }, nodes).restricted, true);
+  const published = await directPublish(
+    {
+      get: (key: string) =>
+        key === "session"
+          ? {
+              principal: { id: AUTHOR.id, email: AUTHOR.email, tenantId: TENANT },
+              internal: false,
+              tenantId: TENANT,
+              org: { nodes },
+              ctx: { now: 1 },
+            }
+          : undefined,
+      env: {
+        ENVIRONMENT: "test",
+        TENANT_POLICY: {
+          jurisdiction() {
+            return this;
+          },
+          idFromName: (name: string) => name,
+          get: () => ({ humanIds: async () => [] }),
+        },
+      },
+    },
+    {
+      personal: false,
+      vn: { kind: "circle", parentId: "c_gone", restricted: false, nda: false },
+      stub: {
+        brainConfig: async () => ({ publication: "direct" }),
+        brainRoleOf: async () => null,
+      },
+      can: { edit: true, decide: true },
+    },
+  );
+  assert.equal(published, false);
+});
+
 test("direct publish waits when an unflagged brain sits under a restricted or contacts ancestor", async () => {
   const restore: (() => void)[] = [];
   restore.push(
