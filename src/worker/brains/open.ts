@@ -211,7 +211,8 @@ export async function directPublish(
   if (cfg.publication !== "direct") return false;
   const type = w.personal ? "personal" : w.vn ? brainTypeOf(w.vn.kind) : null;
   if (!type) return false;
-  const facts: BrainFacts = { type, restricted: !!w.vn?.restricted, nda: !!w.vn?.nda };
+  const walked = restrictionOf(w.vn, requireOrg(sess(c)).nodes);
+  const facts: BrainFacts = { type, ...walked };
   if (effectivePublication(facts, cfg.publication) !== "direct") return false;
   if (w.personal) return true;
   return roleAllows(await storedBrainRole(c, w.stub, await humanIdsOf(c.env, sess(c))), "edit");

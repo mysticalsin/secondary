@@ -588,6 +588,202 @@ test("a contacts ancestor restricts both the open card and the missed card", asy
   }
 });
 
+test("an unflagged chain of two hops stays open on the answered card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_open_root", "Open root", { parentId: null, linkUnder: "d_amaris" }));
+  restore.push(
+    await plantCircle("c_open_mid", "Open middle", { parentId: "c_open_root", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_open_hit", "Open hit", { parentId: "c_open_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_open_miss", "Open miss", { parentId: "c_open_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_open_hit", "c_open_miss"], ["c_open_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_open_hit");
+    const miss = read.cards.find((b) => b.id === "c_open_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, false);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, false);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+async function plantAncestorChain(prefix: string, ancestors: number): Promise<() => void> {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle(`${prefix}_${ancestors}`, `${prefix} root`, { parentId: null, linkUnder: "d_amaris" }),
+  );
+  for (let n = ancestors - 1; n >= 1; n -= 1) {
+    restore.push(
+      await plantCircle(`${prefix}_${n}`, `${prefix} ${n}`, {
+        parentId: `${prefix}_${n + 1}`,
+        linkUnder: "d_amaris",
+      }),
+    );
+  }
+  restore.push(
+    await plantCircle(`${prefix}_hit`, `${prefix} hit`, { parentId: `${prefix}_1`, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle(`${prefix}_miss`, `${prefix} miss`, { parentId: `${prefix}_1`, linkUnder: "d_amaris" }),
+  );
+  return () => {
+    restore.reverse().forEach((fn) => fn());
+  };
+}
+
+test("twelve ancestors stay open and thirteen ancestors fail closed", async () => {
+  const restoreTwelve = await plantAncestorChain("c_cap12", 12);
+  const restoreThirteen = await plantAncestorChain("c_cap13", 13);
+  const read = await restrictionOfLeaves(
+    ["c_cap12_hit", "c_cap12_miss", "c_cap13_hit", "c_cap13_miss"],
+    ["c_cap12_miss", "c_cap13_miss"],
+  );
+  try {
+    const openHit = read.cards.find((b) => b.id === "c_cap12_hit");
+    const openMiss = read.cards.find((b) => b.id === "c_cap12_miss");
+    const closedHit = read.cards.find((b) => b.id === "c_cap13_hit");
+    const closedMiss = read.cards.find((b) => b.id === "c_cap13_miss");
+    assert.equal(openHit?.unavailable, undefined);
+    assert.equal(openHit?.restricted, false);
+    assert.equal(openMiss?.unavailable, true);
+    assert.equal(openMiss?.restricted, false);
+    assert.equal(closedHit?.unavailable, undefined);
+    assert.equal(closedHit?.restricted, true);
+    assert.equal(closedMiss?.unavailable, true);
+    assert.equal(closedMiss?.restricted, true);
+  } finally {
+    read.close();
+    restoreThirteen();
+    restoreTwelve();
+  }
+});
+
+async function directPublishSkips(vn: {
+  kind: string;
+  parentId: string | null;
+  restricted?: boolean;
+  nda?: boolean;
+  contacts?: boolean;
+}): Promise<boolean> {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => object;
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const binding = {
+    jurisdiction() {
+      return binding;
+    },
+    idFromName: (name: string) => name,
+    get: () => ({ humanIds: async () => [] }),
+  };
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { directPublish } = (await import(openUrl)) as {
+    directPublish: (c: unknown, w: unknown) => Promise<boolean>;
+  };
+  return directPublish(
+    {
+      get: (key: string) =>
+        key === "session"
+          ? {
+              principal: { id: AUTHOR.id, email: AUTHOR.email, tenantId: TENANT },
+              internal: false,
+              tenantId: TENANT,
+              org,
+              ctx: { now: 1 },
+            }
+          : undefined,
+      env: { ENVIRONMENT: "test", TENANT_POLICY: binding },
+    },
+    {
+      personal: false,
+      vn,
+      stub: {
+        brainConfig: async () => ({ publication: "direct" }),
+        brainRoleOf: async () => null,
+      },
+      can: { edit: true, decide: true },
+    },
+  );
+}
+
+test("direct publish waits when an unflagged brain sits under a restricted or contacts ancestor", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(
+    await plantCircle("c_pub_top", "Publish restricted ancestor", { restricted: true, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_pub_mid", "Publish middle", { parentId: "c_pub_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_pub_hit", "Publish hit", { parentId: "c_pub_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_con_top", "Publish contacts ancestor", { contacts: true, linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_con_hit", "Publish contacts hit", { parentId: "c_con_top", linkUnder: "d_amaris" }),
+  );
+  try {
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_pub_mid", restricted: false, nda: false }),
+      false,
+    );
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_con_top", restricted: false, nda: false }),
+      false,
+    );
+  } finally {
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
+test("a closed card under a restricted ancestor is restricted", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { parentId: string | null }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const dept = org.nodes.get("d_amaris");
+  if (!dept) throw new Error("missing department");
+  const previous = dept.parentId;
+  const restore = await plantCircle("c_close_top", "Closed ancestor", {
+    restricted: true,
+    parentId: null,
+    linkUnder: "d_amaris",
+  });
+  const held = await openDirectory();
+  const api = await app();
+  try {
+    dept.parentId = "c_close_top";
+    const res = await api.request(
+      "http://127.0.0.1/v1/brains?scope=all",
+      {},
+      env(held.binding, ADMIN.email),
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      brains: { id: string; restricted?: boolean; canOpen?: boolean }[];
+    };
+    const card = body.brains.find((b) => b.id === "d_amaris");
+    assert.equal(card?.canOpen, false);
+    assert.equal(card?.restricted, true);
+  } finally {
+    dept.parentId = previous;
+    restore();
+    held.remove();
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {

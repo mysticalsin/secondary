@@ -285,7 +285,10 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
           type: t,
           name: vn.label,
           canOpen: false as const,
-          restricted: isRestrictedBrain({ type: t, restricted: vn.restricted, nda: vn.nda }),
+          restricted: isRestrictedBrain({
+            type: t,
+            ...restrictionOf(vn, requireOrg(s).nodes),
+          }),
           canRequestAccess:
             vn.kind !== "core" && canDoInView(view, s.principal, vn.id, "request_access").allowed,
         };
