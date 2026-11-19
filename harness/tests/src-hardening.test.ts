@@ -529,6 +529,37 @@ test("a missing parent fails closed on both the open card and the missed card", 
   }
 });
 
+test("a chain past the hop cap fails closed on both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_hop_13", "Hop 13", { parentId: null, linkUnder: "d_amaris" }));
+  for (let n = 12; n >= 1; n -= 1) {
+    restore.push(
+      await plantCircle(`c_hop_${n}`, `Hop ${n}`, {
+        parentId: `c_hop_${n + 1}`,
+        linkUnder: "d_amaris",
+      }),
+    );
+  }
+  restore.push(
+    await plantCircle("c_hop_hit", "Hop hit", { parentId: "c_hop_1", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_hop_miss", "Hop miss", { parentId: "c_hop_1", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_hop_hit", "c_hop_miss"], ["c_hop_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_hop_hit");
+    const miss = read.cards.find((b) => b.id === "c_hop_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
+  }
+});
+
 test("a missed card under a restricted ancestor is restricted", async () => {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
