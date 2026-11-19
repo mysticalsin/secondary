@@ -171,21 +171,29 @@ export async function needFlag(c: C, key: FlagKey): Promise<Response | null> {
 }
 
 /**
- * Does a page proposal from this caller publish at once? Only when the brain's publication mode is
- * direct, the policy bounds allow it (account, restricted and Global brains force review, checked
- * again here on every call), and the caller may edit. In a Personal Brain only an explicit "direct".
+ * Does a page proposal from this caller publish at once? A shared brain asks `mayDecide` and the
+ * stored brain role. The publication mode must be direct, and the policy bounds are checked again
+ * here (account, restricted and Global brains force review). The caller must be allowed to edit.
+ * In a Personal Brain only an explicit "direct".
  */
 export async function directPublish(
   c: C,
   w: {
     personal: boolean;
+    nodeId: string;
+    view: AdmittedView;
+    role: BrainRole | null;
     vn: ViewNode | null;
     stub: ReturnType<typeof workspaceStub>;
-    can: { edit: boolean; decide?: boolean };
+    can: { edit: boolean };
   },
 ): Promise<boolean> {
   if (!w.can.edit) return false;
-  if (!w.personal && w.can.decide !== true) return false;
+  if (!w.personal) {
+    if (!w.view || !w.nodeId) return false;
+    if (!mayDecide(w.view, sess(c).principal, w.nodeId).allowed) return false;
+    if (!roleAllows(w.role, "review")) return false;
+  }
   // M-5: text written by an agent (an MCP call) always waits for a person, whatever the brain's mode.
   if (sess(c).internal) return false;
   const cfg = await w.stub.brainConfig();

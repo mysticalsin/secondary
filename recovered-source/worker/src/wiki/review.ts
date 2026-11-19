@@ -15,10 +15,24 @@ import type { Proposal } from "./types.ts";
 
 export type Right = { allowed: boolean; reason: string };
 
-/** Roles that lead a brain. A standing edit or review grant on any other role is not a decision. */
-const LEAD_ROLES = new Set(["acme_lead"]);
+const LEAD_ACTIONS = ["review", "edit", "manage_members"] as const;
 
 const sameId = (a: string, b: string): boolean => asciiLower(a.trim()) === asciiLower(b.trim());
+
+/** A grant marked `lead` that still allows a standing decision action on this node. */
+function leadOf(view: AdmittedView, p: Principal, nodeId: string): Right | null {
+  for (const role of view.roles) {
+    for (const grant of role.grants) {
+      if (grant.conditions.lead !== true) continue;
+      for (const action of LEAD_ACTIONS) {
+        if (!grant.actions.includes(action)) continue;
+        if (canDoInView(view, p, nodeId, action).allowed)
+          return { allowed: true, reason: "Lead of this brain" };
+      }
+    }
+  }
+  return null;
+}
 
 /**
  * A lead may decide inside a brain they lead. Anyone else needs a standing approve_release grant.
@@ -40,12 +54,8 @@ export function mayDecide(
   const standing: AdmittedView = { ...view, ctx: { ...view.ctx, elevatedUntil: undefined } };
   const release = canDoInView(standing, p, nodeId, "approve_release");
   if (release.allowed) return release;
-  if (p.roleIds.some((id) => LEAD_ROLES.has(id))) {
-    for (const action of ["review", "edit", "manage_members"] as const) {
-      const decision = canDoInView(standing, p, nodeId, action);
-      if (decision.allowed) return { allowed: true, reason: "Lead of this brain" };
-    }
-  }
+  const lead = leadOf(standing, p, nodeId);
+  if (lead) return lead;
   return canDoInView(view, p, nodeId, "approve_release");
 }
 

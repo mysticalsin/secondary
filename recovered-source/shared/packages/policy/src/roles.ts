@@ -84,9 +84,10 @@ export const ROLES: Readonly<Record<RoleId, Role>> = {
     summary: "Works in the Sales & Accounts circle and owns the Acme Synthetic SA workspace.",
     grants: [
       G("global", "core", V),
-      G("circle", "c_sales", [...V, "comment", "contribute", "edit"]),
+      G("circle", "c_sales", [...V, "comment", "contribute", "edit"], { lead: true }),
       G("account", "a_acme", [...V, "comment", "contribute", "edit", "review", "manage_members"], {
         member: true,
+        lead: true,
       }),
       ...MEMBER_GRANTS,
     ],

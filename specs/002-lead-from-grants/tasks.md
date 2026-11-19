@@ -15,9 +15,9 @@
 ## Phase 1
 
 - [x] T001 Write `specs/002-lead-from-grants/` and record Tony's decision on the untangle log. [US1]
-- [ ] T002 Add a failing test for the pinned decisions, the loose `can.decide` boolean, and the single grant source. [US1] [US2] [US3]
-- [ ] T003 After T002 is red, mark the two `acme_lead` lead grants, derive the decision from them, and make `directPublish` call `mayDecide`. [US1] [US3]
-- [ ] T004 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. [US1]
+- [x] T002 Add a failing test for the pinned decisions, the loose `can.decide` boolean, and the single grant source. [US1] [US2] [US3]
+- [x] T003 After T002 is red, mark the two `acme_lead` lead grants, derive the decision from them, and make `directPublish` call `mayDecide`. [US1] [US3]
+- [x] T004 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. [US1]
 
 ## Dependencies
 
