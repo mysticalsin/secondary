@@ -21,6 +21,8 @@ const LEAD = { id: "u_acme_lead", email: "acme@synthetic.example" };
 const CANDIDATE = "cand:c_delivery:abcd1234";
 const OTHER_CIRCLE = "cand:c_eng:abcd1234";
 const NDA_CANDIDATE = "cand:a_calypso:abcd1234";
+const LONG_NODE = `n${"a".repeat(113)}`;
+const LONG_CANDIDATE = `cand:${LONG_NODE}:abcd1234`;
 const NOT_FOUND = { error: "not_found" };
 
 const hung = {
@@ -297,16 +299,14 @@ test("an author who lost the node gets 404", async () => {
 test("bad candidate ids share one 404 body", async () => {
   const held = await openDirectory();
   const api = await app();
-  const node128 = `n${"a".repeat(113)}`;
-  const id128 = `cand:${node128}:abcd1234`;
   const id129 = `cand:n${"a".repeat(114)}:abcd1234`;
-  assert.equal(id128.length, 128);
+  assert.equal(LONG_NODE.length, 114);
+  assert.equal(LONG_CANDIDATE.length, 128);
   assert.equal(id129.length, 129);
   try {
     const ids = [
       "not-a-candidate",
       "cand:zz_other_tenant:abcd1234",
-      id128,
       id129,
     ];
     for (const id of ids) {
@@ -318,6 +318,25 @@ test("bad candidate ids share one 404 body", async () => {
       env(held.binding, AUTHOR.email),
     );
     await assertNotFound(missing);
+  } finally {
+    held.remove();
+  }
+});
+
+test("an author can read a 128-character candidate id", async () => {
+  const held = await openDirectory();
+  const api = await app();
+  try {
+    const res = await candidate(api, held.binding, AUTHOR.email, LONG_CANDIDATE);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), {
+      id: LONG_CANDIDATE,
+      title: "Synthetic note",
+      body: "Plain note",
+      status: "candidate",
+      revision: 1,
+      targetNodeId: LONG_NODE,
+    });
   } finally {
     held.remove();
   }
