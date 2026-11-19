@@ -117,6 +117,14 @@ Comments removed because they only repeated the code:
 
 ## Encoded source path
 
-`switchGate` reads `new URL(c.req.url).pathname`. On Hono `4.13.17` that pathname keeps `%73`, so `/v1/%73ources/s1` does not match the connector row. The same request, mounted with `app.route("/v1", v1)` and `GET /sources/:id` after the gate, reaches the handler with id `s1`. The plain path `/v1/sources/s1` returns 503 when the connector switch is off. The red test records that split. The fix is not in this commit.
+`switchGate` used to read `new URL(c.req.url).pathname`. On Hono `4.13.17` that pathname keeps `%73`, so `/v1/%73ources/s1` did not match the connector row, while Hono routed it to `GET /sources/:id`. The gate now matches `c.req.path`, the path Hono already used to choose the route. An encoded path for a switched-off route is 503. A percent sequence `decodeURI` rejects (`%`, `%ZZ`, `%C0%80`) is 400 `{ error: "bad_request" }` and does not continue. A valid encoding of a path that is not a kill-switch row still continues: `/v1/%6dap` reaches `/v1/map`.
 
 These paths are not matched, on main `8c2ede3` and here: `/v1/ai` with no further slash, `/v1/sources` with no id, and a trailing slash on `/v1/personal/items/:id/contribute`. Whether they should be matched is a question for Tony. This slice does not change the matchers.
+
+Other prefix checks still read the undecoded pathname. This slice does not change them:
+
+- `auth.ts` `internalRouteVerdict` matches the MCP allowlist against `new URL(c.req.url).pathname`. An encoded path misses the allowlist and is 403.
+- `security.ts` `isImport` uses that same pathname, so an encoded `/v1/brains/:id/import` gets the 32 KB JSON limit instead of the 5 MB import limit.
+- `security.ts` `securityHeaders` sets `Cache-Control: no-store` when the undecoded pathname starts with `/v1/` or `/internal/`. An encoded prefix can miss that header. It does not refuse the request.
+
+`observe.ts` already reads `c.req.path`. `internal-auth.ts` `pathAndQuery` uses the raw pathname as the signed string, not as a route gate. `brains/unzip.ts` checks archive entry names, not the request URL.

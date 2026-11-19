@@ -1,12 +1,10 @@
 # Spec 005: Encoded source path
 
-**Input**: Sentinel P-1. Hono `4.13.17` routes on the decoded path. `switchGate` reads `new URL(c.req.url).pathname`, which keeps the percent-encoding.
+**Input**: Sentinel P-1. Hono `4.13.17` routes on the decoded path. `switchGate` used to read `new URL(c.req.url).pathname`, which keeps the percent-encoding.
 
-## This commit
+## Behaviour
 
-A red test only. `GET /v1/%73ources/s1` with the connector switch off is mounted the same way production mounts `/v1`: `app.route("/v1", v1)`, then `switchGate`, then `GET /sources/:id`. The test expects `503` and `{ error: "switched_off", switch: "connector" }`.
-
-The plain path `GET /v1/sources/s1` already returns that 503. The encoded path reaches the handler. That is the bug. This commit does not decode the path and does not add a connector check in the handler. The fix is a later change, and that change will say the behaviour change in plain words: an encoded source path that Hono routes to `/sources/:id` will be refused when the connector switch is off.
+`GET /v1/%73ources/s1` with the connector switch off is mounted the same way production mounts `/v1`: `app.route("/v1", v1)`, then `switchGate`, then `GET /sources/:id`. The gate matches `c.req.path`. That request is 503 `{ error: "switched_off", switch: "connector" }`. A percent-encoding `decodeURI` rejects is 400 `{ error: "bad_request" }` and does not continue. A valid encoding of a path that is not a kill-switch row still continues.
 
 ## Not in this slice
 
