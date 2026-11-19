@@ -82,7 +82,7 @@ for (const path of [
     const method = path.includes("contribute") ? "POST" : "POST";
     const res = await ask(app, method, path);
     assert.equal(res.status, 503, path);
-    const body = (await res.json()) as { switch: string };
+    const body = (await res.json()) as { error: string; switch: string };
     assert.equal(body.error, "switched_off");
     assert.equal(body.switch, path.includes("contribute") ? "contribute" : "ai");
   });
