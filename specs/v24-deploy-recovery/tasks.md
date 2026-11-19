@@ -73,12 +73,12 @@
 
 **Independent Test**: T010 fails before T011, then passes. `deploy/assets/` is still only `UNREPRODUCED`.
 
-- [ ] T010 [US5] Add the asset drop-in test in `harness/tests/v24-bindings.test.ts`. It uses temporary synthetic files only. `deploy.sh` exits 2 with `assets-unreproduced` while the marker exists, and exits 2 with `assets-manifest-mismatch` when any listed file's sha256 differs, a listed file is missing, or an unlisted file is present. The guard fails with `assets-manifest-missing` when the manifest is absent. The guard passes when the manifest matches. The pass case does not start Wrangler. A stub stands in for `wrangler` so a refusal cannot upload. Do not rewrite the existing tests. Covers FR-008, FR-011, FR-015, SC-003, SC-007.
-- [ ] T011 [US5] Teach `deploy/guard.ts` the order and the line rules in `contracts/asset-manifest.md`. Do not add files under `deploy/assets/`. Do not call Wrangler from the test's pass case. Covers FR-015, SC-007.
+- [x] T010 [US5] Add the asset drop-in test in `harness/tests/v24-bindings.test.ts`. It uses temporary synthetic files only. `deploy.sh` exits 2 with `assets-unreproduced` while the marker exists, and exits 2 with `assets-manifest-mismatch` when any listed file's sha256 differs, a listed file is missing, or an unlisted file is present. The guard fails with `assets-manifest-missing` when the manifest is absent. The guard passes when the manifest matches. The pass case does not start Wrangler. A stub stands in for `wrangler` so a refusal cannot upload. Do not rewrite the existing tests. Covers FR-008, FR-011, FR-015, SC-003, SC-007.
+- [x] T011 [US5] Teach `deploy/guard.ts` the order and the line rules in `contracts/asset-manifest.md`. Do not add files under `deploy/assets/`. Do not call Wrangler from the test's pass case. Covers FR-015, SC-007.
 
 ## Phase 9: Gates after the manifest check
 
-- [ ] T012 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. All exit 0. Existing tests stay as they are. Do not run `wrangler deploy`. Covers FR-012, SC-006.
+- [x] T012 Run `npm test`, `npm run typecheck`, `npm run typecheck:worker`, and `npm run verify:provenance` on the implementation head. All exit 0. `npm test` is 460 passed and 0 failed. Existing tests stay as they are. Do not run `wrangler deploy`. Covers FR-012, SC-006.
 
 ## Dependencies & Execution Order
 

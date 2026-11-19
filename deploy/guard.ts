@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -24,6 +25,84 @@ function migrationOk(config: Record<string, unknown>): boolean {
   return MIGRATION_KEYS.every((key) => !Object.hasOwn(entry, key));
 }
 
+function assetPath(assets: string, rel: string): string {
+  return join(assets, ...rel.split("/"));
+}
+
+function listAssetFiles(dir: string, prefix: string): string[] | null {
+  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  const out: string[] = [];
+  for (const entry of entries) {
+    const rel = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isSymbolicLink()) return null;
+    if (entry.isDirectory()) {
+      const nested = listAssetFiles(join(dir, entry.name), rel);
+      if (nested === null) return null;
+      out.push(...nested);
+      continue;
+    }
+    if (!entry.isFile()) return null;
+    out.push(rel);
+  }
+  return out;
+}
+
+function checkManifest(assets: string): GuardResult {
+  const manifestPath = join(assets, "MANIFEST.sha256");
+  if (!existsSync(manifestPath)) return { ok: false, reason: "assets-manifest-missing" };
+  let text: string;
+  try {
+    text = readFileSync(manifestPath, "utf8");
+  } catch {
+    return { ok: false, reason: "assets-manifest-mismatch" };
+  }
+  if (text.includes("\u0000")) return { ok: false, reason: "assets-manifest-mismatch" };
+  const lines = text.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  if (lines.length === 0) return { ok: false, reason: "assets-manifest-mismatch" };
+  const want = new Map<string, string>();
+  for (const line of lines) {
+    const match = /^([0-9a-f]{64})  (\S+)$/.exec(line);
+    if (!match) return { ok: false, reason: "assets-manifest-mismatch" };
+    const rel = match[2];
+    if (rel.includes("\\") || rel.startsWith("/")) return { ok: false, reason: "assets-manifest-mismatch" };
+    const parts = rel.split("/");
+    if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
+      return { ok: false, reason: "assets-manifest-mismatch" };
+    }
+    if (rel === "MANIFEST.sha256" || rel === "UNREPRODUCED" || want.has(rel)) {
+      return { ok: false, reason: "assets-manifest-mismatch" };
+    }
+    want.set(rel, match[1]);
+  }
+  const present = listAssetFiles(assets, "");
+  if (present === null) return { ok: false, reason: "assets-manifest-mismatch" };
+  const files = present.filter((rel) => rel !== "MANIFEST.sha256");
+  if (files.length !== want.size) return { ok: false, reason: "assets-manifest-mismatch" };
+  for (const rel of files) {
+    const expected = want.get(rel);
+    if (expected === undefined) return { ok: false, reason: "assets-manifest-mismatch" };
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(assetPath(assets, rel));
+    } catch {
+      return { ok: false, reason: "assets-manifest-mismatch" };
+    }
+    if (createHash("sha256").update(bytes).digest("hex") !== expected) {
+      return { ok: false, reason: "assets-manifest-mismatch" };
+    }
+  }
+  return { ok: true };
+}
+
+function checkAssets(root: string): GuardResult {
+  const assets = join(root, "deploy/assets");
+  if (!existsSync(assets)) return { ok: false, reason: "assets-manifest-missing" };
+  const names = readdirSync(assets);
+  if (names.includes("UNREPRODUCED")) return { ok: false, reason: "assets-unreproduced" };
+  return checkManifest(assets);
+}
+
 export function guardRoot(root: string, mode: GuardMode): GuardResult {
   if (existsSync(join(root, ".dev.vars"))) return { ok: false, reason: "dev-vars-present" };
   const configPath = join(root, "wrangler.jsonc");
@@ -37,11 +116,7 @@ export function guardRoot(root: string, mode: GuardMode): GuardResult {
   if (Object.hasOwn(config, "vars")) return { ok: false, reason: "vars-present" };
   if (config.keep_vars !== true) return { ok: false, reason: "keep-vars-required" };
   if (!migrationOk(config)) return { ok: false, reason: "migration-shape" };
-  if (mode === "deploy") {
-    const assets = join(root, "deploy/assets");
-    const names = existsSync(assets) ? readdirSync(assets) : [];
-    if (names.includes("UNREPRODUCED")) return { ok: false, reason: "assets-unreproduced" };
-  }
+  if (mode === "deploy") return checkAssets(root);
   return { ok: true };
 }
 
