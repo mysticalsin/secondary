@@ -75,22 +75,41 @@ export function admittedBrainParams(c: C): { param: string; vn: ViewNode | null 
   return out;
 }
 
+export type RestrictionNode = {
+  restricted?: boolean;
+  nda?: boolean;
+  contacts?: boolean;
+  parentId?: string | null;
+};
+
+const ANCESTOR_HOP_CAP = 12;
+
 /**
- * What bounds a brain: its own flags, a contacts subspace, and any restricted or NDA ancestor (a node
- * under a restricted parent is restricted whatever its own flag says).
+ * Own flags plus every ancestor. Contacts counts as restricted, on the node and on an ancestor.
+ * The walk is finished only when a parent id is null. A missing parent, or a chain still open at
+ * the hop cap, fails closed.
  */
-function factsOf(type: BrainType, vn: ViewNode, org: ReturnType<typeof requireOrg>): BrainFacts {
-  let restricted = !!vn.restricted || !!vn.contacts;
-  let nda = !!vn.nda;
-  for (
-    let p = vn.parentId ? org.nodes.get(vn.parentId) : undefined;
-    p;
-    p = p.parentId ? org.nodes.get(p.parentId) : undefined
-  ) {
-    restricted ||= !!p.restricted;
-    nda ||= !!p.nda;
+export function restrictionOf(
+  node: RestrictionNode | null,
+  nodes: { get(id: string): RestrictionNode | undefined },
+): { restricted: boolean; nda: boolean } {
+  let restricted = !!node?.restricted || !!node?.contacts;
+  let nda = !!node?.nda;
+  let parentId = node?.parentId ?? null;
+  if (parentId === null) return { restricted, nda };
+  for (let hop = 0; hop < ANCESTOR_HOP_CAP; hop += 1) {
+    const parent = nodes.get(parentId);
+    if (!parent) return { restricted: true, nda };
+    restricted ||= !!parent.restricted || !!parent.contacts;
+    nda ||= !!parent.nda;
+    parentId = parent.parentId ?? null;
+    if (parentId === null) return { restricted, nda };
   }
-  return { type, restricted, nda };
+  return { restricted: true, nda };
+}
+
+function factsOf(type: BrainType, vn: ViewNode, org: ReturnType<typeof requireOrg>): BrainFacts {
+  return { type, ...restrictionOf(vn, org.nodes) };
 }
 
 export async function brainOf(c: C, param: string, humanIds?: string[]): Promise<Brain | null> {

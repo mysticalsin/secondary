@@ -20,7 +20,7 @@ A candidate stored for tenant A is 404 for a user of tenant B, including when th
 
 ## Missed card
 
-A brain card produced because the workspace did not answer is restricted when the node or an ancestor is restricted or under NDA.
+A brain card, whether the workspace answered or missed the bound, is restricted when the node or an ancestor is restricted, under NDA, or a contacts subspace. The same walk serves both cards. It is finished only when a parent id is null. A missing parent, or a chain that is still open after twelve hops, fails closed: the card is restricted. The real org's longest chain is five, so a chain of thirteen ancestors is a synthetic cap, not a production shape.
 
 ## Erasure steps
 

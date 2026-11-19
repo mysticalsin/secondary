@@ -41,7 +41,15 @@ import {
   type TemplateId,
 } from "./model.ts";
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
-import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag, reconcileStoredMembers } from "./open.ts";
+import {
+  admittedBrainParams,
+  type Brain,
+  brainOf,
+  needBrain,
+  needFlag,
+  reconcileStoredMembers,
+  restrictionOf,
+} from "./open.ts";
 import { placeScopedMember } from "./store.ts";
 import { type BrainCard, cardOf, lineReadable, rateLimit, roleOfBrain, SKIP_TYPES, seeBrains } from "./shared.ts";
 
@@ -139,34 +147,28 @@ type MissedCard = {
   role?: BrainRole;
 };
 
-type FlagNode = { restricted?: boolean; nda?: boolean; parentId?: string | null };
-
-/** Own flags, then each ancestor. A missing parent stops the walk. */
-function ancestorFlags(
-  vn: FlagNode | null,
-  nodes: { get(id: string): FlagNode | undefined },
-): { restricted: boolean; nda: boolean } {
-  let restricted = !!vn?.restricted;
-  let nda = !!vn?.nda;
-  let id = vn?.parentId ?? null;
-  for (let hop = 0; id && hop < 12; hop += 1) {
-    const node = nodes.get(id);
-    if (!node) break;
-    restricted ||= !!node.restricted;
-    nda ||= !!node.nda;
-    id = node.parentId ?? null;
-  }
-  return { restricted, nda };
-}
-
 /** A card for a brain that missed the bound. Role is included only when the view already produced it. Template is not: it lives in the workspace this read did not finish. */
 function missedCard(
-  p: { param: string; vn: { kind: string; label: string } & FlagNode | null },
+  p: {
+    param: string;
+    vn: {
+      kind: string;
+      label: string;
+      restricted?: boolean;
+      nda?: boolean;
+      contacts?: boolean;
+      parentId?: string | null;
+    } | null;
+  },
   brain: Brain | null,
-  nodes: { get(id: string): FlagNode | undefined },
+  nodes: {
+    get(id: string):
+      | { restricted?: boolean; nda?: boolean; contacts?: boolean; parentId?: string | null }
+      | undefined;
+  },
 ): MissedCard {
   const type = p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal");
-  const flags = ancestorFlags(p.vn, nodes);
+  const flags = restrictionOf(p.vn, nodes);
   const card: MissedCard = {
     id: p.param,
     type,
