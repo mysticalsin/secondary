@@ -346,3 +346,83 @@ test("bytes changed after verify are not the bytes wrangler would upload", () =>
   const uploaded = existsSync(stagedPath) ? readFileSync(stagedPath, "utf8") : index;
   assert.equal(uploaded, index);
 });
+
+test("a pre-existing or stale configured asset directory is refused", () => {
+  const index = "alpha";
+  const fill = (assets: string) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
+  };
+  const stale = assetFixture(fill);
+  mkdirSync(join(stale, "deploy/.staged"));
+  writeFileSync(join(stale, "deploy/.staged/old.txt"), "old");
+  refuseDeploy(stale, "assets-directory-present");
+  assert.equal(readFileSync(join(stale, "deploy/.staged/old.txt"), "utf8"), "old");
+
+  const empty = assetFixture(fill);
+  mkdirSync(join(empty, "deploy/.staged"));
+  refuseDeploy(empty, "assets-directory-present");
+  assert.equal(existsSync(join(empty, "deploy/.staged")), true);
+});
+
+test("staging is outside the configured path and is removed when wrangler exits non-zero", () => {
+  const index = "alpha";
+  const dir = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
+  });
+  const record = join(dir, "wrangler-args");
+  const stub = join(dir, "node_modules", ".bin", "wrangler");
+  writeFileSync(
+    stub,
+    `#!/bin/sh
+printf '%s\\n' "$@" > '${record}'
+assets=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--assets" ]; then
+    assets="$arg"
+  fi
+  prev="$arg"
+done
+if [ -n "$assets" ] && [ -f "$assets/index.html" ]; then
+  echo saw-index >> '${record}'
+  stat -c %a "$assets" >> '${record}'
+fi
+exit 7
+`,
+  );
+  chmodSync(stub, 0o755);
+  const tmpParent = join(dir, "tmp-parent");
+  mkdirSync(tmpParent);
+  const result = spawnSync("bash", ["deploy.sh"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { ...process.env, TMPDIR: tmpParent },
+  });
+  assert.equal(result.status, 7);
+  const lines = readFileSync(record, "utf8").split("\n").filter((line) => line.length > 0);
+  const at = lines.indexOf("--assets");
+  assert.notEqual(at, -1);
+  const staged = lines[at + 1];
+  assert.equal(staged.startsWith(`${tmpParent}/`), true);
+  assert.equal(staged.includes("/deploy/"), false);
+  assert.equal(lines.includes("saw-index"), true);
+  assert.equal(lines.includes("700"), true);
+  assert.equal(existsSync(join(dir, "deploy/.staged")), false);
+  assert.equal(existsSync(staged), false);
+  assert.deepEqual(readdirSync(tmpParent), []);
+});
+
+test("an empty unreproduced directory in any case is refused", () => {
+  const index = "alpha";
+  const manifest = `${sha256(index)}  index.html\n`;
+  for (const name of ["unreproduced", "UNREPRODUCED", "keep/Unreproduced"]) {
+    const dir = assetFixture((assets) => {
+      writeFileSync(join(assets, "index.html"), index);
+      writeFileSync(join(assets, "MANIFEST.sha256"), manifest);
+      mkdirSync(join(assets, name), { recursive: true });
+    });
+    refuseDeploy(dir, "assets-unreproduced");
+  }
+});
