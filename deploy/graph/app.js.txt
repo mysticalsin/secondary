@@ -681,6 +681,8 @@
 
   function select(n) {
     selected = n;
+    const live = $("#graph-selection");
+    if (live) live.textContent = n && n.label ? n.label : "";
     if (opts.local) refresh(true);
     renderPanel();
     draw();
@@ -796,6 +798,21 @@
     } else if (e.key === "Escape" && document.activeElement !== searchEl) {
       select(null);
     }
+  });
+  canvas.addEventListener("keydown", (e) => {
+    const list = visible.nodes;
+    if (!list.length) return;
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!step && e.key !== "Enter") return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    let index = list.indexOf(selected);
+    if (!step) {
+      select(list[index >= 0 ? index : 0]);
+      return;
+    }
+    if (index < 0) index = step > 0 ? -1 : 0;
+    select(list[(index + step + list.length) % list.length]);
   });
 
   workspaceEl.addEventListener("change", () => {

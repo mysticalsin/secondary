@@ -389,6 +389,33 @@ test("the search field shows a visible focus ring", async () => {
   }
 });
 
+test("the search field draws a single focus ring", async () => {
+  const { server, port } = await serve(false);
+  const launched = await launch();
+  try {
+    await size(launched.session, 1440, 900);
+    await launched.session.call("Page.navigate", { url: `http://127.0.0.1:${port}/graph` });
+    let ring: { outline: string; width: string; border: string; before: string } | undefined;
+    for (let i = 0; i < 40; i += 1) {
+      ring = await evalJson(launched.session, `(() => {
+        const input = document.getElementById("search");
+        if (!input) return JSON.stringify(null);
+        const before = getComputedStyle(input).borderTopColor;
+        input.focus();
+        const style = getComputedStyle(input);
+        return JSON.stringify({ outline: style.outlineStyle, width: style.outlineWidth, border: style.borderTopColor, before });
+      })()`);
+      if (ring?.outline) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(ring?.outline, "solid");
+    assert.ok(Number.parseFloat(ring?.width || "0") >= 2, `outline width ${ring?.width}`);
+    assert.equal(ring?.border, ring?.before, `border ${ring?.border} plus outline ${ring?.width} is a second ring`);
+  } finally {
+    await stop(launched.chrome, launched.session, launched.browser, launched.profile, server);
+  }
+});
+
 test("prefers-reduced-motion turns off the pulse and the shimmer", async () => {
   const { server, port } = await serve(false);
   const launched = await launch();
