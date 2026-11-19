@@ -80,7 +80,7 @@ const sessionPrincipal = () => ({
 test("deny warning: one shape, 403, and one function for every deny site", async () => {
   const seen = capture();
   try {
-    const adminSpec = new URL("../../recovered-source/worker/src/admin/routes.ts", import.meta.url).href;
+    const adminSpec = new URL("../../src/worker/admin/routes.ts", import.meta.url).href;
     const admin = (await import(adminSpec)) as { adminRoutes: (deps: object) => Hono };
     const adminApp = new Hono<{ Variables: { session: unknown } }>();
     adminApp.use("*", async (c, next) => {
@@ -108,7 +108,7 @@ test("deny warning: one shape, 403, and one function for every deny site", async
     assert.equal(govWarn.action, "gov.role_upsert.propose");
 
     seen.lines.length = 0;
-    const routesSpec = new URL("../../recovered-source/worker/src/routes.ts", import.meta.url).href;
+    const routesSpec = new URL("../../src/worker/routes.ts", import.meta.url).href;
     const routes = (await import(routesSpec)) as {
       v1Routes: (deps: { now: () => number }) => { request: Function };
     };
@@ -152,7 +152,7 @@ test("deny warning: one shape, 403, and one function for every deny site", async
     assert.equal(seen.lines.some((line) => line.includes('"decision":"deny"')), false);
 
     seen.lines.length = 0;
-    const opsSpec = new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href;
+    const opsSpec = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
     const ops = (await import(opsSpec)) as {
       opsAdminRoutes: (deps: { now: () => number }) => Hono;
     };
@@ -192,7 +192,7 @@ test("deny warning: one shape, 403, and one function for every deny site", async
     assert.equal(offLine?.includes("@"), false);
     assert.equal(offLine?.includes('"decision":"deny"'), false);
 
-    const root = new URL("../../recovered-source/worker/src/", import.meta.url);
+    const root = new URL("../../src/worker/", import.meta.url);
     const copies = ["admin/routes.ts", "routes.ts", "uxv2/questions.ts", "ux/util.ts"].filter((file) =>
       readFileSync(new URL(file, root), "utf8").includes('at: "audit_unavailable"'),
     );

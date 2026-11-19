@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { callModel } from "../../recovered-source/worker/src/ai/anthropic.ts";
+import { callModel } from "../../src/worker/ai/anthropic.ts";
 import { commit } from "../../src/state/illegal.ts";
 import { requireFail, requireOk, requireTag } from "./require-ok.ts";
 import {

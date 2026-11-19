@@ -20,7 +20,7 @@ type NonceHost = {
   nonceFirst(key: string, now: number, ttlMs: number): boolean;
 };
 
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
 
 async function openPolicy(file: string): Promise<NonceHost> {
   const db = openSqlite(file);

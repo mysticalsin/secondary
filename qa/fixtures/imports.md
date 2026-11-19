@@ -1,6 +1,6 @@
 # Synthetic import samples
 
-Three formats, from `recovered-source/worker/src/brains/importers.ts`: `okf`, `obsidian`, `outline`.
+Three formats, from `src/worker/brains/importers.ts`: `okf`, `obsidian`, `outline`.
 
 Route: `POST /v1/brains/:id/import?format=<format>`. Body limit `IMPORT_BODY_BYTES` is 5_242_880. A real import writes one `wiki_ingest` proposal per kept page and does not publish (`publishMode(false)` so `state` is `draft`). It does not insert a wiki page by itself. A dry run (`dryRun=1`) writes no proposal and no `brain.import` receipt.
 

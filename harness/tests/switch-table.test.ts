@@ -8,9 +8,10 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
+// Reconciliation point for the pinned rows. The encoded source row is 503, which this commit did not answer.
 const SOURCE = "53bc34e0901591d4c7a64c063e239a9c3aaf9992";
 
-test("switch gate matches the table taken from main", async () => {
+test("switch gate matches the pinned table", async () => {
   const fixture = JSON.parse(
     readFileSync(new URL("./switch-main-table.json", import.meta.url), "utf8"),
   ) as { source: string; rows: unknown[] };
@@ -21,7 +22,7 @@ test("switch gate matches the table taken from main", async () => {
 });
 
 test("kill-switch paths and handler names are declared once", () => {
-  const root = new URL("../../recovered-source/worker/src/", import.meta.url);
+  const root = new URL("../../src/worker/", import.meta.url);
   const read = (file: string) => readFileSync(new URL(file, root), "utf8");
   assert.equal(read("ops-admin.ts").includes("personal/items"), false);
   assert.equal(read("switches.ts").includes("personal\\/items"), true);

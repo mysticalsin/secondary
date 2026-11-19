@@ -15,7 +15,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const storeSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
+const storeSpecifier = "../../src/worker/wiki/store.ts";
 
 type Decide = { ok: true; status: string } | { ok: false; code: string; message: string };
 type Edited = { ok: true; revision: number } | { ok: false; code: string; message: string };
@@ -233,7 +233,7 @@ test("proposal review: an edit that loses the revision compare-and-set writes no
 });
 
 test("proposal review: wikiDecide counts distinct approvers and does not use the quorum clock", () => {
-  const src = readFileSync(new URL("../../recovered-source/worker/src/wiki/store.ts", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../../src/worker/wiki/store.ts", import.meta.url), "utf8");
   const decide = src.slice(src.indexOf("async wikiDecide("), src.indexOf("wikiEditProposal("));
   assert.doesNotMatch(decide, /commitQuorum\(/);
   assert.match(decide, /approvers: \[\.\.\.prior, actorId\]/);

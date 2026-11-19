@@ -39,7 +39,7 @@ const gated = {
   },
 };
 
-const mod = await import("../../recovered-source/worker/src/brains/store.ts");
+const mod = await import("../../src/worker/brains/store.ts");
 const store = Object.create(mod.BrainBase.prototype) as {
   sql: SqlStorage;
   brainMemberFinishProposal(

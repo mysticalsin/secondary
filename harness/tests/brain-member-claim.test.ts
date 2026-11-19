@@ -18,7 +18,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const storeSpecifier = "../../recovered-source/worker/src/brains/store.ts";
+const storeSpecifier = "../../src/worker/brains/store.ts";
 
 type Release = { ok: true } | { ok: false; code: string };
 

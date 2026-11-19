@@ -14,7 +14,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
+const workspaceSpecifier = "../../src/worker/workspace.ts";
 
 type Workspace = {
   purgeExpired(cutoffs: Record<string, number>): number;

@@ -18,7 +18,7 @@ const CREATED_IDS = ["constructor"] as const;
 test("a role id that is not an own property of the built-in table is not a lead", async () => {
   for (const id of ALL_IDS) assert.equal(isBuiltInLeadRoleId(id), false, id);
 
-  const review = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
+  const review = new URL("../../src/worker/wiki/review.ts", import.meta.url).href;
   const { mayDecide } = (await import(review)) as {
     mayDecide: (
       view: ReturnType<typeof admittedView>,
@@ -34,7 +34,7 @@ test("a role id that is not an own property of the built-in table is not a lead"
     assert.equal(mayDecide(view, principal, "core").allowed, false, id);
   }
 
-  const validate = new URL("../../recovered-source/worker/src/admin/validate.ts", import.meta.url).href;
+  const validate = new URL("../../src/worker/admin/validate.ts", import.meta.url).href;
   const { buildRole } = (await import(validate)) as {
     buildRole: (
       input: { id: string; label: string; grants: unknown[] },

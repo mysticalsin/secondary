@@ -16,7 +16,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const storeSpecifier = "../../recovered-source/worker/src/brains/store.ts";
+const storeSpecifier = "../../src/worker/brains/store.ts";
 
 type Brain = {
   sql: SqlStorage;

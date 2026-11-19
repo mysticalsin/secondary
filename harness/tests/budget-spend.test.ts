@@ -16,7 +16,7 @@ register(new URL("../runtime/budget-stub-hook.mjs", import.meta.url).href, {
   parentURL: import.meta.url,
 });
 
-const budgetModule = "../../recovered-source/worker/src/ai/budget.ts";
+const budgetModule = "../../src/worker/ai/budget.ts";
 
 type Adder = {
   add(tokens: number, cap: number): Promise<number | null>;

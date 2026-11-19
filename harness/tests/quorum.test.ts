@@ -18,7 +18,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
 
 type Ask = { tag: string };
 
@@ -271,18 +271,18 @@ test("quorum: concurrent confirms accept exactly one", async () => {
 
 test("quorum: the second-person callers share one result and do not keep string copies", () => {
   const callers = [
-    "recovered-source/worker/src/tenant-policy.ts",
-    "recovered-source/worker/src/brains/data.ts",
-    "recovered-source/worker/src/brains/routes.ts",
-    "recovered-source/worker/src/ops-admin.ts",
-    "recovered-source/worker/src/ops-internal.ts",
+    "src/worker/tenant-policy.ts",
+    "src/worker/brains/data.ts",
+    "src/worker/brains/routes.ts",
+    "src/worker/ops-admin.ts",
+    "src/worker/ops-internal.ts",
   ];
   const decisions = [
     "src/state/kill-switch.ts",
-    "recovered-source/worker/src/brains/data.ts",
-    "recovered-source/worker/src/brains/routes.ts",
-    "recovered-source/worker/src/ops-admin.ts",
-    "recovered-source/worker/src/ops-internal.ts",
+    "src/worker/brains/data.ts",
+    "src/worker/brains/routes.ts",
+    "src/worker/ops-admin.ts",
+    "src/worker/ops-internal.ts",
   ];
   const keys = [
     "switch:",

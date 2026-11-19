@@ -149,3 +149,20 @@ Mutations, restored before commit:
 - `routedPath` returned `new URL().pathname`: exit 1, 3 pass, 2 fail, duration_ms 240.904142. `/v1/%73ources/s1` was `200 !== 503`, and `/%76%31/sources/s1` was `200 !== 503`. Under that same mutation `/v1/s%6Furces/s1` was 200, `/v1/%73ources/s1/` was 200, `/v1/sources%2Fs1` stayed the catch-all, and the dot segment stayed 503.
 - `decodeURIComponent` in place of `c.req.path`: exit 1, 4 pass, 1 fail, duration_ms 251.618101. `/v1/sources%2Fs1` was `503 !== 200`.
 - `securityHeaders` put back on the raw pathname: `switch-cache.test.ts` exit 1, 0 pass, 1 fail, duration_ms 121.291043, `null !== 'no-store'`. The red commit before the fix failed the same way, duration_ms 132.272536.
+
+## Folder move
+
+The Worker HTTP code lived in `recovered-source/worker/src` and the decisions it calls live in `src/state`. Tony approved this move ("A, all three"). The tree is now `src/worker`, beside `src/state`. HTTP answers stay as on main `e8e7ef63`. The pin in `harness/tests/worker-pin.test.ts` passed on that main (exit 0, 1 pass). Skipping the off-switch return made `GET /v1/sources/s1` with the connector switch off `200 !== 503` (exit 1, 0 pass, 1 fail, duration_ms 249.61952). That edit was restored.
+
+Queued with that move, and not a behaviour change:
+
+- Inspector I-1: the switch-table test must not say the fixture was taken from main.
+- Inspector I-2: label the dot-segment assertion. `new URL().pathname` already collapses it, so it does not separate the two path readers.
+- Inspector I-4: an encoded path fails the MCP allowlist.
+- Inspector I-5: unit tests for a different letter case and a trailing slash.
+- PR #10 R-1: `httpSwitch` requires the switch map. The first-match fallback goes away.
+- Sentinel Info: a malformed percent-encoding that is 400 still gets `Cache-Control: no-store` when the routed path is under `/v1/`.
+
+`internalRouteVerdict` and `isImport` stay on the raw pathname. Publish still reads `can.decide`. Those are not this slice.
+
+Comment removed because it only repeated the code: the note on `blockingSwitch` said it returns the first matching row whose switch is off. The function walks the rows and returns that row.

@@ -27,7 +27,7 @@ function policyNamespace(result: { status: string; sameActor?: boolean }) {
 }
 
 async function postEnable(result: { status: string; sameActor?: boolean }): Promise<Response> {
-  const specifier = new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const mod = (await import(specifier)) as { opsAdminRoutes: (deps: { now: () => number }) => Hono };
   const app = new Hono<{ Variables: { session: unknown } }>();
   const principal = persona("platform_admin");

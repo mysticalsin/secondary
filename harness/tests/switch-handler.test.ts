@@ -7,10 +7,11 @@ import { persona } from "../../packages/policy/src/personas.ts";
 import {
   blockingSwitch,
   handlerSwitch,
+  httpSwitch,
   SWITCH_TABLE,
   type HandlerKey,
   type SwitchName,
-} from "../../recovered-source/worker/src/switches.ts";
+} from "../../src/worker/switches.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
   parentURL: import.meta.url,
@@ -23,7 +24,7 @@ function switches(contribute: boolean) {
 }
 
 test("submitCandidate with contribute off is 503 and writes nothing", async () => {
-  const routes = new URL("../../recovered-source/worker/src/routes.ts", import.meta.url).href;
+  const routes = new URL("../../src/worker/routes.ts", import.meta.url).href;
   const { submitCandidate } = (await import(routes)) as {
     submitCandidate: (
       c: { get: (key: string) => unknown; env: unknown; json: (body: unknown, status: number) => Response },
@@ -102,7 +103,7 @@ test("submitCandidate with contribute off is 503 and writes nothing", async () =
 });
 
 test("routine ingest with contribute off returns the exact reason", async () => {
-  const mod = new URL("../../recovered-source/worker/src/uxv2/routines.ts", import.meta.url).href;
+  const mod = new URL("../../src/worker/uxv2/routines.ts", import.meta.url).href;
   const { writeIngest } = (await import(mod)) as {
     writeIngest: (
       c: { get: (key: string) => unknown; env: unknown },
@@ -196,4 +197,13 @@ test("a later off row still refuses", () => {
     blockingSwitch(rows, "POST", "/x", { ...on, ai: true, contribute: false }),
     "contribute",
   );
+});
+
+test("a different letter case is not the row, and a trailing slash on sources is", () => {
+  const off = { mcp: true, connector: false, ai: true, contribute: false };
+  assert.equal(httpSwitch("GET", "/v1/sources/s1", off), "connector");
+  assert.equal(httpSwitch("GET", "/v1/Sources/s1", off), null);
+  assert.equal(httpSwitch("GET", "/v1/sources/s1/", off), "connector");
+  assert.equal(httpSwitch("POST", "/v1/personal/items/pi:abcd1234/contribute", off), "contribute");
+  assert.equal(httpSwitch("POST", "/v1/personal/items/pi:abcd1234/contribute/", off), null);
 });

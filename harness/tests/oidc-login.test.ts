@@ -20,9 +20,9 @@ register(new URL("../runtime/login-stub-hook.mjs", import.meta.url).href, {
   parentURL: import.meta.url,
 });
 
-const routesSpecifier = "../../recovered-source/worker/src/auth/routes.ts";
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
-const oidcSpecifier = "../../recovered-source/worker/src/auth/oidc.ts";
+const routesSpecifier = "../../src/worker/auth/routes.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
+const oidcSpecifier = "../../src/worker/auth/oidc.ts";
 
 const TENANT = "11111111-1111-1111-1111-111111111111";
 const CLIENT = "22222222-2222-2222-2222-222222222222";

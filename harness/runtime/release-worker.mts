@@ -32,7 +32,7 @@ const gated = {
     return result;
   },
 };
-const mod = await import("../../recovered-source/worker/src/workspace.ts");
+const mod = await import("../../src/worker/workspace.ts");
 const ws = Object.create(mod.Workspace.prototype) as {
   sql: SqlStorage;
   ctx: { storage: { transactionSync<T>(fn: () => T): T } };

@@ -27,8 +27,8 @@ test("decide and direct publish match the table taken from main", async () => {
     directPublish: unknown[];
   };
   assert.equal(fixture.source, SOURCE);
-  const review = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
-  const open = new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url).href;
+  const review = new URL("../../src/worker/wiki/review.ts", import.meta.url).href;
+  const open = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { mayDecide } = (await import(review)) as { mayDecide: LeadDecide };
   const { directPublish } = (await import(open)) as { directPublish: LeadPublish };
   const table = await collectLeadTable(mayDecide, directPublish);

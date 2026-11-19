@@ -13,7 +13,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const storeSpecifier = "../../recovered-source/worker/src/workspace.ts";
+const storeSpecifier = "../../src/worker/workspace.ts";
 
 type Wiki = {
   wikiForgetSources(ids: string[], now: number): { facts: number; pages: number; proposals: number };
@@ -234,7 +234,7 @@ test("source forget: an orphan search row does not survive, and a live page's ro
 
 test("the production pseudonym is not a strict prefix of the id", async () => {
   const id = "Jonathan";
-  const spec = "../../recovered-source/worker/src/ops-rights.ts";
+  const spec = "../../src/worker/ops-rights.ts";
   const { pseudonymFor } = (await import(spec)) as {
     pseudonymFor: (
       env: { PSEUDONYM_KEY?: string },

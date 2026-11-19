@@ -16,8 +16,8 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
-const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
+const workspaceSpecifier = "../../src/worker/workspace.ts";
 
 type Policy = {
   humanIds(principalId: string, email?: string): string[];

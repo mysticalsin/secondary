@@ -13,7 +13,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const workspaceSpecifier = "../../recovered-source/worker/src/workspace.ts";
+const workspaceSpecifier = "../../src/worker/workspace.ts";
 
 type Counts = { items: number; comments: number; approvals: number; edits: number };
 

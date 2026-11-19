@@ -13,7 +13,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 const NOW = 1_700_000_000_000;
 
 test("wiki decide: a lead is allowed in their brain, and elevation or self-approval is not", async () => {
-  const specifier = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/wiki/review.ts", import.meta.url).href;
   const { mayDecide } = (await import(specifier)) as {
     mayDecide: (
       view: ReturnType<typeof admittedView>,

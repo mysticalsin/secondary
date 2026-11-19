@@ -64,7 +64,7 @@ export type SwitchRow = {
 
 export async function collectSwitchTable(): Promise<SwitchRow[]> {
   const mod = (await import(
-    new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href
+    new URL("../../src/worker/ops-admin.ts", import.meta.url).href
   )) as {
     switchGate: (c: { set: Function; get: Function; req: { method: string; url: string }; json: Function }, next: () => Promise<void>) => Promise<Response | void>;
   };
