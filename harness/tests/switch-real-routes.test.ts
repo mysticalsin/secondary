@@ -7,11 +7,15 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
+// switchGate, then the real aiRoutes. GET /sources/:id and POST /personal/items/:id/contribute
+// are stand-ins on the same paths production registers. Those handlers are closures inside
+// v1Routes, after authenticate, and are not exported. v1Routes would answer 401 until a tenant
+// session exists, and that session's switches come from TenantPolicy, not from this test.
 const env = { AI_ENABLED: "false" };
 
 type Switches = { mcp: boolean; connector: boolean; ai: boolean; contribute: boolean };
 
-async function realV1(switches: Switches) {
+async function gatedApp(switches: Switches) {
   const ops = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const aiUrl = new URL("../../src/worker/ai/routes.ts", import.meta.url).href;
   const { switchGate } = (await import(ops)) as {
@@ -29,8 +33,8 @@ async function realV1(switches: Switches) {
   });
   v1.use("*", switchGate as never);
   v1.route("/", aiRoutes({}) as never);
-  v1.get("/sources/:id", (c) => c.json({ id: c.req.param("id") }));
-  v1.post("/personal/items/:id/contribute", (c) => c.json({ id: c.req.param("id") }));
+  v1.get("/sources/:id", (c) => c.json({ id: c.req.param("id"), standIn: true }));
+  v1.post("/personal/items/:id/contribute", (c) => c.json({ id: c.req.param("id"), standIn: true }));
   const app = new Hono();
   app.route("/v1", v1);
   return app;
@@ -39,13 +43,13 @@ async function realV1(switches: Switches) {
 const off = { mcp: true, connector: false, ai: false, contribute: false };
 const on = { mcp: true, connector: true, ai: true, contribute: true };
 
-async function ask(app: Awaited<ReturnType<typeof realV1>>, method: string, path: string) {
+async function ask(app: Awaited<ReturnType<typeof gatedApp>>, method: string, path: string) {
   return app.request(`http://127.0.0.1${path}`, { method }, env);
 }
 
-test("the real /v1 router 404s paths it does not own, and the gate still refuses a switched path", async () => {
-  const closed = await realV1(off);
-  const open = await realV1(on);
+test("switchGate plus real aiRoutes: unmatched paths 404, switched paths 503, stand-ins answer when on", async () => {
+  const closed = await gatedApp(off);
+  const open = await gatedApp(on);
 
   for (const app of [closed, open]) {
     const missed = await ask(app, "GET", "/v1//sources/s1");
@@ -63,7 +67,7 @@ test("the real /v1 router 404s paths it does not own, and the gate still refuses
   assert.deepEqual(await sourceOff.json(), { error: "switched_off", switch: "connector" });
   const sourceOn = await ask(open, "GET", "/v1/sources/s1");
   assert.equal(sourceOn.status, 200);
-  assert.deepEqual(await sourceOn.json(), { id: "s1" });
+  assert.deepEqual(await sourceOn.json(), { id: "s1", standIn: true });
 
   const aiOff = await ask(closed, "GET", "/v1/ai/status");
   assert.equal(aiOff.status, 503);
@@ -73,24 +77,29 @@ test("the real /v1 router 404s paths it does not own, and the gate still refuses
   assert.deepEqual(await contributeOff.json(), { error: "switched_off", switch: "contribute" });
 });
 
-for (const path of [
-  "/v1/genui/plan////",
-  "/v1/personal/items/pi:abcd1234/contribute/////",
-]) {
-  test(`four or more trailing slashes stay gated: ${path}`, async () => {
-    const app = await realV1(off);
-    const method = path.includes("contribute") ? "POST" : "POST";
-    const res = await ask(app, method, path);
-    assert.equal(res.status, 503, path);
-    const body = (await res.json()) as { error: string; switch: string };
-    assert.equal(body.error, "switched_off");
-    assert.equal(body.switch, path.includes("contribute") ? "contribute" : "ai");
-  });
+const slashRows = [
+  { method: "POST", path: "/v1/genui/plan", name: "ai" },
+  { method: "POST", path: "/v1/personal/items/pi:abcd1234/contribute", name: "contribute" },
+  { method: "GET", path: "/v1/connectors/acme", name: "connector" },
+] as const;
+
+for (const row of slashRows) {
+  for (let n = 1; n <= 10; n++) {
+    const path = `${row.path}${"/".repeat(n)}`;
+    test(`${n} trailing slash(es) stay gated: ${row.method} ${path}`, async () => {
+      const app = await gatedApp(off);
+      const res = await ask(app, row.method, path);
+      assert.equal(res.status, 503, path);
+      const body = (await res.json()) as { error: string; switch: string };
+      assert.equal(body.error, "switched_off");
+      assert.equal(body.switch, row.name);
+    });
+  }
 }
 
 test("HEAD on the real ai status route follows the ai switch", async () => {
-  const closed = await realV1(off);
-  const open = await realV1(on);
+  const closed = await gatedApp(off);
+  const open = await gatedApp(on);
   const headOff = await ask(closed, "HEAD", "/v1/ai/status");
   assert.equal(headOff.status, 503);
   assert.equal(await headOff.text(), "");
