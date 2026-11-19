@@ -102,6 +102,14 @@ The lead mark is not a grant condition. Resending the built-in grants through go
 
 Inspector's review of `a30305a7` is the same decide gap: an `acme_lead` with an extra edit, review, or manage-members grant, or a second role that carries one, was denied, and so was `pb:<id>:n`. Main allows those because the role id is a lead and the standing action check passes. `cc3a0864` restored that loop. The truth table from main `2d61c473` now names the governance-edit grants, the second role, and `pb:u_acme_lead:1`, `:2`, and `:3`.
 
+## Switch table
+
+The HTTP kill switches are declared twice. `ops-admin.ts` `GATES` matches `POST /v1/personal/items/:id/contribute` for `contribute`, `/v1/ai/*`, `/v1/genui/plan`, and `/v1/briefs` for `ai`, and `/v1/connectors` and `/v1/sources` for `connector`. Handlers then re-check the same names: `submitCandidate` and routine runs for `contribute`, `gate()` and brief save for `ai`, and search, wiki sources, and sharepoint for `connector`. An internal call checks `mcp` before any path.
+
+This slice puts those names, path matchers, and handler keys in one table. `switchGate` and the handlers read it. The matchers stay, including the `/v1` prefix and the `POST`-only contribute matcher. An internal `mcp` off still wins.
+
+These answers are not the middleware 503, so they stay at the call site: search and wiki sources omit connector hits, a sharepoint routine returns `{ error: "switched_off" }` and the route returns 409, a routine ingest returns a reason string, a personal routine target is not blocked, `gate()` returns `ai_disabled`, and the wiki ingest job reads the tenant switch with no session and fails closed when that read throws. Folding those into the 503 would change behaviour. The publish-rule question from the lead slice is still deferred.
+
 Comments removed because they only repeated the code:
 
 - The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
