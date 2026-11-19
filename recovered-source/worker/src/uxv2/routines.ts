@@ -17,6 +17,7 @@ import { checkSourceAccess } from "../connector.ts";
 import { candidateId, personalScope, scopeOfNode } from "../scope.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import { tenantStub } from "../stubs.ts";
+import { handlerSwitch, sessionSwitchOff, sessionSwitchOn, switchedOff } from "../switches.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { notifyContributed } from "../ux/notify.ts";
 import {
@@ -237,7 +238,7 @@ async function collect(
     default: {
       // sharepoint: files the connector synced, found by the routine's search words, each one
       // readable by this person at content level and confirmed by the connector.
-      if (!s.switches.connector) return { error: "switched_off" };
+      if (sessionSwitchOff(s, "sharepoint")) return { error: "switched_off" };
       const tokens = tokensOf(routine.source.ref ?? "");
       if (!tokens.length) return { items: [] };
       const match = matchOfTokens(tokens);
@@ -336,7 +337,8 @@ export async function writeIngest(
     await wikiNotify(c.env, s.tenantId, t.scope, [made.id], s.ctx.now);
     return { ok: true, id: made.id };
   }
-  if (!s.switches.contribute) return { ok: false, reason: "Contributions are switched off" };
+  if (sessionSwitchOff(s, "routineIngest"))
+    return { ok: false, reason: "Contributions are switched off" };
   // R-111 once more on exactly what will be stored. A flag here means the text was not cleaned.
   if (detectSensitivity({ title: cleanTitle, body: text }).length)
     return { ok: false, reason: "Sensitive content remains in the text" };
@@ -571,8 +573,8 @@ export function routineRoutes(deps: AppDeps): Hono<AppEnv> {
       });
       return tgt.res;
     }
-    if (!tgt.t.personal && !s.switches.contribute)
-      return c.json({ error: "switched_off", switch: "contribute" }, 503);
+    if (!tgt.t.personal && sessionSwitchOff(s, "routineRun"))
+      return c.json(switchedOff(handlerSwitch("routineRun")), 503);
     if (
       !(await audit(c, {
         action: "routine.run",
@@ -590,7 +592,7 @@ export function routineRoutes(deps: AppDeps): Hono<AppEnv> {
     const seenRec = await ws.get(`rs:${cur.id}`);
     const seen: Record<string, string> = safeJson(seenRec?.body ?? null) as Record<string, string>;
 
-    const g = gate(c.env, s.switches.ai);
+    const g = gate(c.env, sessionSwitchOn(s, "aiCall"));
     const budget = g.ok
       ? metered(
           withUserCap(

@@ -10,6 +10,7 @@
 import { Hono } from "hono";
 import { callModel, extractJson } from "../ai/anthropic.ts";
 import { contractGate, gate } from "../ai/brief.ts";
+import { sessionSwitchOn } from "../switches.ts";
 import { doBudget, reserve, withUserCap } from "../ai/budget.ts";
 import { estimateTokens, LIMITS } from "../ai/config.ts";
 import { excludePersonalSegments, maskContacts } from "../ai/segments.ts";
@@ -537,7 +538,7 @@ async function tryModel(
   usage: { inputTokens: number; outputTokens: number };
 } | null> {
   const s = sess(c);
-  const g = gate(c.env, s.switches.ai);
+  const g = gate(c.env, sessionSwitchOn(s, "aiCall"));
   if (!g.ok) return null;
   // Personal Brain content never goes to a model, and an account's contract decides for its material.
   if (lines.some((l) => l.ws.personal)) return null;

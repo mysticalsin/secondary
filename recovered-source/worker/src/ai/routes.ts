@@ -12,6 +12,7 @@ import { appendReceipt, newReceiptId, type Receipt } from "../audit.ts";
 import { requireOrg, viewOf } from "../auth.ts";
 import { MAX_PROMPT } from "../genui.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
+import { handlerSwitch, sessionSwitchOn, switchedOff } from "../switches.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { metered, recordUsage } from "../uxv2/ledger.ts";
 import {
@@ -146,7 +147,7 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
     );
 
   ai.get("/ai/status", (c) => {
-    const g = gate(c.env, c.get("session").switches.ai);
+    const g = gate(c.env, sessionSwitchOn(c.get("session"), "aiCall"));
     return c.json({
       state: g.ok ? "ready" : g.error === "ai_disabled" ? "disabled" : "not_configured",
       reason: g.ok ? null : g.reason,
@@ -203,7 +204,7 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
 
   ai.post("/briefs", async (c) => {
     const s = c.get("session");
-    const g = gate(c.env, s.switches.ai);
+    const g = gate(c.env, sessionSwitchOn(s, "aiCall"));
     if (!g.ok) return c.json({ error: g.error, reason: g.reason }, g.status);
     const body = await readObject(await c.req.text());
     const q = body.question;
@@ -276,7 +277,8 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
 
   ai.post("/briefs/save", async (c) => {
     const s = c.get("session");
-    if (!s.switches.ai) return c.json({ error: "switched_off", switch: "ai" }, 503);
+    if (!sessionSwitchOn(s, "briefSave"))
+      return c.json(switchedOff(handlerSwitch("briefSave")), 503);
     requireOrg(s);
     const body = await readObject(await c.req.text());
     const raw = body.brief as Record<string, unknown> | undefined;
@@ -333,7 +335,7 @@ export function aiRoutes(deps: AppDeps): Hono<AppEnv> {
   // answered by the deterministic planner registered after this one.
   ai.post("/genui/plan", async (c, next) => {
     const s = c.get("session");
-    const g = gate(c.env, s.switches.ai);
+    const g = gate(c.env, sessionSwitchOn(s, "aiCall"));
     if (!g.ok) return next();
     let prompt: string | undefined;
     let nodeId: string | undefined;
