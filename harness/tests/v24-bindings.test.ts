@@ -730,3 +730,53 @@ test("a hard link of wrangler.jsonc is a regular file and is accepted", async ()
   assert.deepEqual(guard.guardRoot(dir, "dry-run"), { ok: true });
   assert.deepEqual(guard.guardRoot(dir, "deploy"), { ok: true });
 });
+
+test("a nested symlink under deploy/graph or deploy/assets is refused", () => {
+  const graph = matchingAssets();
+  const graphDir = join(graph, "deploy", "graph");
+  mkdirSync(graphDir);
+  const held = join(graph, "held-app.js.txt");
+  writeFileSync(held, "export {}\n");
+  symlinkSync(held, join(graphDir, "app.js.txt"));
+  refuseDeploy(graph, "assets-symlink");
+
+  const nested = matchingAssets();
+  mkdirSync(join(nested, "deploy", "graph", "sub"), { recursive: true });
+  symlinkSync(held, join(nested, "deploy", "graph", "sub", "app.js.txt"));
+  refuseDeploy(nested, "assets-symlink");
+
+  const assets = matchingAssets();
+  mkdirSync(join(assets, "deploy", "assets", "nested"));
+  const heldAsset = join(assets, "held-asset.txt");
+  writeFileSync(heldAsset, "asset\n");
+  symlinkSync(heldAsset, join(assets, "deploy", "assets", "nested", "file.txt"));
+  refuseDeploy(assets, "assets-symlink");
+});
+
+test("a symlinked graph-route.ts or policy-entry.ts is refused", () => {
+  const route = matchingAssets();
+  const heldRoute = join(route, "held-route.ts");
+  writeFileSync(heldRoute, "export {}\n");
+  symlinkSync(heldRoute, join(route, "deploy", "graph-route.ts"));
+  refuseDeploy(route, "assets-symlink");
+
+  const policy = matchingAssets();
+  mkdirSync(join(policy, "harness", "adapters"), { recursive: true });
+  const heldPolicy = join(policy, "held-policy.ts");
+  writeFileSync(heldPolicy, "export {}\n");
+  symlinkSync(heldPolicy, join(policy, "harness", "adapters", "policy-entry.ts"));
+  refuseDeploy(policy, "assets-symlink");
+});
+
+test("an unreadable deploy/graph is refused", () => {
+  const dir = matchingAssets();
+  const graphDir = join(dir, "deploy", "graph");
+  mkdirSync(graphDir);
+  writeFileSync(join(graphDir, "app.js.txt"), "export {}\n");
+  chmodSync(graphDir, 0);
+  try {
+    refuseDeploy(dir, "assets-symlink");
+  } finally {
+    chmodSync(graphDir, 0o755);
+  }
+});
