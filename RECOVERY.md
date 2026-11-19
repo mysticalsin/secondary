@@ -14,8 +14,8 @@ The archive `intake/secondary-api-private-source-candidate.tar.gz` is the review
 | `candidate-manifest.json` SHA-256 | `330452d57b8704a69da263b64342b26c8b7fb1d828f111590a256ddff76cea77` |
 | Manifest files | 117, all present, byte counts and SHA-256 match |
 | Source bytes | 1227833 |
-| Layout | 99 files under `src/worker`, 18 under `recovered-source/shared/packages` |
-| Extensions | 116 `.ts`, 1 generated `.js` |
+| Layout | Intake split: 99 Worker files and 18 shared-package files (117). `src/worker` now holds 102 files (101 `.ts`, including 2 `.d.ts`, and 1 `.js`). `recovered-source/shared/packages` now holds 20 `.ts` files. |
+| Extensions | Intake: 116 `.ts`, 1 generated `.js` |
 
 The manifest says the bytes came from `sourcesContent` in a source map of the deployed `secondary-api-dev` Worker (map SHA-256 `fbbb2928d9aa8ea9cfd043e1b1ea0226323784e9a71ff27a407e1d6571737985`). This repo does not contain that map, so that hash was not recomputed. Original git history and build config were not in the archive. Paths are the archive's safe mapping. Imports were left as recovered.
 
