@@ -81,3 +81,7 @@ The four `audit` wrappers stay. They are not the same function:
 - `admin/routes.ts` `audit` uses the session clock (`new Date(s.ctx.now).toISOString()`), spreads the whole intent (the caller supplies `decision` and `reason`; there is no `owner` default), and returns a boolean.
 - `routes.ts` `audit` uses the wall clock, spreads the whole intent, and returns `{ receiptId, ok }`. Callers read `.ok`, and some also read `receiptId`.
 - `ops-admin.ts` `audit` takes `(c, session, action, reason)`, stamps `deps.now()`, always writes `decision: "allow"`, and always writes `nodeId` and `scopeId` as null. Enable still waits and answers 503 when the receipt fails. Switch-off still uses `boundedAudit` and logs `{ at: "switch_disable", audit, switch }` with `succeeded`, `refused`, or `timed_out`.
+
+## Owner, 01:16 BRT
+
+Tony, via Jarvis: the three larger refactors are approved ("A, all three"). Comments that only restate the code, and tests that cannot fail, are approved to delete ("Yes, delete them"). Each is its own slice. The lead slice is `specs/002-lead-from-grants/`. The switch table, the folder move, and the comment and test deletion are not that slice.
