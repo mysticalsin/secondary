@@ -7,11 +7,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-type GateApp = {
-  request: (input: string, init?: { method: string }) => Promise<Response>;
-};
-
-async function gate(off: "ai" | "connector" | "contribute"): Promise<GateApp> {
+async function gate(off: "ai" | "connector" | "contribute") {
   const ops = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const { switchGate } = (await import(ops)) as {
     switchGate: (c: never, next: () => Promise<void>) => Promise<Response | void>;
