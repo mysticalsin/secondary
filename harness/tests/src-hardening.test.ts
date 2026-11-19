@@ -32,13 +32,15 @@ const hung = {
   members: [] as string[],
 };
 let failScope: string | null = null;
+const hangIds = new Set<string>();
 
 type App = {
   request: (input: string, init: RequestInit | undefined, env: unknown) => Promise<Response>;
 };
 
 function workspace(name: string) {
-  const slow = name.includes("c_delivery") || name.includes("a_acme");
+  const slow =
+    name.includes("c_delivery") || name.includes("a_acme") || [...hangIds].some((id) => name.includes(id));
   return {
     brainMemberRead: async () => null,
     brainRoleOf: async () => null,
@@ -134,7 +136,13 @@ let directory: Directory;
 async function plantCircle(
   id: string,
   label: string,
-  flags: { restricted?: boolean; parentId?: string } = {},
+  flags: {
+    restricted?: boolean;
+    nda?: boolean;
+    contacts?: boolean;
+    parentId?: string | null;
+    linkUnder?: string;
+  } = {},
 ): Promise<() => void> {
   const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const orgMod = (await import(specifier)) as {
@@ -147,8 +155,9 @@ async function plantCircle(
     seed: 20261104,
     personalOwners: [AUTHOR.id],
   });
-  const parentId = flags.parentId ?? "d_amaris";
-  const parent = org.nodes.get(parentId);
+  const parentId = flags.parentId === undefined ? "d_amaris" : flags.parentId;
+  const linkUnder = flags.linkUnder ?? (parentId || "d_amaris");
+  const parent = org.nodes.get(linkUnder);
   if (!parent) throw new Error("missing department");
   if (!org.nodes.has(id)) {
     org.nodes.set(id, {
@@ -161,6 +170,8 @@ async function plantCircle(
       dept: "d_amaris",
       circle: id,
       ...(flags.restricted ? { restricted: true } : {}),
+      ...(flags.nda ? { nda: true } : {}),
+      ...(flags.contacts ? { contacts: true } : {}),
       facts: {},
       leaf: null,
     } as never);
@@ -168,7 +179,7 @@ async function plantCircle(
   }
   return () => {
     org.nodes.delete(id);
-    const still = org.nodes.get(parentId);
+    const still = org.nodes.get(linkUnder);
     if (still) still.childIds = still.childIds.filter((child) => child !== id);
   };
 }
@@ -420,6 +431,50 @@ test("an id longer than 128 characters is not found even when it names a real no
   } finally {
     restore();
     held.remove();
+  }
+});
+
+async function restrictionOfLeaves(leaves: string[], hang: string[]) {
+  for (const id of hang) hangIds.add(id);
+  const held = await openDirectory(leaves.map((id) => ({ scope_type: "circle" as const, scope_id: id })));
+  const api = await app({ brainBoundMs: 40 });
+  const res = await api.request("http://127.0.0.1/v1/brains", {}, env(held.binding, AUTHOR.email));
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as {
+    brains: { id: string; restricted?: boolean; unavailable?: boolean }[];
+  };
+  return {
+    cards: body.brains,
+    close() {
+      for (const id of hang) hangIds.delete(id);
+      held.remove();
+    },
+  };
+}
+
+test("grandparent restriction reaches both the open card and the missed card", async () => {
+  const restore: (() => void)[] = [];
+  restore.push(await plantCircle("c_gp_top", "Grandparent restricted", { restricted: true, linkUnder: "d_amaris" }));
+  restore.push(
+    await plantCircle("c_gp_mid", "Grandparent middle", { parentId: "c_gp_top", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_gp_hit", "Grandparent hit", { parentId: "c_gp_mid", linkUnder: "d_amaris" }),
+  );
+  restore.push(
+    await plantCircle("c_gp_miss", "Grandparent miss", { parentId: "c_gp_mid", linkUnder: "d_amaris" }),
+  );
+  const read = await restrictionOfLeaves(["c_gp_hit", "c_gp_miss"], ["c_gp_miss"]);
+  try {
+    const hit = read.cards.find((b) => b.id === "c_gp_hit");
+    const miss = read.cards.find((b) => b.id === "c_gp_miss");
+    assert.equal(hit?.unavailable, undefined);
+    assert.equal(hit?.restricted, true);
+    assert.equal(miss?.unavailable, true);
+    assert.equal(miss?.restricted, true);
+  } finally {
+    read.close();
+    restore.reverse().forEach((fn) => fn());
   }
 });
 
