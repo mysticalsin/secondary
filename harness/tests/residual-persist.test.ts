@@ -145,6 +145,77 @@ test("connector upsert persists through the real workspace, and source access ca
     );
     assert.equal(calls, 1);
     assert.equal(allowed.has(ITEM), true);
+
+    const user = { id: "u_consultant", email: "consultant@synthetic.example" };
+    const closed = async (connector: unknown) =>
+      checkSourceAccess(
+        { CONNECTOR_HMAC_KEY: SECRET, CONNECTOR: connector } as never,
+        "synthetic",
+        user,
+        [ITEM],
+      );
+    assert.equal((await closed(undefined)).size, 0);
+    assert.equal(
+      (
+        await checkSourceAccess(
+          { CONNECTOR: { fetch: async () => Response.json({}) } } as never,
+          "synthetic",
+          user,
+          [ITEM],
+        )
+      ).size,
+      0,
+    );
+    assert.equal((await closed({ fetch: async () => new Response("no", { status: 503 }) })).size, 0);
+    assert.equal((await closed({ fetch: async () => new Response("not-json", { status: 200 }) })).size, 0);
+    assert.equal(
+      (await closed({ fetch: async () => Response.json({ results: { [ITEM]: { allowed: "true" } } }) })).size,
+      0,
+    );
+    const { forgetSourceAccess } = await import(connectorUrl);
+    assert.equal(await forgetSourceAccess({ CONNECTOR_HMAC_KEY: SECRET } as never, "synthetic", user), false);
+    assert.equal(
+      await forgetSourceAccess(
+        { CONNECTOR_HMAC_KEY: SECRET, CONNECTOR: { fetch: async () => new Response("no", { status: 500 }) } } as never,
+        "synthetic",
+        user,
+      ),
+      false,
+    );
+    assert.equal(
+      await forgetSourceAccess(
+        { CONNECTOR_HMAC_KEY: SECRET, CONNECTOR: { fetch: async () => new Response(null, { status: 204 }) } } as never,
+        "synthetic",
+        user,
+      ),
+      true,
+    );
+
+    const badBody = JSON.stringify({ tenantId: "NO" });
+    const badHeaders = await signInternalRequest({
+      secret: SECRET,
+      method: "POST",
+      url,
+      body: badBody,
+      principal: {
+        v: 1,
+        iss: "secondary-mcp",
+        aud: "secondary-api",
+        sub: "secondary-connector",
+        email: "connector@synthetic.example",
+        client_id: "secondary-connector",
+        scope: [],
+        tool: "source.upsert",
+      },
+    });
+    const bad = await api.request(
+      url,
+      { method: "POST", headers: { ...badHeaders, "content-type": "application/json" }, body: badBody },
+      env,
+    );
+    assert.equal(bad.status, 400);
+    assert.deepEqual(await bad.json(), { error: "invalid_body" });
+    assert.equal(workspace.sourceGet(ITEM)?.title, "Synthetic file");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

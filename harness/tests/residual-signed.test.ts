@@ -97,9 +97,17 @@ async function boot(): Promise<{ api: App; env: unknown; remove: () => void }> {
   };
 }
 
-async function status(api: App, env: unknown, url: string, headers: Record<string, string>) {
+async function call(api: App, env: unknown, url: string, headers: Record<string, string>) {
   const res = await api.request(url, { headers }, env);
-  return res.status;
+  return { status: res.status, body: (await res.json()) as unknown };
+}
+
+async function status(api: App, env: unknown, url: string, headers: Record<string, string>) {
+  return (await call(api, env, url, headers)).status;
+}
+
+function assertUnauthorized(body: unknown) {
+  assert.deepEqual(body, { error: "unauthorized" });
 }
 
 test("a signature from the other channel's key is 401 on ops and on mcp", async () => {
@@ -107,8 +115,12 @@ test("a signature from the other channel's key is 401 on ops and on mcp", async 
   try {
     const opsWithMcp = await sign(OPS_URL, MCP);
     const mcpWithOps = await sign(MCP_URL, OPS);
-    assert.equal(await status(held.api, held.env, OPS_URL, opsWithMcp), 401);
-    assert.equal(await status(held.api, held.env, MCP_URL, mcpWithOps), 401);
+    const opsRes = await call(held.api, held.env, OPS_URL, opsWithMcp);
+    const mcpRes = await call(held.api, held.env, MCP_URL, mcpWithOps);
+    assert.equal(opsRes.status, 401);
+    assert.equal(mcpRes.status, 401);
+    assertUnauthorized(opsRes.body);
+    assertUnauthorized(mcpRes.body);
     const opsOk = await sign(OPS_URL, OPS);
     const mcpOk = await sign(MCP_URL, MCP);
     assert.equal(await status(held.api, held.env, OPS_URL, opsOk), 200);
@@ -125,18 +137,46 @@ test("signed mcp negatives are 401: forged signature, future time, missing nonce
     const sig = forged["x-secondary-ops-signature"] ?? "";
     const flipped = sig.endsWith("a") ? `${sig.slice(0, -1)}b` : `${sig.slice(0, -1)}a`;
     forged["x-secondary-ops-signature"] = flipped;
-    assert.equal(await status(held.api, held.env, MCP_URL, forged), 401);
+    const forgedRes = await call(held.api, held.env, MCP_URL, forged);
+    assert.equal(forgedRes.status, 401);
+    assertUnauthorized(forgedRes.body);
 
     const future = await sign(MCP_URL, MCP, Math.floor(Date.now() / 1000) + 120);
-    assert.equal(await status(held.api, held.env, MCP_URL, future), 401);
+    const futureRes = await call(held.api, held.env, MCP_URL, future);
+    assert.equal(futureRes.status, 401);
+    assertUnauthorized(futureRes.body);
 
     const noNonce = await sign(MCP_URL, MCP);
     delete noNonce["x-secondary-ops-nonce"];
-    assert.equal(await status(held.api, held.env, MCP_URL, noNonce), 401);
+    const noNonceRes = await call(held.api, held.env, MCP_URL, noNonce);
+    assert.equal(noNonceRes.status, 401);
+    assertUnauthorized(noNonceRes.body);
 
     const noKid = await sign(MCP_URL, MCP);
     delete noKid["x-secondary-ops-key-id"];
-    assert.equal(await status(held.api, held.env, MCP_URL, noKid), 401);
+    const noKidRes = await call(held.api, held.env, MCP_URL, noKid);
+    assert.equal(noKidRes.status, 401);
+    assertUnauthorized(noKidRes.body);
+  } finally {
+    held.remove();
+  }
+});
+
+test("a rejected signature does not spend the nonce", async () => {
+  const held = await boot();
+  try {
+    const headers = await sign(MCP_URL, MCP);
+    const sig = headers["x-secondary-ops-signature"] ?? "";
+    const flipped = sig.endsWith("a") ? `${sig.slice(0, -1)}b` : `${sig.slice(0, -1)}a`;
+    const rejected = await call(held.api, held.env, MCP_URL, {
+      ...headers,
+      "x-secondary-ops-signature": flipped,
+    });
+    assert.equal(rejected.status, 401);
+    assertUnauthorized(rejected.body);
+    const accepted = await call(held.api, held.env, MCP_URL, headers);
+    assert.equal(accepted.status, 200);
+    assert.equal(typeof accepted.body === "object" && accepted.body !== null && "error" in accepted.body, false);
   } finally {
     held.remove();
   }
@@ -158,7 +198,9 @@ test("changing tenant after the mcp signature is 401", async () => {
   try {
     const headers = await sign(MCP_URL, MCP);
     const tampered = "http://127.0.0.1/v1/internal/mcp/switches?tenant=otherten";
-    assert.equal(await status(held.api, held.env, tampered, headers), 401);
+    const res = await call(held.api, held.env, tampered, headers);
+    assert.equal(res.status, 401);
+    assertUnauthorized(res.body);
   } finally {
     held.remove();
   }

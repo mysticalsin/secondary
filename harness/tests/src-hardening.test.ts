@@ -1103,11 +1103,11 @@ test("a missed card under a restricted ancestor is restricted", async () => {
   assert.equal(org.nodes.has(OVER_NODE), false);
   const dept = org.nodes.get("d_amaris");
   if (!dept) throw new Error("missing department");
-  const previous = dept.restricted;
-  dept.restricted = true;
   const held = await openDirectory();
   const api = await app({ brainBoundMs: 40 });
+  const previous = dept.restricted;
   try {
+    dept.restricted = true;
     const res = await api.request("http://127.0.0.1/v1/brains", {}, env(held.binding, AUTHOR.email));
     assert.equal(res.status, 200);
     const body = (await res.json()) as {
