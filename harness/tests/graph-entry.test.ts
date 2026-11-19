@@ -16,8 +16,8 @@ function rewrite(response: Response): Response {
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
 const FILES: { path: string; repo: string; type: string; sha256: string }[] = [
-  [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "1df28560b7621c18ccc7cdec72b886ea04f13e8c304fac0acae5baaab8cf6f76"],
-  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "7a905e701145cc7c251da3f3915e45a604f9114192ac8716f45963451354306a"],
+  [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "a63ce7a7de63ace0d0e56ea116d441dfc8737e319626239492f9ed02eae68bc2"],
+  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "709bb60ce7ee79e1765dad1e1933339cdb519cd35b40c51d84efc81b08e65e1d"],
   ["/graph/app.css", "deploy/graph/app.css", "text/css; charset=utf-8", "91333cfe793b50146a0b760ecff85eaac1f80b75d9745ab7a302285b67e4f76d"],
   ["/graph/nav.js", "deploy/graph/nav.js.txt", "text/javascript; charset=utf-8", "ae5dc4a2b01105c7f0cad18246d140423b6eb366defc133127c4f82a0aacfb4a"],
   ["/graph/nav.css", "deploy/graph/nav.css", "text/css; charset=utf-8", "581e4d30582f5b1415b694a165e155b1b9b1ec54e5050484be3a51dac3c404af"],

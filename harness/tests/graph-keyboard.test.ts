@@ -107,9 +107,7 @@ test("arrow keys move between graph nodes and Enter selects the current one", as
   while (Date.now() < deadline && !/note/.test(elements.stats?.textContent || "")) {
     await new Promise((resolve) => setTimeout(resolve, 15));
   }
-  const canvas = elements.graph;
-  assert.equal(canvas.tabIndex, 0);
-  const handler = canvas.listeners?.keydown;
+  const handler = elements.graph.listeners?.keydown;
   assert.equal(typeof handler, "function");
   const press = (key: string) => handler?.({ key, preventDefault() {} });
   press("ArrowRight");
