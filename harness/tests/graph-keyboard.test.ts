@@ -14,6 +14,20 @@ test("the graph page has a main landmark and an h1", () => {
   assert.match(page, /<canvas[^>]*\stabindex="0"/);
 });
 
+test("the canvas is an application and does not point at Find a page", () => {
+  const canvas = page.match(/<canvas\b[^>]*>/)?.[0] || "";
+  assert.match(canvas, /role="application"/);
+  assert.doesNotMatch(canvas, /role="img"/);
+  assert.match(canvas, /aria-label="[^"]*Arrow/);
+  assert.match(canvas, /aria-label="[^"]*Enter/);
+  assert.doesNotMatch(canvas, /Find a page/);
+});
+
+test("the script does not set the canvas tabindex again", () => {
+  const source = readFileSync(join(repo, "deploy/graph/app.js.txt"), "utf8");
+  assert.equal(/canvas\.tabIndex\s*=/.test(source), false);
+});
+
 const PRELUDE = `
 class Node { constructor() { this.childNodes = []; } append(...xs) { this.childNodes.push(...xs); } }
 class Element extends Node {
@@ -111,4 +125,52 @@ test("arrow keys move between graph nodes and Enter selects the current one", as
   press("Enter");
   assert.equal(elements.panel.hidden, false);
   assert.equal(elements["panel-title"].textContent, "My Secondary");
+});
+
+test("modified arrow keys do not move the graph", async () => {
+  const sandbox: Record<string, unknown> = {
+    console, URL, Response, Headers, setTimeout, clearTimeout, queueMicrotask, TextEncoder, Math, Date, JSON,
+    Object, Array, Map, Set, WeakMap, Promise, Number, String, Boolean, RegExp, Error, TypeError, Symbol,
+    parseInt, parseFloat, isNaN, isFinite, encodeURIComponent, decodeURIComponent,
+    fetch: async (input: string | URL) => {
+      const url = new URL(String(input), "http://127.0.0.1");
+      if (url.pathname === "/v1/brains") return Response.json({ brains: [{ id: "me", name: "My Secondary", pages: 2 }] });
+      if (url.pathname === "/v1/brain/tree") {
+        return Response.json({
+          roots: [{
+            id: "me",
+            label: "My Secondary",
+            access: "full",
+            children: [{ id: "me#Notes", label: "Notes", children: [{ id: "me/alpha", label: "Alpha" }] }],
+          }],
+        });
+      }
+      return new Response("no", { status: 404, headers: { "content-type": "text/plain" } });
+    },
+  };
+  const context = createContext(sandbox);
+  runInContext(PRELUDE, context);
+  runInContext(readFileSync(join(repo, "deploy/graph/app.js.txt"), "utf8"), context);
+  const elements = sandbox.__elements as Record<string, { textContent?: string; hidden?: boolean; listeners?: Record<string, (event: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean; preventDefault: () => void }) => void> }>;
+  const deadline = Date.now() + 1500;
+  while (Date.now() < deadline && !/note/.test(elements.stats?.textContent || "")) {
+    await new Promise((resolve) => setTimeout(resolve, 15));
+  }
+  const handler = elements.graph.listeners?.keydown;
+  assert.equal(typeof handler, "function");
+  const prevented: string[] = [];
+  const press = (event: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }) => {
+    let stopped = false;
+    handler?.({ ...event, preventDefault() { stopped = true; } });
+    if (stopped) prevented.push(event.key);
+  };
+  const before = elements["panel-title"]?.textContent;
+  press({ key: "ArrowRight", altKey: true });
+  press({ key: "ArrowRight", ctrlKey: true });
+  press({ key: "ArrowRight", metaKey: true });
+  assert.equal(elements["panel-title"]?.textContent, before);
+  assert.deepEqual(prevented, []);
+  press({ key: "ArrowRight" });
+  assert.equal(elements["panel-title"].textContent, "My Secondary");
+  assert.deepEqual(prevented, ["ArrowRight"]);
 });

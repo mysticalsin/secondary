@@ -3,8 +3,9 @@
 ## Requirements
 
 - The graph page has a `<main>` landmark and one `<h1>`. The heading is the page name, Graph. It is not a new tagline.
-- The graph canvas is in the tab order.
-- With the canvas focused, Arrow Right and Arrow Down move to the next visible node, Arrow Left and Arrow Up move to the previous one, and Enter selects the current node. Moving selects that node, so its title is shown.
+- The graph canvas is in the tab order from its HTML `tabindex`. The script does not set `tabIndex` again.
+- The canvas role is `application`. Its accessible name says arrow keys move between pages and Enter selects the current page. It does not say to use Find a page.
+- With the canvas focused, Arrow Right and Arrow Down move to the next visible node, Arrow Left and Arrow Up move to the previous one, and Enter selects the current node. Moving selects that node, so its title is shown. Arrow keys held with Alt, Ctrl, or Meta do not move the selection and do not call preventDefault.
 
 ## Out of scope
 
