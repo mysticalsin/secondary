@@ -21,6 +21,7 @@ body {
 }
 button, input, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 a { color: inherit; }
 
 .top {
@@ -86,7 +87,9 @@ a { color: inherit; }
 @keyframes pulse { 50% { opacity: .25; } }
 
 .zoom { position: fixed; right: 16px; bottom: 18px; z-index: 4; display: flex; flex-direction: column; gap: 6px; }
-body:has(#panel:not([hidden])) .zoom { right: 372px; }
+@media (min-width: 761px) {
+  body:has(#panel:not([hidden])) .zoom { right: 372px; }
+}
 .zoom button {
   width: 36px; height: 36px; border-radius: 12px; border: 1px solid var(--line); background: rgba(33,26,38,.92); cursor: pointer; font-size: 16px;
 }
