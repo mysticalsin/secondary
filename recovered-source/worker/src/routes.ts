@@ -41,6 +41,7 @@ import { detectSensitivity, type SensitivityFlag } from "./sensitivity.ts";
 import { tenantStub, workspaceStub } from "./stubs.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
 import { uxRoutes } from "./ux/index.ts";
+import { warnAuditDenied } from "./ux/util.ts";
 import { notifyApproved, notifyChangesRequested, notifyContributed } from "./ux/notify.ts";
 import { uxv2Routes } from "./uxv2/index.ts";
 import { wikiNotify } from "./wiki/hooks.ts";
@@ -252,8 +253,7 @@ export async function submitCandidate(
       reason: d.reason,
       revision: null,
     });
-    if (!wrote.ok)
-      console.warn(JSON.stringify({ at: "audit_unavailable", action: "contribute", decision: "deny" }));
+    if (!wrote.ok) warnAuditDenied("contribute");
     return forbidden(c, d.reason);
   }
   const receipt = await audit(c, {
@@ -906,8 +906,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
         reason: d.reason,
         revision: null,
       });
-      if (!wrote.ok)
-        console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
+      if (!wrote.ok) warnAuditDenied(action);
       return forbidden(c, d.reason);
     }
     if (action === "manage_members" || action === "configure")

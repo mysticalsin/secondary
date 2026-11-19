@@ -22,7 +22,16 @@ import { parseCandidateId, personalScope, scopeOfNode } from "../scope.ts";
 import type { SensitivityFlag } from "../sensitivity.ts";
 import type { AppEnv } from "../types.ts";
 import { notifyApproved, notifyChangesRequested } from "../ux/notify.ts";
-import { audit, bad, type C, forbidden, notFound, readObject, sess } from "../ux/util.ts";
+import {
+  audit,
+  bad,
+  type C,
+  forbidden,
+  notFound,
+  readObject,
+  sess,
+  warnAuditDenied,
+} from "../ux/util.ts";
 import { numberChanges, parseSeen, seenProblem } from "../wiki/changes.ts";
 import { mayDecide, proposalSources, wikiQueueRow } from "../wiki/review.ts";
 import {
@@ -337,8 +346,7 @@ const deny = async (c: C, action: string, id: string, scope: string | null, reas
     decision: "deny",
     reason,
   });
-  if (!wrote)
-    console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
+  if (!wrote) warnAuditDenied(action);
   return forbidden(c, reason);
 };
 

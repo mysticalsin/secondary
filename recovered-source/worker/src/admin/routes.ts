@@ -15,6 +15,7 @@ import {
 } from "@secondary/policy";
 import { type Context, Hono } from "hono";
 import { appendReceipt, fetchReceipts, newReceiptId, type Receipt } from "../audit.ts";
+import { warnAuditDenied } from "../ux/util.ts";
 import { requireOrg, viewOf } from "../auth.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv, Session } from "../types.ts";
@@ -103,9 +104,7 @@ const receipt = (
 /** A refusal on authority: a deny receipt, then 403 with the reason. */
 async function deny(c: C, action: string, reason: string, scopeId: string | null = null) {
   const wrote = await audit(c, receipt(action, "deny", reason.slice(0, 280), scopeId));
-  if (!wrote) {
-    console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
-  }
+  if (!wrote) warnAuditDenied(action);
   return refuse(c, 403, "forbidden", reason);
 }
 
