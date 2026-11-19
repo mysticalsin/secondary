@@ -78,7 +78,6 @@ export const SWITCH_TABLE: readonly Row[] = [
 
 type MatchRow = { name: SwitchName; http?: (method: string, path: string) => boolean };
 
-/** The first matching row whose switch is off, including a row after one that is on. */
 export function blockingSwitch(
   rows: readonly MatchRow[],
   method: string,
@@ -91,14 +90,8 @@ export function blockingSwitch(
   return null;
 }
 
-export function httpSwitch(
-  method: string,
-  path: string,
-  switches?: SwitchState,
-): SwitchName | null {
-  if (switches) return blockingSwitch(SWITCH_TABLE, method, path, switches);
-  for (const row of SWITCH_TABLE) if (row.http?.(method, path)) return row.name;
-  return null;
+export function httpSwitch(method: string, path: string, switches: SwitchState): SwitchName | null {
+  return blockingSwitch(SWITCH_TABLE, method, path, switches);
 }
 
 export function handlerSwitch(key: HandlerKey): SwitchName {

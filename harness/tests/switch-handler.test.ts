@@ -7,6 +7,7 @@ import { persona } from "../../packages/policy/src/personas.ts";
 import {
   blockingSwitch,
   handlerSwitch,
+  httpSwitch,
   SWITCH_TABLE,
   type HandlerKey,
   type SwitchName,
@@ -196,4 +197,13 @@ test("a later off row still refuses", () => {
     blockingSwitch(rows, "POST", "/x", { ...on, ai: true, contribute: false }),
     "contribute",
   );
+});
+
+test("a different letter case is not the row, and a trailing slash on sources is", () => {
+  const off = { mcp: true, connector: false, ai: true, contribute: false };
+  assert.equal(httpSwitch("GET", "/v1/sources/s1", off), "connector");
+  assert.equal(httpSwitch("GET", "/v1/Sources/s1", off), null);
+  assert.equal(httpSwitch("GET", "/v1/sources/s1/", off), "connector");
+  assert.equal(httpSwitch("POST", "/v1/personal/items/pi:abcd1234/contribute", off), "contribute");
+  assert.equal(httpSwitch("POST", "/v1/personal/items/pi:abcd1234/contribute/", off), null);
 });

@@ -43,7 +43,11 @@ test("an encoded source path is blocked when the connector switch is off", async
   assert.deepEqual(body, { error: "switched_off", switch: "connector" });
 
   const dotted = await app.request("http://127.0.0.1/v1/map/%2e%2e/sources/s1");
-  assert.equal(dotted.status, 503);
+  assert.equal(
+    dotted.status,
+    503,
+    "the URL parser already collapsed this dot segment, so the raw pathname and the routed path agree",
+  );
   assert.deepEqual(await dotted.json(), { error: "switched_off", switch: "connector" });
 });
 
