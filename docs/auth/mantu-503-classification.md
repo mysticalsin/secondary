@@ -1,12 +1,12 @@
+# Mantu Home ac41dfec: signed-out `GET /` returns 503 `auth_unconfigured`, but the script expects 401
+
 ## Status as of ad04f08
 
-This note is the only addition. The classification below is unchanged. It describes the ac41dfec home bundle, not `src/worker` on this commit.
+This note and the Historical markers are the only additions. The classification text is otherwise unchanged. It describes the ac41dfec home bundle, not `src/worker` on this commit.
 
 That bundle's `worker/entry.js` answered 503 `auth_unconfigured` when issuer and audience were empty, before it looked at a session. Current `src/worker` has no `auth_unconfigured` guard and does not read `AUTH_ISSUER` or `AUTH_AUDIENCE`. `GET /` is the static shell. An API request with no Access token is 401 `{ error: "unauthorized" }`. A missing Access team domain or audience makes `verifyAccessJwt` return null, which is the same 401.
 
 `docs/auth/mantu-503-repro.mjs` still drives `<bundle>/worker/entry.js`. `npm test` runs only `harness/tests/*.test.ts` and `harness/runtime/*.test.ts`. Neither typecheck includes `docs/`. The script is not part of the gates, and it was not rewritten to call `createApp`.
-
-# Mantu Home ac41dfec: signed-out `GET /` returns 503 `auth_unconfigured`, but the script expects 401
 
 Classified by Devin (senior engineer), 2026-11-09 ~01:00 BRT (America/Sao_Paulo). I only read files and ran a box-local repro. I made no repo writes, used no real credentials and made no network calls.
 
@@ -41,6 +41,8 @@ configured remote AUTH_JWKS_URL    | no identity | GET / -> 401 unauthorized   (
 ```
 A correctly configured deploy, using either the local or the remote JWKS path, returns **401 `unauthorized`** to a user with no identity. That is the product behavior Q09 wants.
 
+Historical: describes the ac41dfec bundle only, not current main.
+
 ## Fixes (no ac41dfec product change needed)
 1. **Harness:** the owner is the bundle builder (bc-97be2a5b, build-only) or the Mantu QA owner. Add a signed-out-but-configured mode to `start.mjs`, for example `QA_SIGNED_OUT=1`. It would use `personaEnv(...)` (issuer, audience, public-only `LOCAL_JWKS`) and skip bearer injection at `start.mjs:229` (`if (token && !presented(headers)) ...`). Add a receipt `signed-out-configured-root.txt` that expects 401 `unauthorized`. This is a harness-only change, so the worker bytes stay unchanged.
 2. **Script:** the owner is the Mantu QA script author. Amend Q09:
@@ -52,6 +54,8 @@ A correctly configured deploy, using either the local or the remote JWKS path, r
    - unconfigured env with a bad bearer gives 503, which pins config-before-session;
    - configured env with no token gives 401 `unauthorized`, which exists today;
    - configured env with a bad bearer gives 401 `invalid_token`.
+Historical: describes the ac41dfec bundle only, not current main.
+
 4. **Product note:** this is informational, not a defect. The shipped `wrangler.jsonc` has empty issuer and audience, so a deploy that does not supply vars or secrets would return 503 to all users. That is safe, because it fails closed and exposes no shell. The file says it is local-only and that `npm run deploy` does not upload it. Before any real deploy, the deploy gate must check that the issuer, audience and JWKS vars are set.
 
 ## Separate blocker (the main reason the hands-on gate did not run)
