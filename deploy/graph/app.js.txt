@@ -106,11 +106,30 @@
       .trim();
   }
 
+  function brainCards(body) {
+    const cards = Array.isArray(body && body.brains) ? body.brains : [];
+    return cards.filter((card) => card && typeof card.id === "string" && card.id !== "" && typeof card.name === "string");
+  }
+
+  function chooseBrain(cards) {
+    const withPages = cards.find((card) => Number(card.pages) > 0);
+    return (withPages || cards[0] || { id: "" }).id;
+  }
+
+  function fillBrainSelect(select, cards) {
+    const id = chooseBrain(cards);
+    select.replaceChildren();
+    for (const card of cards) select.append(new Option(card.name, card.id));
+    if (id) select.value = id;
+    return id;
+  }
+
   async function load() {
     setStatus("Loading your second brain…", "loading");
     let tree;
+    let cards;
     try {
-      tree = await getJson("/v1/brain/tree");
+      [tree, cards] = await Promise.all([getJson("/v1/brain/tree"), getJson("/v1/brains").then(brainCards)]);
     } catch (err) {
       if (err instanceof AuthError) {
         setStatus("Your sign-in has expired or this page could not reach the brain. Reload to sign in again.", "error");
@@ -139,10 +158,9 @@
         }
       }
     }
-    workspaceEl.replaceChildren(new Option("All brains", ""));
-    for (const ws of workspaces) workspaceEl.append(new Option(`${ws.label} (${ws.count ?? 0})`, ws.id));
+    const chosen = fillBrainSelect(workspaceEl, cards);
     renderLegend();
-    if (pages.length === 0) {
+    if (pages.filter((node) => node.ws === chosen).length === 0) {
       emptyEl.hidden = false;
       setStatus(locked ? `${locked} brain${locked === 1 ? "" : "s"} visible by name only. No pages you can open.` : "No pages yet.", "");
       refresh();
@@ -199,8 +217,9 @@
 
   function renderLegend() {
     legendEl.replaceChildren();
+    const ws = workspaceEl.value;
     for (const [folder, color] of folderColor) {
-      const count = nodes.filter((n) => n.kind === "note" && n.folder === folder).length;
+      const count = nodes.filter((n) => n.kind === "note" && n.folder === folder && (!ws || n.ws === ws)).length;
       const button = document.createElement("button");
       button.type = "button";
       button.className = "legend-item";
@@ -762,6 +781,7 @@
 
   workspaceEl.addEventListener("change", () => {
     autoFit = true;
+    renderLegend();
     refresh();
   });
   $("#opt-folders").addEventListener("change", (e) => {

@@ -117,9 +117,27 @@
     return e;
   }
 
+  function brainCards(body) {
+    const cards = Array.isArray(body && body.brains) ? body.brains : [];
+    return cards.filter((card) => card && typeof card.id === "string" && card.id !== "" && typeof card.name === "string");
+  }
+
+  function chooseBrain(cards) {
+    const withPages = cards.find((card) => Number(card.pages) > 0);
+    return (withPages || cards[0] || { id: "" }).id;
+  }
+
+  function fillBrainSelect(select, cards) {
+    const id = chooseBrain(cards);
+    select.replaceChildren();
+    for (const card of cards) select.append(new Option(card.name, card.id));
+    if (id) select.value = id;
+    return id;
+  }
+
   async function loadBrain() {
     setStatus("Reading your second brain…", "loading");
-    const tree = await getJson("/v1/brain/tree");
+    const [tree, listed] = await Promise.all([getJson("/v1/brain/tree"), getJson("/v1/brains")]);
     const roots = Array.isArray(tree.roots) ? tree.roots : [];
     const workspaces = roots.filter((r) => r.access !== "locked" && Array.isArray(r.children));
     const locked = roots.filter((r) => r.access === "locked").length;
@@ -180,7 +198,7 @@
         .trim();
       if (p.text.startsWith(p.title)) p.text = p.text.slice(p.title.length).trim();
     }
-    return { pages, workspaces, locked, failed, capped: pages.length > MAX_DETAILS ? pages.length : 0 };
+    return { pages, workspaces, locked, failed, capped: pages.length > MAX_DETAILS ? pages.length : 0, cards: brainCards(listed) };
   }
 
   function parseNum(str) {
@@ -739,8 +757,7 @@
 
   loadBrain().then((b) => {
     brain = b;
-    brainEl.replaceChildren(new Option("All brains", ""));
-    for (const ws of b.workspaces) brainEl.append(new Option(ws.label, ws.id));
+    fillBrainSelect(brainEl, b.cards);
     const notes = [];
     if (b.capped) notes.push(`Read the first ${MAX_DETAILS} of ${b.capped} pages.`);
     if (b.failed) notes.push(`${plural(b.failed, "page")} could not be read.`);
