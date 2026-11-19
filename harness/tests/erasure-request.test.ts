@@ -26,6 +26,7 @@ import {
   encodeErasure,
   erasurePlan,
   runErasure,
+  scopeIdOfStep,
   stepsForRestore,
   type StoredErasure,
 } from "../../src/state/erasure-request.ts";
@@ -175,9 +176,23 @@ test("erasure request stores a known scope and drops a step the grammar rejects"
       steps: ["personal", "scope:c_delivery", "scope:bad id", "scope:c_delivery\n", "not-a-step"],
     }),
   ).state;
-  assert.deepEqual(opened.order, ["scope:c_delivery", "personal"]);
+  assert.deepEqual(opened.order, ["personal", "scope:c_delivery"]);
   assert.equal(opened.order.includes("scope:bad id"), false);
   assert.equal(opened.mark["scope:bad id"], undefined);
+  assert.equal(scopeIdOfStep("scope:c_delivery"), "c_delivery");
+  assert.equal(scopeIdOfStep("scope:c_delivery\n"), null);
+  assert.equal(scopeIdOfStep(`scope:${"a".repeat(129)}`), null);
+  assert.equal(scopeIdOfStep("scope:café"), null);
+  assert.deepEqual(stepsForRestore("workspace", "bad id", "p1"), []);
+  assert.deepEqual(stepsForRestore("workspace", "c_delivery", "p1"), ["scope:c_delivery"]);
+  const openedAgain = requireOk(
+    commitErasure(opened, {
+      type: "request",
+      now: NOW + 1,
+      steps: ["directory", "scope:bad id", "scope:c_delivery"],
+    }),
+  ).state;
+  assert.deepEqual(openedAgain.order, ["scope:c_delivery", "personal", "directory"]);
 });
 
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {

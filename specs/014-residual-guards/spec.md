@@ -24,4 +24,4 @@ A brain card, whether the workspace answered or missed the bound, is restricted 
 
 ## Erasure steps
 
-A stored erasure order is unreadable when a step is not one of `receipts`, `tombstone`, `personal`, `connector`, `directory`, or `scope:` plus a scope id of the form `[a-z0-9][A-Za-z0-9_.:@-]{0,127}`. A grant whose subject is not the person being erased does not resume. That subject check is already in `erasureGrantOk`.
+A stored erasure order is unreadable when a step is not one of `receipts`, `tombstone`, `personal`, `connector`, `directory`, or `scope:` plus a scope id of the form `[a-z0-9][A-Za-z0-9_.:@-]{0,127}`. A request drops a step that is not that form before it is stored, and `place` ranks a scope step only when the same check matches. The plan emits a scope step only for an id of that form. The runner takes the scope id with that same match, not a prefix. A grant whose subject is not the person being erased does not resume. That subject check is already in `erasureGrantOk`.

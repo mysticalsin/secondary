@@ -15,6 +15,7 @@ import {
   withLedgerVersion,
   erasurePlan,
   runErasure as applyLedger,
+  scopeIdOfStep,
   stepsForRestore,
   type ErasureEvent,
   type StoredErasure,
@@ -194,8 +195,9 @@ async function runErasure(
         await tenant.erasePrincipal(principalId, pseudonym);
         return true;
       }
-      if (step.startsWith("scope:")) {
-        const r = await workspaceStub(env, tenantId, step.slice("scope:".length)).pseudonymise(
+      const scopeId = scopeIdOfStep(step);
+      if (scopeId) {
+        const r = await workspaceStub(env, tenantId, scopeId).pseudonymise(
           principalId,
           pseudonym,
           aliases,

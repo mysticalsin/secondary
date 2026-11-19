@@ -83,11 +83,17 @@ export function decodeStepMark(value: unknown): StepMark | null {
 }
 
 const FIXED_STEPS = new Set(["receipts", "tombstone", "personal", "connector", "directory"]);
-const SCOPE_STEP = /^scope:[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
+const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
+
+/** The scope id inside a step, or null when the step is not exactly scope: plus that id. */
+export function scopeIdOfStep(step: string): string | null {
+  const match = /^scope:([a-z0-9][A-Za-z0-9_.:@-]{0,127})$/.exec(step);
+  return match?.[1] ?? null;
+}
 
 /** A step the erasure plan can name: a fixed name, or scope: plus one scope id. */
 function knownErasureStep(id: string): boolean {
-  return FIXED_STEPS.has(id) || SCOPE_STEP.test(id);
+  return FIXED_STEPS.has(id) || scopeIdOfStep(id) !== null;
 }
 
 export function absentErasure(): StoredErasure {
@@ -260,10 +266,11 @@ export function erasureWithGrant(existing: StoredErasure, grant: ErasureGrant): 
 
 /** Receipts, the tombstone, each company scope, the personal brain, the connector, then the directory. */
 export function erasurePlan(companyScopes: readonly string[]): string[] {
+  const scopes = companyScopes.filter((scope) => SCOPE_ID.test(scope));
   return [
     "receipts",
     "tombstone",
-    ...companyScopes.map((scope) => `scope:${scope}`),
+    ...scopes.map((scope) => `scope:${scope}`),
     "personal",
     "connector",
     "directory",
@@ -278,7 +285,7 @@ export function stepsForRestore(
 ): string[] {
   if (kind === "tenant") return ["directory"];
   if (scope === `personal:${principalId}`) return ["personal"];
-  if (scope.startsWith("personal:")) return [];
+  if (scope.startsWith("personal:") || !SCOPE_ID.test(scope)) return [];
   return [`scope:${scope}`];
 }
 
@@ -317,7 +324,7 @@ function clock(state: StoredErasure, event: ErasureEvent): ErasureStep | null {
 }
 
 function requestedFrom(steps: readonly string[]): StoredErasure {
-  const order = [...new Set(steps.filter((id) => id !== ""))];
+  const order = [...new Set(steps.filter((id) => knownErasureStep(id)))];
   const mark: Record<string, StepMark> = {};
   for (const id of order) mark[id] = "pending";
   return { status: { tag: "requested" }, order, mark, grant: null, receipts: null };
@@ -327,7 +334,7 @@ function addSteps(state: StoredErasure, steps: readonly string[]): StoredErasure
   const order = [...state.order];
   const mark = { ...state.mark };
   for (const id of steps) {
-    if (!id || order.includes(id)) continue;
+    if (!knownErasureStep(id) || order.includes(id)) continue;
     order.push(id);
     mark[id] = "pending";
   }
@@ -338,7 +345,7 @@ function reopen(state: StoredErasure, steps: readonly string[]): StoredErasure {
   const order = [...state.order];
   const mark = { ...state.mark };
   for (const id of steps) {
-    if (!id) continue;
+    if (!knownErasureStep(id)) continue;
     if (!order.includes(id)) order.push(id);
     mark[id] = "pending";
   }
@@ -382,16 +389,16 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
     const place = (id: string) =>
       id === "receipts" ? 0
       : id === "tombstone" ? 1
-      : id.startsWith("scope:") ? 2
+      : scopeIdOfStep(id) ? 2
       : id === "personal" ? 3
       : id === "connector" ? 4
       : id === "directory" ? 5
-      : 2;
-    rest.sort((a, b) => place(a) - place(b));
-    const order = [...done, ...rest];
+      : 6;
+    const pending = rest.filter((id) => place(id) < 6).sort((a, b) => place(a) - place(b));
+    const order = [...done, ...pending];
     const mark: Record<string, StepMark> = {};
     for (const id of done) mark[id] = "done";
-    for (const id of rest) mark[id] = "pending";
+    for (const id of pending) mark[id] = "pending";
     return allow({ ...state, order, mark }, []);
   }
   if (event.type === "resume") {
