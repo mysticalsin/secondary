@@ -271,7 +271,16 @@ export async function reapplyErasures(
   const skipped: string[] = [];
   let applied = 0;
   for (const s of stones) {
-    const wanted = stepsForRestore(kind, scope, s.principalId);
+    let wanted: string[];
+    try {
+      wanted = stepsForRestore(kind, scope, s.principalId);
+    } catch (error) {
+      if (error instanceof Error && error.message === "invalid_scope") {
+        skipped.push(s.principalId);
+        continue;
+      }
+      throw error;
+    }
     if (wanted.length === 0) continue;
     const state = decodeErasureLedger(await t.erasureLoad(s.principalId), s.principalId);
     const grant = state.grant;
