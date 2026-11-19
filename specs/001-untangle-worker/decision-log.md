@@ -182,3 +182,11 @@ Tony, via Jarvis: "A, make the switches catch those variants too." The unmatched
 Tracked, and not this change: a signed `authenticate` request that proves the MCP call site. The string pin cannot see a rewrite that avoids those spellings. Inspector's evasion list for that call is `decodeURI`, `decodeURIComponent`, `unescape`, `toLowerCase`, `toUpperCase`, a trailing-slash `replace` or `slice`, and reading `c.req.path` instead of the raw pathname. A helper with another name would slip the string pin. The signed request is what would catch that helper.
 
 The prefix check is `path === prefix || path.startsWith(prefix + "/")`. Replacing that with `startsWith(prefix)` would treat `/v1/aix` as `/v1/ai`. The normalizer drops every trailing slash, so `/v1/genui/plan//` and `/contribute//` are the same row as the path without those slashes. An interior `//`, `%2F`, `%2f`, `%2573`, `/v1x`, and `/v10` stay off the rows. A bad percent sequence stays 400.
+
+## Real router, extra slashes, and HEAD
+
+These are tests, not a new matcher. The app under test sets a session, runs `switchGate`, then the same paths the Worker registers: `aiRoutes`, `GET /sources/:id`, and `POST /personal/items/:id/contribute`. There is no catch-all.
+
+`/v1//sources/s1` is 404 with the connector switch off or on. The router has no such route, and the path is not the connector prefix. `/v1/sources/s1//x` is 503 when the connector switch is off, because the path still starts with `/v1/sources/`, and 404 when the switch is on, because no route matches. That 503 is the current gate. It is not a defect to remove from `switches.ts`.
+
+Four and five trailing slashes stay on the row. HEAD `GET /v1/ai/status` is 503 when the ai switch is off and 200 when it is on, the same status as GET. A strip loop capped at three slashes, a catch-all in place of the router, and a HEAD skip in the gate each turn their own test red. Those edits are restored.
