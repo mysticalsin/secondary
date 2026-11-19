@@ -69,6 +69,7 @@ const PATCHED_RECOVERED = new Set<string>([
   "src/worker/routes.ts",
   "src/worker/brains/agents.ts",
   "src/worker/ux/personal.ts",
+  "src/worker/ux/review.ts",
   "src/worker/ux/util.ts",
   "src/worker/wiki/review.ts",
   "src/worker/brains/open.ts",
