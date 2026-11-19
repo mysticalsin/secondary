@@ -196,17 +196,23 @@ test("erase route refuses a company scope the grammar rejects before it stores",
   }
 });
 
-test("erasure request stores a known scope and drops a step the grammar rejects", () => {
-  const opened = requireOk(
+test("erasure request stores a known scope and refuses a step the grammar rejects", () => {
+  const refused = requireFail(
     commitErasure(absentErasure(), {
       type: "request",
       now: NOW,
       steps: ["personal", "scope:c_delivery", "scope:bad id", "scope:c_delivery\n", "not-a-step"],
     }),
+  );
+  assert.equal(refused.reason, "unknown_step");
+  const opened = requireOk(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["personal", "scope:c_delivery"],
+    }),
   ).state;
   assert.deepEqual(opened.order, ["personal", "scope:c_delivery"]);
-  assert.equal(opened.order.includes("scope:bad id"), false);
-  assert.equal(opened.mark["scope:bad id"], undefined);
   assert.equal(scopeIdOfStep("scope:c_delivery"), "c_delivery");
   assert.equal(scopeIdOfStep("scope:c_delivery\n"), null);
   assert.equal(scopeIdOfStep(`scope:${"a".repeat(129)}`), null);
@@ -220,7 +226,7 @@ test("erasure request stores a known scope and drops a step the grammar rejects"
     commitErasure(opened, {
       type: "request",
       now: NOW + 1,
-      steps: ["directory", "scope:bad id", "scope:c_delivery"],
+      steps: ["directory", "scope:c_delivery"],
     }),
   ).state;
   assert.deepEqual(openedAgain.order, ["scope:c_delivery", "personal", "directory"]);
@@ -298,34 +304,40 @@ test("erasure request refuses a step the grammar rejects instead of shortening",
   assert.equal(refused.reason, "unknown_step");
 });
 
-test("erasure request drops a scope step that is not an anchored match", () => {
+test("erasure request refuses a scope step that is not an anchored match", () => {
   const illegal = [
     "scope:c_delivery!",
     `scope:${"a".repeat(129)}`,
     "scopes:x",
     "scope:C_delivery",
   ];
+  for (const id of illegal) {
+    const refused = requireFail(
+      commitErasure(absentErasure(), {
+        type: "request",
+        now: NOW,
+        steps: ["receipts", id, "scope:c_delivery"],
+      }),
+    );
+    assert.equal(refused.reason, "unknown_step", id);
+    assert.equal(scopeIdOfStep(id), null, id);
+  }
   const opened = requireOk(
     commitErasure(absentErasure(), {
       type: "request",
       now: NOW,
-      steps: ["receipts", ...illegal, "scope:c_delivery"],
+      steps: ["receipts", "scope:c_delivery"],
     }),
   ).state;
   assert.deepEqual(opened.order, ["receipts", "scope:c_delivery"]);
-  for (const id of illegal) {
-    assert.equal(scopeIdOfStep(id), null, id);
-    assert.equal(opened.order.includes(id), false, id);
-  }
   const again = requireOk(
     commitErasure(opened, {
       type: "request",
       now: NOW + 1,
-      steps: ["personal", ...illegal, "scope:c_delivery"],
+      steps: ["personal", "scope:c_delivery"],
     }),
   ).state;
   assert.deepEqual(again.order, ["receipts", "scope:c_delivery", "personal"]);
-  for (const id of illegal) assert.equal(again.order.includes(id), false, id);
 });
 
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {

@@ -257,8 +257,12 @@ export function withLedgerVersion(ledger: string, version: number): string {
  * so the caller writes nothing.
  */
 export function erasureWithGrant(existing: StoredErasure, grant: ErasureGrant): StoredErasure {
-  if (!erasureGrantOk(existing.grant, grant.subject, existing.order) || !existing.grant)
-    return { ...requestedFrom(grant.steps), grant };
+  if (!erasureGrantOk(existing.grant, grant.subject, existing.order) || !existing.grant) {
+    const fresh = requestedFrom(grant.steps);
+    if (!fresh)
+      return { status: { tag: "unreadable" }, order: [], mark: {}, grant: null, receipts: null };
+    return { ...fresh, grant };
+  }
   if (erasureGrantOk(existing.grant, grant.subject, grant.steps)) return existing;
   const steps = [...new Set([...existing.grant.steps, ...grant.steps])];
   return { ...existing, grant: { ...grant, steps } };
@@ -324,8 +328,9 @@ function clock(state: StoredErasure, event: ErasureEvent): ErasureStep | null {
   return null;
 }
 
-function requestedFrom(steps: readonly string[]): StoredErasure {
-  const order = [...new Set(steps.filter((id) => knownErasureStep(id)))];
+function requestedFrom(steps: readonly string[]): StoredErasure | null {
+  if (steps.some((id) => !knownErasureStep(id))) return null;
+  const order = [...new Set(steps)];
   const mark: Record<string, StepMark> = {};
   for (const id of order) mark[id] = "pending";
   return { status: { tag: "requested" }, order, mark, grant: null, receipts: null };
@@ -369,8 +374,11 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
       state.status.tag === "absent" ||
       state.status.tag === "unreadable" ||
       state.order.length === 0
-    )
-      return allow(requestedFrom(event.steps), []);
+    ) {
+      const fresh = requestedFrom(event.steps);
+      if (!fresh) return reject(MACHINE, state.status.tag, event.type, "unknown_step");
+      return allow(fresh, []);
+    }
     if (state.status.tag === "completed") {
       const next = addSteps(state, event.steps);
       if (next.order.length === state.order.length) return allow(state, []);
@@ -409,8 +417,9 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
     return proceed(state);
   }
   if (event.type === "restore") {
+    const empty = requestedFrom([]);
     const base =
-      state.status.tag === "absent" || state.status.tag === "unreadable" ? requestedFrom([]) : state;
+      state.status.tag === "absent" || state.status.tag === "unreadable" ? (empty ?? state) : state;
     return proceed(reopen(base, event.steps));
   }
   if (state.status.tag !== "running") return reject(MACHINE, state.status.tag, event.type, "not_running");
