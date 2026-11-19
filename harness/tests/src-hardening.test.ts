@@ -1186,7 +1186,8 @@ test("a brain the caller cannot open is not read and is not returned degraded", 
   }
 });
 
-test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async () => {
+test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async (t) => {
+  const realSetTimeout = globalThis.setTimeout;
   const held = await openDirectory();
   const api = await app();
   hung.pace.clear();
@@ -1194,13 +1195,27 @@ test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async () => 
   hung.pace.set("c_delivery", { ms: 2499, pages: note("On time") });
   hung.pace.set("c_eng", { ms: 2501, pages: note("Late secret") });
   hung.lateOnAbort.add("c_eng");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let armed = 0;
+  const mockedSet = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: Parameters<typeof setTimeout>[0], ms?: number, ...rest: unknown[]) => {
+    if (ms === 2499) armed += 1;
+    return mockedSet(fn, ms, ...rest);
+  }) as typeof setTimeout;
   try {
-    const raced = await Promise.race([
-      api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)),
-      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 4000)),
-    ]);
-    assert.notEqual(raced, "hung");
-    const body = (await (raced as Response).json()) as {
+    const pending = api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email));
+    const start = Date.now();
+    while (armed === 0) {
+      if (Date.now() - start > 2000) throw new Error("2499ms read was not armed");
+      await new Promise((resolve) => realSetTimeout(resolve, 10));
+    }
+    await t.mock.timers.tick(2499);
+    await new Promise((resolve) => realSetTimeout(resolve, 20));
+    await t.mock.timers.tick(2);
+    await new Promise((resolve) => realSetTimeout(resolve, 30));
+    const res = await pending;
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
       roots: { id: string; access: string; children?: { children?: { label: string }[] }[] }[];
     };
     const kept = body.roots.find((root) => root.id === "c_delivery");
@@ -1214,6 +1229,8 @@ test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async () => 
   } finally {
     hung.pace.clear();
     hung.lateOnAbort.clear();
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
     held.remove();
   }
 });
