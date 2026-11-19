@@ -1,0 +1,34 @@
+# Contract: asset manifest
+
+`deploy/assets/MANIFEST.sha256` is UTF-8 text. This file is not in the repo. A test may write it in a temporary directory.
+
+A real deploy (`deploy.sh` with no arguments) checks the asset directory in this order:
+
+1. If any path segment under `deploy/assets` case-folds to `unreproduced`, the result is `assets-unreproduced`. The process exits 2. The manifest is not consulted.
+2. If `MANIFEST.sha256` is absent, the result is `assets-manifest-missing`. The process exits 2.
+3. Otherwise every rule below must hold. A failure is `assets-manifest-mismatch` and exit 2.
+4. When every rule holds, the asset check passes. Exit from the guard is 0. This contract does not start Wrangler.
+
+## Line rules
+
+- The file may end with one newline. That newline is not a line.
+- Every remaining line is 64 lowercase hex digits, then two spaces, then one relative path. No other text.
+- The path uses `/`. It has no leading slash, no backslash, no space, and no empty, `.`, or `..` segment.
+- The path is not `MANIFEST.sha256` and not `UNREPRODUCED`.
+- A path appears once.
+- There is at least one line.
+
+## Directory rules
+
+- The hash is the sha256 of that file's raw bytes.
+- Every listed file exists and has that hash.
+- Every file under `deploy/assets/` other than `MANIFEST.sha256` is listed. Subdirectories are part of the relative path.
+- A symlink, or anything that is not a regular file or a directory, is a mismatch.
+
+## Upload directory
+
+`assets.directory` in `wrangler.jsonc` names `deploy/.staged`. The guard does not create it. If it exists, the result is `assets-directory-present`. A missing, absolute, escaping, or `deploy/assets` value is `assets-directory-mismatch`. The bytes Wrangler reads are a `mktemp -d` directory (mode `0700`) passed with `--assets`. `copyThenRehash` hashes each copy after writing it. An `afterCopy` hook is optional and is not passed by `deploy.sh` or the guard CLI. Staging reads no environment variable. `deploy.sh` passes `--config wrangler.jsonc` and removes that temp directory on exit. `wrangler.json`, `wrangler.toml`, and `.wrangler/deploy/config.json` are `config-shadow`. A symlink at `deploy` or `deploy/assets` is `assets-symlink`. A dangling symlink at the configured directory is `assets-directory-present`.
+
+## What this repo contains
+
+`deploy/assets/UNREPRODUCED` only. `deploy/.staged` is gitignored and absent. `--dry-run` does not apply this contract.

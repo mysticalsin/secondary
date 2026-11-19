@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Graph · Second Brain</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%236600ae'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/graph/app.css">
+<script src="/graph/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">
+    <span class="mark"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="5" r="2.2" fill="#fff"/><circle cx="11.5" cy="6.5" r="2.4" fill="#fff"/><circle cx="6.5" cy="11.5" r="1.9" fill="#fff"/><path d="M5 5L11.5 6.5L6.5 11.5Z" fill="none" stroke="#fff" stroke-width="1"/></svg></span>
+    Second Brain
+  </a>
+  <nav class="capsule" aria-label="Second Brain">
+    <a href="/">Home</a>
+    <a href="/brains">Brains</a>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/graph" aria-current="page">Graph</a>
+    <a href="/search">Search</a>
+  </nav>
+  <div class="search" role="search">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+    <input id="search" type="search" placeholder="Find a page" aria-label="Find a page by title" autocomplete="off">
+    <kbd>/</kbd>
+    <ul id="results" hidden></ul>
+  </div>
+</header>
+
+<canvas id="graph" role="img" aria-label="Graph of your second brain. Each dot is a page; lines are links between pages. Use Find a page to move to a page."></canvas>
+
+<aside class="dock" aria-label="Graph settings">
+  <button id="toggle-controls" type="button" aria-expanded="false" aria-controls="controls">Filters</button>
+  <h2>Graph view</h2>
+  <p id="stats">Loading…</p>
+  <div id="controls" data-open="false">
+    <select id="workspace" aria-label="Brain"><option value="">All brains</option></select>
+    <label class="row">Folders <input id="opt-folders" type="checkbox" checked></label>
+    <label class="row">Unresolved links <input id="opt-unresolved" type="checkbox"></label>
+    <label class="row">Labels <input id="opt-labels" type="checkbox" checked></label>
+    <label class="row">Local graph of selected page <input id="opt-local" type="checkbox"></label>
+    <label class="row">Depth
+      <select id="depth" class="compact" aria-label="Local graph depth">
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+      </select>
+    </label>
+    <div class="sep"></div>
+    <div class="legend" id="legend" aria-label="Folders. Select one to hide or show it."></div>
+  </div>
+</aside>
+
+<div class="zoom">
+  <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+  <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+  <button id="fit" type="button" aria-label="Fit graph to screen">⤢</button>
+</div>
+
+<aside id="panel" hidden aria-live="polite">
+  <header>
+    <h2 id="panel-title"></h2>
+    <button id="panel-close" type="button" aria-label="Close page details">×</button>
+  </header>
+  <p id="panel-kind"></p>
+  <div id="panel-body"></div>
+  <a id="panel-open" href="/" hidden>Open page</a>
+</aside>
+
+<div id="empty" hidden>
+  <div>
+    <h2>Your second brain has no pages yet</h2>
+    <p>Pages you add or import appear here as dots. Links between pages become lines.</p>
+    <a href="/brains/me">Open your Personal Brain</a>
+  </div>
+</div>
+
+<p id="status" role="status">Loading…</p>
+</body>
+</html>

@@ -1,0 +1,818 @@
+(() => {
+  "use strict";
+
+  const API = document.documentElement.dataset.api || "";
+  const MAX_DETAILS = 400;
+  const CONCURRENCY = 6;
+  const PALETTE = ["#db64ff", "#ffc709", "#ff6571", "#eaa7ff", "#ffde43", "#b266e9", "#ffabb1", "#efb003", "#f1ceff", "#9c43da"];
+  const GHOST = "#5c5d6d";
+  const OTHER = "#8f90a1";
+
+  const $ = (sel) => document.querySelector(sel);
+  const canvas = $("#graph");
+  const ctx = canvas.getContext("2d");
+  const statusEl = $("#status");
+  const statsEl = $("#stats");
+  const panel = $("#panel");
+  const searchEl = $("#search");
+  const resultsEl = $("#results");
+  const workspaceEl = $("#workspace");
+  const legendEl = $("#legend");
+  const emptyEl = $("#empty");
+
+  const opts = { folders: true, unresolved: false, labels: true, local: false, depth: 1 };
+  const nodes = [];
+  const links = [];
+  const byId = new Map();
+  const folderColor = new Map();
+  const hiddenFolders = new Set();
+  let workspaces = [];
+  let visible = { nodes: [], links: [] };
+  let view = { x: 0, y: 0, k: 1 };
+  let hover = null;
+  let selected = null;
+  let query = "";
+  let alpha = 1;
+  let running = false;
+  let autoFit = true;
+  let dpr = 1;
+  let width = 0;
+  let height = 0;
+
+  class AuthError extends Error {}
+
+  async function getJson(path) {
+    let res;
+    try {
+      res = await fetch(API + path, { credentials: "same-origin", headers: { accept: "application/json" } });
+    } catch {
+      throw new AuthError("network");
+    }
+    if (res.status === 401 || res.status === 403) throw new AuthError(String(res.status));
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
+    const type = res.headers.get("content-type") || "";
+    if (!type.includes("application/json")) throw new AuthError("not_json");
+    return res.json();
+  }
+
+  function setStatus(text, kind) {
+    statusEl.textContent = text;
+    statusEl.dataset.kind = kind || "";
+  }
+
+  function colorOf(folderKey) {
+    if (!folderColor.has(folderKey)) folderColor.set(folderKey, PALETTE[folderColor.size % PALETTE.length]);
+    return folderColor.get(folderKey);
+  }
+
+  function addNode(node) {
+    const existing = byId.get(node.id);
+    if (existing) return existing;
+    const angle = Math.random() * Math.PI * 2;
+    const r = 80 + Math.random() * 220;
+    const full = { x: Math.cos(angle) * r, y: Math.sin(angle) * r, vx: 0, vy: 0, degree: 0, out: [], in: [], ...node };
+    nodes.push(full);
+    byId.set(full.id, full);
+    return full;
+  }
+
+  function addLink(source, target, kind) {
+    if (source === target) return;
+    if (links.some((l) => l.source === source && l.target === target && l.kind === kind)) return;
+    links.push({ source, target, kind });
+    if (kind === "note") {
+      source.out.push(target);
+      target.in.push(source);
+    }
+    source.degree += 1;
+    target.degree += 1;
+  }
+
+  function radius(n) {
+    if (n.kind === "workspace") return 9;
+    if (n.kind === "folder") return 6;
+    return 3.2 + Math.sqrt(n.degree) * 1.7;
+  }
+
+  function cleanText(markdown) {
+    return String(markdown || "")
+      .replace(/ ?\{src:[^}]+\}/g, "")
+      .replace(/\[\[([A-Za-z0-9:_-]{1,70})\]\]/g, (_m, id) => {
+        const hit = nodes.find((n) => n.pid === id);
+        return hit ? hit.label : id;
+      })
+      .replace(/^#+[ \t]{0,}/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  async function load() {
+    setStatus("Loading your second brain…", "loading");
+    let tree;
+    try {
+      tree = await getJson("/v1/brain/tree");
+    } catch (err) {
+      if (err instanceof AuthError) {
+        setStatus("Your sign-in has expired or this page could not reach the brain. Reload to sign in again.", "error");
+      } else {
+        setStatus(`The brain could not be loaded (${err.message}).`, "error");
+      }
+      return;
+    }
+    const roots = Array.isArray(tree.roots) ? tree.roots : [];
+    workspaces = roots.filter((r) => r.access !== "locked" && Array.isArray(r.children));
+    const locked = roots.filter((r) => r.access === "locked").length;
+    const pages = [];
+    for (const ws of workspaces) {
+      const hub = addNode({ id: `ws:${ws.id}`, label: ws.label, kind: "workspace", ws: ws.id, folder: null });
+      for (const folder of ws.children) {
+        const key = `${ws.id}#${folder.label}`;
+        const folderNode = addNode({ id: `folder:${folder.id}`, label: folder.label, kind: "folder", ws: ws.id, folder: key });
+        colorOf(folder.label);
+        addLink(hub, folderNode, "tree");
+        for (const page of folder.children || []) {
+          const slash = page.id.indexOf("/");
+          const pid = slash >= 0 ? page.id.slice(slash + 1) : page.id;
+          const node = addNode({ id: page.id, pid, label: page.label, kind: "note", ws: ws.id, wsLabel: ws.label, folder: folder.label, access: page.access });
+          addLink(folderNode, node, "tree");
+          pages.push(node);
+        }
+      }
+    }
+    workspaceEl.replaceChildren(new Option("All brains", ""));
+    for (const ws of workspaces) workspaceEl.append(new Option(`${ws.label} (${ws.count ?? 0})`, ws.id));
+    renderLegend();
+    if (pages.length === 0) {
+      emptyEl.hidden = false;
+      setStatus(locked ? `${locked} brain${locked === 1 ? "" : "s"} visible by name only. No pages you can open.` : "No pages yet.", "");
+      refresh();
+      return;
+    }
+    refresh();
+    const queue = pages.slice(0, MAX_DETAILS);
+    let done = 0;
+    let failed = 0;
+    setStatus(`Reading links 0 / ${queue.length}…`, "loading");
+    async function worker() {
+      while (queue.length) {
+        const node = queue.shift();
+        try {
+          const detail = await getJson(`/v1/wiki/${encodeURIComponent(node.ws)}/pages/${encodeURIComponent(node.pid)}`);
+          node.summary = typeof detail.summary === "string" ? detail.summary : "";
+          node.markdown = typeof detail.markdown === "string" ? detail.markdown : "";
+          node.updatedAt = detail.updatedAt;
+          node.type = detail.type;
+          for (const l of Array.isArray(detail.links) ? detail.links : []) {
+            if (typeof l.id !== "string") continue;
+            if (l.id.startsWith("global:")) {
+              const target = addNode({ id: l.id, label: String(l.title || l.id.slice(7)), kind: "other", ws: null, folder: null });
+              addLink(node, target, "note");
+            } else if (l.broken) {
+              const target = addNode({ id: `${node.ws}/~${l.id}`, label: String(l.title || l.id), kind: "ghost", ws: node.ws, folder: null });
+              addLink(node, target, "note");
+            } else {
+              const target = byId.get(`${node.ws}/${l.id}`) || addNode({ id: `${node.ws}/${l.id}`, pid: l.id, label: String(l.title || l.id), kind: "note", ws: node.ws, folder: "Other" });
+              addLink(node, target, "note");
+            }
+          }
+        } catch (err) {
+          failed += 1;
+          if (err instanceof AuthError) {
+            queue.length = 0;
+            setStatus("Your sign-in expired while links were loading. Reload to sign in again.", "error");
+          }
+        }
+        done += 1;
+        if (done % 4 === 0 || queue.length === 0) {
+          setStatus(`Reading links ${done} / ${done + queue.length}…`, "loading");
+          refresh(true);
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+    const capped = pages.length > MAX_DETAILS ? ` Links were read for the first ${MAX_DETAILS} of ${pages.length} pages.` : "";
+    const failNote = failed ? ` ${failed} page${failed === 1 ? "" : "s"} could not be read.` : "";
+    const lockNote = locked ? ` ${locked} brain${locked === 1 ? " is" : "s are"} visible by name only.` : "";
+    if (statusEl.dataset.kind !== "error") setStatus(`Ready.${capped}${failNote}${lockNote}`, "");
+    refresh(true);
+  }
+
+  function renderLegend() {
+    legendEl.replaceChildren();
+    for (const [folder, color] of folderColor) {
+      const count = nodes.filter((n) => n.kind === "note" && n.folder === folder).length;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "legend-item";
+      button.setAttribute("aria-pressed", hiddenFolders.has(folder) ? "false" : "true");
+      const dot = document.createElement("span");
+      dot.className = "dot";
+      dot.style.background = color;
+      const text = document.createElement("span");
+      text.textContent = `${folder} ${count}`;
+      button.append(dot, text);
+      button.addEventListener("click", () => {
+        if (hiddenFolders.has(folder)) hiddenFolders.delete(folder);
+        else hiddenFolders.add(folder);
+        renderLegend();
+        refresh(true);
+      });
+      legendEl.append(button);
+    }
+  }
+
+  function neighborhood(start, depth) {
+    const seen = new Set([start]);
+    let frontier = [start];
+    for (let d = 0; d < depth; d += 1) {
+      const next = [];
+      for (const n of frontier) {
+        for (const l of links) {
+          if (l.kind !== "note") continue;
+          const other = l.source === n ? l.target : l.target === n ? l.source : null;
+          if (other && !seen.has(other)) {
+            seen.add(other);
+            next.push(other);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return seen;
+  }
+
+  function refresh(keepHeat) {
+    const ws = workspaceEl.value;
+    const local = opts.local && selected ? neighborhood(selected, opts.depth) : null;
+    const show = (n) => {
+      if (ws && n.ws !== ws && n.kind !== "other") return false;
+      if (n.kind === "ghost" && !opts.unresolved) return false;
+      if ((n.kind === "folder" || n.kind === "workspace") && (!opts.folders || local)) return false;
+      if (n.kind === "note" && hiddenFolders.has(n.folder)) return false;
+      if (n.kind === "folder" && hiddenFolders.has(n.label)) return false;
+      if (local && !local.has(n)) return false;
+      return true;
+    };
+    const shown = new Set(nodes.filter(show));
+    visible = {
+      nodes: [...shown],
+      links: links.filter((l) => shown.has(l.source) && shown.has(l.target)),
+    };
+    const notes = visible.nodes.filter((n) => n.kind === "note").length;
+    const noteLinks = visible.links.filter((l) => l.kind === "note").length;
+    const ghosts = nodes.filter((n) => n.kind === "ghost").length;
+    statsEl.textContent = `${notes} note${notes === 1 ? "" : "s"} · ${noteLinks} link${noteLinks === 1 ? "" : "s"}${ghosts ? ` · ${ghosts} unresolved` : ""}`;
+    alpha = keepHeat ? Math.max(alpha, 0.5) : 1;
+    start();
+  }
+
+  function tick() {
+    const ns = visible.nodes;
+    const n = ns.length;
+    const repulse = 900;
+    for (let i = 0; i < n; i += 1) {
+      const a = ns[i];
+      for (let j = i + 1; j < n; j += 1) {
+        const b = ns[j];
+        let dx = a.x - b.x;
+        let dy = a.y - b.y;
+        let d2 = dx * dx + dy * dy;
+        if (d2 < 0.01) {
+          dx = Math.random() - 0.5;
+          dy = Math.random() - 0.5;
+          d2 = 0.25;
+        }
+        if (d2 > 160000) continue;
+        const f = (repulse * alpha) / d2;
+        a.vx += dx * f;
+        a.vy += dy * f;
+        b.vx -= dx * f;
+        b.vy -= dy * f;
+      }
+    }
+    for (const l of visible.links) {
+      const s = l.source;
+      const t = l.target;
+      const dx = t.x - s.x;
+      const dy = t.y - s.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const target = l.kind === "tree" ? 46 : 70;
+      const k = ((d - target) / d) * 0.05 * alpha;
+      t.vx -= dx * k;
+      t.vy -= dy * k;
+      s.vx += dx * k;
+      s.vy += dy * k;
+    }
+    for (const node of ns) {
+      if (node.fixed) {
+        node.vx = 0;
+        node.vy = 0;
+        continue;
+      }
+      node.vx -= node.x * 0.006 * alpha;
+      node.vy -= node.y * 0.006 * alpha;
+      node.vx *= 0.58;
+      node.vy *= 0.58;
+      node.x += node.vx;
+      node.y += node.vy;
+    }
+    alpha *= 0.985;
+  }
+
+  function start() {
+    if (running) return;
+    running = true;
+    requestAnimationFrame(frame);
+  }
+
+  function frame() {
+    if (alpha > 0.004) tick();
+    if (autoFit && alpha > 0.004) fit(true);
+    draw();
+    if (alpha > 0.004 || dragging) requestAnimationFrame(frame);
+    else running = false;
+  }
+
+  function isMatch(n) {
+    return query && n.label.toLowerCase().includes(query);
+  }
+
+  function nodeColor(n) {
+    if (n.kind === "ghost") return GHOST;
+    if (n.kind === "other") return OTHER;
+    if (n.kind === "workspace") return "#f8f6f9";
+    if (n.kind === "folder") return colorOf(n.label);
+    return colorOf(n.folder || "Other");
+  }
+
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    ctx.translate(width / 2 + view.x, height / 2 + view.y);
+    ctx.scale(view.k, view.k);
+    const focus = hover || selected;
+    const near = focus ? new Set([focus, ...focus.out, ...focus.in, ...linkedTree(focus)]) : null;
+    const searching = Boolean(query);
+    ctx.lineCap = "round";
+    for (const l of visible.links) {
+      const hot = focus && (l.source === focus || l.target === focus);
+      ctx.beginPath();
+      ctx.moveTo(l.source.x, l.source.y);
+      ctx.lineTo(l.target.x, l.target.y);
+      if (hot) {
+        ctx.strokeStyle = "rgba(219,100,255,0.85)";
+        ctx.lineWidth = 1.6 / view.k;
+      } else {
+        const dim = (focus || searching) ? 0.05 : l.kind === "tree" ? 0.1 : 0.26;
+        ctx.strokeStyle = `rgba(216,216,223,${dim})`;
+        ctx.lineWidth = (l.kind === "tree" ? 0.6 : 1) / view.k;
+      }
+      if (l.kind === "tree") ctx.setLineDash([3 / view.k, 3 / view.k]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    for (const n of visible.nodes) {
+      const r = radius(n);
+      const dim = (near && !near.has(n)) || (searching && !isMatch(n) && n !== selected);
+      ctx.globalAlpha = dim ? 0.16 : 1;
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = nodeColor(n);
+      if (n.kind === "ghost" || n.kind === "other") {
+        ctx.fillStyle = "#17121a";
+        ctx.fill();
+        ctx.strokeStyle = nodeColor(n);
+        ctx.lineWidth = 1.4 / view.k;
+        ctx.stroke();
+      } else {
+        ctx.fill();
+      }
+      if (n === selected || (searching && isMatch(n))) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 3.5 / view.k, 0, Math.PI * 2);
+        ctx.strokeStyle = "#ffc709";
+        ctx.lineWidth = 2 / view.k;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (opts.labels) {
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      const size = 11.5 / view.k;
+      ctx.font = `${n2(size)}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`;
+      for (const n of visible.nodes) {
+        const important = n === focus || n === selected || (near && near.has(n)) || (searching && isMatch(n)) || n.kind === "workspace" || n.kind === "folder";
+        const zoomed = view.k > 1.15 || n.degree >= 6;
+        if (!important && !zoomed) continue;
+        const dim = (near && !near.has(n)) || (searching && !isMatch(n) && n !== selected);
+        if (dim) continue;
+        const label = n.label.length > 42 ? `${n.label.slice(0, 40)}…` : n.label;
+        ctx.fillStyle = n.kind === "ghost" ? "#8f90a1" : n.kind === "folder" || n.kind === "workspace" ? "#f1ceff" : "#f8f6f9";
+        ctx.globalAlpha = important ? 1 : Math.min(1, (view.k - 1) * 1.6 + 0.35);
+        ctx.fillText(label, n.x, n.y + radius(n) + 3 / view.k);
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+  function n2(v) {
+    return Math.round(v * 100) / 100;
+  }
+
+  function linkedTree(n) {
+    const out = [];
+    for (const l of visible.links) {
+      if (l.kind !== "tree") continue;
+      if (l.source === n) out.push(l.target);
+      else if (l.target === n) out.push(l.source);
+    }
+    return out;
+  }
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    width = rect.width;
+    height = rect.height;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    draw();
+  }
+
+  function toWorld(px, py) {
+    return { x: (px - width / 2 - view.x) / view.k, y: (py - height / 2 - view.y) / view.k };
+  }
+
+  function nodeAt(px, py) {
+    const p = toWorld(px, py);
+    let best = null;
+    let bestD = Infinity;
+    for (const n of visible.nodes) {
+      const dx = n.x - p.x;
+      const dy = n.y - p.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const hit = radius(n) + 6 / view.k;
+      if (d < hit && d < bestD) {
+        best = n;
+        bestD = d;
+      }
+    }
+    return best;
+  }
+
+  const pointers = new Map();
+  let dragging = null;
+  let panning = false;
+  let moved = false;
+  let pinch = null;
+  let last = { x: 0, y: 0 };
+
+  function localPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  canvas.addEventListener("pointerdown", (e) => {
+    autoFit = false;
+    canvas.setPointerCapture(e.pointerId);
+    const p = localPoint(e);
+    pointers.set(e.pointerId, p);
+    moved = false;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), k: view.k };
+      dragging = null;
+      panning = false;
+      return;
+    }
+    const n = nodeAt(p.x, p.y);
+    if (n) {
+      dragging = n;
+      n.fixed = true;
+    } else {
+      panning = true;
+    }
+    last = p;
+  });
+
+  canvas.addEventListener("pointermove", (e) => {
+    const p = localPoint(e);
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
+    if (pinch && pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      view.k = clamp(pinch.k * (d / pinch.d), 0.15, 5);
+      draw();
+      return;
+    }
+    if (dragging) {
+      const w = toWorld(p.x, p.y);
+      if (Math.hypot(p.x - last.x, p.y - last.y) > 3) moved = true;
+      dragging.x = w.x;
+      dragging.y = w.y;
+      alpha = Math.max(alpha, 0.3);
+      start();
+      return;
+    }
+    if (panning) {
+      if (Math.hypot(p.x - last.x, p.y - last.y) > 3) moved = true;
+      view.x += p.x - last.x;
+      view.y += p.y - last.y;
+      last = p;
+      draw();
+      return;
+    }
+    const n = nodeAt(p.x, p.y);
+    if (n !== hover) {
+      hover = n;
+      canvas.style.cursor = n ? "pointer" : "grab";
+      draw();
+    }
+  });
+
+  function endPointer(e) {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    const p = localPoint(e);
+    if (dragging) {
+      const n = dragging;
+      n.fixed = false;
+      dragging = null;
+      if (!moved) select(n);
+    } else if (panning && !moved) {
+      const n = nodeAt(p.x, p.y);
+      if (!n) select(null);
+    }
+    panning = false;
+  }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("pointerleave", () => {
+    if (hover) {
+      hover = null;
+      draw();
+    }
+  });
+
+  canvas.addEventListener("dblclick", (e) => {
+    const p = localPoint(e);
+    const n = nodeAt(p.x, p.y);
+    if (n && n.kind === "note") window.location.href = noteHref(n);
+  });
+
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    autoFit = false;
+    const p = localPoint(e);
+    const before = toWorld(p.x, p.y);
+    view.k = clamp(view.k * Math.exp(-e.deltaY * 0.0015), 0.15, 5);
+    view.x = p.x - width / 2 - before.x * view.k;
+    view.y = p.y - height / 2 - before.y * view.k;
+    draw();
+  }, { passive: false });
+
+  function clamp(v, lo, hi) {
+    return Math.min(hi, Math.max(lo, v));
+  }
+
+  function noteHref(n) {
+    return `/brains/${encodeURIComponent(n.ws)}/pages/${encodeURIComponent(n.pid)}`;
+  }
+
+  function center(n) {
+    autoFit = false;
+    view.x = -n.x * view.k;
+    view.y = -n.y * view.k;
+    draw();
+  }
+
+  function fit(quiet) {
+    if (!quiet) autoFit = false;
+    const ns = visible.nodes;
+    if (!ns.length) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const n of ns) {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x);
+      maxY = Math.max(maxY, n.y);
+    }
+    const w = Math.max(maxX - minX, 40);
+    const h = Math.max(maxY - minY, 40);
+    view.k = clamp(Math.min(width / (w + 120), height / (h + 120)), 0.15, 2.5);
+    view.x = -((minX + maxX) / 2) * view.k;
+    view.y = -((minY + maxY) / 2) * view.k;
+    if (!quiet) draw();
+  }
+
+  function listButton(n) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "link-row";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = nodeColor(n);
+    const text = document.createElement("span");
+    text.textContent = n.label + (n.kind === "ghost" ? " (not created yet)" : n.kind === "other" ? " (another brain)" : "");
+    b.append(dot, text);
+    b.addEventListener("click", () => {
+      if (!visible.nodes.includes(n)) {
+        workspaceEl.value = "";
+        if (n.kind === "ghost") {
+          opts.unresolved = true;
+          $("#opt-unresolved").checked = true;
+        }
+        refresh(true);
+      }
+      if (query) {
+        searchEl.value = "";
+        query = "";
+      }
+      resultsEl.hidden = true;
+      select(n);
+      center(n);
+    });
+    return b;
+  }
+
+  function select(n) {
+    selected = n;
+    if (opts.local) refresh(true);
+    renderPanel();
+    draw();
+  }
+
+  function renderPanel() {
+    const n = selected;
+    if (!n) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    $("#panel-title").textContent = n.label;
+    const kind = n.kind === "note" ? `${n.folder || "Page"} · ${n.wsLabel || n.ws}` : n.kind === "folder" ? "Folder" : n.kind === "workspace" ? "Brain" : n.kind === "ghost" ? "Linked, but no page exists yet" : "Page in another brain";
+    $("#panel-kind").textContent = kind;
+    const body = $("#panel-body");
+    body.replaceChildren();
+    if (n.kind === "note") {
+      const raw = cleanText(n.markdown || n.summary);
+      const text = raw.startsWith(n.label) ? raw.slice(n.label.length).trim() : raw;
+      const p = document.createElement("p");
+      p.className = "preview";
+      p.textContent = text ? (text.length > 900 ? `${text.slice(0, 900)}…` : text) : n.markdown === undefined ? "Loading the page…" : "This page has no text yet.";
+      body.append(p);
+      if (n.updatedAt) {
+        const when = document.createElement("p");
+        when.className = "muted";
+        when.textContent = `Updated ${new Date(n.updatedAt).toLocaleString()}`;
+        body.append(when);
+      }
+    }
+    const out = n.out;
+    const inc = n.in;
+    if (n.kind === "folder" || n.kind === "workspace") {
+      const children = linkedTree(n).filter((c) => c.kind !== "workspace" && !(n.kind === "folder" && c.kind === "folder"));
+      const h = document.createElement("h3");
+      h.textContent = `Contains ${children.length}`;
+      body.append(h);
+      for (const c of children.slice(0, 60)) body.append(listButton(c));
+    } else {
+      const h1 = document.createElement("h3");
+      h1.textContent = `Links to ${out.length}`;
+      body.append(h1);
+      if (!out.length) body.append(muted("No outgoing links."));
+      for (const c of out) body.append(listButton(c));
+      const h2 = document.createElement("h3");
+      h2.textContent = `Linked from ${inc.length}`;
+      body.append(h2);
+      if (!inc.length) body.append(muted("No backlinks."));
+      for (const c of inc) body.append(listButton(c));
+    }
+    const open = $("#panel-open");
+    if (n.kind === "note") {
+      open.hidden = false;
+      open.href = noteHref(n);
+    } else if (n.kind === "workspace") {
+      open.hidden = false;
+      open.href = `/brains/${encodeURIComponent(n.ws)}`;
+    } else {
+      open.hidden = true;
+    }
+  }
+
+  function muted(text) {
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.textContent = text;
+    return p;
+  }
+
+  function renderResults() {
+    resultsEl.replaceChildren();
+    if (!query) {
+      resultsEl.hidden = true;
+      return;
+    }
+    const hits = visible.nodes.filter((n) => n.kind === "note" && isMatch(n)).slice(0, 8);
+    resultsEl.hidden = false;
+    if (!hits.length) {
+      const li = document.createElement("li");
+      li.className = "muted";
+      li.textContent = "No page title matches.";
+      resultsEl.append(li);
+      return;
+    }
+    for (const n of hits) {
+      const li = document.createElement("li");
+      li.append(listButton(n));
+      resultsEl.append(li);
+    }
+  }
+
+  searchEl.addEventListener("input", () => {
+    query = searchEl.value.trim().toLowerCase();
+    renderResults();
+    draw();
+  });
+  searchEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const first = resultsEl.querySelector("button");
+      if (first) first.click();
+    } else if (e.key === "Escape") {
+      searchEl.value = "";
+      query = "";
+      renderResults();
+      draw();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "/" && document.activeElement !== searchEl) {
+      e.preventDefault();
+      searchEl.focus();
+    } else if (e.key === "Escape" && document.activeElement !== searchEl) {
+      select(null);
+    }
+  });
+
+  workspaceEl.addEventListener("change", () => {
+    autoFit = true;
+    refresh();
+  });
+  $("#opt-folders").addEventListener("change", (e) => {
+    opts.folders = e.target.checked;
+    refresh();
+  });
+  $("#opt-unresolved").addEventListener("change", (e) => {
+    opts.unresolved = e.target.checked;
+    refresh(true);
+  });
+  $("#opt-labels").addEventListener("change", (e) => {
+    opts.labels = e.target.checked;
+    draw();
+  });
+  $("#opt-local").addEventListener("change", (e) => {
+    opts.local = e.target.checked;
+    autoFit = true;
+    refresh();
+  });
+  $("#depth").addEventListener("change", (e) => {
+    opts.depth = Number(e.target.value) || 1;
+    autoFit = true;
+    refresh();
+  });
+  $("#fit").addEventListener("click", () => fit());
+  $("#zoom-in").addEventListener("click", () => {
+    autoFit = false;
+    view.k = clamp(view.k * 1.25, 0.15, 5);
+    draw();
+  });
+  $("#zoom-out").addEventListener("click", () => {
+    autoFit = false;
+    view.k = clamp(view.k / 1.25, 0.15, 5);
+    draw();
+  });
+  $("#panel-close").addEventListener("click", () => select(null));
+  $("#toggle-controls").addEventListener("click", () => {
+    const box = $("#controls");
+    const open = box.dataset.open === "true";
+    box.dataset.open = open ? "false" : "true";
+    $("#toggle-controls").setAttribute("aria-expanded", open ? "false" : "true");
+  });
+
+  window.addEventListener("resize", resize);
+  resize();
+  load().then(() => {
+    const m = /^#focus=(.+)$/.exec(window.location.hash);
+    const n = m ? byId.get(decodeURIComponent(m[1])) : null;
+    if (n) {
+      select(n);
+      setTimeout(() => center(n), 400);
+    }
+  });
+})();

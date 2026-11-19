@@ -2,7 +2,7 @@
   "name": "secondary-api-recovery",
   "private": true,
   "type": "module",
-  "description": "Private local preservation of recovered Secondary API source, with a typecheck and test harness. Not a deployable Worker.",
+  "description": "Recovered Secondary API. deploy.sh refuses a real deploy while deploy/assets/UNREPRODUCED exists.",
   "engines": {
     "node": ">=22.18"
   },
@@ -10,7 +10,8 @@
     "test": "node --experimental-strip-types --test --test-reporter=spec harness/tests/*.test.ts harness/runtime/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "typecheck:worker": "tsc --noEmit -p tsconfig.worker.json",
-    "verify:provenance": "node --experimental-strip-types harness/verify-provenance.ts"
+    "verify:provenance": "node --experimental-strip-types harness/verify-provenance.ts",
+    "deploy": "./deploy.sh"
   },
   "dependencies": {
     "@openuidev/lang-core": "1.1.0",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261107.1",
     "@types/node": "22.19.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "wrangler": "4.158.0"
   }
 }
