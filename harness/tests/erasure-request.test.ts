@@ -17,6 +17,7 @@ import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 import {
   absentErasure,
   commitErasure,
+  decodeErasure,
   decodeErasureLedger,
   decodeErasureStatus,
   decodeReceiptCursor,
@@ -138,6 +139,24 @@ test("erasure request: an order with an unknown step is unreadable", () => {
   });
   assert.equal(row.status.tag, "unreadable");
   assert.deepEqual(row.order, []);
+});
+
+test("erasure request: only the exact step forms are readable", () => {
+  for (const id of ["receipts ", "scope:", "scope: ", "scope:../x", "Scope:c_delivery"]) {
+    const row = decodeErasure({
+      status: "partial_failed",
+      order: [id],
+      mark: { [id]: "pending" },
+    });
+    assert.equal(row.status.tag, "unreadable", id);
+    assert.deepEqual(row.order, [], id);
+  }
+  const kept = decodeErasure({
+    status: "partial_failed",
+    order: ["receipts", "scope:c_delivery"],
+    mark: { receipts: "pending", "scope:c_delivery": "pending" },
+  });
+  assert.deepEqual(kept.order, ["receipts", "scope:c_delivery"]);
 });
 
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {
