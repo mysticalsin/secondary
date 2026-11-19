@@ -96,25 +96,29 @@ test("extra trailing slashes stay on the contribute switch", async () => {
   assert.deepEqual(await res.json(), { error: "switched_off", switch: "contribute" });
 });
 
-test("a switched prefix does not swallow the next character", async () => {
-  const open = [
-    ["ai", "GET", "/v1/aix"],
-    ["ai", "GET", "/v1/aiX/"],
-    ["ai", "GET", "/v1/briefsx"],
-    ["ai", "GET", "/v1/briefsX/"],
-    ["ai", "POST", "/v1/genui/planx"],
-    ["connector", "GET", "/v1/sourcesx"],
-    ["connector", "GET", "/v1/sourcesX/"],
-    ["connector", "GET", "/v1/connectorsx"],
-    ["connector", "GET", "/v1/connectorsX/"],
-    ["contribute", "POST", "/v1/personal/items/pi:abcd1234/contributex"],
-  ] as const;
-  for (const [off, method, path] of open) {
+const siblings = [
+  ["ai", "GET", "/v1/aix"],
+  ["ai", "GET", "/v1/aiX/"],
+  ["ai", "GET", "/v1/briefsx"],
+  ["ai", "GET", "/v1/briefsX/"],
+  ["ai", "POST", "/v1/genui/planx"],
+  ["connector", "GET", "/v1/sourcesx"],
+  ["connector", "GET", "/v1/sourcesX/"],
+  ["connector", "GET", "/v1/connectorsx"],
+  ["connector", "GET", "/v1/connectorsX/"],
+  ["contribute", "POST", "/v1/personal/items/pi:abcd1234/contributex"],
+] as const;
+
+for (const [off, method, path] of siblings) {
+  test(`prefix boundary stays closed: ${method} ${path}`, async () => {
     const app = await gate(off);
     const res = await app.request(`http://127.0.0.1${path}`, { method });
     assert.equal(res.status, 200, `${method} ${path}`);
     assert.deepEqual(await res.json(), { hit: "fall" });
-  }
+  });
+}
+
+test("a switched prefix still matches its own path", async () => {
   const closed = [
     ["ai", "GET", "/v1/ai"],
     ["ai", "GET", "/v1/ai/"],
