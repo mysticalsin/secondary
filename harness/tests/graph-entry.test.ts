@@ -17,13 +17,13 @@ const root = fileURLToPath(new URL("../..", import.meta.url));
 
 const FILES: { path: string; repo: string; type: string; sha256: string }[] = [
   [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "7e23249adc0ae23141e904dd03ff75be1fe59beb6229f413373e536dcf8568e4"],
-  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "99b8086389763ce590ca1d84a5aadf011f73b3a11b20538fb8254861841b7acc"],
-  ["/graph/app.css", "deploy/graph/app.css", "text/css; charset=utf-8", "be7948006e02b46d5c73bc28be5c67985b0572d04dfbe6121d1c419953cc6e80"],
+  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "cfaa3d8985b53580fca891a72066489655f600da7afd27d21c5571df26551511"],
+  ["/graph/app.css", "deploy/graph/app.css", "text/css; charset=utf-8", "8b3d4e59b592015e8fed4fbdbcd21e6359d9671218320b4d7ad64cd18c1be91a"],
   ["/graph/nav.js", "deploy/graph/nav.js.txt", "text/javascript; charset=utf-8", "ae5dc4a2b01105c7f0cad18246d140423b6eb366defc133127c4f82a0aacfb4a"],
   ["/graph/nav.css", "deploy/graph/nav.css", "text/css; charset=utf-8", "581e4d30582f5b1415b694a165e155b1b9b1ec54e5050484be3a51dac3c404af"],
   ["/dashboard", "deploy/graph/dashboard.html", "text/html; charset=utf-8", "32a9b9b9860026fa1581ede4b238c857f8ff0d1d954dc87c75a218e0a07ef345"],
-  ["/graph/dashboard.js", "deploy/graph/dashboard.js.txt", "text/javascript; charset=utf-8", "e9703a59a3d5259623f5ac83c0bf1768e0a7cdeb671009062807c2b36c8b75ad"],
-  ["/graph/dashboard.css", "deploy/graph/dashboard.css", "text/css; charset=utf-8", "db2058e727fe4155ab4711c8ab740284e3fbe52db7dd445c4e72626495afa1bb"],
+  ["/graph/dashboard.js", "deploy/graph/dashboard.js.txt", "text/javascript; charset=utf-8", "b891973870f7c81165a545f3727c793b99f61a828dcc939e53e1ae310c49f4eb"],
+  ["/graph/dashboard.css", "deploy/graph/dashboard.css", "text/css; charset=utf-8", "f2ed6925ef5e781b2e4930d1ab5a00f9e5560170d3c37b273b40cafa3d098db8"],
 ].map(([path, repo, type, sha256]) => ({ path: path.trim(), type, repo, sha256 }));
 
 function fileMap(): Record<string, readonly [string, string]> {

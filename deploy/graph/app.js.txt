@@ -46,7 +46,7 @@
     try {
       res = await fetch(API + path, { credentials: "same-origin", headers: { accept: "application/json" } });
     } catch {
-      throw new AuthError("network");
+      throw new Error("offline");
     }
     if (res.status === 401 || res.status === 403) throw new AuthError(String(res.status));
     if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
@@ -143,7 +143,7 @@
       if (err instanceof AuthError) {
         setStatus("Your sign-in has expired or this page could not reach the brain. Reload to sign in again.", "error");
       } else {
-        setStatus(`The brain could not be loaded (${err.message}).`, "error");
+        setStatus(err instanceof Error && err.message === "offline" ? "The brain could not be loaded." : `The brain could not be loaded (${err.message}).`, "error");
       }
       return;
     }
@@ -228,9 +228,9 @@
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     const capped = pages.length > MAX_DETAILS ? ` Links were read for the first ${MAX_DETAILS} of ${pages.length} pages.` : "";
-    const failNote = failed ? ` ${failed} page${failed === 1 ? "" : "s"} could not be read.` : "";
     const lockNote = locked ? ` ${locked} brain${locked === 1 ? " is" : "s are"} visible by name only.` : "";
-    if (statusEl.dataset.kind !== "error") setStatus(`Ready.${capped}${failNote}${lockNote}`, "");
+    if (failed && statusEl.dataset.kind !== "error") setStatus(`${failed} page${failed === 1 ? "" : "s"} could not be read.${capped}${lockNote}`, "error");
+    else if (statusEl.dataset.kind !== "error") setStatus(`Ready.${capped}${lockNote}`, "");
     refresh(true);
   }
 
