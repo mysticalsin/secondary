@@ -74,6 +74,11 @@ export async function audit(
   });
 }
 
+/** Log a failed deny receipt. The caller still returns 403. */
+export function warnAuditDenied(action: string): void {
+  console.warn(JSON.stringify({ at: "audit_unavailable", action, decision: "deny" }));
+}
+
 /** Data-level refusal from a Workspace as an HTTP answer. */
 export function failResponse(
   c: C,
