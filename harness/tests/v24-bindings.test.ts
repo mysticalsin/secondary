@@ -780,3 +780,21 @@ test("an unreadable deploy/graph is refused", () => {
     chmodSync(graphDir, 0o755);
   }
 });
+
+test("secret file names are matched case-insensitively", async () => {
+  const guard = (await import("../../deploy/guard.ts")) as {
+    guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
+  };
+  const cases: Array<[string, string]> = [
+    [".ENV", "env-file-present"],
+    [".Env.local", "env-file-present"],
+    [".Dev.Vars", "dev-vars-present"],
+    [".DEV.VARS.local", "dev-vars-present"],
+  ];
+  for (const [name, reason] of cases) {
+    const dir = matchingAssets();
+    writeFileSync(join(dir, name), "SECRET=value\n");
+    assert.deepEqual(guard.guardRoot(dir, "dry-run"), { ok: false, reason }, name);
+    assert.deepEqual(guard.guardRoot(dir, "deploy"), { ok: false, reason }, name);
+  }
+});
