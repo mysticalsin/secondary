@@ -114,3 +114,9 @@ Comments removed because they only repeated the code:
 
 - The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
 - The `directPublish` note said the mode must be direct and the caller must be allowed to edit. Those are the `publication` and `can.edit` checks. It also said publish asks the stored brain role, which this function does not do.
+
+## Encoded source path
+
+`switchGate` reads `new URL(c.req.url).pathname`. On Hono `4.13.17` that pathname keeps `%73`, so `/v1/%73ources/s1` does not match the connector row. The same request, mounted with `app.route("/v1", v1)` and `GET /sources/:id` after the gate, reaches the handler with id `s1`. The plain path `/v1/sources/s1` returns 503 when the connector switch is off. The red test records that split. The fix is not in this commit.
+
+These paths are not matched, on main `8c2ede3` and here: `/v1/ai` with no further slash, `/v1/sources` with no id, and a trailing slash on `/v1/personal/items/:id/contribute`. Whether they should be matched is a question for Tony. This slice does not change the matchers.
