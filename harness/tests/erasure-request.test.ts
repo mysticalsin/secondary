@@ -168,6 +168,31 @@ test("erasure plan keeps only a scope id the step grammar accepts", () => {
   }
 });
 
+test("erasure plan refuses a company scope the grammar rejects", () => {
+  assert.throws(
+    () => erasurePlan(["c_delivery", "bad id"]),
+    (error: unknown) => error instanceof Error && error.message === "invalid_scope",
+  );
+});
+
+test("erase route refuses a company scope the grammar rejects before it stores", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const { post, audits } = await eraseApp(buildOrg(["bad id"]));
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(res.status, 422);
+    assert.deepEqual(await res.json(), { error: "invalid_scope" });
+    assert.equal(readLedger(file), undefined);
+    assert.equal(tombstones(file), 0);
+    assert.deepEqual(erasureCalls(), []);
+    assert.equal(pendingErase(file), undefined);
+    assert.deepEqual(audits, []);
+  } finally {
+    remove();
+  }
+});
+
 test("erasure request stores a known scope and drops a step the grammar rejects", () => {
   const opened = requireOk(
     commitErasure(absentErasure(), {
