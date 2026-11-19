@@ -46,7 +46,7 @@
     try {
       res = await fetch(API + path, { credentials: "same-origin", headers: { accept: "application/json" } });
     } catch {
-      throw new AuthError("network");
+      throw new Error("offline");
     }
     if (res.status === 401 || res.status === 403) throw new AuthError(String(res.status));
     if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
@@ -106,21 +106,59 @@
       .trim();
   }
 
+  function brainCards(body) {
+    const cards = Array.isArray(body && body.brains) ? body.brains : [];
+    return cards.filter((card) => card && typeof card.id === "string" && card.id !== "" && typeof card.name === "string");
+  }
+
+  function chooseBrain(cards) {
+    const withPages = cards.find((card) => Number(card.pages) > 0);
+    return (withPages || cards[0] || { id: "" }).id;
+  }
+
+  function cardsFromTree(workspaces) {
+    return workspaces.filter((ws) => typeof ws.id === "string" && ws.id !== "").map((ws) => ({
+      id: ws.id,
+      name: typeof ws.label === "string" && ws.label ? ws.label : ws.id,
+      pages: (ws.children || []).reduce((n, folder) => n + (Array.isArray(folder.children) ? folder.children.length : 0), 0),
+    }));
+  }
+
+  function fillBrainSelect(select, cards) {
+    const id = chooseBrain(cards);
+    select.replaceChildren();
+    for (const card of cards) select.append(new Option(card.name, card.id));
+    if (id) select.value = id;
+    return id;
+  }
+
   async function load() {
     setStatus("Loading your second brain…", "loading");
     let tree;
+    let cards = [];
+    let brainsFailed = false;
     try {
       tree = await getJson("/v1/brain/tree");
     } catch (err) {
       if (err instanceof AuthError) {
         setStatus("Your sign-in has expired or this page could not reach the brain. Reload to sign in again.", "error");
       } else {
-        setStatus(`The brain could not be loaded (${err.message}).`, "error");
+        setStatus(err instanceof Error && err.message === "offline" ? "The brain could not be loaded." : `The brain could not be loaded (${err.message}).`, "error");
       }
       return;
     }
+    try {
+      cards = brainCards(await getJson("/v1/brains"));
+    } catch (err) {
+      if (err instanceof AuthError) {
+        setStatus("Your sign-in has expired or this page could not reach the brain. Reload to sign in again.", "error");
+        return;
+      }
+      brainsFailed = true;
+    }
     const roots = Array.isArray(tree.roots) ? tree.roots : [];
     workspaces = roots.filter((r) => r.access !== "locked" && Array.isArray(r.children));
+    if (brainsFailed) cards = cardsFromTree(workspaces);
     const locked = roots.filter((r) => r.access === "locked").length;
     const pages = [];
     for (const ws of workspaces) {
@@ -139,10 +177,9 @@
         }
       }
     }
-    workspaceEl.replaceChildren(new Option("All brains", ""));
-    for (const ws of workspaces) workspaceEl.append(new Option(`${ws.label} (${ws.count ?? 0})`, ws.id));
+    const chosen = fillBrainSelect(workspaceEl, cards);
     renderLegend();
-    if (pages.length === 0) {
+    if (pages.filter((node) => node.ws === chosen).length === 0) {
       emptyEl.hidden = false;
       setStatus(locked ? `${locked} brain${locked === 1 ? "" : "s"} visible by name only. No pages you can open.` : "No pages yet.", "");
       refresh();
@@ -191,16 +228,17 @@
     }
     await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     const capped = pages.length > MAX_DETAILS ? ` Links were read for the first ${MAX_DETAILS} of ${pages.length} pages.` : "";
-    const failNote = failed ? ` ${failed} page${failed === 1 ? "" : "s"} could not be read.` : "";
     const lockNote = locked ? ` ${locked} brain${locked === 1 ? " is" : "s are"} visible by name only.` : "";
-    if (statusEl.dataset.kind !== "error") setStatus(`Ready.${capped}${failNote}${lockNote}`, "");
+    if (failed && statusEl.dataset.kind !== "error") setStatus(`${failed} page${failed === 1 ? "" : "s"} could not be read.${capped}${lockNote}`, "error");
+    else if (statusEl.dataset.kind !== "error") setStatus(`Ready.${capped}${lockNote}`, "");
     refresh(true);
   }
 
   function renderLegend() {
     legendEl.replaceChildren();
+    const ws = workspaceEl.value;
     for (const [folder, color] of folderColor) {
-      const count = nodes.filter((n) => n.kind === "note" && n.folder === folder).length;
+      const count = nodes.filter((n) => n.kind === "note" && n.folder === folder && ws && n.ws === ws).length;
       const button = document.createElement("button");
       button.type = "button";
       button.className = "legend-item";
@@ -245,7 +283,7 @@
     const ws = workspaceEl.value;
     const local = opts.local && selected ? neighborhood(selected, opts.depth) : null;
     const show = (n) => {
-      if (ws && n.ws !== ws && n.kind !== "other") return false;
+      if (!ws || (n.ws !== ws && n.kind !== "other")) return false;
       if (n.kind === "ghost" && !opts.unresolved) return false;
       if ((n.kind === "folder" || n.kind === "workspace") && (!opts.folders || local)) return false;
       if (n.kind === "note" && hiddenFolders.has(n.folder)) return false;
@@ -260,7 +298,7 @@
     };
     const notes = visible.nodes.filter((n) => n.kind === "note").length;
     const noteLinks = visible.links.filter((l) => l.kind === "note").length;
-    const ghosts = nodes.filter((n) => n.kind === "ghost").length;
+    const ghosts = nodes.filter((n) => n.kind === "ghost" && ws && n.ws === ws).length;
     statsEl.textContent = `${notes} note${notes === 1 ? "" : "s"} · ${noteLinks} link${noteLinks === 1 ? "" : "s"}${ghosts ? ` · ${ghosts} unresolved` : ""}`;
     alpha = keepHeat ? Math.max(alpha, 0.5) : 1;
     start();
@@ -762,6 +800,7 @@
 
   workspaceEl.addEventListener("change", () => {
     autoFit = true;
+    renderLegend();
     refresh();
   });
   $("#opt-folders").addEventListener("change", (e) => {
