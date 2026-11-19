@@ -11,7 +11,7 @@ import {
   SWITCH_TABLE,
   type HandlerKey,
   type SwitchName,
-} from "../../recovered-source/worker/src/switches.ts";
+} from "../../src/worker/switches.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
   parentURL: import.meta.url,
@@ -24,7 +24,7 @@ function switches(contribute: boolean) {
 }
 
 test("submitCandidate with contribute off is 503 and writes nothing", async () => {
-  const routes = new URL("../../recovered-source/worker/src/routes.ts", import.meta.url).href;
+  const routes = new URL("../../src/worker/routes.ts", import.meta.url).href;
   const { submitCandidate } = (await import(routes)) as {
     submitCandidate: (
       c: { get: (key: string) => unknown; env: unknown; json: (body: unknown, status: number) => Response },
@@ -103,7 +103,7 @@ test("submitCandidate with contribute off is 503 and writes nothing", async () =
 });
 
 test("routine ingest with contribute off returns the exact reason", async () => {
-  const mod = new URL("../../recovered-source/worker/src/uxv2/routines.ts", import.meta.url).href;
+  const mod = new URL("../../src/worker/uxv2/routines.ts", import.meta.url).href;
   const { writeIngest } = (await import(mod)) as {
     writeIngest: (
       c: { get: (key: string) => unknown; env: unknown },

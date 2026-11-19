@@ -8,7 +8,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 test("an encoded /v1 path still gets Cache-Control: no-store", async () => {
-  const security = new URL("../../recovered-source/worker/src/security.ts", import.meta.url).href;
+  const security = new URL("../../src/worker/security.ts", import.meta.url).href;
   const { securityHeaders } = (await import(security)) as {
     securityHeaders: (c: never, next: () => Promise<void>) => Promise<void>;
   };

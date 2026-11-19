@@ -10,7 +10,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 const NOW = 1_700_000_000_000;
 
 test("profile: a kelvin address is labeled so it is not the ASCII twin", async () => {
-  const specifier = new URL("../../recovered-source/worker/src/routes.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/routes.ts", import.meta.url).href;
   const { v1Routes } = (await import(specifier)) as {
     v1Routes: (deps: { now: () => number }) => { request: Function };
   };

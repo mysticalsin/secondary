@@ -7,7 +7,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 test("persona id: a malformed email is rejected", async () => {
-  const specifier = new URL("../../recovered-source/worker/src/org.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
   const { personaId } = (await import(specifier)) as {
     personaId: (roleId: "consultant", email: string) => Promise<string | null>;
   };

@@ -15,7 +15,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const storeSpecifier = "../../recovered-source/worker/src/wiki/store.ts";
+const storeSpecifier = "../../src/worker/wiki/store.ts";
 
 type ProposeResult =
   | { ok: true; created: false; reason: string }
@@ -214,7 +214,7 @@ test("import publish: publishing a row that is not a draft is refused", async ()
 });
 
 test("import publish: the dry run and the real import both report publishMode(false)", () => {
-  const data = readFileSync(new URL("../../recovered-source/worker/src/brains/data.ts", import.meta.url), "utf8");
+  const data = readFileSync(new URL("../../src/worker/brains/data.ts", import.meta.url), "utf8");
   assert.match(data, /const reported = publishMode\(false\)/);
   assert.equal(data.match(/state: reported/g)?.length, 2);
   assert.doesNotMatch(data, /const publishDirect = b\.personal && verdict\.verdict === "ingest" && !cur/);

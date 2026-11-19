@@ -8,8 +8,8 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 test("a malformed /v1 path is 400 and still no-store", async () => {
-  const securityUrl = new URL("../../recovered-source/worker/src/security.ts", import.meta.url).href;
-  const opsUrl = new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href;
+  const securityUrl = new URL("../../src/worker/security.ts", import.meta.url).href;
+  const opsUrl = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const { securityHeaders } = (await import(securityUrl)) as {
     securityHeaders: (c: never, next: () => Promise<void>) => Promise<void>;
   };

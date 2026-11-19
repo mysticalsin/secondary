@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { streamRound } from "../../recovered-source/worker/src/agent/stream.ts";
+import { streamRound } from "../../src/worker/agent/stream.ts";
 import { requireOk, requireTag } from "./require-ok.ts";
 import {
   canApplyDelta,

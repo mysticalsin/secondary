@@ -22,7 +22,7 @@ test("switch gate matches the pinned table", async () => {
 });
 
 test("kill-switch paths and handler names are declared once", () => {
-  const root = new URL("../../recovered-source/worker/src/", import.meta.url);
+  const root = new URL("../../src/worker/", import.meta.url);
   const read = (file: string) => readFileSync(new URL(file, root), "utf8");
   assert.equal(read("ops-admin.ts").includes("personal/items"), false);
   assert.equal(read("switches.ts").includes("personal\\/items"), true);

@@ -13,7 +13,7 @@ test("an encoded source path is blocked when the connector switch is off", async
     dependencies: { hono: string };
   };
   assert.equal(pkg.dependencies.hono, "4.13.17");
-  const ops = new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href;
+  const ops = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const { switchGate } = (await import(ops)) as {
     switchGate: (c: never, next: () => Promise<void>) => Promise<Response | void>;
   };
@@ -52,7 +52,7 @@ test("an encoded source path is blocked when the connector switch is off", async
 });
 
 test("a malformed percent-encoding does not pass the switch gate", async () => {
-  const ops = new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href;
+  const ops = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const { switchGate } = (await import(ops)) as {
     switchGate: (c: never, next: () => Promise<void>) => Promise<Response | void>;
   };
@@ -86,7 +86,7 @@ test("a malformed percent-encoding does not pass the switch gate", async () => {
 });
 
 async function routedApp(connector: boolean) {
-  const ops = new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url).href;
+  const ops = new URL("../../src/worker/ops-admin.ts", import.meta.url).href;
   const { switchGate } = (await import(ops)) as {
     switchGate: (c: never, next: () => Promise<void>) => Promise<Response | void>;
   };

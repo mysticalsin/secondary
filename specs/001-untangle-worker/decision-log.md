@@ -152,7 +152,7 @@ Mutations, restored before commit:
 
 ## Folder move
 
-The Worker HTTP code lives in `recovered-source/worker/src` and the decisions it calls live in `src/state`. A change to one system is split across two trees. Tony approved this move ("A, all three"). The tree moves to `src/worker`, beside `src/state`. HTTP answers stay as on main `e8e7ef63`. The pin in `harness/tests/worker-pin.test.ts` passed on that main (exit 0, 1 pass). Skipping the off-switch return made `GET /v1/sources/s1` with the connector switch off `200 !== 503` (exit 1, 0 pass, 1 fail, duration_ms 249.61952). That edit was restored.
+The Worker HTTP code lived in `recovered-source/worker/src` and the decisions it calls live in `src/state`. Tony approved this move ("A, all three"). The tree is now `src/worker`, beside `src/state`. HTTP answers stay as on main `e8e7ef63`. The pin in `harness/tests/worker-pin.test.ts` passed on that main (exit 0, 1 pass). Skipping the off-switch return made `GET /v1/sources/s1` with the connector switch off `200 !== 503` (exit 1, 0 pass, 1 fail, duration_ms 249.61952). That edit was restored.
 
 Queued with that move, and not a behaviour change:
 
@@ -164,3 +164,5 @@ Queued with that move, and not a behaviour change:
 - Sentinel Info: a malformed percent-encoding that is 400 still gets `Cache-Control: no-store` when the routed path is under `/v1/`.
 
 `internalRouteVerdict` and `isImport` stay on the raw pathname. Publish still reads `can.decide`. Those are not this slice.
+
+Comment removed because it only repeated the code: the note on `blockingSwitch` said it returns the first matching row whose switch is off. The function walks the rows and returns that row.

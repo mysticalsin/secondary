@@ -18,7 +18,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 
 const DAY = "2023-11-14";
 const AT = Date.parse(`${DAY}T12:00:00Z`);
-const storeSpecifier = "../../recovered-source/worker/src/brains/store.ts";
+const storeSpecifier = "../../src/worker/brains/store.ts";
 
 type JournalRun =
   | { pageId: string | null; created: boolean }

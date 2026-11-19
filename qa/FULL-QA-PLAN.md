@@ -87,7 +87,7 @@ Addresses in those tests are synthetic (`example` names, fictional org `tenant_m
 | Callback, no cookie | query state only | 400, that row unchanged | `oidc-login.test.ts` |
 | Callback, matching state, code exchange succeeds | synthetic RS256 token, `ada@example.invalid` | 303, session cookie, replay of that state is 400 | `oidc-login.test.ts` |
 | Callback, IdP disabled | `AUTH_MODE=access` | 404, cookie row consumed, query row kept | `oidc-login.test.ts` |
-| Access JWT | bad signature, expiry, audience, or issuer | null email, then 401 if nothing else identifies the caller | `recovered-source/worker/src/auth.ts` `verifyAccessJwt`. Needs a live team JWKS to exercise the success path. Blocked without that. Do not call a real team. |
+| Access JWT | bad signature, expiry, audience, or issuer | null email, then 401 if nothing else identifies the caller | `src/worker/auth.ts` `verifyAccessJwt`. Needs a live team JWKS to exercise the success path. Blocked without that. Do not call a real team. |
 | Dev bypass | loopback, `ENVIRONMENT=dev`, bypass email set | email is accepted only for localhost / 127.0.0.1 / `[::1]` | `devBypassEmail` in `auth.ts`. Not enabled on this boot. |
 | Logout | `POST /auth/logout` with a session cookie | ends that session. Unsigned boot: the route still runs its cookie clear. Confirm status on a harness session, not against production. | `auth/routes.ts` |
 | SCIM without a token | `GET /scim/v2/Users` | 401 SCIM error | boot |

@@ -32,8 +32,8 @@ function preseeded(role: Role): Role {
 }
 
 test("stored roles: an old acme_lead still decides, and can.decide false does not publish", async () => {
-  const specifier = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
-  const openSpecifier = new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/wiki/review.ts", import.meta.url).href;
+  const openSpecifier = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { mayDecide } = (await import(specifier)) as {
     mayDecide: (
       view: ReturnType<typeof admittedView>,
@@ -97,7 +97,7 @@ test("stored roles: an old acme_lead still decides, and can.decide false does no
 });
 
 test("governance: editing acme_lead without resending grants is not invalid_condition", async () => {
-  const validateSpecifier = new URL("../../recovered-source/worker/src/admin/validate.ts", import.meta.url).href;
+  const validateSpecifier = new URL("../../src/worker/admin/validate.ts", import.meta.url).href;
   const { buildRole } = (await import(validateSpecifier)) as {
     buildRole: (
       input: { label?: string; grants?: unknown },
@@ -105,7 +105,7 @@ test("governance: editing acme_lead without resending grants is not invalid_cond
       base: Role | null,
     ) => { ok: true } | { ok: false; code: string; message: string };
   };
-  const storeSpecifier = new URL("../../recovered-source/worker/src/admin/store.ts", import.meta.url).href;
+  const storeSpecifier = new URL("../../src/worker/admin/store.ts", import.meta.url).href;
   const { GovStore } = (await import(storeSpecifier)) as {
     GovStore: new (
       host: { sql: ReturnType<typeof sqliteStorage>; tx: <T>(fn: () => T) => T; bump: () => number },

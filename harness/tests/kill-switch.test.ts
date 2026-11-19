@@ -11,7 +11,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { SECOND_PERSON_TTL_MS } from "../../src/state/quorum.ts";
-import { SecurityJournal } from "../../recovered-source/worker/src/security-journal.ts";
+import { SecurityJournal } from "../../src/worker/security-journal.ts";
 import { openSqlite, sqliteStorage } from "../runtime/sqlite-storage.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
@@ -19,7 +19,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 const NOW = 1_700_000_000_000;
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
 
 type SwitchResult = { status: "applied" | "pending" | "replay" | "refused"; sameActor?: boolean };
 type SwitchName = "mcp" | "connector" | "ai" | "contribute";
@@ -382,7 +382,7 @@ test("kill switch: a quorum refusal is not a pending ask", async () => {
 
 test("kill switch route: replay and refused are 409, and pending is the only 202", () => {
   const text = readFileSync(
-    new URL("../../recovered-source/worker/src/ops-admin.ts", import.meta.url),
+    new URL("../../src/worker/ops-admin.ts", import.meta.url),
     "utf8",
   );
   const start = text.indexOf('r.post("/switches"');

@@ -14,7 +14,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
   parentURL: import.meta.url,
 });
 
-const policySpecifier = "../../recovered-source/worker/src/tenant-policy.ts";
+const policySpecifier = "../../src/worker/tenant-policy.ts";
 
 type Policy = {
   erasePrincipal(principalId: string, pseudonym: string): Promise<number>;
@@ -23,7 +23,7 @@ type Policy = {
 const KEY = "0123456789abcdef0123456789abcdef";
 
 async function pseudonym(id: string): Promise<string> {
-  const spec = "../../recovered-source/worker/src/ops-rights.ts";
+  const spec = "../../src/worker/ops-rights.ts";
   const { pseudonymFor } = (await import(spec)) as {
     pseudonymFor: (
       env: { PSEUDONYM_KEY?: string },

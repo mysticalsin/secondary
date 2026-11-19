@@ -31,8 +31,8 @@ const editorRole: Role = {
 };
 
 test("wiki decide: a seeded lead decides, a circle editor does not, and publish still reads can.decide", async () => {
-  const specifier = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
-  const openSpecifier = new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/wiki/review.ts", import.meta.url).href;
+  const openSpecifier = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { mayDecide } = (await import(specifier)) as {
     mayDecide: (
       view: ReturnType<typeof admittedView>,
@@ -100,8 +100,8 @@ test("wiki decide: a seeded lead decides, a circle editor does not, and publish 
   assert.equal(staleFalse, false);
   assert.equal(mayDecide(editorView, editor, "c_sales").allowed, false);
 
-  const review = readFileSync(new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url), "utf8");
-  const open = readFileSync(new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url), "utf8");
+  const review = readFileSync(new URL("../../src/worker/wiki/review.ts", import.meta.url), "utf8");
+  const open = readFileSync(new URL("../../src/worker/brains/open.ts", import.meta.url), "utf8");
   const roles = readFileSync(new URL("../../packages/policy/src/roles.ts", import.meta.url), "utf8");
   assert.equal(review.includes("const LEAD_ROLES"), false);
   assert.equal(open.includes("w.can.decide !== true"), true);

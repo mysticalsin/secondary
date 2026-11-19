@@ -12,7 +12,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 const NOW = 1_700_000_000_000;
 
 test("wiki release: an elevated CEO cannot approve or publish", async () => {
-  const specifier = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
+  const specifier = new URL("../../src/worker/wiki/review.ts", import.meta.url).href;
   const { mayDecide } = (await import(specifier)) as {
     mayDecide: (
       view: ReturnType<typeof admittedView>,
@@ -36,7 +36,7 @@ test("wiki release: an elevated CEO cannot approve or publish", async () => {
   const reviewerView = admittedView(reviewer, org, { now: NOW });
   assert.equal(mayDecide(reviewerView, reviewer, "core").allowed, true);
 
-  const openSpecifier = new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url).href;
+  const openSpecifier = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { directPublish } = (await import(openSpecifier)) as {
     directPublish: (
       c: unknown,

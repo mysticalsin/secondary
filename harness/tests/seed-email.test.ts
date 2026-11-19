@@ -30,7 +30,7 @@ test("seed: a malformed address is not stored raw", async () => {
         return ready;
       },
     };
-    const specifier = new URL("../../recovered-source/worker/src/tenant-policy.ts", import.meta.url).href;
+    const specifier = new URL("../../src/worker/tenant-policy.ts", import.meta.url).href;
     const mod = (await import(specifier)) as {
       TenantPolicy: new (ctx: unknown, env: unknown) => {
         seed: (

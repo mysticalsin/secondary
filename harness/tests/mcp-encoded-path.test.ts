@@ -7,7 +7,7 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 });
 
 test("an encoded MCP path misses the allowlist", async () => {
-  const auth = new URL("../../recovered-source/worker/src/auth.ts", import.meta.url).href;
+  const auth = new URL("../../src/worker/auth.ts", import.meta.url).href;
   const { internalRouteVerdict } = (await import(auth)) as {
     internalRouteVerdict: (method: string, path: string, scope: string[]) => "ok" | "no";
   };

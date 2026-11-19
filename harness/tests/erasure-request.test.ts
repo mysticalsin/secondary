@@ -252,7 +252,7 @@ type OpenedPolicy = Policy & { connection: PolicyConnection };
 type LedgerRow = { status: string; ledger: string; updated_at: number };
 
 function workerModule(name: string): string {
-  return `../../recovered-source/worker/src/${name}`;
+  return `../../src/worker/${name}`;
 }
 
 function buildOrg(scopes: readonly string[]): Org {
