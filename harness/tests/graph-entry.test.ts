@@ -115,8 +115,8 @@ test("graph wrapper delegates and rewrites only the app HTML", async () => {
 test("graph entry re-exports the worker module", () => {
   const source = readFileSync(join(root, "deploy/graph-entry.ts"), "utf8");
   const route = readFileSync(join(root, "deploy/graph-route.ts"), "utf8");
-  assert.match(source, /import app from "\.\.\/recovered-source\/worker\/src\/index\.ts"/);
-  assert.match(source, /export \* from "\.\.\/recovered-source\/worker\/src\/index\.ts"/);
+  assert.match(source, /import app from "\.\.\/src\/worker\/index\.ts"/);
+  assert.match(source, /export \* from "\.\.\/src\/worker\/index\.ts"/);
   assert.equal(source.includes("class TenantPolicy"), false);
   assert.equal(source.includes("class Workspace"), false);
   assert.match(route, /new HTMLRewriter\(\)/);
