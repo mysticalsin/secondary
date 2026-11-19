@@ -104,3 +104,11 @@ Comments removed because they only repeated the code:
 - The `directPublish` note said the mode must be direct and the caller must be allowed to edit. Those are the `publication` and `can.edit` checks. It also said publish asks the stored brain role, which this function does not do.
 
 No test was deleted. In `harness/tests/lead-from-grants.test.ts`, the lead, author, alias, letter-case, elevation, and `approve_release` assertions fail if those outcomes change. The loose `can.decide: true` case fails if a non-lead publishes. The review-mode cases fail if a lead publishes while the mode is review. The source checks fail if `LEAD_ROLES` returns, `directPublish` reads `w.can.decide`, or the grants lose `lead: true`.
+
+## Stored roles and the lead mark
+
+`seedRoles` writes the built-in roles once. A tenant seeded before `conditions.lead` keeps `acme_lead` without that mark. Reading `lead` from the stored role then denies decide and direct publish in `a_acme` and `c_sales`. `validate.ts` rejects `lead` as an unknown condition, so a governance edit that rechecks the stored grants cannot put the mark back, and a seed that stored the mark would make an edit that does not resend grants fail with `invalid_condition`.
+
+The mark stays on the built-in role in `roles.ts`. `mayDecide` looks up that role by id and matches the grant to the brain in the view. It does not read `lead` from the tenant's stored roles. The standing `edit`, `review`, or `manage_members` check still uses the stored grants, so a tenant that removed the action still cannot decide. Seeding strips `lead` before the row is written. Governance still rejects a client that sends `lead`. No migration and no new governance field.
+
+The non-lead direct-publish case uses the editor's own principal and that editor's view. A lead whose stored role has no `lead` mark, with publication mode direct on `c_sales`, direct-publishes. `a_acme` stays a decision and not a direct publish: account brains force review.

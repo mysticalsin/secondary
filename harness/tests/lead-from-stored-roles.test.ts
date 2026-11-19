@@ -136,7 +136,7 @@ test("governance: editing acme_lead without resending grants is not invalid_cond
   const validateSpecifier = new URL("../../recovered-source/worker/src/admin/validate.ts", import.meta.url).href;
   const { buildRole } = (await import(validateSpecifier)) as {
     buildRole: (
-      input: { label?: string },
+      input: { label?: string; grants?: unknown },
       org: ReturnType<typeof buildOrg>,
       base: Role | null,
     ) => { ok: true } | { ok: false; code: string; message: string };
@@ -164,6 +164,13 @@ test("governance: editing acme_lead without resending grants is not invalid_cond
     assert.equal(base === undefined, false);
     const built = buildRole({ label: "Account lead, Acme (edited)" }, buildOrg(), base ?? null);
     assert.equal(built.ok, true, built.ok ? "" : `${built.code}: ${built.message}`);
+    const sent = buildRole(
+      { grants: ROLES.acme_lead.grants },
+      buildOrg(),
+      base ?? null,
+    );
+    assert.equal(sent.ok, false);
+    if (!sent.ok) assert.equal(sent.code, "invalid_condition");
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });

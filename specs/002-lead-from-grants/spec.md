@@ -57,11 +57,12 @@ The proposal author cannot decide, including when the author id differs only by 
 
 ### Functional Requirements
 
-- **FR-001**: Who may decide inside a brain MUST be read from that caller's role grants. A grant with `conditions.lead === true` that includes a standing `edit`, `review`, or `manage_members` on the node is a lead of that node. The set `LEAD_ROLES` MUST NOT remain.
+- **FR-001**: Who may decide inside a brain MUST be read from the built-in role table (`roles.ts`), by role id and the grant that covers that brain. A built-in grant with `conditions.lead === true` that includes a standing `edit`, `review`, or `manage_members` on the node is a lead of that node. `mayDecide` MUST NOT read `lead` from the tenant's stored roles. The set `LEAD_ROLES` MUST NOT remain.
 - **FR-002**: Outcomes MUST stay: `acme_lead` decides in `a_acme` and `c_sales` and not in `core`; a standing edit or review grant that is not a lead grant does not decide; a standing `approve_release` grant does.
 - **FR-003**: The author MUST stay denied, including a different letter case and an alias id. Elevation MUST NOT count.
 - **FR-004**: `directPublish` MUST call `mayDecide` for a shared brain. It MUST NOT read `can.decide`. Personal brains, publication mode, the stored edit check, and an agent caller MUST stay as they are. The wiki route's own `need` check is unchanged.
 - **FR-005**: `brainOf` MAY still set `can.decide` for the screen. That field is not the publish rule.
+- **FR-006**: Seeding a tenant MUST NOT store `conditions.lead`. Governance MUST keep rejecting `lead` as an unknown condition. An edit of `acme_lead` that does not resend grants MUST NOT be `invalid_condition`. A role stored before this mark existed MUST still decide where the built-in role is a lead.
 
 ### Success Criteria
 
@@ -75,8 +76,8 @@ The proposal author cannot decide, including when the author id differs only by 
 
 ## Assumptions
 
-- The two grants that make `acme_lead` a lead today (`c_sales` edit, and `a_acme` edit, review, and manage members) are the grants marked `lead`. No other current grant is a lead grant.
-- `conditions.lead` is data for this rule. The policy engine does not read it, so view, edit, and release checks are unchanged.
+- The two grants that make `acme_lead` a lead today (`c_sales` edit, and `a_acme` edit, review, and manage members) are the grants marked `lead` on the built-in role. No other current grant is a lead grant.
+- `conditions.lead` is data for this rule on the built-in role only. The policy engine does not read it, so view, edit, and release checks are unchanged. Tenants seeded before the mark keep their old grants. New seeds omit the mark. Governance does not gain a way to set it.
 - An `edit` grant limited to `own_drafts` is not marked `lead`.
 - Restating comments next to `leadOf` and `directPublish` are removed. No test in this slice is deleted: each new assertion fails if the lead grant, the author rule, elevation, `approve_release`, or the loose `can.decide` boolean changes.
 - The wider comment and test sweep, the switch table, and the folder move are separate slices.

@@ -6,7 +6,7 @@
 
 ## Summary
 
-Mark the two `acme_lead` grants that already confer a decision with `conditions.lead`. `mayDecide` allows a lead when one of those grants covers the node and a standing `edit`, `review`, or `manage_members` check passes. Delete `LEAD_ROLES`. `directPublish` calls `mayDecide` and stops reading `can.decide`. The stored edit check at the end of `directPublish` stays.
+Mark the two `acme_lead` grants that already confer a decision with `conditions.lead` on the built-in role. `mayDecide` reads that built-in role by id and matches the grant to the brain. It does not read `lead` from stored tenant roles. Seeding strips the mark so governance never stores it. Delete `LEAD_ROLES`. `directPublish` calls `mayDecide` and stops reading `can.decide`. The stored edit check at the end of `directPublish` stays.
 
 ## Technical Context
 

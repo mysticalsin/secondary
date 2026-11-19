@@ -5,9 +5,13 @@
 import {
   type AdmittedView,
   canDoInView,
+  type Grant,
   opensBrain,
   type Principal,
   personalRootId,
+  ROLES,
+  type RoleId,
+  type ViewNode,
 } from "@secondary/policy";
 import { asciiLower } from "../../../../src/state/actor.ts";
 import type { ItemRecord } from "../workspace.ts";
@@ -16,13 +20,48 @@ import type { Proposal } from "./types.ts";
 export type Right = { allowed: boolean; reason: string };
 
 const LEAD_ACTIONS = ["review", "edit", "manage_members"] as const;
+const GLOBAL_KINDS = new Set([
+  "core",
+  "coretopic",
+  "theme",
+  "themedept",
+  "themeitem",
+  "governance",
+  "cluster",
+  "usecase",
+]);
 
 const sameId = (a: string, b: string): boolean => asciiLower(a.trim()) === asciiLower(b.trim());
 
+function leadGrantCovers(grant: Grant, node: ViewNode): boolean {
+  const any = grant.scope_id === "*";
+  switch (grant.scope_type) {
+    case "global":
+      return GLOBAL_KINDS.has(node.kind);
+    case "department":
+      return (
+        (node.kind === "department" || node.kind === "circle" || node.kind === "topic") &&
+        (any || node.dept === grant.scope_id)
+      );
+    case "circle":
+      return (node.kind === "circle" || node.kind === "topic") && (any || node.circle === grant.scope_id);
+    case "account":
+      return !!node.account && (any || node.account === grant.scope_id);
+    case "region":
+      return (node.kind === "region" || node.kind === "country") && (any || node.region === grant.scope_id);
+    default:
+      return false;
+  }
+}
+
 function leadOf(view: AdmittedView, p: Principal, nodeId: string): Right | null {
-  for (const role of view.roles) {
+  const node = view.nodes.get(nodeId);
+  if (!node) return null;
+  for (const id of p.roleIds) {
+    const role = Object.hasOwn(ROLES, id) ? ROLES[id as RoleId] : undefined;
+    if (!role) continue;
     for (const grant of role.grants) {
-      if (grant.conditions.lead !== true) continue;
+      if (grant.conditions.lead !== true || !leadGrantCovers(grant, node)) continue;
       for (const action of LEAD_ACTIONS) {
         if (!grant.actions.includes(action)) continue;
         if (canDoInView(view, p, nodeId, action).allowed)
