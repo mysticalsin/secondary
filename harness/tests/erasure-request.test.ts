@@ -878,6 +878,47 @@ test("erasure request: a tenant restore reopens directory through reapplyErasure
   }
 });
 
+test("a non-conforming restore scope is skipped instead of treated as done", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+      reapplyErasures: (
+        env: { PSEUDONYM_KEY?: string; AUDIT: { fetch: (url: string) => Promise<Response> } },
+        tenantId: string,
+        kind: "workspace",
+        scope: string,
+        now: number,
+      ) => Promise<{ applied: number; skipped: string[] }>;
+    };
+    const finished = completedLedger(erasurePlan(rights.companyScopes(buildOrg(["acme"]))));
+    putLedger(file, finished.status, finished.ledger);
+    const db = openSqlite(file);
+    db.prepare("INSERT INTO principals (id, email) VALUES (?, ?)").run(SUBJECT, "subject@example.invalid");
+    db.prepare(
+      "INSERT INTO erasure_tombstones (principal_id, pseudonym, aliases, erased_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+    ).run(SUBJECT, "pz_subject", "[]", NOW - 1_000, NOW + 86_400_000);
+    db.close();
+    const applied = await rights.reapplyErasures(
+      { PSEUDONYM_KEY, AUDIT: { fetch: async () => new Response(null, { status: 202 }) } },
+      TENANT,
+      "workspace",
+      "bad id",
+      NOW,
+    );
+    assert.deepEqual(applied, { applied: 0, skipped: [SUBJECT] });
+    const left = openSqlite(file);
+    const person = left.prepare("SELECT id FROM principals WHERE id = ?").get(SUBJECT) as { id: string } | undefined;
+    left.close();
+    assert.equal(person?.id, SUBJECT);
+    assert.deepEqual(erasureCalls(), []);
+    assert.equal(readLedger(file)?.updated_at, 5);
+  } finally {
+    remove();
+  }
+});
+
 async function damageStaysPending(status: string, ledger: string): Promise<void> {
   const { file, remove } = tempFile();
   try {
