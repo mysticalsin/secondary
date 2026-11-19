@@ -23,6 +23,7 @@ test("the MCP allowlist call site does not decode the path", () => {
   assert.equal(at > 0, true);
   const call = src.slice(at, src.indexOf(");", at));
   assert.equal(call.includes("new URL(c.req.url).pathname"), true);
-  assert.equal(call.includes("decodeURI"), false);
-  assert.equal(call.includes("c.req.path"), false);
+  for (const banned of ["decodeURI", "unescape", "toLowerCase", "c.req.path", "replace("]) {
+    assert.equal(call.includes(banned), false, banned);
+  }
 });
