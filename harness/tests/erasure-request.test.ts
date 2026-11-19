@@ -159,6 +159,27 @@ test("erasure request: only the exact step forms are readable", () => {
   assert.deepEqual(kept.order, ["receipts", "scope:c_delivery"]);
 });
 
+test("erasure plan keeps only a scope id the step grammar accepts", () => {
+  const plan = erasurePlan(["c_delivery", "bad id", "a\nb", "café", "a".repeat(129), ""]);
+  assert.equal(plan.includes("scope:c_delivery"), true);
+  for (const bad of ["scope:bad id", "scope:a\nb", "scope:café", `scope:${"a".repeat(129)}`, "scope:"]) {
+    assert.equal(plan.includes(bad), false, bad);
+  }
+});
+
+test("erasure request stores a known scope and drops a step the grammar rejects", () => {
+  const opened = requireOk(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["personal", "scope:c_delivery", "scope:bad id", "scope:c_delivery\n", "not-a-step"],
+    }),
+  ).state;
+  assert.deepEqual(opened.order, ["scope:c_delivery", "personal"]);
+  assert.equal(opened.order.includes("scope:bad id"), false);
+  assert.equal(opened.mark["scope:bad id"], undefined);
+});
+
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {
   const seen: string[] = [];
   const saved: StoredErasure[] = [];
