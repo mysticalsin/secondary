@@ -131,8 +131,17 @@
 
 **Independent Test**: T023 fails on `7ff4589`, then T024 passes. `deploy/assets/` is still only `UNREPRODUCED`.
 
-- [x] T023 [US5] Add failing tests. A symlink to `wrangler.jsonc` reaches the stub. A symlink loop is `config-missing`. A dangling `.dev.vars` link reaches the stub. Covers FR-016.
-- [x] T024 [US5] Classify `wrangler.jsonc` and `.dev.vars` with `lstat`. A link is `config-symlink`. A stat error is `config-unreadable`. Any non-absent `.dev.vars` is `dev-vars-present`. Record that deploy time does not check the Wrangler version and that `.env` files are not checked. Do not add UI bytes and do not run a real deploy. Covers FR-016.
+- [x] T023 [US5] Add failing tests. A symlink to `wrangler.jsonc` is `config-symlink`. A directory named `wrangler.jsonc` is `config-not-file`. A dangling `.dev.vars` link and a self-symlink of `.dev.vars` are `dev-vars-present`. Covers FR-016.
+- [x] T024 [US5] Classify `wrangler.jsonc` and `.dev.vars` with `lstat`. A link is `config-symlink`. A stat error is `config-unreadable`. Any non-absent `.dev.vars` is `dev-vars-present`. Record that deploy time does not check the Wrangler version. The `.env` refusal is T026. Do not add UI bytes and do not run a real deploy. Covers FR-016.
+
+## Phase 16: Dry run by default, and refuse env files (Priority: P1)
+
+**Goal**: A bare `deploy.sh` is a dry run. `.env` and `.dev.vars.*` are refused. A missing provenance object names the tag to fetch. UI bytes stay pending.
+
+**Independent Test**: T025 fails on `fe7ab6c`, `a745d61`, `29cdc3c`, and `95ce15a`, then T026 passes. `deploy/assets/` is still only `UNREPRODUCED`.
+
+- [x] T025 [US5] Add failing tests. A bare `deploy.sh` on a matching fixture does not pass `--dry-run`. `--apply` under the test runner is `unsupported arguments`. A `.env`, `.env.local`, or `.env.*` file reaches the guard's success path. A directory named `wrangler.jsonc` is `config-unreadable`. A FIFO at that path is read. A symlink at `deploy/graph` reaches the stub. A missing provenance object prints `not a readable tree`. Covers FR-008, FR-016.
+- [x] T026 [US5] Make no arguments and `--dry-run` the dry run, and require `--apply` for a real deploy. Refuse `--apply` when `NODE_TEST_CONTEXT` is set or `NODE_ENV` is `test`. Refuse `.env`, `.env.local`, `.env.*`, and `.dev.vars.*` with `lstat`. Add `.env*` to `.gitignore`. Refuse a non-file `wrangler.jsonc` with `config-not-file` before reading it. Accept a hard link of a regular file. Refuse a symlink at `deploy/graph` or `deploy/graph-entry.ts`. When a provenance object is missing, print `missing provenance object <sha>: git fetch origin tag provenance/worker-119-<prefix>` and exit 1. Record the `lstat` to Wrangler TOCTOU, the pin plus lockfile with no runtime version assert, and `npm ci`. Do not add UI bytes and do not run a real deploy. Covers FR-008, FR-016.
 
 ## Dependencies & Execution Order
 
@@ -163,6 +172,8 @@
 - T022 depends on the red run of T021.
 - T023 is a failing test and depends on T022.
 - T024 depends on the red run of T023.
+- T025 is a failing test and depends on T024.
+- T026 depends on the red run of T025.
 
 ### Parallel Opportunities
 
@@ -171,4 +182,4 @@
 
 ## Implementation Strategy
 
-T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. T017 lands as a failing test. T018 makes that test pass, drops the extra chmod, and records the rehash deletion proof. T019 lands as a failing test. T020 removes the env seam and records the hook-test deletion proof. T021 lands as a failing test. T022 pins `--config` and records the Wrangler evidence. T023 lands as a failing test. T024 refuses a linked config. No task deploys, and no task writes live UI bytes.
+T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. T017 lands as a failing test. T018 makes that test pass, drops the extra chmod, and records the rehash deletion proof. T019 lands as a failing test. T020 removes the env seam and records the hook-test deletion proof. T021 lands as a failing test. T022 pins `--config` and records the Wrangler evidence. T023 lands as a failing test. T024 refuses a linked config. T025 lands as a failing test. T026 makes the default a dry run and refuses env files. No task deploys, and no task writes live UI bytes.

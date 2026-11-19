@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -167,7 +167,7 @@ test("deploy guard: a dev vars file and a real deploy are refused", async () => 
   assert.deepEqual(guard.guardRoot(root, "dry-run"), { ok: true });
 });
 
-test("deploy.sh without --dry-run exits non-zero and does not upload", () => {
+test("deploy.sh with no arguments exits non-zero and does not upload", () => {
   const result = spawnSync("bash", ["deploy.sh"], { cwd: root, encoding: "utf8" });
   assert.equal(result.status, 2);
   assert.match(result.stderr, /assets-unreproduced/);
@@ -717,4 +717,16 @@ test("a symlinked deploy/graph or deploy/graph-entry.ts is refused", () => {
   writeFileSync(heldEntry, "export {}\n");
   symlinkSync(heldEntry, join(entry, "deploy", "graph-entry.ts"));
   refuseDeploy(entry, "assets-symlink");
+});
+
+test("a hard link of wrangler.jsonc is a regular file and is accepted", async () => {
+  const guard = (await import("../../deploy/guard.ts")) as {
+    guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
+  };
+  const dir = matchingAssets();
+  const held = join(dir, "held-wrangler.jsonc");
+  renameSync(join(dir, "wrangler.jsonc"), held);
+  linkSync(held, join(dir, "wrangler.jsonc"));
+  assert.deepEqual(guard.guardRoot(dir, "dry-run"), { ok: true });
+  assert.deepEqual(guard.guardRoot(dir, "deploy"), { ok: true });
 });

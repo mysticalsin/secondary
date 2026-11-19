@@ -1,11 +1,24 @@
 /**
  * Check every reconstructed-manifest entry against the commit that contains its blob.
- * Not part of npm test. The source commits must be in this clone. If they are not,
- * the process exits 1 and says the tree is not readable. That is not a hash match.
+ * Not part of npm test. The source commits are not ancestors of main. They are in
+ * this clone only as the annotated tags provenance/worker-119-db3e8548,
+ * provenance/worker-119-be6eb37f, and provenance/worker-119-4ba133b0.
+ * A missing object exits 1 and names the tag to fetch.
  */
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+
+const PROVENANCE_TAGS: Record<string, string> = {
+  db3e8548: "provenance/worker-119-db3e8548",
+  be6eb37f: "provenance/worker-119-be6eb37f",
+  "4ba133b0": "provenance/worker-119-4ba133b0",
+};
+
+function provenanceTag(sourceCommit: string): string {
+  const prefix = sourceCommit.slice(0, 8);
+  return PROVENANCE_TAGS[prefix] ?? `provenance/worker-119-${prefix}`;
+}
 
 type Entry = {
   path: string;
@@ -32,6 +45,14 @@ let failed = 0;
 
 for (const file of manifest.files) {
   const label = `${file.path}: sourceCommit ${file.sourceCommit} sourceBlob ${file.sourceBlob}`;
+  const objectType = git(["cat-file", "-t", file.sourceCommit]);
+  if (objectType === null) {
+    console.error(
+      `missing provenance object ${file.sourceCommit}: git fetch origin tag ${provenanceTag(file.sourceCommit)}`,
+    );
+    failed += 1;
+    continue;
+  }
   const listing = git(["ls-tree", "-r", file.sourceCommit]);
   if (listing === null) {
     console.error(`provenance mismatch: ${label}: sourceCommit is not a readable tree`);

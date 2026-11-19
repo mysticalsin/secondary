@@ -167,13 +167,35 @@ function verifySource(root: string): { ok: false; reason: string } | { ok: true;
   return { ok: true, files: manifest.files };
 }
 
-function lstatNode(path: string): "absent" | "file" | "link" | "error" {
+function lstatNode(path: string): "absent" | "file" | "link" | "other" | "error" {
   try {
-    return lstatSync(path).isSymbolicLink() ? "link" : "file";
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) return "link";
+    if (stat.isFile()) return "file";
+    return "other";
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
     return "error";
   }
+}
+
+function refuseSecretFiles(root: string): { ok: false; reason: string } | null {
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    return { ok: false, reason: "dev-vars-present" };
+  }
+  for (const name of names) {
+    if (name !== ".dev.vars" && !name.startsWith(".dev.vars.")) continue;
+    if (lstatNode(join(root, name)) !== "absent") return { ok: false, reason: "dev-vars-present" };
+  }
+  for (const name of names) {
+    if (name !== ".env" && !name.startsWith(".env.")) continue;
+    if (lstatNode(join(root, name)) !== "absent") return { ok: false, reason: "env-file-present" };
+  }
+  return null;
 }
 
 function configuredDirectory(root: string, config: Record<string, unknown>): { ok: false; reason: string } | { ok: true; path: string } {
@@ -185,7 +207,7 @@ function configuredDirectory(root: string, config: Record<string, unknown>): { o
 }
 
 function sourceSymlink(root: string): GuardResult | null {
-  for (const rel of ["deploy", SOURCE_DIR]) {
+  for (const rel of ["deploy", SOURCE_DIR, "deploy/graph", "deploy/graph-entry.ts"]) {
     const path = join(root, rel);
     try {
       if (lstatSync(path).isSymbolicLink()) return { ok: false, reason: "assets-symlink" };
@@ -198,7 +220,8 @@ function sourceSymlink(root: string): GuardResult | null {
 }
 
 function readConfig(root: string): { ok: true; config: Record<string, unknown> } | { ok: false; reason: string } {
-  if (lstatNode(join(root, ".dev.vars")) !== "absent") return { ok: false, reason: "dev-vars-present" };
+  const secret = refuseSecretFiles(root);
+  if (secret !== null) return secret;
   for (const rel of SHADOW_CONFIGS) {
     if (lstatNode(join(root, rel)) !== "absent") return { ok: false, reason: "config-shadow" };
   }
@@ -206,6 +229,7 @@ function readConfig(root: string): { ok: true; config: Record<string, unknown> }
   const configNode = lstatNode(configPath);
   if (configNode === "absent") return { ok: false, reason: "config-missing" };
   if (configNode === "link") return { ok: false, reason: "config-symlink" };
+  if (configNode === "other") return { ok: false, reason: "config-not-file" };
   if (configNode === "error") return { ok: false, reason: "config-unreadable" };
   try {
     const config = JSON.parse(stripJsonc(readFileSync(configPath, "utf8"))) as Record<string, unknown>;

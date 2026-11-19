@@ -2,11 +2,18 @@
 
 The user asked for this log for `deploy/`, and for the guard fix below. Comments were not stripped. Existing tests were not removed.
 
+- Make a bare `deploy.sh` a dry run, and refuse env files before Wrangler reads them.
+  - No arguments and `--dry-run` run the asset guard, then `wrangler deploy --dry-run --assets <tmp> --config wrangler.jsonc`. `--apply` is the only real deploy. `npm run deploy` is `./deploy.sh`. While `NODE_TEST_CONTEXT` is set or `NODE_ENV` is `test`, `--apply` exits 2 with `apply-under-test` and does not start Wrangler. The tests never start Wrangler without `--dry-run`.
+  - Wrangler 4.158.0 loads `.env` and `.env.local` for every command, including a dry run. In the deploy root, `lstat` refuses `.env`, `.env.local`, and `.env.*` with `env-file-present`, and `.dev.vars` plus `.dev.vars.*` with `dev-vars-present`. A file, a symlink, a dangling link, a directory, or a stat error is refused. `.gitignore` contains `.env*`.
+  - A directory, FIFO, or device named `wrangler.jsonc` is `config-not-file` and is not read. A hard link of a regular file is a regular file to `lstat` and is accepted. A symlink at `deploy/graph` or `deploy/graph-entry.ts` is `assets-symlink`.
+  - Known limit: `lstat` and Wrangler's later read are not atomic. A local writer during the run can change a file after the check. That needs local write access during the run.
+  - `deploy.sh` does not check the Wrangler version at deploy time. `package.json` pins `wrangler` at exactly `4.158.0` and the lockfile records that pin. `npm ci` installs it. Devin accepted that pin plus the lockfile, so there is no runtime assert.
+  - The five provenance `sourceCommit` objects are not ancestors of `main`. They exist here only as the annotated tags `provenance/worker-119-db3e8548`, `provenance/worker-119-be6eb37f`, and `provenance/worker-119-4ba133b0`. A missing object prints `missing provenance object <sha>: git fetch origin tag provenance/worker-119-<prefix>` and exits 1.
+  - Proof, with the `.env` loop removed from `refuseSecretFiles`: `harness/tests/v24-bindings.test.ts` exit 1, 30 tests, 29 passed, 1 failed. The only failure was `dotenv files and .dev.vars.* are refused like .dev.vars` (`{ ok: true }` against `env-file-present`). The loop was restored.
 - Refuse a symlinked `wrangler.jsonc` and a linked `.dev.vars`.
   - `existsSync` follows a symlink to `wrangler.jsonc` and treats a dangling `.dev.vars` link as absent.
-  - `lstat` now refuses a symlink with `config-symlink`. A `wrangler.jsonc` that is not a file, such as a directory, is `config-unreadable`. A path `lstat` cannot walk is refused at the first check. A `.dev.vars` file, symlink, dangling link, or stat error is `dev-vars-present`.
-  - `deploy.sh` does not check the Wrangler version at deploy time. `package.json` pins `wrangler` at exactly `4.158.0`.
-  - `.env` files are not checked.
+  - `lstat` now refuses a symlink with `config-symlink`. A directory at `wrangler.jsonc` was first reported as `config-unreadable`. The entry above reports that non-file as `config-not-file` and does not read it. A path `lstat` cannot walk is refused at the first check. A `.dev.vars` file, symlink, dangling link, or stat error is `dev-vars-present`.
+  - `deploy.sh` does not check the Wrangler version at deploy time. `package.json` pins `wrangler` at exactly `4.158.0`. The entry above keeps that, and records `npm ci` as the install.
 - Pin both Wrangler calls to `wrangler.jsonc`, and fail closed on a shadow config or an asset symlink.
   - Without `--config`, Wrangler 4.158.0 prefers `wrangler.json` over `wrangler.jsonc` and follows `.wrangler/deploy/config.json`.
   - `deploy.sh` passes `--config wrangler.jsonc` on both calls and uses `dirname -- "$0"`.
