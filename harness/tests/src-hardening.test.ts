@@ -714,6 +714,53 @@ async function directPublishSkips(vn: {
   );
 }
 
+test("twelve ancestors ending on null are open and thirteen are restricted", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null },
+      nodes: { get(id: string): { parentId?: string | null } | undefined },
+    ) => { restricted: boolean };
+  };
+  const chain = (count: number) => {
+    const nodes = new Map<string, { parentId: string | null }>();
+    nodes.set(`a${count}`, { parentId: null });
+    for (let i = count - 1; i >= 1; i -= 1) nodes.set(`a${i}`, { parentId: `a${i + 1}` });
+    return nodes;
+  };
+  assert.equal(restrictionOf({ parentId: "a1" }, chain(12)).restricted, false);
+  assert.equal(restrictionOf({ parentId: "a1" }, chain(13)).restricted, true);
+});
+
+test("direct publish still publishes an unflagged chain that ends at the hop cap", async () => {
+  const restore = await plantAncestorChain("c_deep", 12);
+  try {
+    assert.equal(
+      await directPublishSkips({ kind: "circle", parentId: "c_deep_1", restricted: false, nda: false }),
+      true,
+    );
+  } finally {
+    restore();
+  }
+});
+
+test("a parent cycle and a self-parent are restricted by the hop cap", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null },
+      nodes: { get(id: string): { parentId?: string | null } | undefined },
+    ) => { restricted: boolean };
+  };
+  const cycle = new Map<string, { parentId: string | null }>([
+    ["a", { parentId: "b" }],
+    ["b", { parentId: "a" }],
+  ]);
+  const self = new Map<string, { parentId: string | null }>([["s", { parentId: "s" }]]);
+  assert.equal(restrictionOf({ parentId: "a" }, cycle).restricted, true);
+  assert.equal(restrictionOf({ parentId: "s" }, self).restricted, true);
+});
+
 test("a throwing parent lookup is restricted and direct publish does not throw", async () => {
   const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { restrictionOf, directPublish } = (await import(openUrl)) as {

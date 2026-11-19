@@ -224,6 +224,36 @@ test("erasure runner: scope:c_delivery does not match scope:c_delivery_x", async
   }
 });
 
+test("erasure request drops a scope step that is not an anchored match", () => {
+  const illegal = [
+    "scope:c_delivery!",
+    `scope:${"a".repeat(129)}`,
+    "scopes:x",
+    "scope:C_delivery",
+  ];
+  const opened = requireOk(
+    commitErasure(absentErasure(), {
+      type: "request",
+      now: NOW,
+      steps: ["receipts", ...illegal, "scope:c_delivery"],
+    }),
+  ).state;
+  assert.deepEqual(opened.order, ["receipts", "scope:c_delivery"]);
+  for (const id of illegal) {
+    assert.equal(scopeIdOfStep(id), null, id);
+    assert.equal(opened.order.includes(id), false, id);
+  }
+  const again = requireOk(
+    commitErasure(opened, {
+      type: "request",
+      now: NOW + 1,
+      steps: ["personal", ...illegal, "scope:c_delivery"],
+    }),
+  ).state;
+  assert.deepEqual(again.order, ["receipts", "scope:c_delivery", "personal"]);
+  for (const id of illegal) assert.equal(again.order.includes(id), false, id);
+});
+
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {
   const seen: string[] = [];
   const saved: StoredErasure[] = [];
