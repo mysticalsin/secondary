@@ -105,7 +105,12 @@ function readManifest(assets: string): { ok: false; reason: string } | { ok: tru
   return { ok: true, files: want };
 }
 
-function stageCopies(destRoot: string, assets: string, files: Map<string, string>): GuardResult {
+export function copyThenRehash(
+  destRoot: string,
+  assets: string,
+  files: Map<string, string>,
+  afterCopy?: (dest: string) => void,
+): GuardResult {
   mkdirSync(destRoot, { recursive: true });
   for (const [rel, expected] of files) {
     let bytes: Buffer;
@@ -120,8 +125,7 @@ function stageCopies(destRoot: string, assets: string, files: Map<string, string
     const dest = assetPath(destRoot, rel);
     mkdirSync(join(dest, ".."), { recursive: true });
     writeFileSync(dest, bytes);
-    const replacement = process.env.DEPLOY_AFTER_COPY;
-    if (replacement !== undefined) writeFileSync(dest, replacement);
+    if (afterCopy !== undefined) afterCopy(dest);
     const copy = readFileSync(dest);
     if (!bytes.equals(copy) || createHash("sha256").update(copy).digest("hex") !== expected) {
       return { ok: false, reason: "assets-manifest-mismatch" };
@@ -212,7 +216,7 @@ export function stageDeploy(root: string, dest: string): GuardResult {
   }
   const verified = verifySource(root);
   if (!verified.ok) return verified;
-  return stageCopies(dest, join(root, SOURCE_DIR), verified.files);
+  return copyThenRehash(dest, join(root, SOURCE_DIR), verified.files);
 }
 
 const entry = process.argv[1] ?? "";

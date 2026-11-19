@@ -2,10 +2,15 @@
 
 The user asked for this log for `deploy/`, and for the guard fix below. Comments were not stripped. Existing tests were not removed.
 
+- Rehash through `copyThenRehash`, and do not read an environment variable while staging.
+  - `DEPLOY_AFTER_COPY` was test scaffolding on the real deploy path. A stray value could replace staged bytes. It is gone. `deploy/guard.ts` does not read `process.env`. `deploy.sh` and the guard CLI call `copyThenRehash` with no hook.
+  - The optional `afterCopy` argument runs after the write and before the rehash. The unit test passes a hook that replaces the file and expects `assets-manifest-mismatch`. That call does not start Wrangler.
+  - The test added in `5dbf2bad` expected the env var to refuse the deploy. That assertion is replaced: `deploy.sh` with `DEPLOY_AFTER_COPY` set still stages the original bytes and starts the stub.
+  - Proof, with the rehash removed and `afterCopy` left in place: `npm test` exit 1, 473 tests, 472 passed, 1 failed. The only failure was `afterCopy that replaces a staged file is refused and does not start wrangler` (`{ ok: true }` against `assets-manifest-mismatch`). The rehash was restored.
+  - The extra `chmod` stays removed. Same-user writes to the `0700` directory `mktemp -d` creates, during the Wrangler upload, remain an accepted residual.
 - Rehash each staged copy after the write, and do not chmod the temp directory.
   - The rehash after `writeFileSync` had no test. Deleting it left the suite green.
-  - `DEPLOY_AFTER_COPY` is the test seam. When set, it replaces the staged file after the write and before the rehash. A normal deploy leaves it unset. The rehash then refuses the deploy and Wrangler is not started.
-  - Proof, with those rehash lines removed and the seam left in place: `npm test` exit 1, 471 tests, 470 passed, 1 failed. The only failure was `a tmp copy changed after write and before rehash is refused` (99 !== 2). The rehash was restored.
+  - `DEPLOY_AFTER_COPY` was the test seam in `bc227aa`. Devin rejected it, and the next fix removes it. The proof below was for that seam: with the rehash removed, `npm test` exit 1, 471 tests, 470 passed, 1 failed, only `a tmp copy changed after write and before rehash is refused` (99 !== 2).
   - `chmod 0700` after `mktemp -d` was redundant. `mktemp -d` creates the directory mode `0700`.
   - Same-user writes to that `0700` directory during the Wrangler upload remain an accepted residual. The mode is the one `mktemp -d` creates.
 - Stage outside the path `wrangler.jsonc` names, and pass that temp directory with `--assets`.

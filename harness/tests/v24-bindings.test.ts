@@ -413,20 +413,41 @@ exit 7
   assert.deepEqual(readdirSync(tmpParent), []);
 });
 
-test("a tmp copy changed after write and before rehash is refused", () => {
+test("DEPLOY_AFTER_COPY on deploy.sh does not change the staged bytes", () => {
   const index = "alpha";
   const dir = assetFixture((assets) => {
     writeFileSync(join(assets, "index.html"), index);
     writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
   });
+  const record = join(dir, "staged-bytes");
+  const stub = join(dir, "node_modules", ".bin", "wrangler");
+  writeFileSync(
+    stub,
+    `#!/bin/sh
+assets=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--assets" ]; then
+    assets="$arg"
+  fi
+  prev="$arg"
+done
+if [ -n "$assets" ]; then
+  cat "$assets/index.html" > '${record}'
+fi
+echo wrangler-invoked >&2
+exit 7
+`,
+  );
+  chmodSync(stub, 0o755);
   const result = spawnSync("bash", ["deploy.sh"], {
     cwd: dir,
     encoding: "utf8",
     env: { ...process.env, DEPLOY_AFTER_COPY: "mutated" },
   });
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /assets-manifest-mismatch/);
-  assert.equal(result.stderr.includes("wrangler-invoked"), false);
+  assert.equal(result.status, 7);
+  assert.equal(result.stderr.includes("wrangler-invoked"), true);
+  assert.equal(readFileSync(record, "utf8"), index);
 });
 
 test("afterCopy that replaces a staged file is refused and does not start wrangler", async () => {

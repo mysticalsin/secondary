@@ -27,7 +27,7 @@ A real deploy (`deploy.sh` with no arguments) checks the asset directory in this
 
 ## Upload directory
 
-`assets.directory` in `wrangler.jsonc` names `deploy/.staged`. The guard does not create it. If it exists, the result is `assets-directory-present`. A missing, absolute, escaping, or `deploy/assets` value is `assets-directory-mismatch`. The bytes Wrangler reads are a `mktemp -d` directory (mode `0700`) passed with `--assets`. The guard hashes each copy after writing it. `DEPLOY_AFTER_COPY` replaces that copy only when the test sets it. `deploy.sh` removes that temp directory on exit.
+`assets.directory` in `wrangler.jsonc` names `deploy/.staged`. The guard does not create it. If it exists, the result is `assets-directory-present`. A missing, absolute, escaping, or `deploy/assets` value is `assets-directory-mismatch`. The bytes Wrangler reads are a `mktemp -d` directory (mode `0700`) passed with `--assets`. `copyThenRehash` hashes each copy after writing it. An `afterCopy` hook is optional and is not passed by `deploy.sh` or the guard CLI. Staging reads no environment variable. `deploy.sh` removes that temp directory on exit.
 
 ## What this repo contains
 

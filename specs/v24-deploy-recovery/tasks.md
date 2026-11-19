@@ -105,7 +105,16 @@
 **Independent Test**: T017 fails on `5dbf2ba`, then T018 passes. Deleting the rehash turns only that test red.
 
 - [x] T017 [US5] Add one failing test. `DEPLOY_AFTER_COPY` replaces the temp copy after the write and before the rehash. `deploy.sh` exits 2 with `assets-manifest-mismatch` and does not start Wrangler. Covers FR-016.
-- [x] T018 [US5] Honor `DEPLOY_AFTER_COPY` between the write and the rehash. Drop the `chmod 0700` after `mktemp -d`. Record the proof that deleting the rehash fails only this test. Do not invent UI bytes and do not run a real deploy. Covers FR-016.
+- [x] T018 [US5] Honor `DEPLOY_AFTER_COPY` between the write and the rehash. Drop the `chmod 0700` after `mktemp -d`. Record the proof that deleting the rehash fails only this test. Do not invent UI bytes and do not run a real deploy. Covers FR-016. T020 removes the env seam.
+
+## Phase 13: Hook instead of an env seam (Priority: P1)
+
+**Goal**: The rehash is tested through an exported function. The deploy path reads no environment variable.
+
+**Independent Test**: T019 fails on `5a18583`, then T020 passes. Deleting the rehash turns only the `afterCopy` test red.
+
+- [x] T019 [US5] Add failing tests. `copyThenRehash` is missing, so a hook cannot replace a staged file. `deploy/guard.ts` still contains `DEPLOY_AFTER_COPY`. Covers FR-016.
+- [x] T020 [US5] Export `copyThenRehash` with an optional `afterCopy`. Call it from the deploy path with no hook. Remove every `process.env` read from `deploy/guard.ts`. Replace the `5dbf2bad` assertion that expected the env var to refuse a deploy. Record the proof that deleting the rehash fails only the hook test. Do not invent UI bytes and do not run a real deploy. Covers FR-016.
 
 ## Dependencies & Execution Order
 
@@ -130,6 +139,8 @@
 - T016 depends on the red run of T015.
 - T017 is a failing test and depends on T016.
 - T018 depends on the red run of T017.
+- T019 is a failing test and depends on T018.
+- T020 depends on the red run of T019.
 
 ### Parallel Opportunities
 
@@ -138,4 +149,4 @@
 
 ## Implementation Strategy
 
-T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. T017 lands as a failing test. T018 makes that test pass, drops the extra chmod, and records the rehash deletion proof. No task deploys, and no task writes live UI bytes.
+T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. T017 lands as a failing test. T018 makes that test pass, drops the extra chmod, and records the rehash deletion proof. T019 lands as a failing test. T020 removes the env seam and records the hook-test deletion proof. No task deploys, and no task writes live UI bytes.
