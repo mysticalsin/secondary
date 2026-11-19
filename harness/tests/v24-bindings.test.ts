@@ -429,6 +429,66 @@ test("a tmp copy changed after write and before rehash is refused", () => {
   assert.equal(result.stderr.includes("wrangler-invoked"), false);
 });
 
+test("afterCopy that replaces a staged file is refused and does not start wrangler", async () => {
+  const guard = (await import("../../deploy/guard.ts")) as {
+    copyThenRehash?: (
+      destRoot: string,
+      assets: string,
+      files: Map<string, string>,
+      afterCopy?: (dest: string) => void,
+    ) => { ok: true } | { ok: false; reason: string };
+  };
+  assert.equal(typeof guard.copyThenRehash, "function");
+  const index = "alpha";
+  const dir = mkdtempSync(join(tmpdir(), "v24-rehash-"));
+  const assets = join(dir, "assets");
+  const destRoot = join(dir, "staged");
+  mkdirSync(assets);
+  writeFileSync(join(assets, "index.html"), index);
+  const result = guard.copyThenRehash!(
+    destRoot,
+    assets,
+    new Map([["index.html", sha256(index)]]),
+    (copied) => {
+      writeFileSync(copied, "mutated");
+    },
+  );
+  assert.deepEqual(result, { ok: false, reason: "assets-manifest-mismatch" });
+  assert.equal(readFileSync(join(destRoot, "index.html"), "utf8"), "mutated");
+});
+
+test("DEPLOY_AFTER_COPY is absent and does not change staged bytes", async () => {
+  const guardText = readFileSync(join(root, "deploy/guard.ts"), "utf8");
+  const scriptText = readFileSync(join(root, "deploy.sh"), "utf8");
+  assert.equal(guardText.includes("DEPLOY_AFTER_COPY"), false);
+  assert.equal(scriptText.includes("DEPLOY_AFTER_COPY"), false);
+  assert.equal(guardText.includes("process.env"), false);
+  const guard = (await import("../../deploy/guard.ts")) as {
+    copyThenRehash?: (
+      destRoot: string,
+      assets: string,
+      files: Map<string, string>,
+    ) => { ok: true } | { ok: false; reason: string };
+  };
+  assert.equal(typeof guard.copyThenRehash, "function");
+  const index = "alpha";
+  const dir = mkdtempSync(join(tmpdir(), "v24-env-"));
+  const assets = join(dir, "assets");
+  const destRoot = join(dir, "staged");
+  mkdirSync(assets);
+  writeFileSync(join(assets, "index.html"), index);
+  const previous = process.env.DEPLOY_AFTER_COPY;
+  process.env.DEPLOY_AFTER_COPY = "mutated";
+  try {
+    const result = guard.copyThenRehash!(destRoot, assets, new Map([["index.html", sha256(index)]]));
+    assert.deepEqual(result, { ok: true });
+    assert.equal(readFileSync(join(destRoot, "index.html"), "utf8"), index);
+  } finally {
+    if (previous === undefined) delete process.env.DEPLOY_AFTER_COPY;
+    else process.env.DEPLOY_AFTER_COPY = previous;
+  }
+});
+
 test("an empty unreproduced directory in any case is refused", () => {
   const index = "alpha";
   const manifest = `${sha256(index)}  index.html\n`;
