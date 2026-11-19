@@ -26,7 +26,7 @@
   "src/worker/connector.ts": "a3ebd678d5c3db53c49e64181903f730f7f5364672bd4bc2afa4b6d219cf5d8c",
   "src/worker/internal-auth.ts": "bcb6474080d646ec7f9f80dae0d27212618c8d66f0e5f70a88bcfcb5149d2e0e",
   "src/worker/observe.ts": "b73a384af81adc5e84e619d92e5a1f1cc40efd2c553bd583c0b577b101f6dae3",
-  "src/worker/ops-admin.ts": "af36b9797b8cfec61d3adedc760b50cd99a945e87eece4fb4b87e82a649aa1b6",
+  "src/worker/ops-admin.ts": "58aab1f354a68104f2a5a2475dfeac23956cbb1b0f26b7fba48ec4c738b4fcd0",
   "src/worker/ops-internal.ts": "2c6d9f9c4f0e7fb655c703141954b73d1df8d511237319fccc20f5cd8d78cfb3",
   "src/worker/ops-rights.ts": "387cabe065c212b02adf3d7333377b205324eb78d25a6efdf5909ec209eea92c",
   "src/worker/org.ts": "85e56620309d5181ed972cf43294557dbce34dfdf501782e630c45e465f41293",

@@ -266,11 +266,11 @@ export function erasureWithGrant(existing: StoredErasure, grant: ErasureGrant): 
 
 /** Receipts, the tombstone, each company scope, the personal brain, the connector, then the directory. */
 export function erasurePlan(companyScopes: readonly string[]): string[] {
-  const scopes = companyScopes.filter((scope) => SCOPE_ID.test(scope));
+  if (companyScopes.some((scope) => !SCOPE_ID.test(scope))) throw new Error("invalid_scope");
   return [
     "receipts",
     "tombstone",
-    ...scopes.map((scope) => `scope:${scope}`),
+    ...companyScopes.map((scope) => `scope:${scope}`),
     "personal",
     "connector",
     "directory",

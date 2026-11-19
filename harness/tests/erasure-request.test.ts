@@ -160,12 +160,15 @@ test("erasure request: only the exact step forms are readable", () => {
   assert.deepEqual(kept.order, ["receipts", "scope:c_delivery"]);
 });
 
-test("erasure plan keeps only a scope id the step grammar accepts", () => {
-  const plan = erasurePlan(["c_delivery", "bad id", "a\nb", "café", "a".repeat(129), ""]);
-  assert.equal(plan.includes("scope:c_delivery"), true);
-  for (const bad of ["scope:bad id", "scope:a\nb", "scope:café", `scope:${"a".repeat(129)}`, "scope:"]) {
-    assert.equal(plan.includes(bad), false, bad);
-  }
+test("erasure plan keeps a company scope the grammar accepts", () => {
+  assert.deepEqual(erasurePlan(["c_delivery"]), [
+    "receipts",
+    "tombstone",
+    "scope:c_delivery",
+    "personal",
+    "connector",
+    "directory",
+  ]);
 });
 
 test("erasure plan refuses a company scope the grammar rejects", () => {

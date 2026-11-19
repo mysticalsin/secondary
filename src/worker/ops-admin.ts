@@ -218,7 +218,14 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "cannot_erase_self" }, 409);
 
     const tenant = tenantStub(c.env, s.tenantId);
-    const plan = erasurePlan(companyScopes(org));
+    let plan: string[];
+    try {
+      plan = erasurePlan(companyScopes(org));
+    } catch (error) {
+      if (error instanceof Error && error.message === "invalid_scope")
+        return c.json({ error: "invalid_scope" }, 422);
+      throw error;
+    }
     const existing = decodeErasureLedger(await tenant.erasureLoad(principalId), principalId);
     const tag = existing.status.tag;
     const resumable =
