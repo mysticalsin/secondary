@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -262,4 +262,87 @@ test("asset drop-in: deploy.sh refuses a marker or a manifest mismatch and the g
   assert.equal(passed.stderr.includes("wrangler-invoked"), false);
   assert.deepEqual(guard.guardRoot(matched, "deploy"), { ok: true });
   assert.deepEqual(readdirSync(join(root, "deploy", "assets")), ["UNREPRODUCED"]);
+});
+
+function writeAssetDirectory(dir: string, directory: string): void {
+  const text = readFileSync(join(dir, "wrangler.jsonc"), "utf8");
+  const next = text.replace(/"directory":\s*"[^"]+"/, `"directory": "${directory}"`);
+  assert.match(next, new RegExp(`"directory": "${directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+  writeFileSync(join(dir, "wrangler.jsonc"), next);
+}
+
+test("npm run deploy is the guard, and a direct wrangler deploy has no staging directory", () => {
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  assert.equal(pkg.scripts.deploy, "./deploy.sh");
+  const config = readConfig();
+  const assets = config.assets as { directory: string };
+  assert.equal(assets.directory.replace(/^\.\//, ""), "deploy/.staged");
+  assert.equal(existsSync(join(root, "deploy/.staged")), false);
+  const ignore = readFileSync(join(root, ".gitignore"), "utf8");
+  assert.match(ignore, /(^|\n)deploy\/\.staged\/?(?:\n|$)/);
+  const result = spawnSync("npm", ["run", "deploy"], { cwd: root, encoding: "utf8" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /assets-unreproduced/);
+  assert.equal(result.stderr.includes("wrangler-invoked"), false);
+  assert.equal(result.stdout.includes("Uploaded"), false);
+});
+
+test("a case-variant unreproduced sentinel is refused", () => {
+  const body = "sentinel";
+  const index = "alpha";
+  const dir = assetFixture((assets) => {
+    writeFileSync(join(assets, "unreproduced"), body);
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(
+      join(assets, "MANIFEST.sha256"),
+      `${sha256(index)}  index.html\n${sha256(body)}  unreproduced\n`,
+    );
+  });
+  refuseDeploy(dir, "assets-unreproduced");
+});
+
+test("an assets.directory that is the source tree is refused", async () => {
+  const guard = (await import("../../deploy/guard.ts")) as {
+    guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
+  };
+  const index = "alpha";
+  const dir = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
+  });
+  writeAssetDirectory(dir, "./deploy/assets");
+  assert.deepEqual(guard.guardRoot(dir, "deploy"), { ok: false, reason: "assets-directory-mismatch" });
+  const escaped = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
+  });
+  writeAssetDirectory(escaped, "../outside");
+  assert.deepEqual(guard.guardRoot(escaped, "deploy"), { ok: false, reason: "assets-directory-mismatch" });
+});
+
+test("bytes changed after verify are not the bytes wrangler would upload", () => {
+  const index = "alpha";
+  const dir = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
+  });
+  writeAssetDirectory(dir, "./deploy/from-config");
+  const passed = spawnSync(
+    "node",
+    ["--experimental-strip-types", "deploy/guard.ts", "deploy"],
+    { cwd: dir, encoding: "utf8" },
+  );
+  assert.equal(passed.status, 0);
+  const stagedPath = join(dir, "deploy/from-config/index.html");
+  assert.equal(readFileSync(stagedPath, "utf8"), index);
+  writeFileSync(join(dir, "deploy/assets/index.html"), "mutated");
+  assert.equal(readFileSync(stagedPath, "utf8"), index);
+  const again = spawnSync("bash", ["deploy.sh"], { cwd: dir, encoding: "utf8" });
+  assert.equal(again.status, 2);
+  assert.match(again.stderr, /assets-manifest-mismatch/);
+  assert.equal(again.stderr.includes("wrangler-invoked"), false);
+  const uploaded = existsSync(stagedPath) ? readFileSync(stagedPath, "utf8") : index;
+  assert.equal(uploaded, index);
 });
