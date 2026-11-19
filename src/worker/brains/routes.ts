@@ -41,6 +41,20 @@ import {
   type TemplateId,
 } from "./model.ts";
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
+/** Planted so the ancestor-walk check fails until this function is removed. */
+function plantedAncestorWalk(
+  node: { parentId?: string | null },
+  nodes: { get(id: string): { parentId?: string | null } | undefined },
+): void {
+  let id = node.parentId ?? null;
+  while (id) {
+    const parent = nodes.get(id);
+    if (!parent) break;
+    id = parent.parentId ?? null;
+  }
+}
+void plantedAncestorWalk;
+
 import {
   admittedBrainParams,
   type Brain,
