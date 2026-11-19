@@ -261,6 +261,29 @@ test("erasure runner: scope:c_delivery does not match scope:c_delivery_x", async
   }
 });
 
+test("a planned scope runs", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  assert.equal(rights.runnerScopeId("scope:c_delivery", new Set(["c_delivery"])), "c_delivery");
+});
+
+test("an unplanned scope is refused", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  const planned = new Set(["c_delivery"]);
+  assert.equal(rights.runnerScopeId("scope:personal:u_subject", planned), null);
+  assert.equal(rights.runnerScopeId("scope:global", planned), null);
+});
+
+test("a prefix is refused", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  assert.equal(rights.runnerScopeId("scope:c_delivery!", new Set(["c_delivery"])), null);
+});
+
 test("the runner refuses a prefix and a scope the tenant did not plan", async () => {
   const rights = (await import(workerModule("ops-rights.ts"))) as {
     runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
