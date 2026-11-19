@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createContext, runInContext } from "node:vm";
+import { runGraphScript } from "./run-graph-script.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -168,7 +167,7 @@ async function load(file: string, cards: Card[], pagesById: Record<string, Page[
   };
   const context = createContext(sandbox);
   runInContext(PRELUDE, context);
-  runInContext(readFileSync(join(root, file), "utf8"), context);
+  runGraphScript(root, file, context);
   const elements = sandbox.__elements as Record<string, { value: string; textContent?: string; childNodes: { value?: string; textContent?: string; childNodes?: unknown[] }[] }>;
   const selectId = file.endsWith("dashboard.js.txt") ? "brain" : "workspace";
   const deadline = Date.now() + (cards.length === 0 ? 50 : 1000);

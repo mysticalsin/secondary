@@ -9,6 +9,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createContext, runInContext } from "node:vm";
+import { runGraphScript } from "./run-graph-script.ts";
 
 const root = fileURLToPath(new URL("../../deploy/graph/", import.meta.url));
 const repo = fileURLToPath(new URL("../..", import.meta.url));
@@ -20,6 +21,7 @@ const files: Record<string, readonly [string, string]> = {
   "/graph/app.css": ["app.css", "text/css; charset=utf-8"],
   "/graph/dashboard.css": ["dashboard.css", "text/css; charset=utf-8"],
   "/graph/app.js": ["app.js.txt", "text/javascript; charset=utf-8"],
+  "/graph/fetch-bound.js": ["fetch-bound.js.txt", "text/javascript; charset=utf-8"],
   "/graph/dashboard.js": ["dashboard.js.txt", "text/javascript; charset=utf-8"],
 };
 
@@ -485,7 +487,7 @@ async function boot(file: string, fetchImpl: (url: URL) => Promise<Response> | R
   };
   const context = createContext(sandbox);
   runInContext(PRELUDE, context);
-  runInContext(readFileSync(join(repo, file), "utf8"), context);
+  runGraphScript(repo, file, context);
   const elements = sandbox.__elements as Record<string, { textContent?: string }>;
   const deadline = Date.now() + 1500;
   let text = "";

@@ -2,13 +2,14 @@
 // the caller's admitted view, folders are the wiki page types, leaves are pages. A workspace the caller
 // can see by name only is "locked" (name, no children). A workspace the view does not reach is absent,
 // so an NDA account the caller has no grant for leaves no trace. Pages whose cited sources the caller
-// cannot read are left out, and a folder that lost pages says "partial".
+// cannot read are left out, and a folder that lost pages says "partial". A brain that does not
+// answer within the bound is returned as "degraded" so the others are not held.
 
 import { isPersonalKind, opensBrain } from "@secondary/policy";
 import { Hono } from "hono";
 import { viewOf } from "../auth.ts";
 import { scopeOfNode } from "../scope.ts";
-import type { AppEnv } from "../types.ts";
+import type { AppDeps, AppEnv } from "../types.ts";
 import { type C, sess } from "../ux/util.ts";
 import {
   admittedWikis,
@@ -24,21 +25,60 @@ export type TreeNode = {
   id: string;
   label: string;
   kind: "workspace" | "folder" | "page";
-  access: "full" | "partial" | "locked";
+  access: "full" | "partial" | "locked" | "degraded";
   count?: number;
   children?: TreeNode[];
 };
 
 const MAX_PAGES_PER_FOLDER = 200;
+const TREE_BOUND_MS = 2_500;
 
-export function treeRoutes(): Hono<AppEnv> {
+/**
+ * One brain has this long to answer. The timer ends the wait. `wikiPages` takes no signal, so
+ * that SQL read runs to completion. A value that arrives in the abort turn is left out of the
+ * response. A read that never settles is a miss on the following turn, so one hung brain does
+ * not hold the others.
+ */
+function within<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promise<T | "miss"> {
+  const ac = new AbortController();
+  return new Promise((resolve) => {
+    let settled = false;
+    let safety: ReturnType<typeof setTimeout> | undefined;
+    const finish = (value: T | "miss") => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (safety !== undefined) clearTimeout(safety);
+      resolve(value);
+    };
+    const timer = setTimeout(() => ac.abort(), ms);
+    // The work may register its abort listener before this one, so a late resolve is queued
+    // first and the miss rule leaves it out of the response. This listener ends the wait when
+    // the read ignores the signal. It does not cancel wikiPages.
+    const pending = work(ac.signal);
+    ac.signal.addEventListener(
+      "abort",
+      () => {
+        safety = setTimeout(() => finish("miss"), 0);
+      },
+      { once: true },
+    );
+    pending.then(
+      (value) => finish(ac.signal.aborted ? "miss" : value),
+      () => finish("miss"),
+    );
+  });
+}
+
+export function treeRoutes(deps: AppDeps = {}): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
+  const ms = deps.treeBoundMs ?? TREE_BOUND_MS;
 
   r.get("/brain/tree", async (c) => {
     const root = c.req.query("root");
     if (root !== undefined && root !== "personal" && root !== "company")
       throw badRequest("invalid_root");
-    return c.json({ roots: await brainTree(c, root) });
+    return c.json({ roots: await brainTree(c, root, ms) });
   });
 
   return r;
@@ -47,6 +87,7 @@ export function treeRoutes(): Hono<AppEnv> {
 export async function brainTree(
   c: C,
   root: "personal" | "company" | undefined,
+  ms = TREE_BOUND_MS,
 ): Promise<TreeNode[]> {
   const s = sess(c);
   const view = viewOf(s);
@@ -82,23 +123,40 @@ export async function brainTree(
             access: "locked" as const,
           }));
 
-  const per = await Promise.all(
+  const settled = await Promise.all(
     wanted.map(async (t) => {
       const stub = stubOf(c, t.scope);
-      const [pages, schema] = await Promise.all([stub.wikiPages(), stub.wikiSchema()]);
-      return { t, stub, pages, schema };
+      const read = await within(ms, async (signal) => {
+        // The real wikiPages() takes no signal. The extra argument does not cancel the SQL read.
+        const readPages = stub.wikiPages as (signal?: AbortSignal) => ReturnType<typeof stub.wikiPages>;
+        const [pages, schema] = await Promise.all([
+          Promise.resolve(readPages(signal)),
+          Promise.resolve(stub.wikiSchema()),
+        ]);
+        const [ok] = await readableMany(c, [
+          {
+            w: { view, personal: t.personal, stub },
+            ids: pages.flatMap((x) => citationsOf(x.markdown)),
+          },
+        ]);
+        return { pages, schema, ok };
+      });
+      if (read === "miss") return { t, miss: true as const };
+      return { t, miss: false as const, ...read };
     }),
   );
-  const oks = await readableMany(
-    c,
-    per.map((p) => ({
-      w: { view, personal: p.t.personal, stub: p.stub },
-      ids: p.pages.flatMap((x) => citationsOf(x.markdown)),
-    })),
-  );
+  const per = settled.filter((p) => !p.miss);
+  const degraded: TreeNode[] = settled
+    .filter((p) => p.miss)
+    .map((p) => ({
+      id: p.t.param,
+      label: p.t.label,
+      kind: "workspace" as const,
+      access: "degraded" as const,
+    }));
 
-  const open: TreeNode[] = per.map((p, i) => {
-    const ok = oks[i] as Parameters<typeof pageVisible>[1];
+  const open: TreeNode[] = per.map((p) => {
+    const ok = p.ok as Parameters<typeof pageVisible>[1];
     let hidden = 0;
     const byType = new Map<string, TreeNode[]>();
     const partialType = new Set<string>();
@@ -137,7 +195,7 @@ export async function brainTree(
     };
   });
   // The Personal Brain first, then company workspaces by name.
-  return [...open, ...locked].sort(
+  return [...open, ...locked, ...degraded].sort(
     (a, b) => Number(b.id === "me") - Number(a.id === "me") || a.label.localeCompare(b.label),
   );
 }

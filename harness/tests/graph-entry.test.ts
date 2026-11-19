@@ -16,13 +16,14 @@ function rewrite(response: Response): Response {
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
 const FILES: { path: string; repo: string; type: string; sha256: string }[] = [
-  [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "5fae8dbc9ae5a999ddedd8e3b558d173196814cf33d3554383226b3a97f91940"],
-  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "d00201705a0070333591d0fc18efc824550653bb5433b078f21471dd81469d3b"],
+  [" /graph", "deploy/graph/page.html", "text/html; charset=utf-8", "49151dd7148c0975bbfb9e9b4753eb4bbd1379f996ba1a7c4a4b9a2bd68ace9a"],
+  ["/graph/app.js", "deploy/graph/app.js.txt", "text/javascript; charset=utf-8", "d7aad166a14238e8d4f0e74617053a18a7a272e7be6697b044b5c62309ecaaf7"],
+  ["/graph/fetch-bound.js", "deploy/graph/fetch-bound.js.txt", "text/javascript; charset=utf-8", "0ac465aeb7e507160b7a2a31337de5db9fb30ed12da9c803c0aa4e628c09786c"],
   ["/graph/app.css", "deploy/graph/app.css", "text/css; charset=utf-8", "58a84df162b081c856a185f0f147838f2351ee604a359f47e0c0e927d89f20a3"],
   ["/graph/nav.js", "deploy/graph/nav.js.txt", "text/javascript; charset=utf-8", "ae5dc4a2b01105c7f0cad18246d140423b6eb366defc133127c4f82a0aacfb4a"],
   ["/graph/nav.css", "deploy/graph/nav.css", "text/css; charset=utf-8", "581e4d30582f5b1415b694a165e155b1b9b1ec54e5050484be3a51dac3c404af"],
-  ["/dashboard", "deploy/graph/dashboard.html", "text/html; charset=utf-8", "32a9b9b9860026fa1581ede4b238c857f8ff0d1d954dc87c75a218e0a07ef345"],
-  ["/graph/dashboard.js", "deploy/graph/dashboard.js.txt", "text/javascript; charset=utf-8", "b891973870f7c81165a545f3727c793b99f61a828dcc939e53e1ae310c49f4eb"],
+  ["/dashboard", "deploy/graph/dashboard.html", "text/html; charset=utf-8", "10f3363c52baf020683ccf3cf790b84713a05827b5d37806072e6d4b8e14413f"],
+  ["/graph/dashboard.js", "deploy/graph/dashboard.js.txt", "text/javascript; charset=utf-8", "af5171f2eab913ef28dc342a4a33ae088e9f61d29f322bb7857b782e6194489d"],
   ["/graph/dashboard.css", "deploy/graph/dashboard.css", "text/css; charset=utf-8", "f2ed6925ef5e781b2e4930d1ab5a00f9e5560170d3c37b273b40cafa3d098db8"],
 ].map(([path, repo, type, sha256]) => ({ path: path.trim(), type, repo, sha256 }));
 
