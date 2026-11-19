@@ -13,15 +13,21 @@ if [[ $# -eq 1 ]]; then
   fi
   mode="dry-run"
 fi
-node --experimental-strip-types deploy/guard.ts "$mode"
+tmp=$(mktemp -d)
+chmod 0700 "$tmp"
+trap 'rm -rf "$tmp"' EXIT
+if [[ "$mode" == "deploy" ]]; then
+  node --experimental-strip-types deploy/guard.ts deploy "$tmp"
+else
+  node --experimental-strip-types deploy/guard.ts dry-run
+fi
 set +e
+export WRANGLER_SEND_METRICS=false
 if [[ "$mode" == "dry-run" ]]; then
-  export WRANGLER_SEND_METRICS=false
-  ./node_modules/.bin/wrangler deploy --dry-run
+  ./node_modules/.bin/wrangler deploy --dry-run --assets "$tmp"
   status=$?
 else
-  ./node_modules/.bin/wrangler deploy
+  ./node_modules/.bin/wrangler deploy --assets "$tmp"
   status=$?
 fi
-node --experimental-strip-types deploy/guard.ts cleanup
 exit "$status"

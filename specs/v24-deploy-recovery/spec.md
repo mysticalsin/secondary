@@ -29,11 +29,14 @@ Answers below are facts checked against the v24 reference, Wrangler 4.158.0's co
 
 ### Session 2026-11-19 review
 
-- Q: What does a direct `wrangler deploy` upload? → A: Only `assets.directory` from `wrangler.jsonc`. That field is `deploy/.staged`. It is gitignored and absent unless the guard has just written it. `npm run deploy` is `./deploy.sh`. The guard is the only writer of that directory.
+- Q: What does a direct `wrangler deploy` upload? → A: The directory in `assets.directory`, which is `deploy/.staged`. The guard never creates that path. While it is absent, Wrangler 4.158.0 `deploy --dry-run` exits 1 and does not create it. `npm run deploy` is `./deploy.sh`.
 - Q: Which directory does the guard read? → A: The upload directory comes from `assets.directory` and from nowhere else. `deploy/assets` is the drop-in source, not the upload directory. If the configured directory is missing, absolute, escapes the repo, or is `deploy/assets` or inside it, the result is `assets-directory-mismatch`.
-- Q: How is the check tied to the bytes Wrangler reads? → A: The guard copies the listed source bytes into the configured directory and hashes those copies. Wrangler is started only after that. A later edit to the source is not what those copies contain. `deploy.sh` removes the directory after Wrangler returns.
+- Q: How is the check tied to the bytes Wrangler reads? → A: The guard copies the listed source bytes into the temp directory named by `--assets` and hashes those copies. A later edit to the source is not what those copies contain. The configured directory is not written.
 - Q: What counts as the unreproduced sentinel? → A: Any path segment that case-folds to `unreproduced`. A file named `unreproduced` is refused even when the manifest lists its real hash.
 - Q: Why is `b15efb94` between the merge and the red test? → A: That commit is the asset-manifest spec. The red test is the next commit, `48daa28`. History is not rewritten.
+- Q: Where are the bytes Wrangler reads staged? → A: In a fresh `mktemp -d` directory, mode `0700`, never under the configured path. `deploy.sh` runs `wrangler deploy --assets <tmp>` and `trap 'rm -rf "$tmp"' EXIT`. If the configured path exists at all, the guard refuses with `assets-directory-present` and does not delete it. Wrangler 4.158.0 `--dry-run --assets` reads that temp directory instead of `deploy/.staged`: an empty temp dir exits 0 and reports 0 files; a temp dir with one file exits 0 and reports 1 file. No login and no token.
+- Q: What if the same user writes the temp directory during upload? → A: Accepted residual. The directory is mode `0700`. A same-user write during the Wrangler process is not blocked.
+- Q: Which older assertion changed from `deploy/assets` to `deploy/.staged`? → A: `harness/tests/v24-bindings.test.ts` in `b6254be`. Devin accepted that edit. The bytes test in the following green commit no longer expects a write into the configured directory.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -137,7 +140,9 @@ A reviewer can see that `pending_role` and `pending_at` do not require a new Dur
 - A path with an empty, `.`, or `..` segment, a leading slash, a backslash, or a space is a mismatch. So is `MANIFEST.sha256`, `UNREPRODUCED`, or a duplicate path.
 - An empty manifest, a symlink under `deploy/assets/`, and a directory that is not the manifest plus the listed files are mismatches.
 - `--dry-run` does not read the marker or the manifest.
-- A direct Wrangler deploy, while `deploy/.staged` is absent, has no asset directory to upload.
+- A direct Wrangler deploy, while `deploy/.staged` is absent, exits 1 and does not create that directory.
+- An empty directory named `unreproduced` in any case, at any depth, is `assets-unreproduced`.
+- A configured directory that already exists is `assets-directory-present` and is left in place.
 - `npm run deploy` is `./deploy.sh`. A case-variant of `unreproduced` exits 2.
 - The spec commit `b15efb94` sits between the merge and the red test `48daa28`. It stays in the history.
 
@@ -160,7 +165,7 @@ A reviewer can see that `pending_role` and `pending_at` do not require a new Dur
 - **FR-013**: This feature does not deploy, does not merge the pull request, does not force-push, does not push `main`, does not call the Cloudflare API, does not create a paid resource, does not open a tunnel, and does not read an API token. The one merge of main into this branch is the owner's 2026-11-19 instruction.
 - **FR-014**: `workers_dev` is true, `preview_urls` is false, `logpush` is false, and the config has no `routes`, no `account_id`, and no `observability` object.
 - **FR-015**: Without `--dry-run`, `deploy.sh` exits 2 when `deploy/assets/MANIFEST.sha256` is missing, or when any file named there mismatches the rule in `contracts/asset-manifest.md`. The guard passes that check only for a matching manifest and the files it names. The pass case is a temporary fixture. It does not start Wrangler.
-- **FR-016**: On a real deploy the guard reads `assets.directory`, refuses `assets-directory-mismatch` when that value is not a relative upload directory outside `deploy/assets`, copies the listed source bytes into it, and hashes the copies before Wrangler can read them. A source edit after that copy does not change the copies. `deploy.sh` deletes the directory after Wrangler returns. A direct Wrangler deploy, while the directory is absent, has nothing to upload.
+- **FR-016**: The guard reads `assets.directory` and never creates it. A missing, absolute, escaping, or `deploy/assets` value is `assets-directory-mismatch`. If that path exists, the result is `assets-directory-present` and the path is not deleted. A real deploy copies the listed source bytes into a new `0700` temp directory outside that path, hashes the copies, and runs Wrangler with `--assets` set to the temp directory. `trap 'rm -rf "$tmp"' EXIT` removes it, including when Wrangler exits non-zero. An empty directory whose name case-folds to `unreproduced` is `assets-unreproduced`. A same-user write to the temp directory during upload is an accepted residual.
 
 ### Key Entities
 

@@ -27,7 +27,7 @@ A real deploy (`deploy.sh` with no arguments) checks the asset directory in this
 
 ## Upload directory
 
-`assets.directory` in `wrangler.jsonc` is the only upload path. In this repo it is `deploy/.staged`. The guard copies the listed files there and hashes the copies. A configured path that is missing, absolute, escapes the repo, or is `deploy/assets` or inside it is `assets-directory-mismatch`.
+`assets.directory` in `wrangler.jsonc` names `deploy/.staged`. The guard does not create it. If it exists, the result is `assets-directory-present`. A missing, absolute, escaping, or `deploy/assets` value is `assets-directory-mismatch`. The bytes Wrangler reads are a `0700` temp directory passed with `--assets`. `deploy.sh` removes that temp directory on exit.
 
 ## What this repo contains
 

@@ -33,7 +33,7 @@ One entry. Tag `v3`. `new_sqlite_classes` is `TenantPolicy` then `Workspace`. No
 
 ## Upload directory
 
-`deploy/.staged` is the directory named by `assets.directory`. It is not committed. The guard writes the listed source bytes there and hashes those writes. Wrangler reads that directory and no other asset path.
+`deploy/.staged` is the directory named by `assets.directory`. It is not committed and the guard does not create it. If it exists, deploy is refused and the directory is left as it is. The bytes Wrangler reads live in a `0700` temp directory created by `deploy.sh` and passed with `--assets`.
 
 ## Asset manifest
 

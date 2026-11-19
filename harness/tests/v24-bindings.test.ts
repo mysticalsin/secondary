@@ -329,22 +329,21 @@ test("bytes changed after verify are not the bytes wrangler would upload", () =>
     writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
   });
   writeAssetDirectory(dir, "./deploy/from-config");
+  const outside = mkdtempSync(join(tmpdir(), "v24-outside-"));
   const passed = spawnSync(
     "node",
-    ["--experimental-strip-types", "deploy/guard.ts", "deploy"],
+    ["--experimental-strip-types", "deploy/guard.ts", "deploy", outside],
     { cwd: dir, encoding: "utf8" },
   );
   assert.equal(passed.status, 0);
-  const stagedPath = join(dir, "deploy/from-config/index.html");
-  assert.equal(readFileSync(stagedPath, "utf8"), index);
+  assert.equal(existsSync(join(dir, "deploy/from-config")), false);
+  assert.equal(readFileSync(join(outside, "index.html"), "utf8"), index);
   writeFileSync(join(dir, "deploy/assets/index.html"), "mutated");
-  assert.equal(readFileSync(stagedPath, "utf8"), index);
+  assert.equal(readFileSync(join(outside, "index.html"), "utf8"), index);
   const again = spawnSync("bash", ["deploy.sh"], { cwd: dir, encoding: "utf8" });
   assert.equal(again.status, 2);
   assert.match(again.stderr, /assets-manifest-mismatch/);
   assert.equal(again.stderr.includes("wrangler-invoked"), false);
-  const uploaded = existsSync(stagedPath) ? readFileSync(stagedPath, "utf8") : index;
-  assert.equal(uploaded, index);
 });
 
 test("a pre-existing or stale configured asset directory is refused", () => {

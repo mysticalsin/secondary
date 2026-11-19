@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 export type GuardMode = "dry-run" | "deploy";
 export type GuardResult = { ok: true } | { ok: false; reason: string };
@@ -30,22 +30,30 @@ function assetPath(assets: string, rel: string): string {
   return join(assets, ...rel.split("/"));
 }
 
-function listAssetFiles(dir: string, prefix: string): string[] | null {
+function walkAssets(dir: string, prefix: string): { files: string[]; sentinel: boolean } | null {
   const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
-  const out: string[] = [];
+  const files: string[] = [];
+  let sentinel = false;
   for (const entry of entries) {
+    if (entry.name.toLowerCase() === "unreproduced") sentinel = true;
     const rel = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
     if (entry.isSymbolicLink()) return null;
     if (entry.isDirectory()) {
-      const nested = listAssetFiles(join(dir, entry.name), rel);
+      const nested = walkAssets(join(dir, entry.name), rel);
       if (nested === null) return null;
-      out.push(...nested);
+      if (nested.sentinel) sentinel = true;
+      files.push(...nested.files);
       continue;
     }
     if (!entry.isFile()) return null;
-    out.push(rel);
+    files.push(rel);
   }
-  return out;
+  return { files, sentinel };
+}
+
+function isInside(parent: string, child: string): boolean {
+  const rel = relative(resolve(parent), resolve(child));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 function isSentinel(rel: string): boolean {
@@ -65,10 +73,6 @@ function uploadRelative(config: Record<string, unknown>): string | null {
   if (parts.some((part) => part.length === 0 || part === "." || part === "..")) return null;
   if (text === SOURCE_DIR || text.startsWith(`${SOURCE_DIR}/`)) return null;
   return text;
-}
-
-function removeUpload(root: string, relative: string): void {
-  rmSync(join(root, relative), { recursive: true, force: true });
 }
 
 function readManifest(assets: string): { ok: false; reason: string } | { ok: true; files: Map<string, string> } {
@@ -101,20 +105,16 @@ function readManifest(assets: string): { ok: false; reason: string } | { ok: tru
   return { ok: true, files: want };
 }
 
-function stageCopies(root: string, relative: string, assets: string, files: Map<string, string>): GuardResult {
-  const destRoot = join(root, relative);
-  rmSync(destRoot, { recursive: true, force: true });
+function stageCopies(destRoot: string, assets: string, files: Map<string, string>): GuardResult {
   mkdirSync(destRoot, { recursive: true });
   for (const [rel, expected] of files) {
     let bytes: Buffer;
     try {
       bytes = readFileSync(assetPath(assets, rel));
     } catch {
-      removeUpload(root, relative);
       return { ok: false, reason: "assets-manifest-mismatch" };
     }
     if (createHash("sha256").update(bytes).digest("hex") !== expected) {
-      removeUpload(root, relative);
       return { ok: false, reason: "assets-manifest-mismatch" };
     }
     const dest = assetPath(destRoot, rel);
@@ -122,64 +122,50 @@ function stageCopies(root: string, relative: string, assets: string, files: Map<
     writeFileSync(dest, bytes);
     const copy = readFileSync(dest);
     if (!bytes.equals(copy) || createHash("sha256").update(copy).digest("hex") !== expected) {
-      removeUpload(root, relative);
       return { ok: false, reason: "assets-manifest-mismatch" };
     }
   }
-  const present = listAssetFiles(destRoot, "");
-  if (present === null || present.length !== files.size || present.some((rel) => !files.has(rel))) {
-    removeUpload(root, relative);
+  const present = walkAssets(destRoot, "");
+  if (present === null || present.sentinel || present.files.length !== files.size || present.files.some((rel) => !files.has(rel))) {
     return { ok: false, reason: "assets-manifest-mismatch" };
   }
   return { ok: true };
 }
 
-function checkAssets(root: string, config: Record<string, unknown>): GuardResult {
-  const relative = uploadRelative(config);
-  if (relative === null) return { ok: false, reason: "assets-directory-mismatch" };
+function verifySource(root: string): { ok: false; reason: string } | { ok: true; files: Map<string, string> } {
   const assets = join(root, SOURCE_DIR);
-  if (!existsSync(assets)) {
-    removeUpload(root, relative);
-    return { ok: false, reason: "assets-manifest-missing" };
-  }
-  const present = listAssetFiles(assets, "");
-  if (present === null) {
-    removeUpload(root, relative);
-    return { ok: false, reason: "assets-manifest-mismatch" };
-  }
-  if (present.some(isSentinel)) {
-    removeUpload(root, relative);
-    return { ok: false, reason: "assets-unreproduced" };
-  }
+  if (!existsSync(assets)) return { ok: false, reason: "assets-manifest-missing" };
+  const present = walkAssets(assets, "");
+  if (present === null) return { ok: false, reason: "assets-manifest-mismatch" };
+  if (present.sentinel) return { ok: false, reason: "assets-unreproduced" };
   const manifest = readManifest(assets);
-  if (!manifest.ok) {
-    removeUpload(root, relative);
-    return manifest;
-  }
-  const files = present.filter((rel) => rel !== "MANIFEST.sha256");
+  if (!manifest.ok) return manifest;
+  const files = present.files.filter((rel) => rel !== "MANIFEST.sha256");
   if (files.length !== manifest.files.size || files.some((rel) => !manifest.files.has(rel))) {
-    removeUpload(root, relative);
     return { ok: false, reason: "assets-manifest-mismatch" };
   }
   for (const rel of files) {
     const expected = manifest.files.get(rel);
-    if (expected === undefined) {
-      removeUpload(root, relative);
-      return { ok: false, reason: "assets-manifest-mismatch" };
-    }
+    if (expected === undefined) return { ok: false, reason: "assets-manifest-mismatch" };
     let bytes: Buffer;
     try {
       bytes = readFileSync(assetPath(assets, rel));
     } catch {
-      removeUpload(root, relative);
       return { ok: false, reason: "assets-manifest-mismatch" };
     }
     if (createHash("sha256").update(bytes).digest("hex") !== expected) {
-      removeUpload(root, relative);
       return { ok: false, reason: "assets-manifest-mismatch" };
     }
   }
-  return stageCopies(root, relative, assets, manifest.files);
+  return { ok: true, files: manifest.files };
+}
+
+function configuredDirectory(root: string, config: Record<string, unknown>): { ok: false; reason: string } | { ok: true; path: string } {
+  const relativeDir = uploadRelative(config);
+  if (relativeDir === null) return { ok: false, reason: "assets-directory-mismatch" };
+  const path = join(root, relativeDir);
+  if (existsSync(path)) return { ok: false, reason: "assets-directory-present" };
+  return { ok: true, path };
 }
 
 function readConfig(root: string): { ok: true; config: Record<string, unknown> } | { ok: false; reason: string } {
@@ -201,30 +187,45 @@ export function guardRoot(root: string, mode: GuardMode): GuardResult {
   if (Object.hasOwn(config, "vars")) return { ok: false, reason: "vars-present" };
   if (config.keep_vars !== true) return { ok: false, reason: "keep-vars-required" };
   if (!migrationOk(config)) return { ok: false, reason: "migration-shape" };
-  if (mode === "deploy") return checkAssets(root, config);
+  const configured = configuredDirectory(root, config);
+  if (!configured.ok) return configured;
+  if (mode === "deploy") {
+    const verified = verifySource(root);
+    if (!verified.ok) return verified;
+  }
   return { ok: true };
 }
 
-function cleanup(root: string): void {
+export function stageDeploy(root: string, dest: string): GuardResult {
   const parsed = readConfig(root);
-  if (!parsed.ok) return;
-  const relative = uploadRelative(parsed.config);
-  if (relative === null) return;
-  removeUpload(root, relative);
+  if (!parsed.ok) return parsed;
+  const config = parsed.config;
+  if (Object.hasOwn(config, "vars")) return { ok: false, reason: "vars-present" };
+  if (config.keep_vars !== true) return { ok: false, reason: "keep-vars-required" };
+  if (!migrationOk(config)) return { ok: false, reason: "migration-shape" };
+  const configured = configuredDirectory(root, config);
+  if (!configured.ok) return configured;
+  if (isInside(configured.path, dest) || isInside(join(root, SOURCE_DIR), dest)) {
+    return { ok: false, reason: "assets-directory-mismatch" };
+  }
+  const verified = verifySource(root);
+  if (!verified.ok) return verified;
+  return stageCopies(dest, join(root, SOURCE_DIR), verified.files);
 }
 
 const entry = process.argv[1] ?? "";
 if (entry.endsWith(`${"guard"}.ts`) || entry.endsWith(`${"guard"}.js`)) {
   const mode = process.argv[2];
-  if (mode === "cleanup") {
-    cleanup(process.cwd());
-    process.exit(0);
-  }
+  const dest = process.argv[3];
   if (mode !== "dry-run" && mode !== "deploy") {
     console.error("deploy.sh: unsupported arguments");
     process.exit(2);
   }
-  const result = guardRoot(process.cwd(), mode);
+  if (dest !== undefined && mode !== "deploy") {
+    console.error("deploy.sh: unsupported arguments");
+    process.exit(2);
+  }
+  const result = mode === "deploy" && dest !== undefined ? stageDeploy(process.cwd(), dest) : guardRoot(process.cwd(), mode);
   if (!result.ok) {
     console.error(`deploy.sh: ${result.reason}`);
     process.exit(2);

@@ -87,7 +87,16 @@
 **Independent Test**: T013 fails on `da7297c`, then T014 passes. `deploy/assets/` is still only `UNREPRODUCED`.
 
 - [x] T013 [US5] Add the four failing tests in `harness/tests/v24-bindings.test.ts`. `npm run deploy` must be `./deploy.sh` and `deploy/.staged` must be absent. A file named `unreproduced` with its real hash is refused. `assets.directory` of `./deploy/assets` or `../outside` is refused. A matching fixture staged at the directory named in the config keeps those bytes after the source changes, and a later `deploy.sh` does not start Wrangler. Covers FR-006, FR-008, FR-016.
-- [x] T014 [US5] Point `assets.directory` at `deploy/.staged`, gitignore it, and add the npm `deploy` script. The guard reads that directory from the config, copies the listed bytes, and rehashes the copies. `deploy.sh` removes the directory after Wrangler returns. Do not invent UI bytes and do not run Wrangler. Covers FR-006, FR-008, FR-016.
+- [x] T014 [US5] Point `assets.directory` at `deploy/.staged`, gitignore it, and add the npm `deploy` script. The guard reads that directory from the config. T016 replaces the in-repo copy. Do not invent UI bytes. Covers FR-006, FR-008, FR-016.
+
+## Phase 11: Temp staging (Priority: P1)
+
+**Goal**: The configured directory is never created, Wrangler reads a temp directory, and an empty sentinel directory is refused.
+
+**Independent Test**: T015 fails on `8de81a4`, then T016 passes. `deploy/.staged` stays absent.
+
+- [x] T015 [US5] Add failing tests: a pre-existing or empty configured directory is refused and left in place; `deploy.sh` passes `--assets` to a `0700` directory outside that path and removes it when the stub exits 7; an empty `unreproduced`, `UNREPRODUCED`, or `keep/Unreproduced` directory is refused. Covers FR-016.
+- [x] T016 [US5] Stage with `mktemp -d`, `chmod 0700`, and `trap 'rm -rf "$tmp"' EXIT`. Run `wrangler deploy --assets "$tmp"`. Refuse when the configured path exists. Treat every `unreproduced` directory name as the sentinel. Record the Wrangler 4.158.0 `--dry-run` evidence. Do not invent UI bytes and do not run a real deploy. Covers FR-016.
 
 ## Dependencies & Execution Order
 
@@ -108,6 +117,8 @@
 - T012 depends on T011.
 - T013 is a failing test and depends on T012.
 - T014 depends on the red run of T013.
+- T015 is a failing test and depends on T014.
+- T016 depends on the red run of T015.
 
 ### Parallel Opportunities
 
@@ -116,4 +127,4 @@
 
 ## Implementation Strategy
 
-T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. No task deploys, and no task writes live UI bytes.
+T000 records the parent. T001 and T002 land as a failing test commit. T003 through T006 make those tests pass. T007 confirms the constructor was not edited. T008 and T009 are the gates. T009a merges main. T010 lands as a failing test. T011 makes that test pass. T012 repeats the four gates. T015 lands as a failing test. T016 makes that test pass and records the `--assets` dry run. No task deploys, and no task writes live UI bytes.

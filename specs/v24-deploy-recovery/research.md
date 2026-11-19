@@ -58,7 +58,9 @@
 
 ## Decision: stage the bytes Wrangler uploads
 
-**Decision**: `wrangler.jsonc` `assets.directory` is `deploy/.staged`, gitignored, and absent by default. The guard reads that field, refuses it when it is the source tree or escapes the repo, copies the listed `deploy/assets` bytes into it, and hashes the copies. `npm run deploy` is `./deploy.sh`. `deploy.sh` removes the directory after Wrangler returns. A path segment that case-folds to `unreproduced` is refused.
+**Decision**: `wrangler.jsonc` `assets.directory` is `deploy/.staged`, gitignored, and never created by the guard. If it exists, deploy is refused. `deploy.sh` copies a matching manifest into a `0700` temp directory, rehashes the copies, and runs `wrangler deploy --assets <tmp>` under `trap 'rm -rf "$tmp"' EXIT`. An empty directory whose name case-folds to `unreproduced` is refused. A same-user write to that temp directory during upload is an accepted residual.
+
+**Evidence**: Wrangler 4.158.0, `WRANGLER_SEND_METRICS=false`, no token. `wrangler deploy --dry-run` with `deploy/.staged` absent exits 1 and does not create it. `wrangler deploy --dry-run --assets <empty tmp>` exits 0 and reports `Read 0 files` from that temp directory. The same command with one file in the temp directory exits 0 and reports `Read 1 file` from that temp directory. `deploy/.staged` is still absent.
 
 **Rationale**: Direct `wrangler deploy` never called the guard, because the guard and the config were two strings for the same directory. Hashing the source and then letting Wrangler read it again allowed the bytes to change in between. A case-sensitive sentinel name misses the same file on a case-insensitive disk. One upload path, written only by the guard, closes those three.
 
