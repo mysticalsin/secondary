@@ -195,6 +195,35 @@ test("erasure request stores a known scope and drops a step the grammar rejects"
   assert.deepEqual(openedAgain.order, ["scope:c_delivery", "personal", "directory"]);
 });
 
+test("erasure runner: scope:c_delivery does not match scope:c_delivery_x", async () => {
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const org = buildOrg(["c_delivery", "c_delivery_x"]);
+    const rights = (await import(workerModule("ops-rights.ts"))) as {
+      companyScopes: (org: Org) => string[];
+    };
+    const order = erasurePlan(rights.companyScopes(org));
+    const stored = encodeErasure({
+      status: { tag: "partial_failed" },
+      order,
+      mark: Object.fromEntries(order.map((id) => [id, id === "receipts" ? "failed" : "pending"])),
+      grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
+      receipts: null,
+    });
+    putLedger(file, stored.status, stored.ledger);
+    const { post } = await eraseApp(org);
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    assert.equal(res.status, 200);
+    const scopes = erasureActors()
+      .filter((actor) => actor.op === "pseudonymise")
+      .map((actor) => actor.scope);
+    assert.deepEqual(scopes, ["c_delivery", "c_delivery_x", "global"]);
+  } finally {
+    remove();
+  }
+});
+
 test("erasure request: a failed step stops the attempt and a resume continues it", async () => {
   const seen: string[] = [];
   const saved: StoredErasure[] = [];
