@@ -43,7 +43,7 @@ import {
 import { buildNav, NAV_NODE_IDS } from "./nav.ts";
 import { admittedBrainParams, type Brain, brainOf, needBrain, needFlag, reconcileStoredMembers } from "./open.ts";
 import { placeScopedMember } from "./store.ts";
-import { type BrainCard, cardOf, lineReadable, rateLimit, SKIP_TYPES, seeBrains } from "./shared.ts";
+import { type BrainCard, cardOf, lineReadable, rateLimit, roleOfBrain, SKIP_TYPES, seeBrains } from "./shared.ts";
 
 const WEEK = 7 * DAY;
 const COACH_TTL = 60 * 60_000;
@@ -89,10 +89,29 @@ function templateForRole(role: string, fallback: TemplateId): TemplateId {
 
 const BRAIN_BOUND_MS = 2_500;
 
-function within(ms: number, work: Promise<BrainCard | null>): Promise<BrainCard | null | "miss"> {
+function aborted(): DOMException {
+  return new DOMException("The operation was aborted", "AbortError");
+}
+
+/**
+ * One brain has this long to answer. On the way out the signal aborts, so a late workspace
+ * reply does not continue into cardOf and further subrequests. clearTimeout runs when the
+ * read finishes first, so a brain that answered is not aborted when the bound elapses.
+ *
+ * A Durable Object call that has already been sent cannot be cancelled from this isolate.
+ * The in-flight set is that one brain's fixed fan-out, not a retry loop.
+ */
+function within(
+  ms: number,
+  work: (signal: AbortSignal) => Promise<BrainCard | null>,
+): Promise<BrainCard | null | "miss"> {
+  const ac = new AbortController();
   return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve("miss"), ms);
-    work.then(
+    const timer = setTimeout(() => {
+      ac.abort();
+      resolve("miss");
+    }, ms);
+    work(ac.signal).then(
       (card) => {
         clearTimeout(timer);
         resolve(card);
@@ -105,24 +124,56 @@ function within(ms: number, work: Promise<BrainCard | null>): Promise<BrainCard 
   });
 }
 
-function missedCard(p: { param: string; vn: { kind: string; label: string } | null }): BrainCard & {
+type MissedCard = {
+  id: string;
+  type: string;
+  name: string;
+  readers: number;
+  manages: boolean;
+  restricted: boolean;
+  publication: Publication;
+  pages: number;
+  health: { score: number };
+  lastActivityAt: null;
   unavailable: true;
-} {
-  return {
+  role?: BrainRole;
+};
+
+/** A card for a brain that missed the bound. Role is included only when the view already produced it. Template is not: it lives in the workspace this read did not finish. */
+function missedCard(
+  p: { param: string; vn: { kind: string; label: string; restricted?: boolean; nda?: boolean } | null },
+  brain: Brain | null,
+): MissedCard {
+  const type = p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal");
+  const card: MissedCard = {
     id: p.param,
-    type: p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal"),
+    type,
     name: p.param === "me" ? "My Secondary" : (p.vn?.label ?? p.param),
-    template: "blank",
     readers: 0,
     manages: false,
-    restricted: false,
+    restricted: isRestrictedBrain({
+      type,
+      restricted: p.vn?.restricted,
+      nda: p.vn?.nda,
+    }),
     publication: "review",
-    role: "reader",
     pages: 0,
     health: { score: 0 },
     lastActivityAt: null,
     unavailable: true,
   };
+  if (brain) card.role = roleOfBrain(brain);
+  return card;
+}
+
+function listed(
+  p: { param: string; vn: { kind: string; label: string } | null },
+  type: string | undefined,
+  q: string,
+): boolean {
+  const kind = p.param === "me" ? "personal" : brainTypeOf(p.vn?.kind as never);
+  const name = p.param === "me" ? "My Secondary" : (p.vn?.label ?? p.param);
+  return (!type || kind === type) && (!q || name.toLowerCase().includes(q));
 }
 
 export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
@@ -137,27 +188,36 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
   /** The cards of these brains, for a caller the view admits to all of them. */
   async function cardsOf(
     c: C,
-    params: { param: string; vn: { kind: string; label: string } | null }[],
+    params: {
+      param: string;
+      vn: { kind: string; label: string; restricted?: boolean; nda?: boolean } | null;
+    }[],
     keep: (b: Brain) => boolean,
-  ) {
+    query: { type?: string; q: string },
+  ): Promise<(BrainCard | MissedCard)[]> {
     const humanIds = await humanIdsOf(c.env, sess(c));
     const ms = deps.brainBoundMs ?? BRAIN_BOUND_MS;
     const cards = await Promise.all(
       params.map(async (p) => {
-        const result = await within(
-          ms,
-          (async () => {
-            const b = await brainOf(c, p.param, humanIds);
-            if (!b || !keep(b)) return null;
-            const [seen] = await seeBrains(c, [b]);
-            if (!seen) return null;
-            return cardOf(c, seen);
-          })(),
-        );
-        return result === "miss" ? missedCard(p) : result;
+        let known: Brain | null = null;
+        const result = await within(ms, async (signal) => {
+          const b = await brainOf(c, p.param, humanIds);
+          known = b;
+          if (signal.aborted) throw aborted();
+          if (!b) return null;
+          const [seen] = await seeBrains(c, [b], signal);
+          if (signal.aborted) throw aborted();
+          if (!seen) return null;
+          return cardOf(c, seen);
+        });
+        // type and q apply to a miss as well as a card that arrived. The check is here, after the
+        // bound, so a hung workspace cannot skip it.
+        if (known ? !keep(known) : !listed(p, query.type, query.q)) return null;
+        if (result === "miss") return missedCard(p, known);
+        return result;
       }),
     );
-    return cards.filter((x): x is BrainCard => x !== null);
+    return cards.filter((x): x is BrainCard | MissedCard => x !== null);
   }
 
   r.get("/brains", async (c) => {
@@ -170,6 +230,7 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
       c,
       admittedBrainParams(c),
       (b) => (!type || b.facts.type === type) && (!q || b.label.toLowerCase().includes(q)),
+      { type, q },
     );
     cards.sort(
       (a, b) => Number(b.id === "me") - Number(a.id === "me") || a.name.localeCompare(b.name),
@@ -230,9 +291,10 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
           NAV_NODE_IDS.has(p.param),
       ),
       () => true,
+      { q: "" },
     );
     c.header("Cache-Control", "no-store");
-    return c.json({ items: buildNav(cards) });
+    return c.json({ items: buildNav(cards as BrainCard[]) });
   });
 
   // ---- home ----

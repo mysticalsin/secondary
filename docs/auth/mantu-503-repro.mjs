@@ -16,6 +16,20 @@ if (!target || rel.startsWith("..") || path.isAbsolute(rel)) {
   console.error("refused: path is outside the repo");
   process.exit(1);
 }
+// The directory can sit inside the repo while worker/entry.js is a symlink to somewhere else.
+let entryReal = "";
+try {
+  entryReal = realpathSync(path.join(target, "worker/entry.js"));
+} catch {
+  entryReal = "";
+}
+if (entryReal) {
+  const entryRel = path.relative(root, entryReal);
+  if (entryRel.startsWith("..") || path.isAbsolute(entryRel)) {
+    console.error("refused: path is outside the repo");
+    process.exit(1);
+  }
+}
 const worker = (await import(pathToFileURL(path.join(target, "worker/entry.js")).href)).default;
 const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const j = publicKey.export({ format: "jwk" });

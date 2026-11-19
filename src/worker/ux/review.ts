@@ -9,7 +9,6 @@ import { humanIdsOf } from "../human.ts";
 import { parseCandidateId, scopeOfNode } from "../scope.ts";
 import { workspaceStub } from "../stubs.ts";
 import type { AppEnv } from "../types.ts";
-import { isAdmin } from "../uxv2/shared.ts";
 import { notifyChangesRequested } from "./notify.ts";
 import {
   audit,
@@ -53,15 +52,25 @@ export function reviewRoutes(): Hono<AppEnv> {
   r.get("/ux/candidates/:id", async (c) => {
     const s = sess(c);
     const id = c.req.param("id") ?? "";
+    // Same ceiling as NODE_ID. A longer id is not a different error: it is not found.
+    if (id.length === 0 || id.length > 128) throw notFound();
     const parsed = parseCandidateId(id);
     if (!parsed) throw notFound();
     const view = viewOf(s);
-    const vn = view.nodes.get(parsed.targetNodeId);
+    const policyNode = parsed.targetNodeId;
+    const vn = view.nodes.get(policyNode);
     const scope = vn ? scopeOfNode(vn) : null;
+    // The node has to be in this caller's view. An author who lost that access is not found.
     if (!vn || !scope) throw notFound();
     const item = await workspaceStub(c.env, s.tenantId, scope).get(id);
     if (!item || item.kind !== "candidate") throw notFound();
-    if (item.authorId !== s.principal.id && !isAdmin(view)) throw notFound();
+    // configure anywhere is not enough. A non-author needs review or release on this node,
+    // so content exclusion, break-glass and NDA still apply. Denial matches a missing id.
+    const may =
+      item.authorId === s.principal.id ||
+      canDoInView(view, s.principal, policyNode, "review").allowed ||
+      canDoInView(view, s.principal, policyNode, "approve_release").allowed;
+    if (!may) throw notFound();
     return c.json({
       id,
       title: item.label,

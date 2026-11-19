@@ -231,7 +231,9 @@ export function opsInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
 /** Read-only kill switch state for workers/mcp. Signed with INTERNAL_HMAC_KEY, which is all the MCP worker holds. */
 export function mcpInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
   const r = new Hono<{ Bindings: Env }>();
-  r.get("/switches", async (c) => {
+  // Every path under this mount, including a doubled slash, is a machine call.
+  // An unknown path is 404 only after the signature check. Unsigned is 401.
+  r.use("*", async (c, next) => {
     if (c.req.header("CF-Connecting-IP")) return c.json({ error: "unauthorized" }, 401);
     const at = deps.now?.() ?? Date.now();
     const ok = await verifyOpsRequest(c.req.raw, internalKeys(c.env), {
@@ -240,8 +242,13 @@ export function mcpInternalRoutes(deps: AppDeps): Hono<{ Bindings: Env }> {
       channel: "mcp-switches",
     });
     if (!ok) return c.json({ error: "unauthorized" }, 401);
+    c.header("Cache-Control", "no-store");
+    await next();
+  });
+  r.get("/switches", async (c) => {
     const tenant = c.req.query("tenant") ?? "";
     if (!TENANT_ID.test(tenant)) return c.json({ error: "invalid_target" }, 400);
+    const at = deps.now?.() ?? Date.now();
     const s = await tenantStub(c.env, tenant).switchStatus(at);
     c.header("Cache-Control", "no-store");
     return c.json({
