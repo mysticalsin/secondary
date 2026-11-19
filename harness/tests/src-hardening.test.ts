@@ -51,6 +51,7 @@ function workspace(name: string) {
         hung.release.set(name, resolve);
       });
     },
+    wikiSchema: async () => ({ types: {} }),
     brainConfig: async () => ({ template: null, publication: "review", everyone: null, fields: [] }),
     wikiMeta: async () => null,
     wikiHealth: async () => null,
@@ -241,10 +242,10 @@ function env(binding: unknown, email: string) {
   };
 }
 
-async function app(extra?: { brainBoundMs?: number }): Promise<App> {
+async function app(extra?: { brainBoundMs?: number; treeBoundMs?: number }): Promise<App> {
   const specifier = new URL("../../src/worker/index.ts", import.meta.url).href;
   const loaded = (await import(specifier)) as {
-    createApp: (deps?: { brainBoundMs?: number }) => App;
+    createApp: (deps?: { brainBoundMs?: number; treeBoundMs?: number }) => App;
   };
   return loaded.createApp(extra);
 }
@@ -377,6 +378,33 @@ test("an author can read a 128-character candidate id", async () => {
       revision: 1,
       targetNodeId: LONG_NODE,
     });
+  } finally {
+    held.remove();
+  }
+});
+
+test("one hung brain does not stall the tree", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  try {
+    const bindings = env(held.binding, AUTHOR.email);
+    const raced = await Promise.race([
+      api.request("http://127.0.0.1/v1/brain/tree", {}, bindings),
+      new Promise<string>((resolve) => setTimeout(() => resolve("hung"), 400)),
+    ]);
+    assert.notEqual(raced, "hung");
+    const res = raced as Response;
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      roots: { id: string; label: string; access: string; children?: unknown }[];
+    };
+    const slow = body.roots.find((root) => root.id === "c_delivery");
+    const mine = body.roots.find((root) => root.id === "me");
+    assert.equal(slow?.access, "degraded");
+    assert.equal(typeof slow?.label === "string" && slow.label.length > 0, true);
+    assert.equal("children" in (slow ?? {}), false);
+    assert.equal(mine?.access === "full" || mine?.access === "partial", true);
+    assert.equal(Array.isArray(mine?.children), true);
   } finally {
     held.remove();
   }
