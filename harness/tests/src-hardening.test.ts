@@ -1147,7 +1147,8 @@ function note(title: string): { id: string; title: string; type: string; markdow
 }
 
 test("the tree roots are exactly the admitted brains", async () => {
-  const held = await openDirectory();
+  const restore = await plantCircle(LONG_NODE, "Synthetic long circle");
+  const held = await openDirectory([{ scope_type: "circle", scope_id: LONG_NODE }]);
   const api = await app({ treeBoundMs: 40 });
   try {
     const res = await api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email));
@@ -1163,6 +1164,7 @@ test("the tree roots are exactly the admitted brains", async () => {
     }
   } finally {
     held.remove();
+    restore();
   }
 });
 
