@@ -761,6 +761,19 @@ test("a parent cycle and a self-parent are restricted by the hop cap", async () 
   assert.equal(restrictionOf({ parentId: "s" }, self).restricted, true);
 });
 
+test("a non-personal brain with no view node is restricted", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null } | null,
+      nodes: { get(id: string): unknown },
+      scope?: { personal?: boolean },
+    ) => { restricted: boolean };
+  };
+  assert.equal(restrictionOf(null, { get: () => undefined }).restricted, true);
+  assert.equal(restrictionOf(null, { get: () => undefined }, { personal: true }).restricted, false);
+});
+
 test("a throwing parent lookup is restricted and direct publish does not throw", async () => {
   const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
   const { restrictionOf, directPublish } = (await import(openUrl)) as {
