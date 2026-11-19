@@ -330,6 +330,30 @@ test("zoom in and zoom out stay reachable while the graph panel is open", async 
   }
 });
 
+test("zoom stays on screen at 390 while the graph panel is open", async () => {
+  const { server, port } = await serve(false);
+  const launched = await launch();
+  try {
+    await size(launched.session, 390, 844);
+    await launched.session.call("Page.navigate", { url: `http://127.0.0.1:${port}/graph` });
+    let box: { x: number; w: number; width: number } | undefined;
+    for (let i = 0; i < 40; i += 1) {
+      box = await evalJson(launched.session, `(() => {
+        const panel = document.getElementById("panel");
+        if (panel) panel.hidden = false;
+        const el = document.getElementById("zoom-in");
+        const rect = el.getBoundingClientRect();
+        return JSON.stringify({ x: rect.x, w: rect.width, width: innerWidth });
+      })()`);
+      if (box && box.w > 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.ok(box && box.x >= 0 && box.x + box.w <= box.width, `zoom-in at ${box?.x} width ${box?.w} on ${box?.width}`);
+  } finally {
+    await stop(launched.chrome, launched.session, launched.browser, launched.profile, server);
+  }
+});
+
 test("the search field shows a visible focus ring", async () => {
   const { server, port } = await serve(false);
   const launched = await launch();
