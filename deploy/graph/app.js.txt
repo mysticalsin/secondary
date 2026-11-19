@@ -1,3 +1,5 @@
+import { boundFetch } from "/graph/fetch-bound.js";
+
 (() => {
   "use strict";
 
@@ -43,33 +45,7 @@
   class AuthError extends Error {}
 
   async function getJson(path) {
-    const ctl = typeof AbortController === "function" ? new AbortController() : null;
-    let timer;
-    const timed = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        if (ctl) ctl.abort();
-        reject(new Error("degraded"));
-      }, FETCH_BOUND_MS);
-    });
-    timed.catch(() => {});
-    const request = Promise.resolve(fetch(API + path, {
-      credentials: "same-origin",
-      headers: { accept: "application/json" },
-      signal: ctl ? ctl.signal : undefined,
-    })).then(
-      (res) => res,
-      (err) => Promise.reject(err && err.name === "AbortError" ? new Error("degraded") : new Error("offline")),
-    );
-    request.catch(() => {});
-    let res;
-    try {
-      res = await Promise.race([request, timed]);
-    } catch (err) {
-      if (err instanceof Error && err.message === "degraded") throw err;
-      throw new Error("offline");
-    } finally {
-      clearTimeout(timer);
-    }
+    const res = await boundFetch(API + path, { credentials: "same-origin", headers: { accept: "application/json" } }, FETCH_BOUND_MS);
     if (res.status === 401 || res.status === 403) throw new AuthError(String(res.status));
     if (!res.ok) throw new Error(`HTTP ${res.status} on ${path}`);
     const type = res.headers.get("content-type") || "";

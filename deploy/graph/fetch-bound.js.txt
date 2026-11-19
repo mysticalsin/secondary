@@ -1,0 +1,27 @@
+export async function boundFetch(url, init, boundMs) {
+  const ctl = typeof AbortController === "function" ? new AbortController() : null;
+  let timer;
+  const timed = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      if (ctl) ctl.abort();
+      reject(new Error("degraded"));
+    }, boundMs);
+  });
+  timed.catch(() => {});
+  const request = Promise.resolve(fetch(url, {
+    ...init,
+    signal: ctl ? ctl.signal : undefined,
+  })).then(
+    (res) => res,
+    (err) => Promise.reject(err && err.name === "AbortError" ? new Error("degraded") : new Error("offline")),
+  );
+  request.catch(() => {});
+  try {
+    return await Promise.race([request, timed]);
+  } catch (err) {
+    if (err instanceof Error && err.message === "degraded") throw err;
+    throw new Error("offline");
+  } finally {
+    clearTimeout(timer);
+  }
+}

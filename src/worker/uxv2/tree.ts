@@ -33,27 +33,37 @@ export type TreeNode = {
 const MAX_PAGES_PER_FOLDER = 200;
 const TREE_BOUND_MS = 2_500;
 
-function aborted(): DOMException {
-  return new DOMException("The operation was aborted", "AbortError");
-}
-
-/** One brain has this long to answer. A miss is that brain alone; the others are still returned. */
+/**
+ * One brain has this long to answer. The timer aborts the read. A value that arrives after that
+ * abort is a miss, even when the read resolves in the abort turn. A read that never settles is a
+ * miss on the following turn, so one hung brain does not hold the others.
+ */
 function within<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promise<T | "miss"> {
   const ac = new AbortController();
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      ac.abort();
-      resolve("miss");
-    }, ms);
-    work(ac.signal).then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(ac.signal.aborted ? "miss" : value);
-      },
+    let settled = false;
+    let safety: ReturnType<typeof setTimeout> | undefined;
+    const finish = (value: T | "miss") => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (safety !== undefined) clearTimeout(safety);
+      resolve(value);
+    };
+    const timer = setTimeout(() => ac.abort(), ms);
+    // The work registers its abort listener before this one, so a late resolve is queued first
+    // and the miss rule decides it. The safety timer covers a read that ignores the abort.
+    const pending = work(ac.signal);
+    ac.signal.addEventListener(
+      "abort",
       () => {
-        clearTimeout(timer);
-        resolve("miss");
+        safety = setTimeout(() => finish("miss"), 0);
       },
+      { once: true },
+    );
+    pending.then(
+      (value) => finish(ac.signal.aborted ? "miss" : value),
+      () => finish("miss"),
     );
   });
 }
@@ -115,15 +125,17 @@ export async function brainTree(
     wanted.map(async (t) => {
       const stub = stubOf(c, t.scope);
       const read = await within(ms, async (signal) => {
-        const [pages, schema] = await Promise.all([stub.wikiPages(), stub.wikiSchema()]);
-        if (signal.aborted) throw aborted();
+        const readPages = stub.wikiPages as (signal?: AbortSignal) => ReturnType<typeof stub.wikiPages>;
+        const [pages, schema] = await Promise.all([
+          Promise.resolve(readPages(signal)),
+          Promise.resolve(stub.wikiSchema()),
+        ]);
         const [ok] = await readableMany(c, [
           {
             w: { view, personal: t.personal, stub },
             ids: pages.flatMap((x) => citationsOf(x.markdown)),
           },
         ]);
-        if (signal.aborted) throw aborted();
         return { pages, schema, ok };
       });
       if (read === "miss") return { t, miss: true as const };

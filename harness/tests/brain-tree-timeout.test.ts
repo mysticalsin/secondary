@@ -4,6 +4,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createContext, runInContext } from "node:vm";
+import { runGraphScript } from "./run-graph-script.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -136,7 +137,7 @@ function boot(
   const context = createContext(sandbox);
   runInContext(PRELUDE, context);
   if (fetchBound) runInContext(`document.documentElement.dataset.fetchBound = ${JSON.stringify(fetchBound)};`, context);
-  runInContext(page(file), context);
+  runGraphScript(root, file, context);
   return {
     elements: sandbox.__elements as Record<string, Status & { childNodes?: OptionNode[]; value?: string }>,
   };

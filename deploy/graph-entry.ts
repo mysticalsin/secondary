@@ -1,6 +1,7 @@
 import app from "../src/worker/index.ts";
 import dashboardCss from "./graph/dashboard.css";
 import dashboard from "./graph/dashboard.html";
+import fetchBound from "./graph/fetch-bound.js.txt";
 import dashboardJs from "./graph/dashboard.js.txt";
 import appCss from "./graph/app.css";
 import appJs from "./graph/app.js.txt";
@@ -14,6 +15,7 @@ export * from "../src/worker/index.ts";
 const files: GraphFiles = {
   "/graph": [page, "text/html; charset=utf-8"],
   "/graph/app.js": [appJs, "text/javascript; charset=utf-8"],
+  "/graph/fetch-bound.js": [fetchBound, "text/javascript; charset=utf-8"],
   "/graph/app.css": [appCss, "text/css; charset=utf-8"],
   "/graph/nav.js": [navJs, "text/javascript; charset=utf-8"],
   "/graph/nav.css": [navCss, "text/css; charset=utf-8"],
