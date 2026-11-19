@@ -396,6 +396,17 @@ test("an author can read a 128-character candidate id", async () => {
   }
 });
 
+test("a planted candidate node is gone before the next test", async () => {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: { has(id: string): boolean };
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  assert.equal(org.nodes.has(LONG_NODE), false);
+});
+
 test("an id longer than 128 characters is not found even when it names a real node", async () => {
   assert.equal(OVER_NODE.length > 114, true);
   assert.equal(OVER_CANDIDATE.length > 128, true);
@@ -420,6 +431,7 @@ test("a missed card under a restricted ancestor is restricted", async () => {
     };
   };
   const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  assert.equal(org.nodes.has(OVER_NODE), false);
   const dept = org.nodes.get("d_amaris");
   if (!dept) throw new Error("missing department");
   const previous = dept.restricted;
