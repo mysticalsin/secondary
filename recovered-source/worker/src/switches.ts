@@ -26,11 +26,15 @@ export type HandlerKey =
   | "wikiSource"
   | "sharepoint";
 
+export type SwitchProbe = { method: string; path: string };
+
 type Row = {
   name: SwitchName;
   /** Set for the switch that blocks every internal call, before any path row. */
   internal?: boolean;
   http?: (method: string, path: string) => boolean;
+  /** Paths this row is the only match for. The disjoint test walks every row's probes. */
+  probes?: readonly SwitchProbe[];
   handlers?: readonly HandlerKey[];
 };
 
@@ -41,6 +45,7 @@ export const SWITCH_TABLE: readonly Row[] = [
   {
     name: "contribute",
     http: (m, p) => m === "POST" && /^\/v1\/personal\/items\/[^/]+\/contribute$/.test(p),
+    probes: [{ method: "POST", path: "/v1/personal/items/pi:abcd1234/contribute" }],
     handlers: ["submitCandidate", "routineRun", "routineIngest"],
   },
   {
@@ -51,17 +56,47 @@ export const SWITCH_TABLE: readonly Row[] = [
       p.startsWith("/v1/ai/") ||
       p === "/v1/briefs" ||
       p.startsWith("/v1/briefs/"),
+    probes: [
+      { method: "POST", path: "/v1/genui/plan" },
+      { method: "GET", path: "/v1/ai/status" },
+      { method: "POST", path: "/v1/briefs" },
+      { method: "POST", path: "/v1/briefs/save" },
+    ],
     handlers: ["briefSave", "aiCall"],
   },
   {
     // /v1/sources and /v1/connectors (M-04). Search and wiki citations omit hits instead of 503.
     name: "connector",
     http: (_m, p) => p.startsWith("/v1/connectors/") || p.startsWith("/v1/sources/"),
+    probes: [
+      { method: "GET", path: "/v1/connectors/acme" },
+      { method: "GET", path: "/v1/sources/s1" },
+    ],
     handlers: ["sourceSearch", "wikiSource", "sharepoint"],
   },
 ];
 
-export function httpSwitch(method: string, path: string): SwitchName | null {
+type MatchRow = { name: SwitchName; http?: (method: string, path: string) => boolean };
+
+/** The first matching row whose switch is off, including a row after one that is on. */
+export function blockingSwitch(
+  rows: readonly MatchRow[],
+  method: string,
+  path: string,
+  switches: SwitchState,
+): SwitchName | null {
+  for (const row of rows) {
+    if (row.http?.(method, path) && !switches[row.name]) return row.name;
+  }
+  return null;
+}
+
+export function httpSwitch(
+  method: string,
+  path: string,
+  switches?: SwitchState,
+): SwitchName | null {
+  if (switches) return blockingSwitch(SWITCH_TABLE, method, path, switches);
   for (const row of SWITCH_TABLE) if (row.http?.(method, path)) return row.name;
   return null;
 }

@@ -4,7 +4,13 @@ import test from "node:test";
 import { admittedView } from "../../packages/policy/src/engine.ts";
 import { buildOrg } from "../../packages/policy/src/org.ts";
 import { persona } from "../../packages/policy/src/personas.ts";
-import { SWITCH_TABLE } from "../../recovered-source/worker/src/switches.ts";
+import {
+  blockingSwitch,
+  handlerSwitch,
+  SWITCH_TABLE,
+  type HandlerKey,
+  type SwitchName,
+} from "../../recovered-source/worker/src/switches.ts";
 
 register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, {
   parentURL: import.meta.url,
@@ -142,21 +148,52 @@ test("routine ingest with contribute off returns the exact reason", async () => 
   assert.deepEqual(audit, []);
 });
 
+test("every handler key resolves to one switch row", () => {
+  const keys = {
+    submitCandidate: true,
+    routineRun: true,
+    routineIngest: true,
+    briefSave: true,
+    aiCall: true,
+    sourceSearch: true,
+    wikiSource: true,
+    sharepoint: true,
+  } satisfies Record<HandlerKey, true>;
+  for (const key of Object.keys(keys) as HandlerKey[]) {
+    const name = handlerSwitch(key);
+    assert.equal(
+      SWITCH_TABLE.some((row) => row.name === name && row.handlers?.includes(key)),
+      true,
+      key,
+    );
+  }
+});
+
 test("switch table HTTP rows are disjoint", () => {
   const http = SWITCH_TABLE.filter((row) => row.http);
-  const probes: [string, string][] = [
-    ["POST", "/v1/personal/items/pi:abcd1234/contribute"],
-    ["POST", "/v1/genui/plan"],
-    ["GET", "/v1/ai/status"],
-    ["POST", "/v1/ai/chat"],
-    ["POST", "/v1/briefs"],
-    ["POST", "/v1/briefs/save"],
-    ["GET", "/v1/briefs/x"],
-    ["GET", "/v1/connectors/acme"],
-    ["GET", "/v1/sources/s1"],
-  ];
-  for (const [method, path] of probes) {
-    const hits = http.filter((row) => row.http?.(method, path));
-    assert.equal(hits.length <= 1, true, `${method} ${path}`);
+  assert.equal(http.length > 0, true);
+  for (const row of http) {
+    assert.equal((row.probes?.length ?? 0) > 0, true, row.name);
+    for (const probe of row.probes ?? []) {
+      const hits = http.filter((other) => other.http?.(probe.method, probe.path));
+      assert.deepEqual(
+        hits.map((hit) => hit.name),
+        [row.name],
+        `${probe.method} ${probe.path}`,
+      );
+    }
   }
+});
+
+test("a later off row still refuses", () => {
+  const rows: { name: SwitchName; http: () => boolean }[] = [
+    { name: "contribute", http: () => true },
+    { name: "ai", http: () => true },
+  ];
+  const on = { mcp: true, connector: true, ai: false, contribute: true };
+  assert.equal(blockingSwitch(rows, "POST", "/x", on), "ai");
+  assert.equal(
+    blockingSwitch(rows, "POST", "/x", { ...on, ai: true, contribute: false }),
+    "contribute",
+  );
 });

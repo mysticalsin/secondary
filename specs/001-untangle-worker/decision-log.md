@@ -114,3 +114,11 @@ Comments removed because they only repeated the code:
 
 - The note on `leadOf` in `wiki/review.ts` said a `lead` grant must still allow a standing decision action. The function checks `conditions.lead` and `canDoInView`.
 - The `directPublish` note said the mode must be direct and the caller must be allowed to edit. Those are the `publication` and `can.edit` checks. It also said publish asks the stored brain role, which this function does not do.
+
+## Switch follow-up
+
+PR #9 merged as `8c2ede3`. The table still matches the first HTTP row, so a later overlapping row that is off would be skipped. This follow-up refuses when any matching row is off. Today's rows are disjoint, so the 228 answers from main `8d8ab548` stay.
+
+The disjoint test now walks a probe list stored on every HTTP row. A row with no probe fails. A probe that another row also matches fails. The eight handler keys each resolve to a row; removing `sharepoint` fails that test and no other test in the file.
+
+These paths are pinned to the current matcher and are not retuned: a trailing slash on contribute is not that row, a trailing slash on `/v1/sources/s1/` is the connector row, `/v1/Sources/s1` and `/V1/sources/s1` are not, `/v1/%73ources/s1` is not (the middleware reads the encoded pathname), `/v1//sources/s1` is not, a query string on `/v1/sources/s1` is the connector row, HEAD and OPTIONS on that path are the connector row, and `/v1x/sources/s1` and `/v10/sources/s1` are not. Whether the encoded source path should be blocked once Hono has decoded it is a separate slice.
