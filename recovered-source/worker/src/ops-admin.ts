@@ -72,8 +72,8 @@ export const switchGate: MiddlewareHandler<AppEnv> = async (c, next) => {
   const mcp = internalSwitch();
   if (s.internal && !s.switches[mcp]) return c.json(switchedOff(mcp), 503);
   const path = new URL(c.req.url).pathname;
-  const name = httpSwitch(c.req.method, path);
-  if (name && !s.switches[name]) return c.json(switchedOff(name), 503);
+  const name = httpSwitch(c.req.method, path, s.switches);
+  if (name) return c.json(switchedOff(name), 503);
   await next();
 };
 
