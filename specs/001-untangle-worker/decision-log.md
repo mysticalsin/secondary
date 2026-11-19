@@ -200,3 +200,7 @@ The public routes are reached through `createApp`: `authenticate`, then `switchG
 ## The ac41dfec 503 note
 
 `docs/auth/mantu-503-classification.md` and `docs/auth/mantu-503-repro.mjs` come from `578de37a` and stay as a record of that bundle. The classification's body is not rewritten. A status note at the top says current `src/worker` does not use `auth_unconfigured`. The repro is not a test.
+
+## Route test gaps
+
+These are tests on the app that is already on main. A bad ops signature, a stale or missing timestamp, and a body that does not match the signature are 401. Restore without a signature is 401, restore while it is turned off is 403, and a dev restore of the tenant's own snapshot is 200. A missing workspace binding is 500 `internal_error`. A connector that says the file is not allowed is 403. The contribution test reads the status stored by `create`, not only the JSON. `GET /v1/internal//ops/targets` with no credentials is 401 from `authenticate`. The same path with a valid Access token is 404 from the v1 catch-all, whatever the HMAC, because it never reaches the ops middleware. The HMAC 401 is proved on `/v1/internal/ops/targets` with that same token and a bad signature.
