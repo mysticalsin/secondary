@@ -145,7 +145,8 @@ export type ErasureRun = EraseSummary & { status: string; step: string | null };
 /** A scope step the runner may touch: an anchored scope id that this tenant's plan already names. */
 export function runnerScopeId(step: string, planned: ReadonlySet<string>): string | null {
   const scopeId = scopeIdOfStep(step);
-  if (!scopeId || !planned.has(scopeId)) return null;
+  if (!scopeId || scopeId.startsWith("personal:")) return null;
+  if (scopeId === "global" && !planned.has("global")) return null;
   return scopeId;
 }
 

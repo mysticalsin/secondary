@@ -237,11 +237,11 @@ test("the runner refuses a prefix and a scope the tenant did not plan", async ()
   try {
     await openPolicy(file);
     const org = buildOrg(["c_delivery"]);
-    const order = ["receipts", "scope:zz_extra", "directory"];
+    const order = ["receipts", "scope:personal:u_subject", "directory"];
     const stored = encodeErasure({
       status: { tag: "partial_failed" },
       order,
-      mark: { receipts: "failed", "scope:zz_extra": "pending", directory: "pending" },
+      mark: { receipts: "failed", "scope:personal:u_subject": "pending", directory: "pending" },
       grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
       receipts: null,
     });
@@ -250,7 +250,7 @@ test("the runner refuses a prefix and a scope the tenant did not plan", async ()
     const res = await post(admin("ada", "ada@example.invalid"), NOW);
     const body = (await res.json()) as { status?: string; error?: string };
     assert.equal(body.status === "erased", false);
-    assert.equal(erasureCalls().includes("pseudonymise:zz_extra"), false);
+    assert.equal(erasureCalls().includes("pseudonymise:personal:u_subject"), false);
   } finally {
     remove();
   }
