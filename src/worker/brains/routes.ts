@@ -168,7 +168,7 @@ function missedCard(
   },
 ): MissedCard {
   const type = p.param === "me" ? "personal" : (brainTypeOf(p.vn?.kind as never) ?? "personal");
-  const flags = restrictionOf(p.vn, nodes);
+  const flags = restrictionOf(p.vn, nodes, { personal: p.param === "me" });
   const card: MissedCard = {
     id: p.param,
     type,

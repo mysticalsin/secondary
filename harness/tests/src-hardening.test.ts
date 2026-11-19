@@ -608,6 +608,7 @@ test("an unflagged chain of two hops stays open on the answered card and the mis
     assert.equal(hit?.restricted, false);
     assert.equal(miss?.unavailable, true);
     assert.equal(miss?.restricted, false);
+    assert.equal(read.cards.some((b) => b.id === "c_open_root"), false);
   } finally {
     read.close();
     restore.reverse().forEach((fn) => fn());
@@ -772,6 +773,30 @@ test("a non-personal brain with no view node is restricted", async () => {
   };
   assert.equal(restrictionOf(null, { get: () => undefined }).restricted, true);
   assert.equal(restrictionOf(null, { get: () => undefined }, { personal: true }).restricted, false);
+});
+
+test("each reader uses the tenant org, and another tenant's org does not apply", async () => {
+  const openUrl = new URL("../../src/worker/brains/open.ts", import.meta.url).href;
+  const { restrictionOf } = (await import(openUrl)) as {
+    restrictionOf: (
+      node: { parentId?: string | null } | null,
+      nodes: { get(id: string): { restricted?: boolean; parentId?: string | null } | undefined },
+    ) => { restricted: boolean };
+  };
+  const tenantA = new Map<string, { restricted?: boolean; parentId: string | null }>([
+    ["leaf", { parentId: "parent" }],
+    ["parent", { restricted: true, parentId: null }],
+  ]);
+  const partialView = new Map<string, { restricted?: boolean; parentId: string | null }>([
+    ["leaf", { parentId: "parent" }],
+  ]);
+  const tenantB = new Map<string, { restricted?: boolean; parentId: string | null }>([
+    ["leaf", { parentId: "parent" }],
+    ["parent", { parentId: null }],
+  ]);
+  assert.equal(restrictionOf({ parentId: "parent" }, tenantA).restricted, true);
+  assert.equal(restrictionOf({ parentId: "parent" }, partialView).restricted, true);
+  assert.equal(restrictionOf({ parentId: "parent" }, tenantB).restricted, false);
 });
 
 test("a throwing parent lookup is restricted and direct publish does not throw", async () => {
