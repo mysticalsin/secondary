@@ -93,19 +93,23 @@ export function restrictionOf(
   node: RestrictionNode | null,
   nodes: { get(id: string): RestrictionNode | undefined },
 ): { restricted: boolean; nda: boolean } {
-  let restricted = !!node?.restricted || !!node?.contacts;
-  let nda = !!node?.nda;
-  let parentId = node?.parentId ?? null;
-  if (parentId === null) return { restricted, nda };
-  for (let hop = 0; hop < ANCESTOR_HOP_CAP; hop += 1) {
-    const parent = nodes.get(parentId);
-    if (!parent) return { restricted: true, nda };
-    restricted ||= !!parent.restricted || !!parent.contacts;
-    nda ||= !!parent.nda;
-    parentId = parent.parentId ?? null;
+  try {
+    let restricted = !!node?.restricted || !!node?.contacts;
+    let nda = !!node?.nda;
+    let parentId = node?.parentId ?? null;
     if (parentId === null) return { restricted, nda };
+    for (let hop = 0; hop < ANCESTOR_HOP_CAP; hop += 1) {
+      const parent = nodes.get(parentId);
+      if (!parent) return { restricted: true, nda };
+      restricted ||= !!parent.restricted || !!parent.contacts;
+      nda ||= !!parent.nda;
+      parentId = parent.parentId ?? null;
+      if (parentId === null) return { restricted, nda };
+    }
+    return { restricted: true, nda };
+  } catch {
+    return { restricted: true, nda: false };
   }
-  return { restricted: true, nda };
 }
 
 function factsOf(type: BrainType, vn: ViewNode, org: ReturnType<typeof requireOrg>): BrainFacts {
