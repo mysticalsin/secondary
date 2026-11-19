@@ -20,7 +20,14 @@ import {
   SUBJECT_PARAM,
 } from "./ops-rights.ts";
 import { tenantStub } from "./stubs.ts";
-import { isSwitchName, SWITCHES, type SwitchName } from "./switches.ts";
+import {
+  httpSwitch,
+  internalSwitch,
+  isSwitchName,
+  SWITCHES,
+  switchedOff,
+  type SwitchName,
+} from "./switches.ts";
 import type { AppDeps, AppEnv, Session } from "./types.ts";
 
 const envName = (env: Env): string => env.ENVIRONMENT;
@@ -57,38 +64,16 @@ function boundedAudit(run: Promise<boolean>): Promise<AuditOutcome> {
 
 // ---- kill switch gate ----
 
-const GATES: { name: SwitchName; match: (method: string, path: string) => boolean }[] = [
-  {
-    name: "contribute",
-    match: (m, p) => m === "POST" && /^\/v1\/personal\/items\/[^/]+\/contribute$/.test(p),
-  },
-  // Every route that can reach the model: the planner, /v1/ai/*, and briefs (H-05). New AI routes
-  // must be listed here AND call gate(env, switches.ai) in the handler. Wiki ingest runs in a Durable Object job
-  // without a session: it reads the tenant's `ai` switch itself (wiki/engine.ts, aiSwitchOn) and passes it to gate().
-  {
-    name: "ai",
-    match: (_m, p) =>
-      p === "/v1/genui/plan" ||
-      p.startsWith("/v1/ai/") ||
-      p === "/v1/briefs" ||
-      p.startsWith("/v1/briefs/"),
-  },
-  // Synced source files are served from /v1/sources/:id; search hits are gated in the handler (M-04).
-  {
-    name: "connector",
-    match: (_m, p) => p.startsWith("/v1/connectors/") || p.startsWith("/v1/sources/"),
-  },
-];
+export { switchedOff };
 
-export const switchedOff = (name: SwitchName) => ({ error: "switched_off", switch: name });
-
-/** Runs after authentication. MCP calls need the mcp switch, other routes the switch that owns them. */
+/** Runs after authentication. An internal call is refused on mcp before any path row. */
 export const switchGate: MiddlewareHandler<AppEnv> = async (c, next) => {
   const s = c.get("session");
-  if (s.internal && !s.switches.mcp) return c.json(switchedOff("mcp"), 503);
+  const mcp = internalSwitch();
+  if (s.internal && !s.switches[mcp]) return c.json(switchedOff(mcp), 503);
   const path = new URL(c.req.url).pathname;
-  for (const g of GATES)
-    if (!s.switches[g.name] && g.match(c.req.method, path)) return c.json(switchedOff(g.name), 503);
+  const name = httpSwitch(c.req.method, path);
+  if (name && !s.switches[name]) return c.json(switchedOff(name), 503);
   await next();
 };
 

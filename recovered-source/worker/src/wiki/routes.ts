@@ -23,6 +23,7 @@ import { checkSourceAccess } from "../connector.ts";
 import { humanIdsOf } from "../human.ts";
 import type { CandidateInput } from "../routes.ts";
 import { personalScope, scopeOfNode } from "../scope.ts";
+import { sessionSwitchOn } from "../switches.ts";
 import { detectSensitivity } from "../sensitivity.ts";
 import { tenantStub, workspaceStub } from "../stubs.ts";
 import type { AppDeps, AppEnv, Session } from "../types.ts";
@@ -137,7 +138,7 @@ export async function readableMany(
   ];
   if (need.length) {
     // With the connector switched off no synced file counts as readable (M-04).
-    const yes = s.switches.connector
+    const yes = sessionSwitchOn(s, "wikiSource")
       ? await checkSourceAccess(
           c.env,
           s.tenantId,

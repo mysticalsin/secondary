@@ -21,6 +21,7 @@ import {
   type TurnRequestValue,
 } from "../../../../packages/contracts/src/agent-ui/index.ts";
 import { contractGate, gate } from "../ai/brief.ts";
+import { sessionSwitchOn } from "../switches.ts";
 import { doBudget, withUserCap } from "../ai/budget.ts";
 import { viewOf } from "../auth.ts";
 import { GOVERNANCE_BRAINS } from "../brains/nav.ts";
@@ -161,7 +162,7 @@ export async function runTurn({ c, deps, req, turnId, send }: TurnInput): Promis
     const view = viewOf(s);
 
     // ---- the gate: nothing leaves the system unless every check says yes ----
-    const g = gate(c.env, s.switches.ai);
+    const g = gate(c.env, sessionSwitchOn(s, "aiCall"));
     let ai: Extract<typeof g, { ok: true }> | null = null;
     // Personal is never sent to the model, and an account counts only when its contract says "allowed".
     const refused = new Set(

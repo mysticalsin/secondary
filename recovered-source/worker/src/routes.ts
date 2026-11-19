@@ -32,7 +32,8 @@ import { checkSourceAccess, NOT_CONFIRMED, SOURCE_ITEM_ID } from "./connector.ts
 import { MAX_PROMPT, planView } from "./genui.ts";
 import { humanIdsOf } from "./human.ts";
 import { readiness } from "./observe.ts";
-import { opsAdminRoutes, switchedOff, switchGate } from "./ops-admin.ts";
+import { opsAdminRoutes, switchGate } from "./ops-admin.ts";
+import { sessionSwitchOff, sessionSwitchOn, switchedOff, handlerSwitch } from "./switches.ts";
 import { PERSONAL_KINDS, type PersonalKind, personalKindOf } from "./personal-kind.ts";
 import { candidateId, parseCandidateId, personalScope, scopeOfNode } from "./scope.ts";
 import { limitBody, mutationGuard, safeEqual } from "./security.ts";
@@ -227,7 +228,8 @@ export async function submitCandidate(
   i: CandidateInput,
 ): Promise<Response> {
   const s = sess(c);
-  if (!s.switches.contribute) return c.json(switchedOff("contribute"), 503);
+  if (sessionSwitchOff(s, "submitCandidate"))
+    return c.json(switchedOff(handlerSwitch("submitCandidate")), 503);
   const flags = detectSensitivity({ title: i.title, body: i.body });
   const pending = flags.filter((f) => !i.acknowledged.includes(f.id));
   // R-110/R-111: anything flagged blocks until the owner acknowledges each flag.
@@ -563,7 +565,7 @@ export function v1Routes(deps: AppDeps): Hono<AppEnv> {
     // lets this user read the file. Anything unconfirmed is left out without a trace.
     // The `connector` kill switch stops source hits too (M-04).
     const sourceHits = (
-      s.switches.connector
+      sessionSwitchOn(s, "sourceSearch")
         ? await Promise.all(
             admittedScopes(view).map((scope) => {
               const stub = workspaceStub(c.env, s.tenantId, scope);

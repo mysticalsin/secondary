@@ -23,8 +23,8 @@ test("switch gate matches the table taken from main", async () => {
 test("kill-switch paths and handler names are declared once", () => {
   const root = new URL("../../recovered-source/worker/src/", import.meta.url);
   const read = (file: string) => readFileSync(new URL(file, root), "utf8");
-  assert.equal(read("ops-admin.ts").includes("/v1/personal/items/"), false);
-  assert.equal(read("switches.ts").includes("/v1/personal/items/"), true);
+  assert.equal(read("ops-admin.ts").includes("personal/items"), false);
+  assert.equal(read("switches.ts").includes("personal\\/items"), true);
   for (const file of [
     "routes.ts",
     "wiki/routes.ts",
