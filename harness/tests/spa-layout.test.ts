@@ -208,6 +208,17 @@ async function evalJson<T>(session: Session, expression: string): Promise<T | un
   }
 }
 
+async function waitForStyle(session: Session, expression: string): Promise<{ name: string }> {
+  let last = "";
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const value = await evalJson<{ ready?: boolean; name?: string }>(session, expression);
+    if (value?.ready && typeof value.name === "string") return { name: value.name };
+    last = JSON.stringify(value ?? null);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`motion styles were not ready: ${last}`);
+}
+
 async function size(session: Session, width: number, height: number) {
   await session.call("Emulation.setDeviceMetricsOverride", {
     width, height, deviceScaleFactor: 1, mobile: width < 760,
@@ -425,21 +436,30 @@ test("prefers-reduced-motion turns off the pulse and the shimmer", async () => {
     });
     await size(launched.session, 1440, 900);
     await launched.session.call("Page.navigate", { url: `http://127.0.0.1:${port}/graph` });
-    const pulse = await evalJson<{ name: string }>(launched.session, `(() => {
+    const pulse = await waitForStyle(launched.session, `(() => {
       const status = document.getElementById("status");
+      let styled = false;
+      try { styled = [...document.styleSheets].some((sheet) => sheet.cssRules.length > 0); } catch { styled = false; }
+      if (!status || !styled) return JSON.stringify({ ready: false });
       status.dataset.kind = "loading";
-      return JSON.stringify({ name: getComputedStyle(status, "::before").animationName });
+      const name = getComputedStyle(status, "::before").animationName;
+      if (!name) return JSON.stringify({ ready: false });
+      return JSON.stringify({ ready: true, name });
     })()`);
     await launched.session.call("Page.navigate", { url: `http://127.0.0.1:${port}/dashboard` });
-    const shimmer = await evalJson<{ name: string }>(launched.session, `(() => {
+    const shimmer = await waitForStyle(launched.session, `(() => {
+      let styled = false;
+      try { styled = [...document.styleSheets].some((sheet) => sheet.cssRules.length > 0); } catch { styled = false; }
+      if (!styled || !document.body) return JSON.stringify({ ready: false });
       const box = document.createElement("div");
       box.className = "skeleton";
       const cell = document.createElement("div");
       box.append(cell);
       document.body.append(box);
-      return JSON.stringify({ name: getComputedStyle(cell).animationName });
+      const name = getComputedStyle(cell).animationName;
+      if (!name) return JSON.stringify({ ready: false });
+      return JSON.stringify({ ready: true, name });
     })()`);
-    if (!pulse || !shimmer) throw new Error("motion styles were not ready");
     assert.equal(pulse.name, "none", `pulse ${pulse.name}`);
     assert.equal(shimmer.name, "none", `shimmer ${shimmer.name}`);
   } finally {

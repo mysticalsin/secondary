@@ -236,6 +236,38 @@ test("erasure runner: scope:c_delivery does not match scope:c_delivery_x", async
   }
 });
 
+test("the runner refuses a prefix and a scope the tenant did not plan", async () => {
+  const rights = (await import(workerModule("ops-rights.ts"))) as {
+    runnerScopeId: (step: string, planned: ReadonlySet<string>) => string | null;
+  };
+  const planned = new Set(["c_delivery"]);
+  assert.equal(rights.runnerScopeId("scope:c_delivery", planned), "c_delivery");
+  for (const id of ["scope:c_delivery!", `scope:${"a".repeat(129)}`, "scopes:x", "scope:C_delivery", "scope:personal:u_subject", "scope:global"]) {
+    assert.equal(rights.runnerScopeId(id, planned), null, id);
+  }
+  const { file, remove } = tempFile();
+  try {
+    await openPolicy(file);
+    const org = buildOrg(["c_delivery"]);
+    const order = ["receipts", "scope:personal:u_subject", "directory"];
+    const stored = encodeErasure({
+      status: { tag: "partial_failed" },
+      order,
+      mark: { receipts: "failed", "scope:personal:u_subject": "pending", directory: "pending" },
+      grant: { subject: SUBJECT, requester: "ada", confirmer: "bea", steps: order },
+      receipts: null,
+    });
+    putLedger(file, stored.status, stored.ledger);
+    const { post } = await eraseApp(org);
+    const res = await post(admin("ada", "ada@example.invalid"), NOW);
+    const body = (await res.json()) as { status?: string; error?: string };
+    assert.equal(body.status === "erased", false);
+    assert.equal(erasureCalls().includes("pseudonymise:personal:u_subject"), false);
+  } finally {
+    remove();
+  }
+});
+
 test("erasure request drops a scope step that is not an anchored match", () => {
   const illegal = [
     "scope:c_delivery!",

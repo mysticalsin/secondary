@@ -1,0 +1,42 @@
+packages/policy/src/brains.ts | b.type === "account" || !!b.restricted || !!b.nda;
+packages/policy/src/brains.ts | return !n.restricted && !n.nda && !n.contacts && !n.account;
+packages/policy/src/engine.ts | ...(n.contacts ? { contacts: true } : {}),
+packages/policy/src/engine.ts | ...(n.nda ? { nda: true } : {}),
+packages/policy/src/engine.ts | ...(n.restricted ? { restricted: true } : {}),
+packages/policy/src/engine.ts | if (g.scope_type === "department" && n.restricted) return false;
+packages/policy/src/engine.ts | if (n.contacts) s.contacts = true;
+packages/policy/src/engine.ts | if (n.contacts) {
+packages/policy/src/engine.ts | if (n.nda && !(n.account && nda.has(n.account) && c.nda === "named_grant")) return false;
+packages/policy/src/engine.ts | if (n.nda) s.nda = true;
+packages/policy/src/engine.ts | if (n.restricted) s.restricted = true;
+packages/policy/src/engine.ts | if (p.restricted || p.nda) return true;
+packages/policy/src/map.ts | if (vn.contacts) b.push("Contacts: members only");
+packages/policy/src/map.ts | if (vn.kind === "circle" && vn.restricted) b.push("Restricted circle");
+packages/policy/src/map.ts | if (vn.nda) b.push("NDA");
+packages/policy/src/org.ts | const base: ScopeRef = { account: aid, region: rid, nda: !!o.nda, bid: !!o.bid };
+src/worker/admin/routes.ts | const accounts = manageable(w.org, w.roles).filter((d) => d.nda && !d.subspace);
+src/worker/admin/routes.ts | if (!d.nda)
+src/worker/admin/routes.ts | nda: d.nda,
+src/worker/admin/routes.ts | needsSecond: d.restricted,
+src/worker/admin/routes.ts | needsSecond: d.restricted,
+src/worker/admin/routes.ts | reason: d.restricted
+src/worker/admin/routes.ts | reason: d.restricted ? "Restricted scope: second approver required" : `${auth} change`,
+src/worker/admin/routes.ts | restricted: d.restricted,
+src/worker/admin/routes.ts | scope: { key: scopeKey(d), label: d.label, restricted: d.restricted },
+src/worker/admin/validate.ts | d.nda ? "a restricted account" : d.label;
+src/worker/admin/validate.ts | if (n?.restricted) return true;
+src/worker/admin/validate.ts | if (org.nodes.get(g.scope_id)?.restricted) return true;
+src/worker/admin/validate.ts | nda: !!node.nda,
+src/worker/admin/validate.ts | restricted: type === "account" || !!node.restricted || subspace !== null,
+src/worker/admin/validate.ts | return n?.childIds.some((c) => org.nodes.get(c)?.restricted) ?? false;
+src/worker/ai/evidence.ts | !n.contacts &&
+src/worker/brains/open.ts | let nda = !!node?.nda;
+src/worker/brains/open.ts | let restricted = !!node?.restricted || !!node?.contacts;
+src/worker/brains/open.ts | nda ||= !!parent.nda;
+src/worker/brains/open.ts | restricted ||= !!parent.restricted || !!parent.contacts;
+src/worker/brains/routes.ts | nda: flags.nda,
+src/worker/brains/routes.ts | needsSecond: d.restricted,
+src/worker/brains/routes.ts | needsSecond: d.restricted,
+src/worker/brains/routes.ts | restricted: flags.restricted,
+src/worker/wiki/seed-content.ts | circles.some((c) => c.restricted)
+src/worker/wiki/seed-content.ts | const restricted = circle.restricted === true;

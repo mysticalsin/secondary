@@ -43,4 +43,20 @@ Devin agrees with Option 2 on conditions C1–C8. This round does not close the 
 - C7. Met by `ancestor walks stay inside restrictionOf and underRestriction`.
 - C8. Met in `plan.md`. Rollback is an ordinary revert to main `9bdb364644f9a811a35032bec60e41a886a7650f`, with no data migration. A page already in review stays in review. Brains whose publish path changes: not measured. Contacts restrict descendants by the open card's rule, under the Sentinel X-2 / Y-1 residual input named in spec 014.
 
+## Sentinel round 1
+
+Sentinel endorses C1–C8 and would block on C2, C3, C4 and C7. Those are met at this head by the tests named above, including the planted second walk that `ancestor walks stay inside restrictionOf and underRestriction` rejects. Sentinel adds S1–S7. The original leak was low. The risk of this change is over-restriction. The unflagged controls stay green.
+
+- S1. Met. `restrictionOf(null)` is restricted unless the caller says the brain is personal. Readers pass the tenant org map. `each reader uses the tenant org, and another tenant's org does not apply`.
+- S2. Recorded, not changed. `underRestriction` does not treat contacts. `packages/policy/src/engine.ts` is intake bytes, so editing it would be a pin, and adding contacts there would also block the Everyone-open lift. `a contacts ancestor does not block the everyone-open lift` locks that divergence. C7 names `underRestriction` as the only allowed second walk.
+- S3. Met by `a new direct flag read is listed before it lands` and `harness/tests/flag-reads.txt`. Brain config at `routes.ts` reads `effectivePublication(b.facts)`, which is the walk's result, not a raw flag. Export, search and ops read flags on directory rows for two-person rules. Those reads are in the inventory.
+- S4. Met by `proposing under a restricted ancestor stays a candidate and an unflagged brain publishes` (201 candidate, then 201 published) and by the closed card's six keys: `canOpen`, `canRequestAccess`, `id`, `name`, `restricted`, `type`.
+- S5. The mutant table is in the report for this head. Each guard names its test in `plan.md`.
+- S6. The runner now refuses a scope that is not an anchored id in the tenant plan (`runnerScopeId`). A request that drops a bad step, a grant that must cover every step, and a failure that must not mark the subject erased are a larger machine change. Not built here. Split into its own pull request.
+- S7. `a stored direct publication publishes again when the ancestor flag is cleared` locks the flip back. A repair path for old erasure rows with bad scope steps is a stored-ledger migration. Not built here. Split with S6.
+
+## Devin advisory mutants
+
+Not a verdict and not a gate loop. V1 is killed by `a parent cycle and a self-parent are restricted by the hop cap`. V2 is killed by `a throwing parent lookup is restricted and direct publish does not throw`. V3 is killed by `the runner refuses a prefix and a scope the tenant did not plan`. V4 is killed by `a 129-character candidate id is not found and a 128-character id is`. V5 is killed by `the author of a candidate on a node they cannot view gets 404`.
+
 CONSENSUS: OPEN

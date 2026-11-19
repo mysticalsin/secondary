@@ -92,8 +92,10 @@ const ANCESTOR_HOP_CAP = 12;
 export function restrictionOf(
   node: RestrictionNode | null,
   nodes: { get(id: string): RestrictionNode | undefined },
+  scope?: { personal?: boolean },
 ): { restricted: boolean; nda: boolean } {
   try {
+    if (!node && !scope?.personal) return { restricted: true, nda: false };
     let restricted = !!node?.restricted || !!node?.contacts;
     let nda = !!node?.nda;
     let parentId = node?.parentId ?? null;
@@ -215,7 +217,7 @@ export async function directPublish(
   if (cfg.publication !== "direct") return false;
   const type = w.personal ? "personal" : w.vn ? brainTypeOf(w.vn.kind) : null;
   if (!type) return false;
-  const walked = restrictionOf(w.vn, requireOrg(sess(c)).nodes);
+  const walked = restrictionOf(w.vn, requireOrg(sess(c)).nodes, { personal: w.personal });
   const facts: BrainFacts = { type, ...walked };
   if (effectivePublication(facts, cfg.publication) !== "direct") return false;
   if (w.personal) return true;

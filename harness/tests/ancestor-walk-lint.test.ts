@@ -13,6 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const ALLOWED = new Set(["src/worker/brains/open.ts", "packages/policy/src/engine.ts"]);
 const HEADER = /for\s*\([^)]*parentId[^)]*\)/;
 const STEP = /parentId\s*=\s*[A-Za-z0-9_]+\.parentId/;
+const LOOP = /\b(?:while|for)\b[\s\S]{0,500}?[A-Za-z0-9_]+\s*=\s*[A-Za-z0-9_]+\.parentId/;
 
 function filesUnder(dir: string): string[] {
   const out: string[] = [];
@@ -31,10 +32,24 @@ test("ancestor walks stay inside restrictionOf and underRestriction", () => {
     for (const full of filesUnder(dir)) {
       const rel = path.relative(root, full).split(path.sep).join("/");
       const text = readFileSync(full, "utf8");
-      if (HEADER.test(text) || STEP.test(text)) found.push(rel);
+      if (HEADER.test(text) || STEP.test(text) || LOOP.test(text)) found.push(rel);
     }
   }
   assert.deepEqual(found.sort(), [...ALLOWED].sort());
+});
+
+test("a new direct flag read is listed before it lands", () => {
+  const hits: string[] = [];
+  for (const dir of ["src", "packages/policy/src"]) {
+    for (const full of filesUnder(path.join(root, dir))) {
+      const rel = path.relative(root, full).split(path.sep).join("/");
+      for (const line of readFileSync(full, "utf8").split("\n")) {
+        if (/\.(restricted|nda|contacts)\b(?!\s*\()/.test(line)) hits.push(`${rel} | ${line.trim()}`);
+      }
+    }
+  }
+  const pinned = readFileSync(path.join(root, "harness/tests/flag-reads.txt"), "utf8").trim().split("\n");
+  assert.deepEqual(hits.sort(), pinned);
 });
 
 test("erasure scope matching does not use a prefix", () => {
