@@ -66,7 +66,7 @@ The proposal author cannot decide, including when the author id differs only by 
 
 ### Success Criteria
 
-- **SC-001**: The new test fails on `3656037a` because the lead is still a role-id set and direct publish still reads `can.decide`, and it passes after the grant check.
+- **SC-001**: The characterization table matches main `2d61c473`. A role id that is not an own property of the built-in table is not a lead. That includes `__proto__`, `constructor`, `toString`, `hasOwnProperty`, `ACME_LEAD`, and `acme_lead` with a trailing space. Replacing `Object.hasOwn` with `in` fails that test.
 - **SC-002**: Existing lead, release, and self-approval tests pass without a weakened assertion.
 
 ### Key Entities

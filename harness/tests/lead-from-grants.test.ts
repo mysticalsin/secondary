@@ -30,7 +30,7 @@ const editorRole: Role = {
   never: [],
 };
 
-test("lead grant: who decides stays, and the lead is not a role-id list", async () => {
+test("wiki decide: a seeded lead decides, a circle editor does not, and publish still reads can.decide", async () => {
   const specifier = new URL("../../recovered-source/worker/src/wiki/review.ts", import.meta.url).href;
   const openSpecifier = new URL("../../recovered-source/worker/src/brains/open.ts", import.meta.url).href;
   const { mayDecide } = (await import(specifier)) as {
