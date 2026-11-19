@@ -127,6 +127,22 @@
     return (withPages || cards[0] || { id: "" }).id;
   }
 
+  function cardsFromTree(workspaces) {
+    return workspaces.filter((ws) => typeof ws.id === "string" && ws.id !== "").map((ws) => ({
+      id: ws.id,
+      name: typeof ws.label === "string" && ws.label ? ws.label : ws.id,
+      pages: (ws.children || []).reduce((n, folder) => n + (Array.isArray(folder.children) ? folder.children.length : 0), 0),
+    }));
+  }
+
+  function sameBrainEdges(page, pages) {
+    const pageSet = pages instanceof Set ? pages : new Set(pages);
+    return {
+      out: page.out.filter((target) => pageSet.has(target)),
+      in: page.in.filter((target) => pageSet.has(target)),
+    };
+  }
+
   function fillBrainSelect(select, cards) {
     const id = chooseBrain(cards);
     select.replaceChildren();
@@ -137,7 +153,15 @@
 
   async function loadBrain() {
     setStatus("Reading your second brain…", "loading");
-    const [tree, listed] = await Promise.all([getJson("/v1/brain/tree"), getJson("/v1/brains")]);
+    const tree = await getJson("/v1/brain/tree");
+    let listed = { brains: [] };
+    let brainsFailed = false;
+    try {
+      listed = await getJson("/v1/brains");
+    } catch (err) {
+      if (err instanceof AuthError) throw err;
+      brainsFailed = true;
+    }
     const roots = Array.isArray(tree.roots) ? tree.roots : [];
     const workspaces = roots.filter((r) => r.access !== "locked" && Array.isArray(r.children));
     const locked = roots.filter((r) => r.access === "locked").length;
@@ -198,7 +222,7 @@
         .trim();
       if (p.text.startsWith(p.title)) p.text = p.text.slice(p.title.length).trim();
     }
-    return { pages, workspaces, locked, failed, capped: pages.length > MAX_DETAILS ? pages.length : 0, cards: brainCards(listed) };
+    return { pages, workspaces, locked, failed, capped: pages.length > MAX_DETAILS ? pages.length : 0, cards: brainsFailed ? cardsFromTree(workspaces) : brainCards(listed) };
   }
 
   function parseNum(str) {
@@ -263,7 +287,10 @@
 
   function analyze(pages) {
     const pageSet = new Set(pages);
-    const degree = (p) => p.out.filter((t) => pageSet.has(t)).length + p.in.filter((t) => pageSet.has(t)).length;
+    const degree = (p) => {
+      const edges = sameBrainEdges(p, pageSet);
+      return edges.out.length + edges.in.length;
+    };
     const scores = Object.fromEntries(LENS_ORDER.map((k) => [k, 0]));
     const evidence = Object.fromEntries(LENS_ORDER.map((k) => [k, { terms: 0, pages: new Set(), folders: new Set() }]));
     const amounts = [];
@@ -419,7 +446,7 @@
       hubs: pages.filter((p) => degree(p) > 0).sort((a, b) => degree(b) - degree(a)).slice(0, 8),
       orphans: pages.filter((p) => degree(p) === 0 && p.loaded),
       recent: pages.filter((p) => p.updatedAt).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8),
-      links: pages.reduce((n, p) => n + p.out.filter((t) => pageSet.has(t)).length, 0),
+      links: pages.reduce((n, p) => n + sameBrainEdges(p, pageSet).out.length, 0),
       folders: new Set(pages.map((p) => `${p.ws}#${p.folder}`)).size,
       fresh: pages.filter((p) => p.updatedAt && now - p.updatedAt < 30 * DAY).length,
       degree,
@@ -638,7 +665,10 @@
       ),
       m.projects.length ? card("Project status", "Status read from words like blocked, delayed, delivered.", h("div", { class: "board" }, cols.map((c) => h("div", { class: `col st-${c.replace(" ", "-").toLowerCase()}` },
         h("h4", { text: `${c} · ${m.projects.filter((p) => p.status === c).length}` }),
-        m.projects.filter((p) => p.status === c).slice(0, 8).map((p) => h("div", { class: "tile" }, ent(p.page), h("span", { class: "muted", text: `${plural(p.page.out.length + p.page.in.length, "link")}` }))))))) : null,
+        m.projects.filter((p) => p.status === c).slice(0, 8).map((p) => {
+          const edges = sameBrainEdges(p.page, m.pages);
+          return h("div", { class: "tile" }, ent(p.page), h("span", { class: "muted", text: `${plural(edges.out.length + edges.in.length, "link")}` }));
+        }))))) : null,
       h("div", { class: "grid2" },
         card("Risks", "Each risk with the pages it touches.", m.risks.length ? h("ul", { class: "list" }, m.risks.slice(0, 8).map((r) => h("li", null, ent(r), h("span", { class: "meta" }, [...new Set([...r.in, ...r.out])].slice(0, 3).map((x) => ent(x)))))) : h("p", { class: "empty", text: "No Risk folder yet." })),
         card("Coming up", "Dates in the next six months found in your notes.", m.upcoming.length ? h("ul", { class: "list" }, m.upcoming.slice(0, 8).map((u) => h("li", null, h("strong", { text: fmtDate(u.t) }), h("p", { text: clip(u.sentence, 140) }), h("span", { class: "meta" }, "in ", ent(u.page))))) : h("p", { class: "empty", text: "No upcoming dates found." })),
@@ -673,7 +703,7 @@
   function render() {
     if (!brain) return;
     const ws = brainEl.value;
-    const pages = brain.pages.filter((p) => !ws || p.ws === ws);
+    const pages = brain.pages.filter((p) => ws && p.ws === ws);
     const m = analyze(pages);
     current = m;
     main.replaceChildren();
@@ -685,7 +715,7 @@
     const mix = LENS_ORDER.map((k, i) => ({ label: LENSES[k].label, value: m.scores[k], color: ["#db64ff", "#ffc709", "#ff6571", "#eaa7ff", "#9c43da"][i] }));
     const hero = h("section", { class: "hero" },
       h("div", { class: "hero-copy" },
-        h("p", { class: "eyebrow", text: ws ? brain.workspaces.find((w) => w.id === ws)?.label || "Brain" : "All brains" }),
+        h("p", { class: "eyebrow", text: brain.workspaces.find((w) => w.id === ws)?.label || "Brain" }),
         h("h1", { text: `Adapted for ${m.active.map((k) => LENSES[k].label).join(" · ")}` }),
         h("p", { class: "lede", text: `Built from ${plural(m.total, "signal")} in ${plural(pages.length, "page")}. Change what you write and this dashboard changes with it.` }),
         h("div", { class: "chips", role: "group", "aria-label": "Dashboard focus" },
@@ -717,7 +747,9 @@
   }
 
   function openDrawer(page) {
-    const m = current && current.pages.includes(page) ? current : analyze(brain.pages);
+    const scope = current && current.pages.includes(page) ? current.pages : brain.pages.filter((item) => item.ws === page.ws);
+    const edges = sameBrainEdges(page, scope);
+    const m = current && current.pages.includes(page) ? current : analyze(scope);
     const figures = m.amounts.filter((a) => a.page === page);
     const said = [];
     const low = page.title.toLowerCase();
@@ -734,8 +766,8 @@
       account ? h("div", { class: "kpis small" }, kpi("Stage", account.stage), kpi("Links", String(account.linked.length)), kpi("Risks", String(account.risks.length))) : null,
       h("p", { class: "preview", text: page.text ? clip(page.text, 600) : "This page has no text yet." }),
       figures.length ? h("div", null, h("h4", { class: "sub", text: "Figures on this page" }), h("ul", { class: "list" }, figures.slice(0, 6).map((a) => h("li", null, h("strong", { text: fmtMoney(a.value, a.currency) }), ` ${a.category}`, h("p", { class: "muted", text: clip(a.sentence, 140) }))))) : null,
-      h("h4", { class: "sub", text: `Links to ${page.out.length}` }), linked(page.out, "No outgoing links."),
-      h("h4", { class: "sub", text: `Linked from ${page.in.length}` }), linked(page.in, "No backlinks."),
+      h("h4", { class: "sub", text: `Links to ${edges.out.length}` }), linked(edges.out, "No outgoing links."),
+      h("h4", { class: "sub", text: `Linked from ${edges.in.length}` }), linked(edges.in, "No backlinks."),
       said.length ? h("div", null, h("h4", { class: "sub", text: `Mentioned in ${plural(said.length, "sentence")}` }), h("ul", { class: "quotes" }, said.slice(0, 5).map((c) => quote(c)))) : null,
       h("div", { class: "drawer-actions" }, h("a", { class: "btn", href: `/brains/${encodeURIComponent(page.ws)}/pages/${encodeURIComponent(page.pid)}` }, "Open page"), h("a", { class: "btn ghost", href: `/graph#focus=${encodeURIComponent(page.key)}` }, "Show in graph")),
     ));
