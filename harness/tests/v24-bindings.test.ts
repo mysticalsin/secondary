@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -173,4 +174,92 @@ test("deploy.sh without --dry-run exits non-zero and does not upload", () => {
   assert.equal(result.stdout.includes("Uploaded"), false);
   const extra = spawnSync("bash", ["deploy.sh", "--upload"], { cwd: root, encoding: "utf8" });
   assert.equal(extra.status, 2);
+});
+
+function sha256(body: string): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+
+function assetFixture(fill: (assets: string) => void): string {
+  const dir = mkdtempSync(join(tmpdir(), "v24-assets-"));
+  writeFileSync(join(dir, "wrangler.jsonc"), readFileSync(join(root, "wrangler.jsonc")));
+  writeFileSync(join(dir, "deploy.sh"), readFileSync(join(root, "deploy.sh")));
+  mkdirSync(join(dir, "deploy"));
+  writeFileSync(join(dir, "deploy", "guard.ts"), readFileSync(join(root, "deploy", "guard.ts")));
+  const bin = join(dir, "node_modules", ".bin");
+  mkdirSync(bin, { recursive: true });
+  const stub = join(bin, "wrangler");
+  writeFileSync(stub, "#!/bin/sh\necho wrangler-invoked >&2\nexit 99\n");
+  chmodSync(stub, 0o755);
+  const assets = join(dir, "deploy", "assets");
+  mkdirSync(assets);
+  fill(assets);
+  return dir;
+}
+
+function refuseDeploy(dir: string, reason: string): void {
+  const result = spawnSync("bash", ["deploy.sh"], { cwd: dir, encoding: "utf8" });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, new RegExp(reason));
+  assert.equal(result.stderr.includes("wrangler-invoked"), false);
+  assert.equal(result.stdout.includes("Uploaded"), false);
+}
+
+test("asset drop-in: deploy.sh refuses a marker or a manifest mismatch and the guard accepts a match", async () => {
+  const guard = (await import("../../deploy/guard.ts")) as {
+    guardRoot: (root: string, mode: "dry-run" | "deploy") => { ok: true } | { ok: false; reason: string };
+  };
+  const index = "alpha";
+  const app = "beta";
+  const indexLine = `${sha256(index)}  index.html`;
+  const appLine = `${sha256(app)}  nested/app.js`;
+
+  const marked = assetFixture((assets) => {
+    writeFileSync(join(assets, "UNREPRODUCED"), "marker\n");
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${indexLine}\n`);
+  });
+  refuseDeploy(marked, "assets-unreproduced");
+
+  const mismatched = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    mkdirSync(join(assets, "nested"));
+    writeFileSync(join(assets, "nested", "app.js"), "changed");
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${indexLine}\n${appLine}\n`);
+  });
+  refuseDeploy(mismatched, "assets-manifest-mismatch");
+
+  const missing = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${indexLine}\n${appLine}\n`);
+  });
+  refuseDeploy(missing, "assets-manifest-mismatch");
+
+  const extra = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "extra.txt"), "extra");
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${indexLine}\n`);
+  });
+  refuseDeploy(extra, "assets-manifest-mismatch");
+
+  const noManifest = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+  });
+  refuseDeploy(noManifest, "assets-manifest-missing");
+
+  const matched = assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    mkdirSync(join(assets, "nested"));
+    writeFileSync(join(assets, "nested", "app.js"), app);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${indexLine}\n${appLine}\n`);
+  });
+  const passed = spawnSync(
+    "node",
+    ["--experimental-strip-types", "deploy/guard.ts", "deploy"],
+    { cwd: matched, encoding: "utf8" },
+  );
+  assert.equal(passed.status, 0);
+  assert.equal(passed.stderr.includes("wrangler-invoked"), false);
+  assert.deepEqual(guard.guardRoot(matched, "deploy"), { ok: true });
+  assert.deepEqual(readdirSync(join(root, "deploy", "assets")), ["UNREPRODUCED"]);
 });
