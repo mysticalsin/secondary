@@ -4,7 +4,7 @@
 
 ## Behaviour
 
-`GET /v1/%73ources/s1` with the connector switch off is mounted the same way production mounts `/v1`: `app.route("/v1", v1)`, then `switchGate`, then `GET /sources/:id`. The gate matches `c.req.path`. That request is 503 `{ error: "switched_off", switch: "connector" }`. A percent-encoding `decodeURI` rejects is 400 `{ error: "bad_request" }` and does not continue. A valid encoding of a path that is not a kill-switch row still continues.
+`GET /v1/%73ources/s1` with the connector switch off is mounted the same way production mounts `/v1`: `app.route("/v1", v1)`, then `switchGate`, then `GET /sources/:id`. The gate matches `c.req.path`. That request is 503 `{ error: "switched_off", switch: "connector" }`. `GET /v1/%2573ources/s1` is not decoded twice and hits the catch-all. A percent-encoding `decodeURI` rejects is 400 `{ error: "bad_request" }` and does not continue. `securityHeaders` uses the same routed path for `Cache-Control: no-store`. A valid encoding of a path that is not a kill-switch row still continues.
 
 ## Not in this slice
 
