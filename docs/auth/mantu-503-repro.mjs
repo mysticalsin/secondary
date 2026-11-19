@@ -1,5 +1,36 @@
 import { generateKeyPairSync } from "node:crypto";
-const worker = (await import(process.argv[2] + "/worker/entry.js")).default;
+import { realpathSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const root = realpathSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.."));
+const given = path.resolve(process.argv[2] ?? "");
+let target = "";
+try {
+  target = realpathSync(given);
+} catch {
+  target = "";
+}
+const rel = target ? path.relative(root, target) : "..";
+if (!target || rel.startsWith("..") || path.isAbsolute(rel)) {
+  console.error("refused: path is outside the repo");
+  process.exit(1);
+}
+// The directory can sit inside the repo while worker/entry.js is a symlink to somewhere else.
+let entryReal = "";
+try {
+  entryReal = realpathSync(path.join(target, "worker/entry.js"));
+} catch {
+  entryReal = "";
+}
+if (entryReal) {
+  const entryRel = path.relative(root, entryReal);
+  if (entryRel.startsWith("..") || path.isAbsolute(entryRel)) {
+    console.error("refused: path is outside the repo");
+    process.exit(1);
+  }
+}
+const worker = (await import(pathToFileURL(path.join(target, "worker/entry.js")).href)).default;
 const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const j = publicKey.export({ format: "jwk" });
 const jwk = { kty: j.kty, n: j.n, e: j.e, alg: "RS256", use: "sig", kid: "qa-synthetic" };

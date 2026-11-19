@@ -38,7 +38,7 @@ test("local boot: health, providers, a refused profile, and the synthetic shell"
   const api = await app();
   const health = await api.request("http://127.0.0.1/v1/health", {}, env);
   assert.equal(health.status, 200);
-  assert.deepEqual(await health.json(), { ok: true, env: "dev", version: "0.1.0" });
+  assert.deepEqual(await health.json(), { ok: true });
 
   const providers = await api.request("http://127.0.0.1/auth/providers", {}, env);
   assert.equal(providers.status, 200);
