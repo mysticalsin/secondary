@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -508,6 +508,61 @@ test("DEPLOY_AFTER_COPY is absent and does not change staged bytes", async () =>
     if (previous === undefined) delete process.env.DEPLOY_AFTER_COPY;
     else process.env.DEPLOY_AFTER_COPY = previous;
   }
+});
+
+function matchingAssets(): string {
+  const index = "alpha";
+  return assetFixture((assets) => {
+    writeFileSync(join(assets, "index.html"), index);
+    writeFileSync(join(assets, "MANIFEST.sha256"), `${sha256(index)}  index.html\n`);
+  });
+}
+
+test("deploy.sh pins wrangler.jsonc and the installed wrangler is 4.158.0", () => {
+  const text = readFileSync(join(root, "deploy.sh"), "utf8");
+  assert.match(text, /dirname -- "\$0"/);
+  assert.equal(text.match(/--config wrangler\.jsonc/g)?.length, 2);
+  const pkg = JSON.parse(readFileSync(join(root, "node_modules/wrangler/package.json"), "utf8")) as { version: string };
+  assert.equal(pkg.version, "4.158.0");
+});
+
+test("a wrangler.json beside wrangler.jsonc is refused", () => {
+  const dir = matchingAssets();
+  writeFileSync(join(dir, "wrangler.json"), "{}\n");
+  refuseDeploy(dir, "config-shadow");
+});
+
+test("a wrangler.toml beside wrangler.jsonc is refused", () => {
+  const dir = matchingAssets();
+  writeFileSync(join(dir, "wrangler.toml"), 'name = "shadow"\n');
+  refuseDeploy(dir, "config-shadow");
+});
+
+test("a wrangler deploy config redirect is refused", () => {
+  const dir = matchingAssets();
+  mkdirSync(join(dir, ".wrangler", "deploy"), { recursive: true });
+  writeFileSync(join(dir, ".wrangler", "deploy", "config.json"), '{"configPath":"../wrangler.jsonc"}\n');
+  refuseDeploy(dir, "config-shadow");
+});
+
+test("a dangling symlink at the configured asset directory is refused", () => {
+  const dir = matchingAssets();
+  symlinkSync(join(dir, "missing-target"), join(dir, "deploy/.staged"));
+  refuseDeploy(dir, "assets-directory-present");
+});
+
+test("a symlink deploy or deploy/assets directory is refused", () => {
+  const assetsLink = matchingAssets();
+  const heldAssets = join(assetsLink, "held-assets");
+  renameSync(join(assetsLink, "deploy", "assets"), heldAssets);
+  symlinkSync(heldAssets, join(assetsLink, "deploy", "assets"));
+  refuseDeploy(assetsLink, "assets-symlink");
+
+  const rootLink = matchingAssets();
+  const heldDeploy = join(rootLink, "held-deploy");
+  renameSync(join(rootLink, "deploy"), heldDeploy);
+  symlinkSync(heldDeploy, join(rootLink, "deploy"));
+  refuseDeploy(rootLink, "assets-symlink");
 });
 
 test("an empty unreproduced directory in any case is refused", () => {
