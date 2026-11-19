@@ -10,13 +10,13 @@
 
 An author who has lost access to the node is refused. Policy wins over authorship.
 
-Anyone else, a missing id, a foreign-tenant id, an unparsable id, and an id longer than 128 characters are the same 404 `{ error: "not_found" }`. An id of exactly 128 characters is still looked up. `GET /v1/nodes/:id` does not grow a candidate branch.
+Anyone else, a missing id, a foreign-tenant id, an unparsable id, and an id longer than 128 characters are the same 404 `{ error: "not_found" }`. An id of exactly 128 characters is still looked up. When that id names a node still in the author's view, the author gets 200. `GET /v1/nodes/:id` does not grow a candidate branch.
 
 ## Brain directory
 
 `GET /v1/brains` and `GET /v1/brains?scope=all` bound each brain at 2,500 ms. A workspace that does not answer within the bound comes back as a card with its id and name, `pages: 0`, and `unavailable: true`, and only when the `type` and `q` filters would have kept it. The other brains still return. Cards that answer in time do not gain `unavailable`.
 
-The unavailable card's `restricted` flag is `isRestrictedBrain` of the view node. It does not hard-code `false`. `role` is the caller's real role when the view already produced it, and is omitted when it did not. `template` is omitted: it lives in the workspace that did not finish. Neither field is invented.
+The unavailable card's `restricted` flag is `isRestrictedBrain` of the view node's own flags. It does not hard-code `false`. Ancestor or NDA restriction that is not copied onto the node itself is a residual: the miss path does not walk ancestors. `role` is the caller's real role when the view already produced it, and is omitted when it did not. `template` is omitted: it lives in the workspace that did not finish. Neither field is invented.
 
 The bound aborts the local read, so a late reply does not continue into further subrequests. `clearTimeout` runs when the read finishes first, so a brain that answered is not aborted. A Durable Object call already sent cannot be cancelled from this isolate. That in-flight set is one brain's fixed fan-out, not a retry loop.
 

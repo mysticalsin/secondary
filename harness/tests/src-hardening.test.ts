@@ -55,7 +55,7 @@ function workspace(name: string) {
     wikiMeta: async () => null,
     wikiHealth: async () => null,
     get: async (id: string) =>
-      id === CANDIDATE || id === OTHER_CIRCLE || id === NDA_CANDIDATE
+      id === CANDIDATE || id === OTHER_CIRCLE || id === NDA_CANDIDATE || id === LONG_CANDIDATE
         ? {
             id,
             kind: "candidate",
@@ -124,7 +124,46 @@ type Directory = {
 
 let directory: Directory;
 
+/** Put a 114-character circle on the synthetic org so a 128-character candidate id can name it. */
+async function plantLongNode(): Promise<void> {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<
+        string,
+        {
+          id: string;
+          childIds: string[];
+          plane: string;
+        }
+      >;
+    };
+  };
+  const org = orgMod.getOrg({
+    tenantId: TENANT,
+    seed: 20261104,
+    personalOwners: [AUTHOR.id],
+  });
+  if (org.nodes.has(LONG_NODE)) return;
+  const parent = org.nodes.get("d_amaris");
+  if (!parent) throw new Error("missing department");
+  org.nodes.set(LONG_NODE, {
+    id: LONG_NODE,
+    label: "Synthetic long circle",
+    kind: "circle",
+    plane: parent.plane,
+    parentId: parent.id,
+    childIds: [],
+    dept: parent.id,
+    circle: LONG_NODE,
+    facts: {},
+    leaf: null,
+  } as never);
+  parent.childIds.push(LONG_NODE);
+}
+
 async function openDirectory(): Promise<{ binding: unknown; remove: () => void }> {
+  await plantLongNode();
   const made = policy();
   const specifier = new URL("../../src/worker/tenant-policy.ts", import.meta.url).href;
   const mod = (await import(specifier)) as {
@@ -142,6 +181,7 @@ async function openDirectory(): Promise<{ binding: unknown; remove: () => void }
         memberships: [
           { scope_type: "circle", scope_id: "c_delivery" },
           { scope_type: "circle", scope_id: "c_eng" },
+          { scope_type: "circle", scope_id: LONG_NODE },
         ],
       },
       {
