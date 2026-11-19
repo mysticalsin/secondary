@@ -19,7 +19,7 @@ a { color: inherit; }
 [hidden] { display: none !important; }
 
 .top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 12px 24px; background: rgba(248,246,249,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
-.brand { display: flex; align-items: center; gap: 8px; text-decoration: none; font-weight: 720; letter-spacing: -0.02em; white-space: nowrap; }
+.brand { display: flex; align-items: center; gap: 8px; min-height: 24px; text-decoration: none; font-weight: 720; letter-spacing: -0.02em; white-space: nowrap; }
 .brand .mark { width: 22px; height: 22px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; }
 .brand .mark svg { width: 14px; height: 14px; }
 .capsule { display: flex; gap: 2px; background: var(--ink); border-radius: 999px; padding: 3px; }
@@ -45,7 +45,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 16px 24px 64px; display: flex
 .hero h1 { margin: 0; font-size: clamp(22px, 3vw, 32px); line-height: 1.15; letter-spacing: -0.025em; }
 .lede { color: #c8c8c8; margin: 10px 0 16px; max-width: 60ch; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { border: 1px solid #3d3c3e; background: transparent; color: #f8f6f9; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; }
+.chip { border: 1px solid #3d3c3e; background: transparent; color: #f8f6f9; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; min-width: 0; overflow-wrap: anywhere; }
 .chip:hover { border-color: var(--accent-2); }
 .chip[aria-pressed="true"] { background: #fff; color: var(--ink); border-color: #fff; }
 .hero-mix { display: flex; align-items: center; gap: 18px; }
@@ -82,12 +82,12 @@ button.kpi:hover { border-color: var(--accent); }
 .muted { color: var(--muted); font-size: 12px; }
 .sub { margin: 14px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 
-.ent { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: rgba(102,0,174,.25); text-underline-offset: 3px; }
+.ent { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 600; cursor: pointer; text-align: left; text-decoration: underline; text-decoration-color: rgba(102,0,174,.25); text-underline-offset: 3px; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .ent:hover { text-decoration-color: var(--accent); }
 
 .bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.bars li { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
-.bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bars li { display: grid; grid-template-columns: minmax(90px, 34%) minmax(0, 1fr) auto; align-items: center; gap: 10px; font-size: 13px; }
+.bar-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar-track { height: 10px; background: #f4f1f6; border-radius: 999px; overflow: hidden; }
 .bar-fill { display: block; height: 100%; border-radius: 999px; }
 .bar-value { font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -123,14 +123,14 @@ button.kpi:hover { border-color: var(--accent); }
 .quote p { margin: 0 0 4px; }
 .cloud { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
 
-.board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
-.col { background: #f9f9fa; border-radius: 14px; padding: 10px; border-top: 3px solid var(--line); }
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.col { min-width: 0; background: #f9f9fa; border-radius: 14px; padding: 10px; border-top: 3px solid var(--line); overflow-wrap: anywhere; }
 .col h4 { margin: 0 0 8px; font-size: 12.5px; }
 .col.st-on-track { border-top-color: var(--accent); }
 .col.st-at-risk { border-top-color: var(--focus); }
 .col.st-blocked { border-top-color: var(--bad); }
 .col.st-done { border-top-color: var(--ok); }
-.tile { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; display: flex; flex-direction: column; gap: 2px; }
+.tile { min-width: 0; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 
 .btn { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; border-radius: 999px; padding: 8px 14px; font-weight: 600; font-size: 13px; margin-top: 8px; }
 .btn:hover { background: #7f00da; }
@@ -148,20 +148,26 @@ button.kpi:hover { border-color: var(--accent); }
 .drawer-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 
 @media (max-width: 900px) {
-  .hero { grid-template-columns: 1fr; }
-  .grid2 { grid-template-columns: 1fr; }
-  .board { grid-template-columns: 1fr 1fr; }
-  .hero-kpis { grid-template-columns: 1fr 1fr; }
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
+  .board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .hero-kpis { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
   .top { flex-wrap: wrap; padding: 10px 14px; gap: 8px; }
+  .brand { min-height: 44px; }
   .capsule { order: 3; width: 100%; overflow-x: auto; }
+  .capsule a { display: inline-flex; align-items: center; min-height: 44px; }
   .brain-pick span { display: none; }
   main { padding: 12px 14px 48px; }
   #status { padding: 0 14px; }
   .hero { padding: 20px; border-radius: 20px; }
   .hero-mix { flex-direction: column; align-items: flex-start; }
-  .board { grid-template-columns: 1fr; }
-  .kpis.small { grid-template-columns: 1fr 1fr 1fr; }
-  .bars li { grid-template-columns: minmax(80px, 40%) 1fr auto; }
+  .board { grid-template-columns: minmax(0, 1fr); }
+  .kpis.small { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+  .bars li { grid-template-columns: minmax(80px, 40%) minmax(0, 1fr) auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #status[data-kind="loading"]::before,
+  .skeleton div { animation: none; }
 }

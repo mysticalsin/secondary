@@ -196,10 +196,10 @@ async function stop(chrome: ChildProcess, session: Session | undefined, browser:
   }
 }
 
-async function evalJson<T>(session: Session, expression: string): Promise<T> {
+async function evalJson<T>(session: Session, expression: string): Promise<T | undefined> {
   const result = await session.call("Runtime.evaluate", { expression, returnByValue: true });
   const value = (result.result as { value?: string } | undefined)?.value;
-  if (typeof value !== "string") throw new Error(`chrome returned no value for ${expression.slice(0, 80)}`);
+  if (typeof value !== "string") return undefined;
   return JSON.parse(value) as T;
 }
 
@@ -238,7 +238,7 @@ test("phone tap targets are at least 44px at 390 and at least 24px on desktop", 
             overflow: de.scrollWidth - de.clientWidth,
           });
         })()`);
-        if (reading.links.length === 5 && reading.font === "13px") break;
+        if (reading && reading.links.length === 5 && reading.font === "13px") break;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       if (!reading || reading.font !== "13px") throw new Error(`capsule css was not ready at ${width}`);
@@ -260,7 +260,7 @@ test("phone tap targets are at least 44px at 390 and at least 24px on desktop", 
             links: links.map((a) => ({ text: a.textContent.trim(), h: Math.round(a.getBoundingClientRect().height * 100) / 100 })),
           });
         })()`);
-        if (dash.links.length === 5 && dash.font === "13px") break;
+        if (dash && dash.links.length === 5 && dash.font === "13px") break;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       if (!dash || dash.font !== "13px") throw new Error(`dashboard capsule css was not ready at ${width}`);
@@ -289,7 +289,7 @@ test("a 300-character title does not widen the dashboard at 1440, 390, or 375", 
           const de = document.documentElement;
           return JSON.stringify({ seen: document.body.innerText.includes(${JSON.stringify(LONG)}), scroll: de.scrollWidth, client: de.clientWidth });
         })()`);
-        if (reading.seen) break;
+        if (reading?.seen) break;
         await new Promise((resolve) => setTimeout(resolve, 50));
       }
       if (!reading?.seen) throw new Error(`the long title did not render at ${width}`);
@@ -320,7 +320,7 @@ test("zoom in and zoom out stay reachable while the graph panel is open", async 
         });
         return JSON.stringify(buttons);
       })()`);
-      if (hit.every((item) => item.label !== "none") && hit[0].label !== "") break;
+      if (hit && hit.every((item) => item.label !== "none") && hit[0].label !== "") break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     const covered = (hit || []).filter((item) => item.label !== item.id).map((item) => `${item.id} hit ${item.label}`);
@@ -344,7 +344,7 @@ test("the search field shows a visible focus ring", async () => {
         const style = getComputedStyle(input);
         return JSON.stringify({ style: style.outlineStyle, width: style.outlineWidth });
       })()`);
-      if (ring.style) break;
+      if (ring?.style) break;
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     assert.equal(ring?.style, "solid");
@@ -377,6 +377,7 @@ test("prefers-reduced-motion turns off the pulse and the shimmer", async () => {
       document.body.append(box);
       return JSON.stringify({ name: getComputedStyle(cell).animationName });
     })()`);
+    if (!pulse || !shimmer) throw new Error("motion styles were not ready");
     assert.equal(pulse.name, "none", `pulse ${pulse.name}`);
     assert.equal(shimmer.name, "none", `shimmer ${shimmer.name}`);
   } finally {
