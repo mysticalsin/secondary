@@ -1,6 +1,6 @@
 /**
  * Direct brainMemberDropClaim calls. A null or empty key is state_unreadable.
- * A whitespace key is a real key that matches nothing, so it is claim_not_found.
+ * A whitespace-only key is state_unreadable. It writes nothing.
  * Neither path writes.
  */
 
@@ -161,7 +161,7 @@ async function whitespaceKey(label: string, key: string): Promise<void> {
       const beforeRows = members(db);
       const dropped = brain.brainMemberDropClaim(principal.id, key, principal.previousState);
       assert.equal(dropped.ok, false, label);
-      assert.equal(dropped.code, "claim_not_found", label);
+      assert.equal(dropped.code, "state_unreadable", label);
       assert.deepEqual(schemaOf(db), beforeSchema, label);
       assert.deepEqual(members(db), beforeRows, label);
     }
@@ -171,19 +171,19 @@ async function whitespaceKey(label: string, key: string): Promise<void> {
   }
 }
 
-test("brain drop: a space key is claim_not_found and writes nothing", async () => {
+test("brain drop: a space key is state_unreadable and writes nothing", async () => {
   await whitespaceKey("space", " ");
 });
 
-test("brain drop: a tab key is claim_not_found and writes nothing", async () => {
+test("brain drop: a tab key is state_unreadable and writes nothing", async () => {
   await whitespaceKey("tab", "\t");
 });
 
-test("brain drop: a newline key is claim_not_found and writes nothing", async () => {
+test("brain drop: a newline key is state_unreadable and writes nothing", async () => {
   await whitespaceKey("newline", "\n");
 });
 
-test("brain drop: a whitespace key is claim_not_found and writes nothing", async () => {
+test("brain drop: a whitespace key is state_unreadable and writes nothing", async () => {
   await whitespaceKey("whitespace", " \t\n ");
 });
 
