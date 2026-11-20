@@ -1,6 +1,6 @@
 # Plan 023 — Drop-claim no-match naming
 
-Status: RED. No production change is in the red commit.
+Status: IMPLEMENTED. The red commit is `eb303c496daa19ca2d8c389ae8bbf126fab3f86d`.
 
 Risk: LOW. The no-match branch still returns `ok: false` and writes nothing. `reconcileBrainMember` does not read the code, and no route turns it into an HTTP body, so the status does not change.
 

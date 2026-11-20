@@ -798,7 +798,7 @@ The rows below are the returns and writes. A named-state edge in the list or the
 | `UPDATE` returns 1 | `SET pending_role = NULL, pending_at = NULL, claim_key = NULL WHERE claim_key AND pending_role IS NOT NULL` | `{ ok: true }` | none | 464-473 |
 | That update returned not 1, `DELETE` returns 1 | `DELETE WHERE claim_key AND pending_role IS NULL AND state IN ('claimed', 'pending')` | `{ ok: true }` | none | 474-483 |
 | Delete returned not 1, `SELECT` of `claim_key` and `pending_role IS NULL` returns 1 | none | `{ ok: true }` | `console.warn` `{ at: "brain_member", principalId, claimKey: key }` | 484-494 |
-| That select returned not 1 | none. `previousState` is not read | `{ ok: false, code: "state_unreadable" }` | none | 496-497 |
+| That select returned not 1 | none. `previousState` is not read | `{ ok: false, code: "claim_not_found" }` | none | 496-497 |
 
 ### `reconcileBrainMember` (`brains/store.ts`)
 

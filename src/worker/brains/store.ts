@@ -460,7 +460,7 @@ export abstract class BrainBase extends WikiBase {
     principalId: string,
     key: string | null,
     previousState: string,
-  ): { ok: true } | { ok: false; code: "state_unreadable" } {
+  ): { ok: true } | { ok: false; code: "state_unreadable" | "claim_not_found" } {
     if (!key) return { ok: false, code: "state_unreadable" };
     this.ensureMemberClaimColumns();
     const cleared = this.sql
@@ -496,7 +496,7 @@ export abstract class BrainBase extends WikiBase {
       return { ok: true };
     }
     void previousState;
-    return { ok: false, code: "state_unreadable" };
+    return { ok: false, code: "claim_not_found" };
   }
 
   /**
@@ -1325,7 +1325,7 @@ type MemberBrain = {
     principalId: string,
     key: string | null,
     previousState: string,
-  ): { ok: true } | { ok: false; code: "state_unreadable" } | Promise<{ ok: true } | { ok: false; code: "state_unreadable" }>;
+  ): { ok: true } | { ok: false; code: "state_unreadable" | "claim_not_found" } | Promise<{ ok: true } | { ok: false; code: "state_unreadable" | "claim_not_found" }>;
   brainMemberClaim(
     principalId: string,
     role: BrainRole,
