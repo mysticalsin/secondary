@@ -243,7 +243,7 @@ test("brain reconcile: a legacy claim with no key stays when the read finds no g
     assert.equal(logs(db).length, 0);
     const dropped = brain.brainMemberDropClaim("ada", "chg_other", "claimed");
     assert.equal(dropped.ok, false);
-    assert.equal(dropped.code, "state_unreadable");
+    assert.equal(dropped.code, "claim_not_found");
     assert.deepEqual(row(db), before);
     db.close();
   } finally {

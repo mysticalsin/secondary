@@ -100,7 +100,7 @@ test("brain drop: a pre-existing member finished pending keeps the row", async (
       .get() as MemberRow | undefined;
     assert.deepEqual(
       { dropped: dropped.ok ? "ok" : dropped.code, row: after ?? null },
-      { dropped: "state_unreadable", row: before },
+      { dropped: "claim_not_found", row: before },
     );
     db.close();
   } finally {
