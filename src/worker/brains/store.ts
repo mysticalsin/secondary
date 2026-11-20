@@ -461,7 +461,7 @@ export abstract class BrainBase extends WikiBase {
     key: string | null,
     previousState: string,
   ): { ok: true } | { ok: false; code: "state_unreadable" | "claim_not_found" } {
-    if (!key) return { ok: false, code: "state_unreadable" };
+    if (!key || key.trim() === "") return { ok: false, code: "state_unreadable" };
     this.ensureMemberClaimColumns();
     const cleared = this.sql
       .exec(
