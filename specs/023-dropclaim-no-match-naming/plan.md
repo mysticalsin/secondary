@@ -14,7 +14,10 @@ Done when:
 
 - [ ] A `brainMemberDropClaim` call whose key matches no row returns `{ ok: false, code: "claim_not_found" }`.
 - [ ] That call does not change the stored row.
-- [ ] A null key still returns `{ ok: false, code: "state_unreadable" }`.
+- [ ] A null key returns `{ ok: false, code: "state_unreadable" }`, and `brain_members` rows and columns are unchanged.
+- [ ] An empty-string key does the same: `state_unreadable`, and the rows and columns stay.
+- [ ] A principal with zero rows returns `claim_not_found`, and no row is created.
+- [ ] A no-match on a present row returns `claim_not_found`, and the total row count is unchanged.
 - [ ] The two tests that matched the old no-match string expect `claim_not_found`.
 - [ ] The drop-claim row in `docs/state-machines.md` names `claim_not_found` for the select that returns not 1.
 
