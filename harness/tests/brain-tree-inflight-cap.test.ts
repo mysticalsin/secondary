@@ -35,10 +35,12 @@ const reads: string[] = [];
 const callArgs: { fn: string; args: string }[] = [];
 const release = new Map<string, (pages: Page[]) => void>();
 let rejectDelivery = false;
+let rejectMessage = "synthetic read failed";
 let paceMs: number | null = null;
 let serveNow = false;
 let pages: Page[] = PAGES;
 let hangPrefix = "c_delivery";
+let lastSchema: { types: { note: { label: string } } } | null = null;
 
 function capId(index: number): string {
   return `c_cap_${String(index).padStart(2, "0")}`;
@@ -72,7 +74,7 @@ function workspace(name: string) {
       }
       if (rejectDelivery && name.includes("c_delivery")) {
         rejectDelivery = false;
-        return Promise.reject(new Error("synthetic read failed"));
+        return Promise.reject(new Error(rejectMessage));
       }
       if (serveNow) return Promise.resolve(pages);
       if (paceMs !== null) {
@@ -93,7 +95,8 @@ function workspace(name: string) {
     wikiTouch: async () => {},
     wikiSchema: async (...args: unknown[]) => {
       callArgs.push({ fn: "wikiSchema", args: JSON.stringify(args) });
-      return { types: { note: { label: "Note" } } };
+      lastSchema = { types: { note: { label: "Note" } } };
+      return lastSchema;
     },
     wikiPage: async () => null,
   };
@@ -230,20 +233,28 @@ async function openDirectory(): Promise<{ binding: unknown; remove: () => void }
   return { binding, remove: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
+type Exec = { waitUntil(promise: Promise<unknown>): void };
+
 type App = {
-  request: (input: string, init: RequestInit | undefined, env: unknown) => Promise<Response>;
+  request: (
+    input: string,
+    init: RequestInit | undefined,
+    env: unknown,
+    executionCtx?: Exec,
+  ) => Promise<Response>;
 };
 
-async function app(extra?: { treeBoundMs?: number }): Promise<App> {
+async function app(extra?: { treeBoundMs?: number; now?: () => number }): Promise<App> {
   const specifier = new URL("../../src/worker/index.ts", import.meta.url).href;
   const loaded = (await import(specifier)) as {
-    createApp: (deps?: { treeBoundMs?: number }) => App;
+    createApp: (deps?: { treeBoundMs?: number; now?: () => number }) => App;
   };
   return loaded.createApp(extra);
 }
 
-function tree(api: App, binding: unknown, email: string) {
-  return api.request("http://127.0.0.1/v1/brain/tree", {}, env(binding, email));
+function tree(api: App, binding: unknown, email: string, executionCtx?: Exec | null) {
+  const ctx = executionCtx === null ? undefined : (executionCtx ?? { waitUntil() {} });
+  return api.request("http://127.0.0.1/v1/brain/tree", {}, env(binding, email), ctx);
 }
 
 async function untilStable(read: () => number, wait: typeof setTimeout): Promise<void> {
@@ -318,7 +329,8 @@ test("after settle a new read starts", async (t) => {
 
 test("after the unsettled TTL a new read starts", async (t) => {
   const held = await openDirectory();
-  const api = await app({ treeBoundMs: 2500 });
+  let clock = 1_700_000_000_000;
+  const api = await app({ treeBoundMs: 2500, now: () => clock });
   reads.length = 0;
   const realSetTimeout = globalThis.setTimeout;
   t.mock.timers.enable({ apis: ["setTimeout"] });
@@ -326,6 +338,7 @@ test("after the unsettled TTL a new read starts", async (t) => {
     const first = tree(api, held.binding, AUTHOR.email);
     await untilStable(deliveryReads, realSetTimeout);
     assert.equal(deliveryReads(), 1);
+    clock += 30_000;
     await t.mock.timers.tick(30_000);
     const second = tree(api, held.binding, AUTHOR.email);
     await untilStable(deliveryReads, realSetTimeout);
@@ -385,6 +398,7 @@ test("two users with different ACLs never receive each other's filtered pages", 
     assert.equal(wideBody.includes("Secret page"), true);
     assert.equal(narrowBody.includes("Secret page"), false);
     assert.equal(narrowBody.includes("Plain page"), true);
+    assert.notEqual(wideBody, narrowBody);
     assert.equal(deliveryReads(), 1);
   } finally {
     paceMs = null;
@@ -536,7 +550,8 @@ test("a workspace write drops the pending read and the new page is present", asy
 
 test("a late settle does not replace the read started after the TTL", async (t) => {
   const held = await openDirectory();
-  const api = await app({ treeBoundMs: 2500 });
+  let clock = 1_700_000_000_000;
+  const api = await app({ treeBoundMs: 2500, now: () => clock });
   reads.length = 0;
   pages = [{ id: "first", title: "First page", type: "note", markdown: "first" }];
   const realSetTimeout = globalThis.setTimeout;
@@ -547,6 +562,7 @@ test("a late settle does not replace the read started after the TTL", async (t) 
     const joiner = tree(api, held.binding, AUTHOR.email);
     await untilStable(deliveryReads, realSetTimeout);
     assert.equal(deliveryReads(), 1);
+    clock += 30_000;
     await t.mock.timers.tick(30_000);
     pages = [{ id: "second", title: "Second page", type: "note", markdown: "second" }];
     paceMs = 10;
@@ -607,13 +623,14 @@ async function plantCaps(): Promise<void> {
   for (const [key, node] of existing) if (!org.nodes.has(key)) org.nodes.set(key, node);
 }
 
-test("the 65th scope evicts the oldest unsettled read", async (t) => {
+test("the 65th scope does not start a second read of a hung scope", async (t) => {
   await plantCaps();
   const held = await openDirectory();
   const api = await app({ treeBoundMs: 2500 });
   reads.length = 0;
   const realSetTimeout = globalThis.setTimeout;
   t.mock.timers.enable({ apis: ["setTimeout"] });
+  const running = (index: number) => reads.filter((name) => name.includes(capId(index))).length;
   try {
     const first = tree(api, held.binding, CAP_A.email);
     const second = tree(api, held.binding, CAP_B.email);
@@ -623,24 +640,283 @@ test("the 65th scope evicts the oldest unsettled read", async (t) => {
       await new Promise((resolve) => realSetTimeout(resolve, 20));
     }
     assert.equal(capReads(), 65, `started ${capReads()}`);
-    assert.ok(capReads() <= 64, `pending ${capReads()} is not capped`);
-    const oldest = reads.filter((name) => name.includes(capId(0))).length;
-    const again = tree(api, held.binding, CAP_A.email);
-    await untilStable(() => reads.filter((name) => name.includes(capId(0))).length, realSetTimeout);
-    assert.equal(reads.filter((name) => name.includes(capId(0))).length, oldest + 1);
-    for (const resolve of [...release.values()]) resolve([{ id: "evicted", title: "Evicted page", type: "note", markdown: "evicted" }]);
-    release.clear();
-    const againBody = JSON.stringify(await (await again).json());
-    assert.equal(againBody.includes("Evicted page"), false);
+    assert.equal(running(0), 1);
+    assert.equal(running(63), 1);
+    assert.equal(running(64), 1);
+    const againOldest = tree(api, held.binding, CAP_A.email);
+    await untilStable(() => running(0), realSetTimeout);
+    assert.equal(running(0), 1, "evict-oldest starts a duplicate read");
+    const againRest = tree(api, held.binding, CAP_B.email);
+    await untilStable(() => running(64), realSetTimeout);
+    assert.equal(running(63), 1, "cap-off-by-one dropped a stored scope");
+    assert.equal(running(64), 2, "the 65th scope was stored");
     await t.mock.timers.tick(2500);
+    finishHung();
     await first;
     await second;
     await third;
-    await again;
+    await againOldest;
+    await againRest;
   } finally {
     finishHung();
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
+    held.remove();
+  }
+});
+
+test("settled pages and schema are frozen against in-place mutation", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  pages = [{ id: "plain", title: "Plain page", type: "note", markdown: "hello" }];
+  serveNow = true;
+  try {
+    const res = await tree(api, held.binding, AUTHOR.email);
+    assert.equal(res.status, 200);
+    assert.throws(() => {
+      pages[0].title = "mutated";
+    });
+    assert.ok(lastSchema);
+    assert.throws(() => {
+      lastSchema!.types.note.label = "mutated";
+    });
+  } finally {
+    serveNow = false;
+    pages = PAGES;
+    held.remove();
+  }
+});
+
+test("a read error string is absent from the response and the log", async () => {
+  const unique = "SENTINEL-ERR-9f3a-tree-inflight";
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  reads.length = 0;
+  rejectDelivery = true;
+  rejectMessage = unique;
+  const logs: unknown[][] = [];
+  const unhandled: unknown[] = [];
+  const onUnhandled = (error: unknown) => {
+    unhandled.push(error);
+  };
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    logs.push(args);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const res = await tree(api, held.binding, AUTHOR.email);
+    const text = await res.text();
+    assert.equal(res.status, 200);
+    assert.equal(text.includes(unique), false);
+    const dumped = JSON.stringify(logs);
+    assert.equal(dumped.includes(unique), false);
+    const lines = logs
+      .flat()
+      .filter((item) => typeof item === "string" && item.includes("tree_inflight"));
+    assert.equal(lines.length, 1);
+    const parsed = JSON.parse(String(lines[0])) as Record<string, unknown>;
+    assert.deepEqual(parsed, { event: "tree_inflight", outcome: "rejected" });
+    assert.equal(Object.hasOwn(parsed, "tenantId"), false);
+    assert.equal(Object.hasOwn(parsed, "scope"), false);
+    assert.equal(dumped.includes(AUTHOR.id), false);
+    assert.equal(dumped.includes(AUTHOR.email), false);
+    assert.equal(dumped.includes("Plain page"), false);
+    assert.equal(dumped.includes("Secret page"), false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    console.log = original;
+    process.off("unhandledRejection", onUnhandled);
+    rejectDelivery = false;
+    rejectMessage = "synthetic read failed";
+    held.remove();
+  }
+});
+
+test("a missing executionCtx does not share and does not throw", async (t) => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 2500 });
+  reads.length = 0;
+  paceMs = 10;
+  const realSetTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const first = tree(api, held.binding, AUTHOR.email, null);
+    const second = tree(api, held.binding, AUTHOR.email, null);
+    await untilStable(deliveryReads, realSetTimeout);
+    assert.equal(deliveryReads(), 2);
+    await t.mock.timers.tick(10);
+    const one = await first;
+    const two = await second;
+    assert.equal(one.status, 200);
+    assert.equal(two.status, 200);
+  } finally {
+    paceMs = null;
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
+    held.remove();
+  }
+});
+
+test("each write and ACL change drops the in-flight read", async (t) => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 2500 });
+  const realSetTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const dir = mkdtempSync(path.join(tmpdir(), "inflight-write-"));
+  const { DatabaseSync } = await import("node:sqlite");
+  const wsDb = new DatabaseSync(path.join(dir, "ws.sqlite"));
+  let wsReady: Promise<void> = Promise.resolve();
+  const wsCtx = {
+    storage: {
+      sql: sqliteStorage(wsDb),
+      transactionSync<T>(fn: () => T): T {
+        return fn();
+      },
+      setAlarm() {},
+    },
+    blockConcurrencyWhile(fn: () => Promise<void>) {
+      wsReady = fn();
+      return wsReady;
+    },
+  };
+  const workspaceUrl = new URL("../../src/worker/workspace.ts", import.meta.url).href;
+  const Workspace = (await import(workspaceUrl)).Workspace;
+  const workspace = new Workspace(wsCtx, { WIKI_ALARMS: "off", ENVIRONMENT: "dev" });
+  await wsReady;
+  await workspace.wikiTouch("synthetic", "c_delivery", 1_700_000_000_000);
+  const writer = workspace as unknown as {
+    wikiSetSchema(s: { types: Record<string, { label: string }> }): void;
+    brainSchemaAdd(collections: { type: string; label: string; required: string[] }[]): string[];
+    brainConfigSet(patch: { everyone: "reader" }, actor: string, now: number): unknown;
+    brainMemberSet(id: string, role: "reader", state: "active", actor: string, now: number): unknown;
+    brainMemberRemove(id: string, actor: string, now: number): boolean;
+    savePage(
+      page: { id: string; type: string; title: string; markdown: string },
+      actor: string | null,
+      proposalId: string | null,
+      now: number,
+    ): unknown;
+    unarchivePage(id: string, now: number): unknown;
+    applyProposal(
+      proposal: {
+        v: 1;
+        kind: "wiki_lint";
+        title: string;
+        rationale: string;
+        origin: "human";
+        pages: [];
+        facts: [];
+        invalidate: [];
+        confirm: [];
+        archive: string[];
+        reingest: [];
+        sources: [];
+        findingKey: null;
+      },
+      actor: string,
+      verifier: string | null,
+      now: number,
+      proposalId: string,
+    ): unknown;
+    wikiPseudonymise(from: string, to: string): number;
+    wikiForgetSources(ids: string[], now: number): unknown;
+    wikiReset(): void;
+  };
+  const steps: { name: string; run: () => void }[] = [
+    {
+      name: "wikiSetSchema",
+      run: () => writer.wikiSetSchema({ types: { note: { label: "Note" } } }),
+    },
+    {
+      name: "brainSchemaAdd",
+      run: () => writer.brainSchemaAdd([{ type: "brief", label: "Brief", required: ["Summary"] }]),
+    },
+    {
+      name: "brainConfigSet",
+      run: () => writer.brainConfigSet({ everyone: "reader" }, AUTHOR.id, 1_700_000_000_000),
+    },
+    {
+      name: "brainMemberSet",
+      run: () => writer.brainMemberSet(NARROW.id, "reader", "active", AUTHOR.id, 1_700_000_000_000),
+    },
+    {
+      name: "brainMemberRemove",
+      run: () => writer.brainMemberRemove(NARROW.id, AUTHOR.id, 1_700_000_000_000),
+    },
+    {
+      name: "savePage",
+      run: () =>
+        writer.savePage(
+          { id: "written", type: "note", title: "Written page", markdown: "written" },
+          AUTHOR.id,
+          null,
+          1_700_000_000_000,
+        ),
+    },
+    {
+      name: "unarchivePage",
+      run: () => writer.unarchivePage("written", 1_700_000_000_000),
+    },
+    {
+      name: "applyProposal",
+      run: () =>
+        writer.applyProposal(
+          {
+            v: 1,
+            kind: "wiki_lint",
+            title: "Archive",
+            rationale: "archive",
+            origin: "human",
+            pages: [],
+            facts: [],
+            invalidate: [],
+            confirm: [],
+            archive: ["written"],
+            reingest: [],
+            sources: [],
+            findingKey: null,
+          },
+          AUTHOR.id,
+          null,
+          1_700_000_000_000,
+          "cand:c_delivery:0123abcd",
+        ),
+    },
+    {
+      name: "wikiPseudonymise",
+      run: () => writer.wikiPseudonymise(AUTHOR.id, "erased-person"),
+    },
+    {
+      name: "wikiForgetSources",
+      run: () => writer.wikiForgetSources(["src:missing"], 1_700_000_000_000),
+    },
+    { name: "wikiReset", run: () => writer.wikiReset() },
+  ];
+  try {
+    for (const step of steps) {
+      reads.length = 0;
+      hangPrefix = "c_delivery";
+      const hung = tree(api, held.binding, AUTHOR.email);
+      await untilStable(deliveryReads, realSetTimeout);
+      assert.equal(deliveryReads(), 1, step.name);
+      step.run();
+      const again = tree(api, held.binding, AUTHOR.email);
+      await untilStable(deliveryReads, realSetTimeout);
+      assert.equal(deliveryReads(), 2, step.name);
+      await t.mock.timers.tick(2500);
+      finishHung();
+      await hung;
+      await again;
+    }
+  } finally {
+    finishHung();
+    hangPrefix = "c_delivery";
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
+    wsDb.close();
+    rmSync(dir, { recursive: true, force: true });
     held.remove();
   }
 });

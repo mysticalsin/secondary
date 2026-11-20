@@ -111,8 +111,8 @@ export default {
       const job = (async () => {
         await scheduler.wait(10);
         throw new Error("synthetic inflight rejection");
-      })().catch((error) => {
-        console.log("inflight rejected " + error.message);
+      })().catch(() => {
+        console.log(JSON.stringify({ event: "tree_inflight", outcome: "rejected" }));
         return "logged";
       });
       ctx.waitUntil(job);
