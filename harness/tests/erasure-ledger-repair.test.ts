@@ -1073,6 +1073,15 @@ function unreadableRow(principalId: string): { principalId: string; status: stri
   };
 }
 
+test("ledger repair: the default report caps the count and leaves truncated false", () => {
+  const rows = [unreadableRow("p-a"), unreadableRow("p-b")];
+  assert.deepEqual(reportUnreadableLedgers(rows, { cap: 1 }), {
+    unreadable: 2,
+    principalIds: 1,
+    truncated: false,
+  });
+});
+
 test("ledger repair: the report limit keeps the first row and the cap sets truncated", () => {
   const rows = [unreadableRow("p-a"), unreadableRow("p-b"), unreadableRow("p-c")];
   const limited = reportUnreadableLedgers(rows, { limit: 1 });

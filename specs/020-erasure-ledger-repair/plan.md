@@ -66,6 +66,8 @@ Green on `1a75589a420ad571f7e58ac682a076eb12fe1840`: 23 pass, 0 fail, `duration_
 
 Green after the loop-1 pins: 27 pass, 0 fail, `duration_ms` 858.764776. The new pins pass on the current code, so they are not a separate red commit. Dropping the `unknown_step` catch then fails `500 !== 422`.
 
+Green after the default-count pin: 28 pass, 0 fail, `duration_ms` 758.221851.
+
 ## Mutants
 
 None of these edits is applied in this commit. After a fix, each one fails the named test again.
