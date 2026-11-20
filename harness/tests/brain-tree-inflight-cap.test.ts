@@ -679,6 +679,7 @@ test("the 65th scope does not start a second read of a hung scope", async (t) =>
   reads.length = 0;
   const realSetTimeout = globalThis.setTimeout;
   t.mock.timers.enable({ apis: ["setTimeout"] });
+  const running = (index: number) => reads.filter((name) => name.includes(capId(index))).length;
   try {
     hangAll = true;
     const first = tree(api, held.binding, CAP_A.email);
@@ -688,7 +689,10 @@ test("the 65th scope does not start a second read of a hung scope", async (t) =>
     await untilStable(() => reads.length, realSetTimeout);
     const third = tree(api, held.binding, CAP_C.email);
     await untilStable(() => reads.length, realSetTimeout);
-    assert.ok(reads.length > 64, `started ${reads.length}`);
+    assert.equal(capReads(), 65, `started ${capReads()}`);
+    assert.equal(running(0), 1);
+    assert.equal(running(63), 1);
+    assert.equal(running(64), 1);
     const times = (scope: string) => reads.filter((name) => name === scope).length;
     const oldest = reads[0];
     const stored = reads[63];

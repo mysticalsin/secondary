@@ -24,7 +24,7 @@ Timing cases use the mock clock, except the Miniflare proof, which uses workerd'
 
 `wikiSchema` takes no arguments:
 
-```436:439:src/worker/wiki/store.ts
+```451:454:src/worker/wiki/store.ts
   wikiSchema(): WikiSchema {
     const r = this.sql.exec("SELECT body FROM wiki_schema WHERE id = 1").toArray()[0];
     return r ? (JSON.parse(r.body as string) as WikiSchema) : DEFAULT_SCHEMA;
@@ -33,14 +33,16 @@ Timing cases use the mock clock, except the Miniflare proof, which uses workerd'
 
 `wikiPages` takes no arguments:
 
-```816:825:src/worker/wiki/store.ts
-  /** Published pages with their text. At most MAX_PAGES_LOADED are read into memory in one call (M-03). */
+```833:841:src/worker/wiki/store.ts
   wikiPages(): PageRow[] {
     return this.sql
       .exec(
         "SELECT * FROM wiki_pages WHERE status = 'published' ORDER BY id LIMIT ?",
         MAX_PAGES_LOADED,
       )
+      .toArray()
+      .map(rowPage);
+  }
 ```
 
 The SQL runs on `this`, the workspace Durable Object. The caller selects that object with `stubOf(c, scope)` before the call. The method list has no principal id, no user token, no row-level session, and no caller header. `brainTree` calls `readPages(signal)` and `stub.wikiSchema()` with the signal only on the test double. The production method ignores it.
@@ -112,7 +114,7 @@ TTL is checked when a request looks up the key. There is no `setTimeout` per ent
 
 The map holds at most 64 running entries. A full map never evicts a hung read. A new scope that does not fit does an unshared read and is not stored. A request for a scope that is already running joins that read. Tests count running `wikiPages` calls, not the map size.
 
-`the 65th scope does not start a second read of a hung scope` hangs every workspace and admits more than 64 reads across two callers, because one tree read stops at the fanout of 40. The test counts running `wikiPages` calls in call order. A second request for the oldest call and for the 64th call keeps each running count at 1. A second request for the 65th call starts a second running read, because that read was not stored.
+`the 65th scope does not start a second read of a hung scope` hangs every workspace. It requires exactly 65 `c_cap_*` reads, and `c_cap_00`, `c_cap_63`, and `c_cap_64` are each still one running read before the second wave. A second request for the oldest call and for the 64th call keeps each running count at 1. A second request for the 65th call starts a second running read, because that read was not stored. A 66th cap read fails the exact count.
 
 ## c3. Runtime
 
