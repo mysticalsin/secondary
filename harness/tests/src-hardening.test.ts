@@ -1235,6 +1235,71 @@ test("a brain at 2499ms is kept and a brain at 2501ms is degraded", async (t) =>
   }
 });
 
+test("the tree bound keeps a brain at exactly 2499ms and degrades one at exactly 2500ms", async (t) => {
+  const realSetTimeout = globalThis.setTimeout;
+  const origAbort = AbortController.prototype.abort;
+  let aborts = 0;
+  AbortController.prototype.abort = function (this: AbortController, reason?: unknown) {
+    aborts += 1;
+    return origAbort.call(this, reason);
+  };
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 2500 });
+  hung.pace.clear();
+  hung.lateOnAbort.clear();
+  hung.pace.set("c_delivery", { ms: 2499, pages: note("On time") });
+  hung.pace.set("c_eng", { ms: 2500, pages: note("Boundary secret") });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let armed = 0;
+  const mockedSet = globalThis.setTimeout;
+  globalThis.setTimeout = ((fn: Parameters<typeof setTimeout>[0], ms?: number) => {
+    if (ms === 2499) armed += 1;
+    return mockedSet(fn, ms);
+  }) as typeof setTimeout;
+  try {
+    let settled = false;
+    const pending = api.request("http://127.0.0.1/v1/brain/tree", {}, env(held.binding, AUTHOR.email)).then((res) => {
+      settled = true;
+      return res;
+    });
+    const start = Date.now();
+    while (armed === 0) {
+      if (Date.now() - start > 2000) throw new Error("2499ms read was not armed");
+      await new Promise((resolve) => realSetTimeout(resolve, 10));
+    }
+    assert.equal(settled, false);
+    assert.equal(aborts, 0);
+    await t.mock.timers.tick(2499);
+    await new Promise((resolve) => realSetTimeout(resolve, 20));
+    assert.equal(settled, false, "2499");
+    assert.equal(aborts, 0, "2499");
+    await t.mock.timers.tick(1);
+    await new Promise((resolve) => realSetTimeout(resolve, 30));
+    assert.equal(settled, true, "2500");
+    assert.equal(aborts, 1, "2500");
+    const res = await pending;
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as {
+      roots: { id: string; access: string; children?: unknown }[];
+    };
+    const kept = body.roots.find((root) => root.id === "c_delivery");
+    const boundary = body.roots.find((root) => root.id === "c_eng");
+    const text = JSON.stringify(body);
+    assert.equal(kept?.access, "full");
+    assert.equal(text.includes("On time"), true);
+    assert.equal(boundary?.access, "degraded");
+    assert.equal("children" in (boundary ?? {}), false);
+    assert.equal(text.includes("Boundary secret"), false);
+  } finally {
+    hung.pace.clear();
+    hung.lateOnAbort.clear();
+    AbortController.prototype.abort = origAbort;
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
+    held.remove();
+  }
+});
+
 test("a late resolve after abort does not return that brain's pages", async () => {
   const held = await openDirectory();
   const api = await app({ treeBoundMs: 30 });
