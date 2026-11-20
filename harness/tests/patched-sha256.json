@@ -45,7 +45,7 @@
   "src/worker/uxv2/index.ts": "1bf22c075a4778f083ab51b3bba4db920403ae2949c39ee2ae2ceec9098b3e78",
   "src/worker/uxv2/questions.ts": "146e754eac9ef4efa3d3efe6bd293bbae9322596e1d6e8cce08cf301dc01a10c",
   "src/worker/uxv2/routines.ts": "01cd7eedb6250b043843fac31ebaccd104bc98947f31ffc3122f99a902972d0d",
-  "src/worker/uxv2/tree.ts": "e73e75f1c3574223a00f733397f52b882795437bf6f6be1769f23cbf5355b018",
+  "src/worker/uxv2/tree.ts": "ee8576bc0032601525013b41c6363c7231eda2d32af68c34f04ddb1e83461dde",
   "src/worker/wiki/review.ts": "ea5603fed48105b9f5873b85a9567677c4d76b4e609c42e48f45684065b7b496",
   "src/worker/wiki/routes.ts": "7e5d128ae4e700e6095befd9158c5c44aaae62793034f94319f2bb5023d48522",
   "src/worker/wiki/seed.ts": "9f0547e344b6d37f22bf01f4aabcb4ccd83bdabdd702281046d31d53ed1eb8ba",

@@ -84,3 +84,74 @@ test("a joiner sees the raw read after the originator returns only when waitUnti
     await other.dispose();
   }
 });
+
+test("the waitUntil read times out once and a rejection is logged", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (error: unknown) => {
+    unhandled.push(error);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  const mf = new Miniflare({
+    workers: [
+      {
+        config: {
+          name: "probe-bound",
+          compatibilityDate: "2026-10-01",
+          manifest: {
+            mainModule: "index.js",
+            modules: {
+              "index.js": {
+                type: "esm",
+                contents: `
+let timeouts = 0;
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === "/reject") {
+      const job = (async () => {
+        await scheduler.wait(10);
+        throw new Error("synthetic inflight rejection");
+      })().catch((error) => {
+        console.log("inflight rejected " + error.message);
+        return "logged";
+      });
+      ctx.waitUntil(job);
+      const logged = await job;
+      return new Response(logged);
+    }
+    if (url.pathname === "/timeout") {
+      const job = new Promise((resolve) => {
+        setTimeout(() => {
+          timeouts += 1;
+          resolve("timed-out");
+        }, 30);
+      });
+      ctx.waitUntil(job);
+      const value = await job;
+      return new Response(value + ":" + timeouts);
+    }
+    return new Response("no");
+  }
+}
+`,
+              },
+            },
+          },
+        },
+      },
+    ],
+  });
+  try {
+    const rejected = await mf.dispatchFetch("http://127.0.0.1/reject");
+    assert.equal(rejected.status, 200);
+    assert.equal(await rejected.text(), "logged");
+    const timed = await mf.dispatchFetch("http://127.0.0.1/timeout");
+    assert.equal(timed.status, 200);
+    assert.equal(await timed.text(), "timed-out:1");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+    await mf.dispose();
+  }
+});

@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -483,12 +483,27 @@ test("a caller who is not admitted does not join the pending read", async (t) =>
   }
 });
 
-test("structured inflight key does not collide", () => {
-  const structured = (tenant: string, scope: string) => JSON.stringify([tenant, scope]);
-  assert.notEqual(structured("a:b", "c"), structured("a", "b:c"));
-  assert.equal(["a:b", "c"].join(":"), ["a", "b:c"].join(":"));
-  const source = readFileSync(new URL("../../src/worker/uxv2/tree.ts", import.meta.url), "utf8");
-  assert.equal(source.includes("JSON.stringify([tenantId, scope])"), true);
+test("structured inflight key does not collide", async () => {
+  const specifier = new URL("../../src/worker/uxv2/tree.ts", import.meta.url).href;
+  const mod = (await import(specifier)) as {
+    inflightKey: (tenantId: string, scope: string) => string;
+  };
+  const left = mod.inflightKey("a:b", "c");
+  const right = mod.inflightKey("a", "b:c");
+  const bracket = mod.inflightKey("t", '["x"]');
+  const plain = mod.inflightKey("t", "x");
+  const bracketTenant = mod.inflightKey('["x"]', "scope");
+  assert.notEqual(left, right);
+  assert.notEqual(bracket, plain);
+  assert.notEqual(bracketTenant, mod.inflightKey("x", "scope"));
+  const entries = new Map<string, string>();
+  entries.set(left, "first");
+  entries.set(right, "second");
+  entries.set(bracket, "bracket");
+  entries.set(plain, "plain");
+  assert.equal(entries.size, 4);
+  assert.equal(entries.get(left), "first");
+  assert.equal(entries.get(right), "second");
 });
 
 test("a workspace write drops the pending read and the new page is present", async (t) => {

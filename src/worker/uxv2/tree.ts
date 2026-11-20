@@ -33,6 +33,11 @@ export type TreeNode = {
 const MAX_PAGES_PER_FOLDER = 200;
 const TREE_BOUND_MS = 2_500;
 
+/** One pending raw read. A separator inside a tenant or a scope must not collide with another pair. */
+export function inflightKey(tenantId: string, scope: string): string {
+  return JSON.stringify([tenantId, scope]);
+}
+
 /**
  * One brain has this long to answer. The timer ends the wait. `wikiPages` takes no signal, so
  * that SQL read runs to completion. A value that arrives in the abort turn is left out of the

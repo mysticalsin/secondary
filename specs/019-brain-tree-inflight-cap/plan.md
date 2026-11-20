@@ -2,7 +2,11 @@
 
 Ticket: SB-BRAIN-TREE-INFLIGHT-CAP
 
-Risk: MEDIUM-HIGH. Server concurrency in `src/worker/uxv2/tree.ts`. A shared filtered tree would cross an ACL boundary. This phase is the plan and the red tests. The tree handler is not changed.
+Risk: MEDIUM-HIGH. Server concurrency in `src/worker/uxv2/tree.ts`. A shared filtered tree would cross an ACL boundary. This phase is the plan and the tests. The tree handler is not changed. `inflightKey` is the exported key builder only.
+
+## Plan debate
+
+"Devin: AGREED, conditional. (1) a2 'not admitted' and a4 'new page is present' are regression guards, not red-first tests, and the plan must label them that way. The build commit must kill two named mutants: join-before-admission, where a request over the cap joins anyway, and no-delete-on-write, where a write leaves the in-flight entry. (2) The a3 source-text check is not accepted. Replace it with a behavioral collision test against the real exported key builder: tenant 'a:b' with scope 'c' versus tenant 'a' with scope 'b:c', plus scope '[\"x\"]' cases, must give distinct keys and distinct in-flight entries. The concat-key mutant must fail. (3) Section (b) lists every mutant by name, each with the test that kills it and the build commit that kills it. Add: drop ctx.waitUntil (the joiner misses the 1500ms deadline), share the filtered body instead of the raw read, cap off by one (64 or 66), TTL never expires, and the key without tenantId. (4) ACL: since wikiSchema and wikiPages take no principal, the raw read may be shared only if ACL filtering runs per request after the join. You need a test where two principals in the same tenant with different ACLs join one read and each gets only its own pages ('Secret page' absent for the low principal). The filtered-body-leak stand-in becomes a named mutant. (5) The waitUntil read is bounded: one timeout, and a rejection is caught and logged with no unhandled rejection, tested in Miniflare. The workerd/Miniflare join test (200 joined:read) and the per-isolate result are in the TEST COMMAND, not just the mock clock. (6) The decision record states that the cap is per isolate and does not protect the whole fleet, and rollback is a revert. (7) Every timing test (2499/2500ms, unsettled TTL, the Miniflare join) runs 50/50 at the default worker count on the build head. The final AGREED binds to my exact-head verifier PASS on the build head that carries (1) through (7), plus Sentinel's line and Inspector's."
 
 ## Test command
 
@@ -43,31 +47,48 @@ The SQL runs on `this`, the workspace Durable Object. The caller selects that ob
 
 ## a2. Admission before a join
 
-`admittedWikis` drops a workspace the view does not open. A locked or absent brain is not passed to `wikiPages`. The join of a pending raw read has to sit after that check. A caller who fails it gets the locked or absent card and must not wait on the shared promise.
+Regression guard, not a red-first test. The handler already skips a workspace the view does not open, so this passes before the cap exists.
 
-`a caller who is not admitted does not join the pending read` starts a hung `c_delivery` read, then requests the tree as a caller whose only membership is `c_eng`. The response returns while the hung read is still pending, and the `c_delivery` read count stays 1.
+`admittedWikis` drops a workspace the view does not open. A locked or absent brain is not passed to `wikiPages`. The join of a pending raw read has to sit after that check. A caller who fails it returns while the pending read is still open, and the read count does not change.
+
+`a caller who is not admitted does not join the pending read` hangs `c_private` for a member, then requests the tree as a caller who is not a member. The response returns, and the `c_private` read count stays 1.
+
+The build commit `share the raw tree read` must kill the mutant `join-before-admission`: a request that is over the cap, or not admitted, joins the pending entry anyway. This guard fails that mutant.
 
 ## a3. Structured key
 
-The key is `JSON.stringify([tenantId, scope])`, or a nested `Map` of tenant then scope. It is not string concatenation. `"a:b" + ":" + "c"` and `"a" + ":" + "b:c"` are both `"a:b:c"`. `JSON.stringify(["a:b","c"])` and `JSON.stringify(["a","b:c"])` differ.
+`inflightKey(tenantId, scope)` is exported from `src/worker/uxv2/tree.ts` and returns `JSON.stringify([tenantId, scope])`. The test calls that function. It does not read the source file.
 
-`structured inflight key does not collide` locks that difference. It also fails until `tree.ts` contains `JSON.stringify([tenantId, scope])`, because the handler does not have the key yet.
+`structured inflight key does not collide` checks tenant `a:b` with scope `c` against tenant `a` with scope `b:c`, and the scope `["x"]` cases against scope `x` and tenant `["x"]`. The four keys are distinct Map entries. The mutant `concat-key`, `tenantId + ":" + scope`, makes the first pair one entry. The build commit `export the structured inflight key` is this function. A key that omits `tenantId` is the mutant `key-without-tenant`.
 
 ## a4. Read your writes
 
-Any workspace write, and any change to the caller's admission, deletes the pending entry for that tenant and scope. The next request starts a new raw read. A write that lands in the workspace after a request has already read the old pages is visible on the next tree request.
+Regression guard, not a red-first test. A later request already starts a new read, so the new page is present before the cap exists.
 
-`a workspace write drops the pending read and the new page is present` changes the stub's page list while a read is in flight and requires the following request to show `Written page`.
+Any workspace write, and any change to the caller's admission, deletes the pending entry for that tenant and scope. The next request starts a new raw read.
 
-## b. Mutants the green guards kill
+`a workspace write drops the pending read and the new page is present` changes the page list and requires `Written page` on the next tree.
 
-These three pass on the unchanged handler. Each one has a mutant the implementation must keep failing.
+The build commit `share the raw tree read` must kill the mutant `no-delete-on-write`: the write leaves the in-flight entry, and the next request still shows `Old page`.
 
-- `a rejected read is not reused`. Mutant: store the rejected promise and return it to the next request. The next `c_delivery` card stays `degraded` and the read count stays 1. The test requires `access: "full"` and a second read.
-- `after the unsettled TTL a new read starts`. Mutant: a pending entry never expires. After 30_000ms the next request still joins the first promise, so the read count stays 1. The test requires 2.
-- `a brain at 2499ms is kept and a brain at 2501ms is degraded`. Mutant: the bound is off by one, 2499 degraded or 2501 kept. The existing mock-clock test fails that.
+## b. Mutants
 
-Mutant: cache the filtered tree under the same tenant and scope key. `two users with different ACLs never receive each other's filtered pages` fails because the narrower caller receives `Secret page`, not because the read count is wrong. The content assertions run before the count assertion. On this handler the pages already differ and the count is `2 !== 1`.
+The build commit named here is the commit that adds the cap. It is not this plan commit. Each row is the mutant name, the test that kills it, and that build commit.
+
+| Mutant | Test that kills it | Build commit |
+|---|---|---|
+| `reused-stored-rejection` | `a rejected read is not reused` | `share the raw tree read` |
+| `ttl-never-expires` | `after the unsettled TTL a new read starts` | `share the raw tree read` |
+| `bound-off-by-one` | `a brain at 2499ms is kept and a brain at 2501ms is degraded` | `share the raw tree read` |
+| `join-before-admission` | `a caller who is not admitted does not join the pending read` | `share the raw tree read` |
+| `no-delete-on-write` | `a workspace write drops the pending read and the new page is present` | `share the raw tree read` |
+| `concat-key` | `structured inflight key does not collide` | `export the structured inflight key` |
+| `key-without-tenant` | `structured inflight key does not collide` | `export the structured inflight key` |
+| `drop-ctx-waitUntil` | `a joiner sees the raw read after the originator returns only when waitUntil holds it` | `share the raw tree read` |
+| `filtered-body-leak` | `two users with different ACLs never receive each other's filtered pages` | `share the raw tree read` |
+| `cap-off-by-one` | `the 65th scope evicts the oldest unsettled read` | `share the raw tree read` |
+
+`drop-ctx-waitUntil` makes the joiner miss the 1500ms deadline. `filtered-body-leak` shares the filtered body, so the low principal receives `Secret page`. `cap-off-by-one` keeps 64 or 66 unsettled entries instead of evicting on the 65th. `key-without-tenant` drops `tenantId` from the key, so two tenants with the same scope share an entry.
 
 ## c1. Compare-and-delete
 
@@ -93,11 +114,15 @@ The raw read therefore has to be registered with `c.executionCtx.waitUntil` befo
 
 The map is module state in one isolate. Isolates do not share memory. L-1 protection is one pending raw read per tenant and scope per isolate. A reload loop that stays on that isolate collapses onto one read. A different isolate, or a different machine, starts its own read. This does not cap the fleet.
 
-`a joiner sees the raw read after the originator returns only when waitUntil holds it` is the local Miniflare proof. It uses `dispatchFetch` only. It does not open a public URL and it does not deploy.
+`a joiner sees the raw read after the originator returns only when waitUntil holds it` is in the test command. Without `waitUntil` the joiner hits the 1500ms deadline. With it, the body is `200 joined:read`. A second isolate returns `missing`.
+
+`the waitUntil read times out once and a rejection is logged` is in the same command. One timeout fires. The rejection is caught, the response is `logged`, and the test records no unhandled rejection. The build commit uses that shape for the shared raw read: one timeout, catch, log, `waitUntil`.
+
+Both use `dispatchFetch` only. They do not open a public URL and they do not deploy.
 
 ## c4. Mock clock
 
-The 2499ms bound, the TTL, the settle, and the late-settle cases advance `t.mock.timers`. They are run 50 times at the default node test workers. The Miniflare proof is the exception: workerd's scheduler is the clock, and the negative case is a 1500ms deadline so a cancelled read cannot hang the suite.
+The 2499ms bound and the unsettled TTL advance `t.mock.timers`. The Miniflare join uses workerd's scheduler and a 1500ms deadline. On the build head, those three timing tests run 50 of 50 at the default node test worker count. That run is not this plan commit.
 
 ## d. Red on this head
 
@@ -118,15 +143,19 @@ Revert this branch. No data migration. The route goes back to one read per reque
 
 ## Decision record draft
 
-Choice: share the raw workspace read, not the filtered tree. Key: `JSON.stringify([tenantId, scope])`. Delete on settle only if the map still holds that promise. Lazy TTL of 30_000ms. Cap 64 unsettled entries, oldest evicted and never reused. Hold the raw read with `waitUntil`. The cap is per isolate. L-1 then means one pending read per workspace on that isolate, not one pending read for the whole service.
+Choice: share the raw workspace read, not the filtered tree. `wikiPages` and `wikiSchema` take no principal, so the raw read may be shared only when ACL filtering runs per request after the join. Key: `inflightKey`, `JSON.stringify([tenantId, scope])`. Delete on settle only if the map still holds that promise. Lazy TTL of 30_000ms. Cap 64 unsettled entries, oldest evicted and never reused. Hold the raw read with `waitUntil`, with one timeout, and catch a rejection so it is logged and not unhandled.
+
+The cap is per isolate. Isolates do not share memory. It does not protect the whole fleet. A reload loop on one isolate collapses onto one read. Another isolate starts its own.
+
+Rollback is a revert of the build commit. No data migration.
 
 Not chosen: a per-user semaphore, a filtered-tree cache, and a concatenated string key.
 
-This draft is not an agreement. A non-author reviews it before any handler change.
+Devin has agreed on the conditions in the Plan debate section. Sentinel's line is not in yet. This is not the final AGREED.
 
 ## Red output
 
-Command: the test command above, on this head, handler unchanged. Exit 1. 7 pass, 6 fail. `duration_ms` 3582.093329.
+Command: the test command above. Exit 1. 9 pass, 5 fail. `duration_ms` 3600.460452.
 
 ```
 ✖ n concurrent tree requests for one hung brain share one pending read
@@ -138,8 +167,7 @@ Command: the test command above, on this head, handler unchanged. Exit 1. 7 pass
 ✔ after the unsettled TTL a new read starts
 
 ✖ two users with different ACLs never receive each other's filtered pages
-  2 !== 1
-  The Secret page assertions pass first. The narrower caller does not receive Secret page.
+  Secret page is absent for the low principal. The count is then 2 !== 1.
 
 ✔ a rejected read is not reused
 
@@ -147,9 +175,7 @@ Command: the test command above, on this head, handler unchanged. Exit 1. 7 pass
 
 ✔ a caller who is not admitted does not join the pending read
 
-✖ structured inflight key does not collide
-  JSON.stringify(["a:b","c"]) differs and colon concatenation collides.
-  tree.ts does not yet contain JSON.stringify([tenantId, scope]): false !== true
+✔ structured inflight key does not collide
 
 ✔ a workspace write drops the pending read and the new page is present
 
@@ -160,13 +186,14 @@ Command: the test command above, on this head, handler unchanged. Exit 1. 7 pass
   pending 65 is not capped
 
 ✔ a joiner sees the raw read after the originator returns only when waitUntil holds it
-  without waitUntil the joiner hits the 1500ms deadline
-  with waitUntil the joiner gets 200 joined:read after the first response
-  a second Miniflare isolate gets missing
+
+✔ the waitUntil read times out once and a rejection is logged
 
 ✔ a brain at 2499ms is kept and a brain at 2501ms is degraded
 ```
 
-Mock-clock timing cases `2499ms is kept` and `unsettled TTL`, 50 of 50 at the default node test workers.
+`a caller who is not admitted does not join the pending read` and `a workspace write drops the pending read and the new page is present` are regression guards. They pass on this handler.
 
-A local stand-in that served the first caller's body to the second caller failed `two users with different ACLs` on `Secret page`: actual true, expected false. That stand-in was not committed.
+The `concat-key` mutant `tenantId + ":" + scope` makes `inflightKey("a:b", "c")` and `inflightKey("a", "b:c")` both `a:b:c`. The collision test then fails `expected: 'a:b:c'` against `actual: 'a:b:c'`. That mutant was reverted.
+
+A stand-in that served the first caller's body to the second caller failed the ACL test on `Secret page`: actual true, expected false. That stand-in was not committed.
