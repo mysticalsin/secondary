@@ -189,6 +189,7 @@ export abstract class BrainBase extends WikiBase {
   }
 
   brainConfigSet(patch: Partial<BrainConfig>, actor: string, now: number): BrainConfig {
+    this.forgetInflight();
     if (patch.template) this.metaSet("brain_template", patch.template);
     if (patch.publication) this.metaSet("brain_publication", patch.publication);
     if (patch.everyone) this.metaSet("brain_everyone", patch.everyone);
@@ -199,6 +200,7 @@ export abstract class BrainBase extends WikiBase {
 
   /** Add collections to the schema. Never removes or changes one that exists. Returns the types added. */
   brainSchemaAdd(collections: Collection[]): string[] {
+    this.forgetInflight();
     const schema = this.wikiSchema();
     const added: string[] = [];
     const types = { ...schema.types };
@@ -739,12 +741,14 @@ export abstract class BrainBase extends WikiBase {
     actor: string,
     now: number,
   ): { ok: true; state: "active" | "pending" } | { ok: false; code: string } {
+    this.forgetInflight();
     const hold = this.brainMemberClaim(principalId, role, actor, now);
     if (!hold.ok) return { ok: false, code: hold.code };
     return this.brainMemberFinish(principalId, role, state, actor, now, hold);
   }
 
   brainMemberRemove(principalId: string, actor: string, now: number): boolean {
+    this.forgetInflight();
     const n = this.sql
       .exec("DELETE FROM brain_members WHERE principal_id = ? RETURNING 1", principalId)
       .toArray().length;
