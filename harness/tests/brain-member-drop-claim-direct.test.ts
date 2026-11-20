@@ -1,6 +1,7 @@
 /**
  * Direct brainMemberDropClaim calls. A null or empty key is state_unreadable.
- * A key that matches no row is claim_not_found. Neither path writes.
+ * A whitespace key is a real key that matches nothing, so it is claim_not_found.
+ * Neither path writes.
  */
 
 import assert from "node:assert/strict";
@@ -57,6 +58,17 @@ const SCHEMA = `
 
 function columns(db: DatabaseSync): Column[] {
   return db.prepare("PRAGMA table_info(brain_members)").all() as Column[];
+}
+
+type MasterRow = { type: string; name: string; tbl_name: string; sql: string | null };
+
+function schemaOf(db: DatabaseSync): { master: MasterRow[]; columns: Column[] } {
+  return {
+    master: db
+      .prepare("SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name")
+      .all() as MasterRow[],
+    columns: columns(db),
+  };
 }
 
 function members(db: DatabaseSync): MemberRow[] {
@@ -122,6 +134,57 @@ test("brain drop: an empty key is state_unreadable and writes nothing", async ()
   } finally {
     remove();
   }
+});
+
+function seedPendingAndClaimed(db: DatabaseSync): void {
+  db.prepare(
+    `INSERT INTO brain_members
+      (principal_id, role, state, added_by, at, change_id, claim_key, pending_role, pending_at)
+     VALUES
+      ('ada', 'reader', 'active', 'bea', 1, 'chg_pending', 'mem_pending', 'owner', 9),
+      ('cy', 'owner', 'claimed', 'bea', 2, NULL, 'mem_claimed', NULL, NULL)`,
+  ).run();
+}
+
+async function whitespaceKey(label: string, key: string): Promise<void> {
+  const { file, remove } = tempFile();
+  try {
+    const db = openSqlite(file);
+    db.exec(SCHEMA);
+    seedPendingAndClaimed(db);
+    const brain = await brainOn(db);
+    for (const principal of [
+      { id: "ada", previousState: "active" },
+      { id: "cy", previousState: "claimed" },
+    ]) {
+      const beforeSchema = schemaOf(db);
+      const beforeRows = members(db);
+      const dropped = brain.brainMemberDropClaim(principal.id, key, principal.previousState);
+      assert.equal(dropped.ok, false, label);
+      assert.equal(dropped.code, "claim_not_found", label);
+      assert.deepEqual(schemaOf(db), beforeSchema, label);
+      assert.deepEqual(members(db), beforeRows, label);
+    }
+    db.close();
+  } finally {
+    remove();
+  }
+}
+
+test("brain drop: a space key is claim_not_found and writes nothing", async () => {
+  await whitespaceKey("space", " ");
+});
+
+test("brain drop: a tab key is claim_not_found and writes nothing", async () => {
+  await whitespaceKey("tab", "\t");
+});
+
+test("brain drop: a newline key is claim_not_found and writes nothing", async () => {
+  await whitespaceKey("newline", "\n");
+});
+
+test("brain drop: a whitespace key is claim_not_found and writes nothing", async () => {
+  await whitespaceKey("whitespace", " \t\n ");
 });
 
 test("brain drop: an absent principal is claim_not_found and creates no row", async () => {
