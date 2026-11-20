@@ -1,6 +1,6 @@
 # Plan 020 — Erasure ledger repair
 
-Status: OPEN. No agreement is recorded on this head.
+Status: IMPLEMENTED. The plan was agreed with conditions at `cad7746ab7e60e8c1054be66a912ae1de8281224` (tree `7214bb3b`). The reds that follow that head are `7fe365849771d06e8363019e354e9827fe930418`. This file records the decisions the implementation follows.
 
 Risk: HIGH. This touches data-rights erasure.
 
@@ -129,3 +129,23 @@ Ordinary revert of this branch onto main `da3ac9c54a44f4ee249d5a32fecdac00a4a738
 | A bad step is merged into a readable grant and the second approval is spent | No merge, no in-place edit, result `refused`, pending ask stays | A healthy `receipts` and `personal` row |
 | No read of unreadable ledgers | A configure-only count, an opt-in id list, a cap, and a counts-only receipt | Legacy rows are never migrated and never deleted |
 | N-2 was treated as already covered | The signed 400 and the mark-byte test are in this file | Tenant restore still ignores scope and reopens directory |
+
+## Plan debate
+
+Loop 1 at `2fa36386` was Devin CONDITIONAL (`/workspace/sb-gate/PLAN-REVIEW-sb-pr30-2fa36386.md`, sha256 `cf034c6b`) and Sentinel AGREED with conditions C-1 to C-6 (`/workspace/sentinel/debate-msb-pr30-2fa36386-20261120.md`, sha256 `d3396517`).
+
+Loop 2 at `7437b0b2` required the report reds to carry their full assertions past the existence checks. That landed at `cad7746ab7e60e8c1054be66a912ae1de8281224`, tree `7214bb3b`.
+
+The plan is AGREED with conditions at that head. Devin (non-author engineering): `/workspace/sb-gate/PLAN-REVIEW-sb-pr30-cad7746a.md`, report_sha256 `44a1862a`. Sentinel (security): `/workspace/sentinel/debate-msb-pr30-cad7746a-20261120.md`, sha256 `7b55cba4`.
+
+## Decision record
+
+- L-1 is option 1. A company scope the grammar rejects is `422` with exactly `{ error: "invalid_scope", scopes: <count> }`. The body does not name the ids. A caller without configure gets `403` and no count. The runbook sentence is in `docs/state-machines.md`, section 30: "If erase returns 422 invalid_scope, scopes is how many company scope ids fail the grammar. The body does not name them. Rename those ids before erasing. Do not drop the bad scope and continue."
+- Refuse-not-drop stays. `addSteps` and `reopen` return no next state when a step is unknown, and `transitionErasure` answers `unknown_step`. An in-progress request does not drop a step whose place is 6.
+- A bad step on a readable grant, on a grant that does not cover the order, or on a row with no grant returns the same object from `erasureWithGrant`. `recordErasureGrant` throws `unknown_step` inside the pending-delete transaction, so the delete rolls back. The result tag is `refused`, not `confirmed`. The erase route maps `refused` to `422` `{ error: "unknown_step" }` and does not return `202`.
+- F-4. When the report's audit write does not return 202, the route returns `503` `{ error: "audit_unavailable" }`. That body names no principal and no scope. The ledger row is not updated and is not deleted.
+- F-5. The route tests fingerprint the temp directory recursively, including a nested file. A write or a new file in that nested directory changes the fingerprint, so the comparison is not vacuous. The report handler does not write that tree. The stored ledger bytes are compared as well.
+- F-6. The grammar pin walks `src/**/*.{ts,js,mjs}`. That is the whole implementation set. A copy of the character class in a `.js` or `.mjs` file fails the pin. The only allowed literal is `export const SCOPE_ID` in `src/state/erasure-request.ts`.
+- N-2. A tenant restore ignores the scope query and reopens `directory`. `stepsForRestore` returns `["directory"]` when `kind` is `tenant`. There is no CLI caller and no cron caller of `reapplyErasures`. The only production caller is the signed restore route in `src/worker/ops-internal.ts`.
+- `GET /v1/admin/rights/erasure-ledgers` reuses `requireConfigure`. A caller without configure gets `403` and an empty body, and the audits and the row are unchanged. The default body is a count. `includeIds=1` returns ids. Any other `includeIds` value is ignored and stays a count. The read uses `LIMIT` with a cap of 100, and `truncated` is set when another row exists past that page. The audit receipt is `rights_erasure_ledgers` with reason `unreadable <count>` and a null scope.
+- Legacy ledgers are never migrated and never deleted. The report only reads them.

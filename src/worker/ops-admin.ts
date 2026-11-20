@@ -3,9 +3,16 @@
 //   POST /v1/admin/switches            { switch, enabled }; re-enabling needs a second person in prod.
 //   POST /v1/admin/rights/export       { principal } (id or email); needs a second person (202 until then)
 //   POST /v1/admin/rights/erase        { principal }; a second person, unless this subject already holds their grant
+//   GET  /v1/admin/rights/erasure-ledgers  a configure-only count of unreadable ledgers
 
 import { Hono, type MiddlewareHandler } from "hono";
-import { decodeErasureLedger, erasureGrantOk, erasurePlan } from "../state/erasure-request.ts";
+import {
+  decodeErasureLedger,
+  erasureGrantOk,
+  erasurePlan,
+  reportUnreadableLedgers,
+  SCOPE_ID,
+} from "../state/erasure-request.ts";
 import { quorumConfirmed } from "../state/quorum.ts";
 import { HTTPException } from "hono/http-exception";
 import { appendReceipt, newReceiptId } from "./audit.ts";
@@ -218,12 +225,15 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "cannot_erase_self" }, 409);
 
     const tenant = tenantStub(c.env, s.tenantId);
+    const scopes = companyScopes(org);
+    const rejected = scopes.filter((scope) => !SCOPE_ID.test(scope)).length;
+    if (rejected > 0) return c.json({ error: "invalid_scope", scopes: rejected }, 422);
     let plan: string[];
     try {
-      plan = erasurePlan(companyScopes(org));
+      plan = erasurePlan(scopes);
     } catch (error) {
       if (error instanceof Error && error.message === "invalid_scope")
-        return c.json({ error: "invalid_scope" }, 422);
+        return c.json({ error: "invalid_scope", scopes: rejected }, 422);
       throw error;
     }
     const existing = decodeErasureLedger(await tenant.erasureLoad(principalId), principalId);
@@ -239,6 +249,7 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
         s.principal.email,
         plan,
       );
+      if (step.tag === "refused") return c.json({ error: "unknown_step" }, 422);
       if (!quorumConfirmed(step)) {
         await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);
         return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
@@ -250,6 +261,33 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       return c.json({ error: "erase_incomplete", status: outcome.status, step: outcome.step }, 502);
     await audit(c, s, "rights_erase", `erased ${pseudonym}`);
     return c.json({ ok: true, ...outcome, status: "erased" });
+  });
+
+  r.get("/rights/erasure-ledgers", async (c) => {
+    let s;
+    try {
+      s = await requireConfigure(c);
+    } catch (error) {
+      if (error instanceof HTTPException && error.status === 403) return new Response(null, { status: 403 });
+      throw error;
+    }
+    const parsed = Number(c.req.query("limit") ?? "100");
+    const requested = Number.isSafeInteger(parsed) ? parsed : 100;
+    const includeIds = c.req.query("includeIds") === "1";
+    const scan = await tenantStub(c.env, s.tenantId).erasureLedgerScan(requested);
+    const found = reportUnreadableLedgers(scan.rows, {
+      includeIds,
+      limit: scan.rows.length,
+      cap: includeIds ? Math.min(Math.max(requested, 0), 100) : scan.rows.length,
+    });
+    const body = {
+      unreadable: found.unreadable,
+      principalIds: found.principalIds,
+      truncated: found.truncated || scan.truncated,
+    };
+    if (!(await audit(c, s, "rights_erasure_ledgers", `unreadable ${body.unreadable}`)))
+      return c.json({ error: "audit_unavailable" }, 503);
+    return c.json(body);
   });
 
   return r;
