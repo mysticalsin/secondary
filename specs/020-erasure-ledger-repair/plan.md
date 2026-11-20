@@ -10,6 +10,8 @@ Parent of the branch: `da3ac9c54a44f4ee249d5a32fecdac00a4a738eb` (tree `916778a4
 
 No agreement is recorded on this head. Loop 1 at `2fa36386` was Devin CONDITIONAL (`cf034c6b`) and Sentinel with C-1 to C-6 (`d3396517`). Loop 2 at `7437b0b2` asked for the report assertions below. The next debate binds to this head.
 
+Implementation head: Devin and Sentinel lines pending re-bind.
+
 ## Ticket
 
 Done when:
@@ -54,51 +56,34 @@ TEST COMMAND:
 node --experimental-strip-types --test --test-reporter=spec --test-name-pattern "ledger repair" harness/tests/erasure-ledger-repair.test.ts
 ```
 
-Exit 1. 13 tests, 3 pass, 10 fail. `duration_ms` 499.888136.
+Red commit `7fe365849771d06e8363019e354e9827fe930418`: exit 1. 23 tests, 4 pass, 19 fail. `duration_ms` 705.640424.
 
-Passed: the 403 erase, the signed workspace restore, and `reapplyErasures` mark bytes.
+Passed on that red: the 403 erase, the signed workspace restore, `reapplyErasures` mark bytes, and the nested-write fingerprint. The nested-write test is a pinning (non-red) test.
 
-```
-✖ ledger repair: the erase route counts rejected company scopes and leaks no ids
-  { error: 'invalid_scope' }
-  missing scopes: 2
+The 19 failures: missing `scopes: 2`; grammar import `false !== true`; request, completed, and restore `true !== false`; a readable grant gained `scope:C_x` and `not-a-step`; a stored bad grant `'confirmed' !== 'refused'`; the report symbol `'undefined' !== 'function'`; the no-configure report `404 !== 403`; the admin report `404 !== 200`; a non-matching grant and a missing grant were not the same object; a replayed grant `'confirmed' !== 'refused'`; a refused tag `202 !== 422`; truncated and `includeIds` `404 !== 200`; an audit failure `404 !== 503`; a javascript copy `[]` against `['pkg/copy.js', 'pkg/copy.mjs']`.
 
-✖ ledger repair: every caller imports the exported scope grammar
-  false !== true
+Green on `1a75589a420ad571f7e58ac682a076eb12fe1840`: 23 pass, 0 fail, `duration_ms` 668.710438.
 
-✖ ledger repair: a request refuses a pending step the grammar does not place
-  true !== false
-
-✖ ledger repair: a completed ledger refuses a step that cannot be placed
-  true !== false
-
-✖ ledger repair: a restore refuses an unknown step
-  true !== false
-
-✖ ledger repair: erasureWithGrant refuses a bad step on a readable row
-  actual: [ 'receipts', 'personal', 'scope:C_x', 'not-a-step' ]
-  expected: [ 'receipts', 'personal' ]
-
-✖ ledger repair: a bad grant step is not written over the stored ledger
-  actual: 'confirmed'
-  expected: 'refused'
-
-✖ ledger repair: a read-only report counts an unreadable legacy ledger and does not write
-  actual: 'undefined'
-  expected: 'function'
-
-✖ ledger repair: a caller without configure gets 403 on the ledger report
-  404 !== 403
-
-✖ ledger repair: an admin ledger report returns a count and a counts-only receipt
-  404 !== 200
-```
-
-`npm test`: exit 1. 709 tests, 699 pass, 10 fail, 0 skipped. `duration_ms` 12474.925198, wall 12.6s. The 10 failures are these tests. `npm run typecheck` exit 0, wall 3.5s. `npm run typecheck:worker` exit 0, wall 3.9s.
+Green after the loop-1 pins: 27 pass, 0 fail, `duration_ms` 858.764776. The new pins pass on the current code, so they are not a separate red commit. Dropping the `unknown_step` catch then fails `500 !== 422`.
 
 ## Mutants
 
 None of these edits is applied in this commit. After a fix, each one fails the named test again.
+
+The report red on `7fe3658` stopped at `typeof` `'undefined' !== 'function'`. The assertions after that check are load-bearing. Measured on this tree, with the export and the route present, three stub mutants fail the later assertion:
+
+- The export returns `{ unreadable: 0, principalIds: 0, truncated: false }`. `a read-only report counts an unreadable legacy ledger and does not write` fails `0 !== 1` at the `unreadable` check.
+- The export writes `mutant-write.txt` into the ledger directory. The same test fails the recursive fingerprint: actual contains `mutant-write.txt`, expected does not.
+- The route returns 200 `{ unreadable: 1, principalIds: 1, truncated: false }` without configure. `a caller without configure gets 403 on the ledger report` fails `200 !== 403`.
+
+Loop-1 survivors, also measured here and not left in the tree:
+
+- Dropping the `unknown_step` catch in `requestSecond` fails `an unknown step is refused with 422 unknown_step` with `500 !== 422`.
+- Deleting the report `limit` slice fails `the report limit keeps the first row and the cap sets truncated` with `3 !== 1`.
+- Deleting the `REPORT_MAX` clamp fails `the report clamps a limit above one hundred rows` with `120 !== 100`.
+- Returning every id instead of the cap fails that limit test with `['p-a', 'p-b', 'p-c']` against `['p-a']`.
+- Forcing `truncated: false` fails the same test with `false !== true`.
+- Deleting `ORDER BY principal_id` fails `the ledger page is ordered by principal id` with `['p-m', 'p-a']` against `['p-a', 'p-m']`.
 
 | Mutant | Edit | Red assertion |
 | --- | --- | --- |

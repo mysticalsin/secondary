@@ -21,6 +21,7 @@ import {
   commitErasure,
   decodeErasureLedger,
   erasureWithGrant,
+  reportUnreadableLedgers,
 } from "../../src/state/erasure-request.ts";
 import { requireOk } from "./require-ok.ts";
 
@@ -452,16 +453,13 @@ test("ledger repair: a bad grant step is not written over the stored ledger", as
     putLedger(file, principalId, "requested", ledger);
     const first = policy.requestSecond(`erase:${principalId}`, "ada", NOW, "ada@example.invalid");
     assert.equal(first.tag, "recorded");
-    let tag = "";
-    try {
-      tag = policy.requestSecond(`erase:${principalId}`, "bea", NOW + 1_000, "bea@example.invalid", [
+    assert.deepEqual(
+      policy.requestSecond(`erase:${principalId}`, "bea", NOW + 1_000, "bea@example.invalid", [
         ...HEALTHY,
         "scope:C_x",
-      ]).tag;
-    } catch {
-      tag = "refused";
-    }
-    assert.equal(tag, "refused");
+      ]),
+      { tag: "refused" },
+    );
     assert.equal(pendingBy(file, principalId), "ada");
     const row = readLedger(file, principalId);
     assert.equal(row?.status, "requested");
@@ -784,16 +782,13 @@ test("ledger repair: a healthy ledger with no matching grant and a bad step is n
     const policy = await openPolicy(file);
     putLedger(file, principalId, "requested", ledger);
     assert.equal(policy.requestSecond(`erase:${principalId}`, "ada", NOW, "ada@example.invalid").tag, "recorded");
-    let tag = "";
-    try {
-      tag = policy.requestSecond(`erase:${principalId}`, "bea", NOW + 1_000, "bea@example.invalid", [
+    assert.deepEqual(
+      policy.requestSecond(`erase:${principalId}`, "bea", NOW + 1_000, "bea@example.invalid", [
         ...HEALTHY,
         "scope:C_x",
-      ]).tag;
-    } catch {
-      tag = "refused";
-    }
-    assert.equal(tag, "refused");
+      ]),
+      { tag: "refused" },
+    );
     assert.equal(pendingBy(file, principalId), "ada");
     const row = readLedger(file, principalId);
     assert.equal(row?.status, "requested");
@@ -843,22 +838,16 @@ test("ledger repair: a replayed grant does not mark a bad step done or delete th
     db.close();
     putLedger(file, principalId, "requested", ledger);
     assert.equal(policy.requestSecond(`erase:${principalId}`, "ada", NOW, "ada@example.invalid").tag, "recorded");
-    let tag = "";
-    try {
-      tag = policy.requestSecond(`erase:${principalId}`, "bea", NOW + 1_000, "bea@example.invalid", ["scope:C_x"]).tag;
-    } catch {
-      tag = "refused";
-    }
-    assert.equal(tag, "refused");
+    assert.deepEqual(
+      policy.requestSecond(`erase:${principalId}`, "bea", NOW + 1_000, "bea@example.invalid", ["scope:C_x"]),
+      { tag: "refused" },
+    );
     assert.equal(pendingBy(file, principalId), "ada");
     drop = true;
-    let replay = "";
-    try {
-      replay = policy.requestSecond(`erase:${principalId}`, "bea", NOW + 2_000, "bea@example.invalid", ["scope:C_x"]).tag;
-    } catch {
-      replay = "refused";
-    }
-    assert.equal(replay, "replay");
+    assert.deepEqual(
+      policy.requestSecond(`erase:${principalId}`, "bea", NOW + 2_000, "bea@example.invalid", ["scope:C_x"]),
+      { tag: "replay" },
+    );
     const row = readLedger(file, principalId);
     assert.equal(row?.ledger, ledger);
     assert.equal(row?.updated_at, 5);
@@ -1044,6 +1033,97 @@ test("ledger repair: a directory fingerprint notices a nested write", () => {
     writeFileSync(path.join(nested, "extra.json"), "d");
     const names = fingerprint(dir).map((mark) => mark.name);
     assert.equal(names.includes("nested/extra.json"), true);
+  } finally {
+    remove();
+  }
+});
+
+test("ledger repair: an unknown step is refused with 422 unknown_step", async () => {
+  const principalId = "p-exact";
+  const { file, remove } = tempFile();
+  const audits: string[] = [];
+  try {
+    const policy = await openPolicy(file);
+    const real = policy.requestSecond.bind(policy);
+    let calls = 0;
+    policy.requestSecond = (key, actor, now, email, steps) => {
+      calls += 1;
+      if (calls === 1) return real(key, actor, now, email, steps);
+      return real(key, actor, now, email, ["scope:C_x", "not-a-step"]);
+    };
+    const first = await postErase("ada-exact", principalId, ["c_ok"], "platform_admin", audits);
+    assert.equal(first.status, 202);
+    const second = await postErase("bea-exact", principalId, ["c_ok"], "platform_admin", audits);
+    const text = await second.text();
+    assert.equal(second.status, 422);
+    assert.notEqual(second.status, 500);
+    assert.deepEqual(JSON.parse(text), { error: "unknown_step" });
+    assert.equal(pendingBy(file, principalId), "ada-exact");
+    assert.equal(readLedger(file, principalId), undefined);
+  } finally {
+    remove();
+  }
+});
+
+function unreadableRow(principalId: string): { principalId: string; status: string; ledger: string } {
+  return {
+    principalId,
+    status: "requested",
+    ledger: JSON.stringify({ order: ["scope:C_x"], mark: { "scope:C_x": "pending" } }),
+  };
+}
+
+test("ledger repair: the report limit keeps the first row and the cap sets truncated", () => {
+  const rows = [unreadableRow("p-a"), unreadableRow("p-b"), unreadableRow("p-c")];
+  const limited = reportUnreadableLedgers(rows, { limit: 1 });
+  assert.equal(limited.unreadable, 1);
+  assert.equal(limited.principalIds, 1);
+  assert.equal(JSON.stringify(limited).includes("p-b"), false);
+  const listed = reportUnreadableLedgers(rows, { includeIds: true, limit: 10, cap: 1 });
+  assert.equal(listed.unreadable, 3);
+  assert.deepEqual(listed.principalIds, ["p-a"]);
+  assert.equal(listed.truncated, true);
+  const covered = reportUnreadableLedgers(rows, { includeIds: true, limit: 10, cap: 3 });
+  assert.equal(covered.truncated, false);
+  assert.deepEqual(covered.principalIds, ["p-a", "p-b", "p-c"]);
+});
+
+test("ledger repair: the report clamps a limit above one hundred rows", () => {
+  const rows = Array.from({ length: 120 }, (_, index) => unreadableRow(`p-${String(index).padStart(3, "0")}`));
+  const clamped = reportUnreadableLedgers(rows, { limit: 500 });
+  assert.equal(clamped.unreadable, 100);
+  assert.equal(clamped.principalIds, 100);
+  const listed = reportUnreadableLedgers(rows, { includeIds: true, limit: 500, cap: 150 });
+  assert.equal(listed.unreadable, 100);
+  assert.equal(Array.isArray(listed.principalIds) && listed.principalIds.length === 100, true);
+  assert.equal(listed.truncated, false);
+  const cut = reportUnreadableLedgers(rows, { includeIds: true, limit: 500, cap: 1 });
+  assert.equal(cut.unreadable, 100);
+  assert.equal(Array.isArray(cut.principalIds) && cut.principalIds.length === 1, true);
+  assert.equal(cut.truncated, true);
+});
+
+test("ledger repair: the ledger page is ordered by principal id", async () => {
+  const ledger = JSON.stringify({ order: ["scope:C_x"], mark: { "scope:C_x": "pending" } });
+  const { file, remove } = tempFile();
+  const audits: string[] = [];
+  try {
+    await openPolicy(file);
+    putLedger(file, "p-m", "requested", ledger);
+    putLedger(file, "p-a", "requested", ledger);
+    const admin = await adminApp("ada-order", "platform_admin", []);
+    const res = await admin.request(
+      "https://api.invalid/v1/admin/rights/erasure-ledgers?limit=10&includeIds=1",
+      undefined,
+      envFor(audits),
+    );
+    const text = await res.text();
+    assert.equal(res.status, 200);
+    const body = JSON.parse(text) as Report;
+    assert.deepEqual(body.principalIds, ["p-a", "p-m"]);
+    assert.equal(body.unreadable, 2);
+    assert.equal(body.truncated, false);
+    assert.equal(text.includes("C_x"), false);
   } finally {
     remove();
   }
