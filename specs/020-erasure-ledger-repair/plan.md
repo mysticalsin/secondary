@@ -1,16 +1,14 @@
 # Plan 020 — Erasure ledger repair
 
-Status: OPEN. Loop 1 conditions are in the red tests. No production change in this commit. Final CONSENSUS waits for loop 2.
+Status: OPEN. No agreement is recorded on this head.
 
 Risk: HIGH. This touches data-rights erasure.
 
-Parent of the branch: `da3ac9c54a44f4ee249d5a32fecdac00a4a738eb` (tree `916778a48bbbac1b0fa9526826f9b057634859cb`). This delta is on top of `2fa36386c816b99af34cd058aa8d811ad7492f45`.
+Parent of the branch: `da3ac9c54a44f4ee249d5a32fecdac00a4a738eb` (tree `916778a48bbbac1b0fa9526826f9b057634859cb`). This delta is on top of `7437b0b2a939dd5bb0c26b9fdd1e93d5343c7d97`.
 
 ## CONSENSUS
 
-- Devin: CONDITIONAL, loop 1. Report `PLAN-REVIEW-sb-pr30-2fa36386.md`, sha256 `cf034c6b`.
-- Sentinel: AGREED with C-1 to C-6. Report `debate-msb-pr30-2fa36386-20261120.md`, sha256 `d3396517`.
-- Final CONSENSUS: not yet. Loop 2 is the plan review of this delta.
+No agreement is recorded on this head. Loop 1 at `2fa36386` was Devin CONDITIONAL (`cf034c6b`) and Sentinel with C-1 to C-6 (`d3396517`). Loop 2 at `7437b0b2` asked for the report assertions below. The next debate binds to this head.
 
 ## Ticket
 
@@ -30,7 +28,7 @@ Done when:
 - C-3. A refused grant must not spend the second approval and must not return `confirmed` (`tenant-policy.ts` around the delete at 999–1030). Throw inside the transaction, or return `refused` before the delete. The storage test expects `refused`, then the pending requester `ada`, then the original ledger bytes.
 - C-4. The merge branch of `erasureWithGrant` (`erasure-request.ts` 266–268) validates every step. The healthy-ledger test starts from `receipts` and `personal` and rejects `scope:C_x` and `not-a-step`. It compares the existing steps before and after, so an in-place mutation that returns the same object does not pass.
 - C-5. `addSteps` and `reopen` refuse instead of skipping (`erasure-request.ts` 343 and 354). A completed ledger plus a bad step is not `ok: true` (383–384). The grammar pin is an import check plus one literal in `src/`, not a count by itself.
-- C-6. The report has an admin-only caller, a `limit`, an id cap, `truncated`, a counts-only audit receipt, and a directory mtime plus sha256 comparison. The default `principalIds` is a count. `includeIds` is what returns `['p-legacy']`.
+- C-6. The report has an admin-only caller, a `limit`, an id cap, `truncated`, a counts-only audit receipt, and a directory mtime plus sha256 comparison. The default `principalIds` is a count. `includeIds` returns `['p-legacy']`. A caller without configure gets 403 and an empty body. Every report value is checked for `C_x`.
 
 ## N-2
 
@@ -44,9 +42,9 @@ A tenant restore ignores the scope query. `stepsForRestore` returns `["directory
 
 ## What the reds reach
 
-The report function test fails today because `reportUnreadableLedgers` is missing (`'undefined' !== 'function'`). The assertions under that line are the contract: `unreadable === 1`, default `principalIds === 1`, `truncated === false`, no `C_x`, no `p-legacy` in the default JSON, `includeIds` returns `['p-legacy']`, a cap of 1 sets `truncated`, the directory fingerprint is unchanged, and the sqlite row is unchanged. Those assertions run once the export exists.
+The report function test fails today because `reportUnreadableLedgers` is missing (`'undefined' !== 'function'`). After that check the test requires `unreadable === 1`, default `principalIds === 1`, `includeIds` deep-equal to `['p-legacy']`, no `C_x` in any returned value, a cap of 1 with `truncated`, the same mtime and sha256 for every file in the ledger directory, and the stored row unchanged.
 
-The admin route tests fail at `404 !== 403` and `404 !== 200`. The 200 test then checks the count body, the key set, the counts-only receipt, and the unchanged row.
+The no-configure route fails today at `404 !== 403`. After that check the body must be empty. The admin route fails today at `404 !== 200`. After that check the body is `{ unreadable: 1, principalIds: 1, truncated: false }` with those keys only, and the audit receipt is counts only.
 
 ## Red
 
@@ -56,7 +54,7 @@ TEST COMMAND:
 node --experimental-strip-types --test --test-reporter=spec --test-name-pattern "ledger repair" harness/tests/erasure-ledger-repair.test.ts
 ```
 
-Exit 1. 13 tests, 3 pass, 10 fail. `duration_ms` 507.141142.
+Exit 1. 13 tests, 3 pass, 10 fail. `duration_ms` 499.888136.
 
 Passed: the 403 erase, the signed workspace restore, and `reapplyErasures` mark bytes.
 
@@ -96,7 +94,7 @@ Passed: the 403 erase, the signed workspace restore, and `reapplyErasures` mark 
   404 !== 200
 ```
 
-`npm test`: exit 1. 709 tests, 699 pass, 10 fail, 0 skipped. `duration_ms` 13451.586437, wall 13.58s. The 10 failures are these tests. `npm run typecheck` exit 0, wall 4.64s. `npm run typecheck:worker` exit 0, wall 3.9s.
+`npm test`: exit 1. 709 tests, 699 pass, 10 fail, 0 skipped. `duration_ms` 12474.925198, wall 12.6s. The 10 failures are these tests. `npm run typecheck` exit 0, wall 3.5s. `npm run typecheck:worker` exit 0, wall 3.9s.
 
 ## Mutants
 

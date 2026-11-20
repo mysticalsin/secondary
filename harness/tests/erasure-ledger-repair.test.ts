@@ -644,6 +644,7 @@ test("ledger repair: a read-only report counts an unreadable legacy ledger and d
     );
     assert.equal(capped.truncated, true);
     assert.equal(Array.isArray(capped.principalIds) && capped.principalIds.length === 1, true);
+    assert.equal(JSON.stringify([found, listed, capped]).includes("C_x"), false);
     assert.deepEqual(fingerprint(dir), before);
     const after = readLedger(file, principalId);
     assert.equal(after?.status, beforeRow?.status);
@@ -666,9 +667,7 @@ test("ledger repair: a caller without configure gets 403 on the ledger report", 
     const denied = await viewer.request("https://api.invalid/v1/admin/rights/erasure-ledgers?limit=1", undefined, envFor(audits));
     const deniedText = await denied.text();
     assert.equal(denied.status, 403);
-    assert.equal(deniedText.includes(principalId), false);
-    assert.equal(deniedText.includes("C_x"), false);
-    assert.equal(deniedText.includes("scopes"), false);
+    assert.equal(deniedText, "");
   } finally {
     remove();
   }
