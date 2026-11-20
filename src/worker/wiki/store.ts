@@ -4,6 +4,7 @@
 // workspace items (kinds wiki_ingest, wiki_lint, wiki_dream), so they ride the existing review queue.
 // Nothing here knows who the caller is: the API checks policy first and passes the actor.
 import { DurableObject } from "cloudflare:workers";
+import { dropInflight } from "../uxv2/inflight.ts";
 import {
   claimImport,
   commitImport,
@@ -324,6 +325,20 @@ export abstract class WikiBase extends DurableObject<Env> {
     );
   }
 
+  /** Drop this isolate's in-flight raw tree read. Other isolates keep theirs. */
+  protected forgetInflight(): void {
+    let tenantId: string | null = null;
+    let scopeId: string | null = null;
+    try {
+      tenantId = this.metaGet("tenant_id");
+      scopeId = this.metaGet("scope_id");
+    } catch {
+      return;
+    }
+    if (!tenantId || !scopeId) return;
+    dropInflight(tenantId, scopeId);
+  }
+
   /** Remember which tenant and scope this object serves (the alarm has no request to ask). */
   async wikiTouch(tenantId: string, scopeId: string, now: number): Promise<void> {
     if (this.metaGet("scope_id")) return;
@@ -439,6 +454,7 @@ export abstract class WikiBase extends DurableObject<Env> {
   }
 
   wikiSetSchema(s: WikiSchema): void {
+    this.forgetInflight();
     this.sql.exec(
       "INSERT INTO wiki_schema (id, body) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET body = excluded.body",
       JSON.stringify(s),
@@ -918,6 +934,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     now: number,
     origin: PageOrigin = "human",
   ): { ok: true; wrote: boolean } | Fail {
+    this.forgetInflight();
     const cur = this.pageById(p.id);
     const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
     const step = commitPage(from, { type: "save", now });
@@ -981,6 +998,7 @@ export abstract class WikiBase extends DurableObject<Env> {
 
   /** Publish an archived page. A save does not do this. */
   protected unarchivePage(id: string, now: number): { ok: true; wrote: boolean } | Fail {
+    this.forgetInflight();
     const cur = this.pageById(id);
     const from = cur ? decodePageStatus(cur.status) : { tag: "absent" as const };
     const step = commitPage(from, { type: "unarchive", now });
@@ -1328,6 +1346,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     now: number,
     proposalId: string,
   ): ApplyResult | Fail {
+    this.forgetInflight();
     const at = new Date(now).toISOString();
     const touched: string[] = [];
     let invalidated = 0;
@@ -2027,6 +2046,7 @@ export abstract class WikiBase extends DurableObject<Env> {
   // ---- operations ----
 
   wikiReset(): void {
+    this.forgetInflight();
     for (const t of WIKI_TABLES) this.sql.exec(`DELETE FROM ${t}`);
   }
 
@@ -2036,6 +2056,7 @@ export abstract class WikiBase extends DurableObject<Env> {
    * titles and the text of records and proposals is replaced too (M-02).
    */
   wikiPseudonymise(from: string, to: string, aliases: string[] = []): number {
+    this.forgetInflight();
     let n = 0;
     for (const [t, c] of [
       ["wiki_facts", "verified_by"],
@@ -2119,6 +2140,7 @@ export abstract class WikiBase extends DurableObject<Env> {
     ids: string[];
     revisions: { pageId: string; revision: number; markdown: string }[];
   } {
+    this.forgetInflight();
     const gone = new Set(ids);
     const out = { facts: 0, pages: 0, proposals: 0, ids: [] as string[] };
     const revisions: { pageId: string; revision: number; markdown: string }[] = [];

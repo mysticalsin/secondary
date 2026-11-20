@@ -19,7 +19,10 @@ import {
   readableMany,
 } from "../wiki/routes.ts";
 import { citationsOf } from "../wiki/text.ts";
+import { inflightKey, loadRaw } from "./inflight.ts";
 import { badRequest, stubOf, type Target, WIKI_NODE_KINDS } from "./shared.ts";
+
+export { inflightKey };
 
 export type TreeNode = {
   id: string;
@@ -33,9 +36,15 @@ export type TreeNode = {
 const MAX_PAGES_PER_FOLDER = 200;
 const TREE_BOUND_MS = 2_500;
 
-/** One pending raw read. A separator inside a tenant or a scope must not collide with another pair. */
-export function inflightKey(tenantId: string, scope: string): string {
-  return JSON.stringify([tenantId, scope]);
+function holdOf(c: C): ((promise: Promise<unknown>) => void) | null {
+  try {
+    const ctx = (c as { executionCtx?: { waitUntil?: (promise: Promise<unknown>) => void } })
+      .executionCtx;
+    if (!ctx || typeof ctx.waitUntil !== "function") return null;
+    return (promise) => ctx.waitUntil!(promise);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -78,12 +87,13 @@ function within<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promi
 export function treeRoutes(deps: AppDeps = {}): Hono<AppEnv> {
   const r = new Hono<AppEnv>();
   const ms = deps.treeBoundMs ?? TREE_BOUND_MS;
+  const now = () => deps.now?.() ?? Date.now();
 
   r.get("/brain/tree", async (c) => {
     const root = c.req.query("root");
     if (root !== undefined && root !== "personal" && root !== "company")
       throw badRequest("invalid_root");
-    return c.json({ roots: await brainTree(c, root, ms) });
+    return c.json({ roots: await brainTree(c, root, ms, now) });
   });
 
   return r;
@@ -93,6 +103,7 @@ export async function brainTree(
   c: C,
   root: "personal" | "company" | undefined,
   ms = TREE_BOUND_MS,
+  now: () => number = Date.now,
 ): Promise<TreeNode[]> {
   const s = sess(c);
   const view = viewOf(s);
@@ -133,18 +144,30 @@ export async function brainTree(
       const stub = stubOf(c, t.scope);
       const read = await within(ms, async (signal) => {
         // The real wikiPages() takes no signal. The extra argument does not cancel the SQL read.
-        const readPages = stub.wikiPages as (signal?: AbortSignal) => ReturnType<typeof stub.wikiPages>;
-        const [pages, schema] = await Promise.all([
-          Promise.resolve(readPages(signal)),
-          Promise.resolve(stub.wikiSchema()),
-        ]);
+        const readPages = stub.wikiPages as (
+          signal?: AbortSignal,
+        ) => ReturnType<typeof stub.wikiPages>;
+        const raw = await loadRaw({
+          tenantId: s.tenantId,
+          scope: t.scope,
+          now: now(),
+          hold: holdOf(c),
+          read: async () => {
+            const [pages, schema] = await Promise.all([
+              Promise.resolve(readPages(signal)),
+              Promise.resolve(stub.wikiSchema()),
+            ]);
+            return { pages, schema };
+          },
+        });
+        if (!raw.ok) throw new Error("tree_inflight_rejected");
         const [ok] = await readableMany(c, [
           {
             w: { view, personal: t.personal, stub },
-            ids: pages.flatMap((x) => citationsOf(x.markdown)),
+            ids: raw.pages.flatMap((x) => citationsOf(x.markdown)),
           },
         ]);
-        return { pages, schema, ok };
+        return { pages: raw.pages, schema: raw.schema, ok };
       });
       if (read === "miss") return { t, miss: true as const };
       return { t, miss: false as const, ...read };

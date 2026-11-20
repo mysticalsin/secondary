@@ -1,6 +1,5 @@
 /**
- * Red tests for one in-flight raw tree read per workspace.
- * The handler still starts one read per request, so the sharing assertions fail.
+ * One in-flight raw tree read per workspace.
  * Clocks are mock timers. The 2500ms bound is not a real sleep.
  */
 
@@ -40,6 +39,7 @@ let paceMs: number | null = null;
 let serveNow = false;
 let pages: Page[] = PAGES;
 let hangPrefix = "c_delivery";
+let hangAll = false;
 let lastSchema: { types: { note: { label: string } } } | null = null;
 
 function capId(index: number): string {
@@ -62,6 +62,11 @@ function workspace(name: string) {
     wikiPages: (...args: unknown[]) => {
       callArgs.push({ fn: "wikiPages", args: JSON.stringify(args) });
       reads.push(name);
+      if (hangAll) {
+        return new Promise<Page[]>((resolve) => {
+          release.set(`${name}#${reads.length}`, resolve);
+        });
+      }
       const tracked = name.includes("c_delivery") || name.includes("c_cap_") || name.includes("c_private");
       if (!tracked) return Promise.resolve([]);
       const hangThis =
@@ -245,6 +250,9 @@ type App = {
 };
 
 async function app(extra?: { treeBoundMs?: number; now?: () => number }): Promise<App> {
+  const inflight = new URL("../../src/worker/uxv2/inflight.ts", import.meta.url).href;
+  const map = (await import(inflight)) as { clearInflight: () => void };
+  map.clearInflight();
   const specifier = new URL("../../src/worker/index.ts", import.meta.url).href;
   const loaded = (await import(specifier)) as {
     createApp: (deps?: { treeBoundMs?: number; now?: () => number }) => App;
@@ -271,9 +279,12 @@ async function untilStable(read: () => number, wait: typeof setTimeout): Promise
   }
 }
 
-function finishHung(): void {
+async function finishHung(): Promise<void> {
   for (const resolve of release.values()) resolve([]);
   release.clear();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 test("n concurrent tree requests for one hung brain share one pending read", async (t) => {
@@ -283,16 +294,24 @@ test("n concurrent tree requests for one hung brain share one pending read", asy
   const realSetTimeout = globalThis.setTimeout;
   t.mock.timers.enable({ apis: ["setTimeout"] });
   try {
+    let heldWaits = 0;
     const pending = Promise.all(
-      [0, 1, 2, 3].map(() => tree(api, held.binding, AUTHOR.email)),
+      [0, 1, 2, 3].map(() =>
+        tree(api, held.binding, AUTHOR.email, {
+          waitUntil() {
+            heldWaits += 1;
+          },
+        }),
+      ),
     );
     await untilStable(deliveryReads, realSetTimeout);
     assert.equal(deliveryReads(), 1);
+    assert.ok(heldWaits >= 1);
     await t.mock.timers.tick(2500);
     const responses = await pending;
     for (const res of responses) assert.equal(res.status, 200);
   } finally {
-    finishHung();
+    await finishHung();
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
     held.remove();
@@ -315,6 +334,7 @@ test("after settle a new read starts", async (t) => {
     await first;
     await second;
     const third = tree(api, held.binding, AUTHOR.email);
+    await untilStable(deliveryReads, realSetTimeout);
     await t.mock.timers.tick(10);
     const res = await third;
     assert.equal(res.status, 200);
@@ -347,7 +367,7 @@ test("after the unsettled TTL a new read starts", async (t) => {
     await first;
     await second;
   } finally {
-    finishHung();
+    await finishHung();
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
     held.remove();
@@ -489,7 +509,7 @@ test("a caller who is not admitted does not join the pending read", async (t) =>
     await t.mock.timers.tick(2500);
     await hung;
   } finally {
-    finishHung();
+    await finishHung();
     hangPrefix = "c_delivery";
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
@@ -532,6 +552,31 @@ test("a workspace write drops the pending read and the new page is present", asy
     const first = tree(api, held.binding, AUTHOR.email);
     await untilStable(deliveryReads, realSetTimeout);
     pages = [{ id: "written", title: "Written page", type: "note", markdown: "written" }];
+    const { DatabaseSync } = await import("node:sqlite");
+    const dir = mkdtempSync(path.join(tmpdir(), "inflight-write-"));
+    const wsDb = new DatabaseSync(path.join(dir, "ws.sqlite"));
+    let wsReady: Promise<void> = Promise.resolve();
+    const Workspace = (await import(new URL("../../src/worker/workspace.ts", import.meta.url).href))
+      .Workspace;
+    const workspace = new Workspace(
+      {
+        storage: {
+          sql: sqliteStorage(wsDb),
+          transactionSync<T>(fn: () => T): T {
+            return fn();
+          },
+          setAlarm() {},
+        },
+        blockConcurrencyWhile(fn: () => Promise<void>) {
+          wsReady = fn();
+          return wsReady;
+        },
+      },
+      { WIKI_ALARMS: "off", ENVIRONMENT: "dev" },
+    );
+    await wsReady;
+    await workspace.wikiTouch("synthetic", "c_delivery", 1_700_000_000_000);
+    workspace.wikiSetSchema({ types: { note: { label: "Note" } } } as never);
     const second = tree(api, held.binding, AUTHOR.email);
     await untilStable(deliveryReads, realSetTimeout);
     assert.equal(deliveryReads(), 2);
@@ -539,9 +584,12 @@ test("a workspace write drops the pending read and the new page is present", asy
     const body = JSON.stringify(await (await second).json());
     assert.equal(body.includes("Written page"), true);
     await first;
+    wsDb.close();
+    rmSync(dir, { recursive: true, force: true });
   } finally {
     pages = PAGES;
     paceMs = null;
+    await t.mock.timers.tick(2500);
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
     held.remove();
@@ -567,6 +615,7 @@ test("a late settle does not replace the read started after the TTL", async (t) 
     pages = [{ id: "second", title: "Second page", type: "note", markdown: "second" }];
     paceMs = 10;
     const second = tree(api, held.binding, AUTHOR.email);
+    await untilStable(deliveryReads, realSetTimeout);
     await t.mock.timers.tick(10);
     const secondBody = JSON.stringify(await (await second).json());
     for (const resolve of release.values()) resolve([{ id: "first", title: "First page", type: "note", markdown: "first" }]);
@@ -579,7 +628,7 @@ test("a late settle does not replace the read started after the TTL", async (t) 
   } finally {
     pages = PAGES;
     paceMs = null;
-    finishHung();
+    await finishHung();
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
     held.remove();
@@ -630,35 +679,43 @@ test("the 65th scope does not start a second read of a hung scope", async (t) =>
   reads.length = 0;
   const realSetTimeout = globalThis.setTimeout;
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const running = (index: number) => reads.filter((name) => name.includes(capId(index))).length;
   try {
+    hangAll = true;
     const first = tree(api, held.binding, CAP_A.email);
+    await untilStable(() => reads.length, realSetTimeout);
+    const afterA = reads.length;
     const second = tree(api, held.binding, CAP_B.email);
+    await untilStable(() => reads.length, realSetTimeout);
     const third = tree(api, held.binding, CAP_C.email);
-    const start = Date.now();
-    while (capReads() < 65 && Date.now() - start < 2000) {
+    await untilStable(() => reads.length, realSetTimeout);
+    assert.ok(reads.length > 64, `started ${reads.length}`);
+    const times = (scope: string) => reads.filter((name) => name === scope).length;
+    const oldest = reads[0];
+    const stored = reads[63];
+    const refused = reads[64];
+    if (!oldest || !stored || !refused) throw new Error("missing scope");
+    const owner = (index: number) => (index < afterA ? CAP_A.email : CAP_B.email);
+    const againA = tree(api, held.binding, CAP_A.email);
+    const againB = owner(63) === CAP_B.email || owner(64) === CAP_B.email
+      ? tree(api, held.binding, CAP_B.email)
+      : null;
+    const mark = Date.now();
+    while (Date.now() - mark < 400) {
       await new Promise((resolve) => realSetTimeout(resolve, 20));
     }
-    assert.equal(capReads(), 65, `started ${capReads()}`);
-    assert.equal(running(0), 1);
-    assert.equal(running(63), 1);
-    assert.equal(running(64), 1);
-    const againOldest = tree(api, held.binding, CAP_A.email);
-    await untilStable(() => running(0), realSetTimeout);
-    assert.equal(running(0), 1, "evict-oldest starts a duplicate read");
-    const againRest = tree(api, held.binding, CAP_B.email);
-    await untilStable(() => running(64), realSetTimeout);
-    assert.equal(running(63), 1, "cap-off-by-one dropped a stored scope");
-    assert.equal(running(64), 2, "the 65th scope was stored");
+    assert.equal(times(oldest), 1, "evict-oldest starts a duplicate read");
+    assert.equal(times(stored), 1, "cap-off-by-one dropped a stored scope");
+    assert.equal(times(refused), 2, "the 65th read was stored");
     await t.mock.timers.tick(2500);
-    finishHung();
+    await finishHung();
     await first;
     await second;
     await third;
-    await againOldest;
-    await againRest;
+    await againA;
+    if (againB) await againB;
   } finally {
-    finishHung();
+    hangAll = false;
+    await finishHung();
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
     held.remove();
@@ -906,12 +963,12 @@ test("each write and ACL change drops the in-flight read", async (t) => {
       await untilStable(deliveryReads, realSetTimeout);
       assert.equal(deliveryReads(), 2, step.name);
       await t.mock.timers.tick(2500);
-      finishHung();
+      await finishHung();
       await hung;
       await again;
     }
   } finally {
-    finishHung();
+    await finishHung();
     hangPrefix = "c_delivery";
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();

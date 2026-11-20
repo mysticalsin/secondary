@@ -2,7 +2,7 @@
 
 Ticket: SB-BRAIN-TREE-INFLIGHT-CAP
 
-Risk: HIGH. Server concurrency in `src/worker/uxv2/tree.ts`. A shared filtered tree would cross an ACL boundary. A log of `err.message` would leak a page title. This phase is the plan and the tests. The tree handler is not changed. `inflightKey` is the exported key builder only.
+Risk: HIGH. Server concurrency in `src/worker/uxv2/tree.ts`. A shared filtered tree would cross an ACL boundary. A log of `err.message` would leak a page title. The handler shares one raw read per tenant and scope. `inflightKey` is the exported key builder.
 
 ## Plan debate
 
@@ -112,7 +112,7 @@ TTL is checked when a request looks up the key. There is no `setTimeout` per ent
 
 The map holds at most 64 running entries. A full map never evicts a hung read. A new scope that does not fit does an unshared read and is not stored. A request for a scope that is already running joins that read. Tests count running `wikiPages` calls, not the map size.
 
-`the 65th scope does not start a second read of a hung scope` admits 65 hung circles across two callers, because one tree read stops at the fanout of 40. A second request for the oldest scope (`c_cap_00`) and for the 64th stored scope (`c_cap_63`) keeps each running count at 1. A second request that reaches the 65th scope (`c_cap_64`) starts a second running read, because that read was not stored.
+`the 65th scope does not start a second read of a hung scope` hangs every workspace and admits more than 64 reads across two callers, because one tree read stops at the fanout of 40. The test counts running `wikiPages` calls in call order. A second request for the oldest call and for the 64th call keeps each running count at 1. A second request for the 65th call starts a second running read, because that read was not stored.
 
 ## c3. Runtime
 
@@ -177,18 +177,17 @@ These change `wikiPages()` or `wikiSchema()`, or they change the ACL stored on t
 
 | Path | Site |
 |---|---|
-| `wikiSetSchema` | `src/worker/wiki/store.ts:441` |
-| `savePage` insert | `src/worker/wiki/store.ts:936` |
-| `savePage` update | `src/worker/wiki/store.ts:949` |
-| `unarchivePage` | `src/worker/wiki/store.ts:992` |
-| `applyProposal` archive | `src/worker/wiki/store.ts:1408` |
-| `wikiReset` | `src/worker/wiki/store.ts:2029` |
-| `wikiPseudonymise` | `src/worker/wiki/store.ts:2038` |
-| `wikiForgetSources` | `src/worker/wiki/store.ts:2112` |
-| `brainSchemaAdd` | `src/worker/brains/store.ts:210` |
-| `brainConfigSet` | `src/worker/brains/store.ts:191` |
-| `brainMemberSet` | `src/worker/brains/store.ts:735` |
-| `brainMemberRemove` | `src/worker/brains/store.ts:747` |
+| `wikiSetSchema` | `src/worker/wiki/store.ts:451` |
+| `savePage` | `src/worker/wiki/store.ts:931` |
+| `unarchivePage` | `src/worker/wiki/store.ts:995` |
+| `applyProposal` | `src/worker/wiki/store.ts:1343` |
+| `wikiReset` | `src/worker/wiki/store.ts:2043` |
+| `wikiPseudonymise` | `src/worker/wiki/store.ts:2053` |
+| `wikiForgetSources` | `src/worker/wiki/store.ts:2137` |
+| `brainConfigSet` | `src/worker/brains/store.ts:192` |
+| `brainSchemaAdd` | `src/worker/brains/store.ts:203` |
+| `brainMemberSet` | `src/worker/brains/store.ts:744` |
+| `brainMemberRemove` | `src/worker/brains/store.ts:751` |
 
 Directory membership is not one of these paths. `src/worker/tenant-policy.ts:297`, `src/worker/tenant-policy.ts:792`, and `src/worker/security-journal.ts:187` change the caller's view. The next request filters with that view. Deleting the raw entry there would only affect the writer's isolate, which is the stale window above.
 
