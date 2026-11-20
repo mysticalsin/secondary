@@ -292,14 +292,15 @@ export function reportUnreadableLedgers(
     .slice(0, limit)
     .filter((row) => decodeErasureLedger(row, row.principalId).status.tag === "unreadable");
   const shown = bad.slice(0, cap);
+  const truncated = rows.length > limit || bad.length > cap;
   if (options?.includeIds === true) {
     return {
       unreadable: bad.length,
       principalIds: shown.map((row) => row.principalId),
-      truncated: bad.length > cap,
+      truncated,
     };
   }
-  return { unreadable: bad.length, principalIds: shown.length, truncated: false };
+  return { unreadable: bad.length, principalIds: shown.length, truncated };
 }
 
 /** Receipts, the tombstone, each company scope, the personal brain, the connector, then the directory. */

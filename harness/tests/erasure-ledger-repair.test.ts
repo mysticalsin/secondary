@@ -962,6 +962,13 @@ test("ledger repair: includeIds is ignored unless the caller asks and still stay
     assert.equal(body.unreadable, 1);
     assert.equal(body.truncated, false);
     assert.equal(listedText.includes("C_x"), false);
+    assert.equal(audits.length, 1);
+    const disclosed = JSON.parse((audits[0] ?? "").slice((audits[0] ?? "").indexOf("{"))) as {
+      reason: string;
+    };
+    assert.equal(disclosed.reason, "unreadable 1 ids=1");
+    assert.equal(JSON.stringify(disclosed).includes(principalId), false);
+    assert.equal(JSON.stringify(disclosed).includes("C_x"), false);
     const ignored = await admin.request(
       "https://api.invalid/v1/admin/rights/erasure-ledgers?limit=10&includeIds=yes",
       undefined,
@@ -973,6 +980,11 @@ test("ledger repair: includeIds is ignored unless the caller asks and still stay
     assert.equal(ignoredBody.principalIds, 1);
     assert.equal(ignoredText.includes(principalId), false);
     assert.equal(ignoredText.includes("C_x"), false);
+    const hidden = JSON.parse((audits[1] ?? "").slice((audits[1] ?? "").indexOf("{"))) as {
+      reason: string;
+    };
+    assert.equal(hidden.reason, "unreadable 1");
+    assert.equal(hidden.reason.includes("ids=1"), false);
     const viewer = await adminApp("ada-view-ids", "consultant", []);
     const denied = await viewer.request(
       "https://api.invalid/v1/admin/rights/erasure-ledgers?limit=10&includeIds=1",
@@ -1073,12 +1085,12 @@ function unreadableRow(principalId: string): { principalId: string; status: stri
   };
 }
 
-test("ledger repair: the default report caps the count and leaves truncated false", () => {
+test("ledger repair: the default report caps the count and sets truncated", () => {
   const rows = [unreadableRow("p-a"), unreadableRow("p-b")];
   assert.deepEqual(reportUnreadableLedgers(rows, { cap: 1 }), {
     unreadable: 2,
     principalIds: 1,
-    truncated: false,
+    truncated: true,
   });
 });
 
@@ -1087,6 +1099,7 @@ test("ledger repair: the report limit keeps the first row and the cap sets trunc
   const limited = reportUnreadableLedgers(rows, { limit: 1 });
   assert.equal(limited.unreadable, 1);
   assert.equal(limited.principalIds, 1);
+  assert.equal(limited.truncated, true);
   assert.equal(JSON.stringify(limited).includes("p-b"), false);
   const listed = reportUnreadableLedgers(rows, { includeIds: true, limit: 10, cap: 1 });
   assert.equal(listed.unreadable, 3);
@@ -1105,7 +1118,7 @@ test("ledger repair: the report clamps a limit above one hundred rows", () => {
   const listed = reportUnreadableLedgers(rows, { includeIds: true, limit: 500, cap: 150 });
   assert.equal(listed.unreadable, 100);
   assert.equal(Array.isArray(listed.principalIds) && listed.principalIds.length === 100, true);
-  assert.equal(listed.truncated, false);
+  assert.equal(listed.truncated, true);
   const cut = reportUnreadableLedgers(rows, { includeIds: true, limit: 500, cap: 1 });
   assert.equal(cut.unreadable, 100);
   assert.equal(Array.isArray(cut.principalIds) && cut.principalIds.length === 1, true);
