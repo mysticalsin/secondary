@@ -83,16 +83,18 @@ export function decodeStepMark(value: unknown): StepMark | null {
 }
 
 const FIXED_STEPS = new Set(["receipts", "tombstone", "personal", "connector", "directory"]);
-const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
+export const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
+const SCOPE_STEP = "scope:";
 
 /** The scope id inside a step, or null when the step is not exactly scope: plus that id. */
 export function scopeIdOfStep(step: string): string | null {
-  const match = /^scope:([a-z0-9][A-Za-z0-9_.:@-]{0,127})$/.exec(step);
-  return match?.[1] ?? null;
+  if (!step.startsWith(SCOPE_STEP)) return null;
+  const id = step.slice(SCOPE_STEP.length);
+  return SCOPE_ID.test(id) ? id : null;
 }
 
 /** A step the erasure plan can name: a fixed name, or scope: plus one scope id. */
-function knownErasureStep(id: string): boolean {
+export function knownErasureStep(id: string): boolean {
   return FIXED_STEPS.has(id) || scopeIdOfStep(id) !== null;
 }
 
@@ -254,18 +256,50 @@ export function withLedgerVersion(ledger: string, version: number): string {
  * Keep a ledger whose grant already covers its own steps. Newly approved steps
  * join that grant. A missing or invalid grant starts the approved plan instead.
  * The same state comes back when the stored grant already covers the new plan,
- * so the caller writes nothing.
+ * or when any approved step is not a known step, so the caller writes nothing.
  */
 export function erasureWithGrant(existing: StoredErasure, grant: ErasureGrant): StoredErasure {
+  if (grant.steps.some((id) => !knownErasureStep(id))) return existing;
   if (!erasureGrantOk(existing.grant, grant.subject, existing.order) || !existing.grant) {
     const fresh = requestedFrom(grant.steps);
-    if (!fresh)
-      return { status: { tag: "unreadable" }, order: [], mark: {}, grant: null, receipts: null };
+    if (!fresh) return existing;
     return { ...fresh, grant };
   }
   if (erasureGrantOk(existing.grant, grant.subject, grant.steps)) return existing;
   const steps = [...new Set([...existing.grant.steps, ...grant.steps])];
   return { ...existing, grant: { ...grant, steps } };
+}
+
+const REPORT_MAX = 100;
+
+function reportBound(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isSafeInteger(value) || value < 0) return fallback;
+  return Math.min(value, REPORT_MAX);
+}
+
+/**
+ * Count unreadable ledgers. Ids are omitted unless includeIds is set.
+ * Nothing here writes, and the result does not carry scope ids.
+ */
+export function reportUnreadableLedgers(
+  rows: readonly { principalId: string; status: string; ledger: string }[],
+  options?: { includeIds?: boolean; limit?: number; cap?: number },
+): { unreadable: number; principalIds: number | readonly string[]; truncated: boolean } {
+  const limit = reportBound(options?.limit, rows.length);
+  const cap = reportBound(options?.cap, limit);
+  const bad = rows
+    .slice(0, limit)
+    .filter((row) => decodeErasureLedger(row, row.principalId).status.tag === "unreadable");
+  const shown = bad.slice(0, cap);
+  if (options?.includeIds === true) {
+    return {
+      unreadable: bad.length,
+      principalIds: shown.map((row) => row.principalId),
+      truncated: bad.length > cap,
+    };
+  }
+  return { unreadable: bad.length, principalIds: shown.length, truncated: false };
 }
 
 /** Receipts, the tombstone, each company scope, the personal brain, the connector, then the directory. */
@@ -336,22 +370,23 @@ function requestedFrom(steps: readonly string[]): StoredErasure | null {
   return { status: { tag: "requested" }, order, mark, grant: null, receipts: null };
 }
 
-function addSteps(state: StoredErasure, steps: readonly string[]): StoredErasure {
+function addSteps(state: StoredErasure, steps: readonly string[]): StoredErasure | null {
+  if (steps.some((id) => !knownErasureStep(id))) return null;
   const order = [...state.order];
   const mark = { ...state.mark };
   for (const id of steps) {
-    if (!knownErasureStep(id) || order.includes(id)) continue;
+    if (order.includes(id)) continue;
     order.push(id);
     mark[id] = "pending";
   }
   return { ...state, order, mark };
 }
 
-function reopen(state: StoredErasure, steps: readonly string[]): StoredErasure {
+function reopen(state: StoredErasure, steps: readonly string[]): StoredErasure | null {
+  if (steps.some((id) => !knownErasureStep(id))) return null;
   const order = [...state.order];
   const mark = { ...state.mark };
   for (const id of steps) {
-    if (!knownErasureStep(id)) continue;
     if (!order.includes(id)) order.push(id);
     mark[id] = "pending";
   }
@@ -370,6 +405,8 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
   const badClock = clock(state, event);
   if (badClock) return badClock;
   if (event.type === "request") {
+    if (event.steps.some((id) => !knownErasureStep(id)))
+      return reject(MACHINE, state.status.tag, event.type, "unknown_step");
     if (
       state.status.tag === "absent" ||
       state.status.tag === "unreadable" ||
@@ -381,6 +418,7 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
     }
     if (state.status.tag === "completed") {
       const next = addSteps(state, event.steps);
+      if (!next) return reject(MACHINE, state.status.tag, event.type, "unknown_step");
       if (next.order.length === state.order.length) return allow(state, []);
       return proceed(next);
     }
@@ -417,10 +455,14 @@ export function transitionErasure(state: StoredErasure, event: ErasureEvent): Er
     return proceed(state);
   }
   if (event.type === "restore") {
+    if (event.steps.some((id) => !knownErasureStep(id)))
+      return reject(MACHINE, state.status.tag, event.type, "unknown_step");
     const empty = requestedFrom([]);
     const base =
       state.status.tag === "absent" || state.status.tag === "unreadable" ? (empty ?? state) : state;
-    return proceed(reopen(base, event.steps));
+    const reopened = reopen(base, event.steps);
+    if (!reopened) return reject(MACHINE, state.status.tag, event.type, "unknown_step");
+    return proceed(reopened);
   }
   if (state.status.tag !== "running") return reject(MACHINE, state.status.tag, event.type, "not_running");
   if (!state.order.includes(event.step)) return reject(MACHINE, state.status.tag, event.type, "unknown_step");

@@ -197,7 +197,7 @@ test("erase route refuses a company scope the grammar rejects before it stores",
     const { post, audits } = await eraseApp(buildOrg(["bad id"]));
     const res = await post(admin("ada", "ada@example.invalid"), NOW);
     assert.equal(res.status, 422);
-    assert.deepEqual(await res.json(), { error: "invalid_scope" });
+    assert.deepEqual(await res.json(), { error: "invalid_scope", scopes: 1 });
     assert.equal(readLedger(file), undefined);
     assert.equal(tombstones(file), 0);
     assert.deepEqual(erasureCalls(), []);

@@ -16,6 +16,7 @@ import {
   decodeErasureLedger,
   encodeErasure,
   erasureWithGrant,
+  knownErasureStep,
   ledgerVersion,
   withLedgerVersion,
 } from "../state/erasure-request.ts";
@@ -1019,8 +1020,14 @@ export class TenantPolicy extends DurableObject<Env> {
               now,
             );
         };
-        if (writeGrant) this.ctx.storage.transactionSync(apply);
-        else apply();
+        if (writeGrant) {
+          try {
+            this.ctx.storage.transactionSync(apply);
+          } catch (error) {
+            if (error instanceof Error && error.message === "unknown_step") return { tag: "refused" };
+            throw error;
+          }
+        } else apply();
         if (!deleted) {
           console.warn(JSON.stringify({ at: "quorum", reason: "replay" }));
           return { tag: "replay" };
@@ -1165,6 +1172,34 @@ export class TenantPolicy extends DurableObject<Env> {
    * Remember an erasure so a restore can be undone by applying it again. `aliases` are the person's
    * addresses as typed into text. The row lives until the last backup that could hold the person has expired.
    */
+  /**
+   * One page of stored erasure rows. The limit is capped at 100. One extra row
+   * is read so the caller can set truncated without a second statement.
+   * This does not update or delete a row.
+   */
+  erasureLedgerScan(limit: number): {
+    rows: { principalId: string; status: string; ledger: string }[];
+    truncated: boolean;
+  } {
+    const capped = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 0), 100) : 100;
+    const raw = this.sql
+      .exec(
+        "SELECT principal_id, status, ledger FROM erasure_requests ORDER BY principal_id LIMIT ?",
+        capped + 1,
+      )
+      .toArray();
+    const truncated = raw.length > capped;
+    const page = truncated ? raw.slice(0, capped) : raw;
+    return {
+      truncated,
+      rows: page.map((row) => ({
+        principalId: String(row.principal_id),
+        status: String(row.status),
+        ledger: String(row.ledger),
+      })),
+    };
+  }
+
   /** The stored erasure request, or null when this subject has none. */
   erasureLoad(principalId: string): { status: string; ledger: string } | null {
     const row = this.sql
@@ -1185,6 +1220,7 @@ export class TenantPolicy extends DurableObject<Env> {
     steps: readonly string[],
     now: number,
   ): void {
+    if (steps.some((id) => !knownErasureStep(id))) throw new Error("unknown_step");
     const loaded = this.erasureLoad(subject);
     const existing = decodeErasureLedger(loaded, subject);
     const next = erasureWithGrant(existing, { subject, requester, confirmer, steps: [...steps] });

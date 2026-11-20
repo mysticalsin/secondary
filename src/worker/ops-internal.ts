@@ -7,6 +7,7 @@
 // signed with INTERNAL_HMAC_KEY. That key cannot reach anything under /v1/internal/ops.
 
 import { Hono } from "hono";
+import { SCOPE_ID } from "../state/erasure-request.ts";
 import { quorumConfirmed } from "../state/quorum.ts";
 import { bodyLimit } from "hono/body-limit";
 import { verifyOpsRequest } from "../../packages/contracts/src/ops-auth.ts";
@@ -23,7 +24,6 @@ const what = (kind: "tenant" | "workspace"): string =>
   kind === "tenant" ? "the directory" : "a workspace";
 
 const TENANT_ID = /^[a-z0-9_]{3,64}$/;
-const SCOPE_ID = /^[a-z0-9][A-Za-z0-9_.:@-]{0,127}$/;
 const SNAPSHOT_KEY = /^\d{4}-\d{2}-\d{2}\/[A-Za-z0-9_.:/@-]{1,200}\.jsonl\.enc$/;
 const MAX_RESTORE_BYTES = 16 * 1024 * 1024;
 const DAY_MS = 86_400_000;
