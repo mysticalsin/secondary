@@ -285,7 +285,8 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       principalIds: found.principalIds,
       truncated: found.truncated || scan.truncated,
     };
-    if (!(await audit(c, s, "rights_erasure_ledgers", `unreadable ${body.unreadable}`)))
+    const reason = includeIds ? `unreadable ${body.unreadable} ids=1` : `unreadable ${body.unreadable}`;
+    if (!(await audit(c, s, "rights_erasure_ledgers", reason)))
       return c.json({ error: "audit_unavailable" }, 503);
     return c.json(body);
   });

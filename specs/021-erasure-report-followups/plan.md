@@ -1,6 +1,6 @@
 # Plan 021 — Erasure report follow-ups
 
-Status: RED. No production change is in the red commit. The decisions below are what the green commit implements.
+Status: IMPLEMENTED. The red commit is `898abf67b5d90617a399a1b53eacae3ff7a21830`. The decisions below are what this implementation follows.
 
 Risk: MEDIUM. This changes the report flag and one audit reason. It does not change erasure.
 
