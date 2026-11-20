@@ -177,13 +177,13 @@ These change `wikiPages()` or `wikiSchema()`, or they change the ACL stored on t
 
 | Path | Site |
 |---|---|
-| `wikiSetSchema` | `src/worker/wiki/store.ts:451` |
-| `savePage` | `src/worker/wiki/store.ts:931` |
-| `unarchivePage` | `src/worker/wiki/store.ts:995` |
-| `applyProposal` | `src/worker/wiki/store.ts:1343` |
-| `wikiReset` | `src/worker/wiki/store.ts:2043` |
-| `wikiPseudonymise` | `src/worker/wiki/store.ts:2053` |
-| `wikiForgetSources` | `src/worker/wiki/store.ts:2137` |
+| `wikiSetSchema` | `src/worker/wiki/store.ts:457` |
+| `savePage` | `src/worker/wiki/store.ts:937` |
+| `unarchivePage` | `src/worker/wiki/store.ts:1001` |
+| `applyProposal` | `src/worker/wiki/store.ts:1349` |
+| `wikiReset` | `src/worker/wiki/store.ts:2049` |
+| `wikiPseudonymise` | `src/worker/wiki/store.ts:2059` |
+| `wikiForgetSources` | `src/worker/wiki/store.ts:2143` |
 | `brainConfigSet` | `src/worker/brains/store.ts:192` |
 | `brainSchemaAdd` | `src/worker/brains/store.ts:203` |
 | `brainMemberSet` | `src/worker/brains/store.ts:744` |
