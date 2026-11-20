@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,6 +20,10 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 const TENANT = "synthetic";
 const AUTHOR = { id: "u_consultant", email: "consultant@synthetic.example" };
 const NARROW = { id: "u_reviewer", email: "reviewer@synthetic.example" };
+const OUTSIDER = { id: "u_outsider", email: "outsider@synthetic.example" };
+const CAP_A = { id: "u_cap_a", email: "cap-a@synthetic.example" };
+const CAP_B = { id: "u_cap_b", email: "cap-b@synthetic.example" };
+const CAP_C = { id: "u_cap_c", email: "cap-c@synthetic.example" };
 const PAGES = [
   { id: "plain", title: "Plain page", type: "note", markdown: "hello" },
   { id: "secret", title: "Secret page", type: "note", markdown: "see {src:secret}" },
@@ -28,12 +32,24 @@ const PAGES = [
 type Page = (typeof PAGES)[number];
 
 const reads: string[] = [];
+const callArgs: { fn: string; args: string }[] = [];
 const release = new Map<string, (pages: Page[]) => void>();
 let rejectDelivery = false;
 let paceMs: number | null = null;
+let serveNow = false;
+let pages: Page[] = PAGES;
+let hangPrefix = "c_delivery";
+
+function capId(index: number): string {
+  return `c_cap_${String(index).padStart(2, "0")}`;
+}
 
 function deliveryReads(): number {
   return reads.filter((name) => name.includes("c_delivery")).length;
+}
+
+function capReads(): number {
+  return reads.filter((name) => name.includes("c_cap_")).length;
 }
 
 function workspace(name: string) {
@@ -41,23 +57,31 @@ function workspace(name: string) {
     brainMemberRead: async () => null,
     brainRoleOf: async () => null,
     brainMembers: async () => [],
-    wikiPages: () => {
+    wikiPages: (...args: unknown[]) => {
+      callArgs.push({ fn: "wikiPages", args: JSON.stringify(args) });
       reads.push(name);
-      if (!name.includes("c_delivery")) return Promise.resolve([]);
-      if (rejectDelivery) {
+      const tracked = name.includes("c_delivery") || name.includes("c_cap_") || name.includes("c_private");
+      if (!tracked) return Promise.resolve([]);
+      const hangThis =
+        name.includes("c_cap_") ||
+        (paceMs === null && !serveNow && !rejectDelivery && name.includes(hangPrefix));
+      if (hangThis) {
+        return new Promise<Page[]>((resolve) => {
+          release.set(name, resolve);
+        });
+      }
+      if (rejectDelivery && name.includes("c_delivery")) {
         rejectDelivery = false;
         return Promise.reject(new Error("synthetic read failed"));
       }
+      if (serveNow) return Promise.resolve(pages);
       if (paceMs !== null) {
-        const pages = PAGES;
         const ms = paceMs;
         return new Promise<Page[]>((resolve) => {
           setTimeout(() => resolve(pages), ms);
         });
       }
-      return new Promise<Page[]>((resolve) => {
-        release.set(name, resolve);
-      });
+      return Promise.resolve([]);
     },
     wikiSourceRefs: async (ids: string[]) =>
       ids
@@ -67,7 +91,10 @@ function workspace(name: string) {
     wikiMeta: async () => null,
     wikiHealth: async () => null,
     wikiTouch: async () => {},
-    wikiSchema: async () => ({ types: { note: { label: "Note" } } }),
+    wikiSchema: async (...args: unknown[]) => {
+      callArgs.push({ fn: "wikiSchema", args: JSON.stringify(args) });
+      return { types: { note: { label: "Note" } } };
+    },
     wikiPage: async () => null,
   };
 }
@@ -155,6 +182,39 @@ async function openDirectory(): Promise<{ binding: unknown; remove: () => void }
         email: NARROW.email,
         roleIds: ["consultant"],
         memberships: [{ scope_type: "circle", scope_id: "c_delivery" }],
+      },
+      {
+        id: OUTSIDER.id,
+        email: OUTSIDER.email,
+        roleIds: ["consultant"],
+        memberships: [{ scope_type: "circle", scope_id: "c_eng" }],
+      },
+      {
+        id: CAP_A.id,
+        email: CAP_A.email,
+        roleIds: ["consultant"],
+        memberships: Array.from({ length: 39 }, (_, index) => ({
+          scope_type: "circle" as const,
+          scope_id: capId(index),
+        })),
+      },
+      {
+        id: CAP_B.id,
+        email: CAP_B.email,
+        roleIds: ["consultant"],
+        memberships: Array.from({ length: 26 }, (_, index) => ({
+          scope_type: "circle" as const,
+          scope_id: capId(39 + index),
+        })),
+      },
+      {
+        id: CAP_C.id,
+        email: CAP_C.email,
+        roleIds: ["consultant"],
+        memberships: [36, 37, 38].map((index) => ({
+          scope_type: "circle" as const,
+          scope_id: capId(index),
+        })),
       },
     ],
     1_700_000_000_000,
@@ -359,6 +419,211 @@ test("a rejected read is not reused", async (t) => {
   } finally {
     rejectDelivery = false;
     paceMs = null;
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
+    held.remove();
+  }
+});
+
+test("wikiPages and wikiSchema arguments do not carry the principal", async () => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 40 });
+  callArgs.length = 0;
+  serveNow = true;
+  try {
+    const wide = await tree(api, held.binding, AUTHOR.email);
+    const narrow = await tree(api, held.binding, NARROW.email);
+    assert.equal(wide.status, 200);
+    assert.equal(narrow.status, 200);
+    assert.ok(callArgs.length > 0);
+    const dumped = JSON.stringify(callArgs);
+    assert.equal(dumped.includes(AUTHOR.id), false);
+    assert.equal(dumped.includes(NARROW.id), false);
+    assert.equal(dumped.includes(AUTHOR.email), false);
+    assert.equal(dumped.includes(NARROW.email), false);
+    const pageArgs = callArgs.filter((call) => call.fn === "wikiPages").map((call) => call.args);
+    const schemaArgs = callArgs.filter((call) => call.fn === "wikiSchema").map((call) => call.args);
+    assert.equal(new Set(pageArgs).size, 1);
+    assert.equal(new Set(schemaArgs).size, 1);
+  } finally {
+    serveNow = false;
+    held.remove();
+  }
+});
+
+test("a caller who is not admitted does not join the pending read", async (t) => {
+  await plantPrivate();
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 2500 });
+  reads.length = 0;
+  hangPrefix = "c_private";
+  const realSetTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const privateReads = () => reads.filter((name) => name.includes("c_private")).length;
+    const hung = tree(api, held.binding, AUTHOR.email);
+    await untilStable(privateReads, realSetTimeout);
+    assert.equal(privateReads(), 1);
+    const outsider = await Promise.race([
+      tree(api, held.binding, OUTSIDER.email).then(async (res) => ({ status: res.status, body: await res.text() })),
+      new Promise<string>((resolve) => realSetTimeout(() => resolve("waited"), 400)),
+    ]);
+    assert.notEqual(outsider, "waited");
+    if (typeof outsider === "string") throw new Error(outsider);
+    assert.equal(outsider.status, 200);
+    assert.equal(privateReads(), 1);
+    await t.mock.timers.tick(2500);
+    await hung;
+  } finally {
+    finishHung();
+    hangPrefix = "c_delivery";
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
+    held.remove();
+  }
+});
+
+test("structured inflight key does not collide", () => {
+  const structured = (tenant: string, scope: string) => JSON.stringify([tenant, scope]);
+  assert.notEqual(structured("a:b", "c"), structured("a", "b:c"));
+  assert.equal(["a:b", "c"].join(":"), ["a", "b:c"].join(":"));
+  const source = readFileSync(new URL("../../src/worker/uxv2/tree.ts", import.meta.url), "utf8");
+  assert.equal(source.includes("JSON.stringify([tenantId, scope])"), true);
+});
+
+test("a workspace write drops the pending read and the new page is present", async (t) => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 2500 });
+  reads.length = 0;
+  pages = [{ id: "old", title: "Old page", type: "note", markdown: "old" }];
+  paceMs = 10;
+  const realSetTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const first = tree(api, held.binding, AUTHOR.email);
+    await untilStable(deliveryReads, realSetTimeout);
+    pages = [{ id: "written", title: "Written page", type: "note", markdown: "written" }];
+    const second = tree(api, held.binding, AUTHOR.email);
+    await untilStable(deliveryReads, realSetTimeout);
+    assert.equal(deliveryReads(), 2);
+    await t.mock.timers.tick(10);
+    const body = JSON.stringify(await (await second).json());
+    assert.equal(body.includes("Written page"), true);
+    await first;
+  } finally {
+    pages = PAGES;
+    paceMs = null;
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
+    held.remove();
+  }
+});
+
+test("a late settle does not replace the read started after the TTL", async (t) => {
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 2500 });
+  reads.length = 0;
+  pages = [{ id: "first", title: "First page", type: "note", markdown: "first" }];
+  const realSetTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const first = tree(api, held.binding, AUTHOR.email);
+    await untilStable(deliveryReads, realSetTimeout);
+    const joiner = tree(api, held.binding, AUTHOR.email);
+    await untilStable(deliveryReads, realSetTimeout);
+    assert.equal(deliveryReads(), 1);
+    await t.mock.timers.tick(30_000);
+    pages = [{ id: "second", title: "Second page", type: "note", markdown: "second" }];
+    paceMs = 10;
+    const second = tree(api, held.binding, AUTHOR.email);
+    await t.mock.timers.tick(10);
+    const secondBody = JSON.stringify(await (await second).json());
+    for (const resolve of release.values()) resolve([{ id: "first", title: "First page", type: "note", markdown: "first" }]);
+    release.clear();
+    assert.equal(secondBody.includes("Second page"), true);
+    assert.equal(secondBody.includes("First page"), false);
+    await t.mock.timers.tick(2500);
+    await first;
+    await joiner;
+  } finally {
+    pages = PAGES;
+    paceMs = null;
+    finishHung();
+    globalThis.setTimeout = realSetTimeout;
+    t.mock.timers.reset();
+    held.remove();
+  }
+});
+
+async function plantCaps(): Promise<void> {
+  const specifier = new URL("../../src/worker/org.ts", import.meta.url).href;
+  const orgMod = (await import(specifier)) as {
+    getOrg: (config: { tenantId: string; seed: number; personalOwners: string[] }) => {
+      nodes: Map<string, { id: string; childIds: string[]; plane: string }>;
+    };
+  };
+  const org = orgMod.getOrg({ tenantId: TENANT, seed: 20261104, personalOwners: [AUTHOR.id] });
+  const parent = org.nodes.get("d_amaris");
+  if (!parent) throw new Error("missing department");
+  for (let index = 0; index < 65; index += 1) {
+    const id = capId(index);
+    if (org.nodes.has(id)) continue;
+    org.nodes.set(id, {
+      id,
+      label: id,
+      kind: "circle",
+      plane: parent.plane,
+      parentId: parent.id,
+      childIds: [],
+      dept: parent.id,
+      circle: id,
+      facts: {},
+      leaf: null,
+    } as never);
+    parent.childIds.push(id);
+  }
+  const existing = [...org.nodes.entries()];
+  org.nodes.clear();
+  for (let index = 0; index < 65; index += 1) {
+    const id = capId(index);
+    const node = existing.find(([key]) => key === id);
+    if (node) org.nodes.set(node[0], node[1]);
+  }
+  for (const [key, node] of existing) if (!org.nodes.has(key)) org.nodes.set(key, node);
+}
+
+test("the 65th scope evicts the oldest unsettled read", async (t) => {
+  await plantCaps();
+  const held = await openDirectory();
+  const api = await app({ treeBoundMs: 2500 });
+  reads.length = 0;
+  const realSetTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const first = tree(api, held.binding, CAP_A.email);
+    const second = tree(api, held.binding, CAP_B.email);
+    const third = tree(api, held.binding, CAP_C.email);
+    const start = Date.now();
+    while (capReads() < 65 && Date.now() - start < 2000) {
+      await new Promise((resolve) => realSetTimeout(resolve, 20));
+    }
+    assert.equal(capReads(), 65, `started ${capReads()}`);
+    assert.ok(capReads() <= 64, `pending ${capReads()} is not capped`);
+    const oldest = reads.filter((name) => name.includes(capId(0))).length;
+    const again = tree(api, held.binding, CAP_A.email);
+    await untilStable(() => reads.filter((name) => name.includes(capId(0))).length, realSetTimeout);
+    assert.equal(reads.filter((name) => name.includes(capId(0))).length, oldest + 1);
+    for (const resolve of [...release.values()]) resolve([{ id: "evicted", title: "Evicted page", type: "note", markdown: "evicted" }]);
+    release.clear();
+    const againBody = JSON.stringify(await (await again).json());
+    assert.equal(againBody.includes("Evicted page"), false);
+    await t.mock.timers.tick(2500);
+    await first;
+    await second;
+    await third;
+    await again;
+  } finally {
+    finishHung();
     globalThis.setTimeout = realSetTimeout;
     t.mock.timers.reset();
     held.remove();
