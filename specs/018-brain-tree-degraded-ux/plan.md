@@ -27,3 +27,7 @@ Exit 1. 0 pass, 3 fail. `duration_ms` 273.185939.
 ```
 
 The directory double lists Delivery as `unavailable: true`, and the picker appends it again. The fake clock, repeated 50 times, reaches `Degraded` at 5000ms because the two 2500ms waits run one after the other. Choosing Delivery still renders the empty-state sentence.
+
+## Green
+
+The same fake clock, 50 runs on each client, reaches `Degraded` at 2500ms. That is one server bound. The 8000ms `boundFetch` is unchanged.

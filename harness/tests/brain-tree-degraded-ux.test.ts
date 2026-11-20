@@ -215,10 +215,11 @@ test("a degraded brain is listed exactly once when the directory already has it"
   while (Date.now() < deadline && (!ready(graph, "workspace") || !ready(dashboard, "brain"))) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  const graphValues = (graph.workspace?.childNodes || []).map((node) => node.value);
-  const dashboardValues = (dashboard.brain?.childNodes || []).map((node) => node.value);
-  assert.deepEqual(graphValues, ["me", "c_delivery"]);
-  assert.deepEqual(dashboardValues, ["me", "c_delivery"]);
+  const ids = (nodes: El[] | undefined) => (nodes || []).map((node) => String(node.value));
+  const graphValues = ids(graph.workspace?.childNodes);
+  const dashboardValues = ids(dashboard.brain?.childNodes);
+  assert.equal(graphValues.join(","), "me,c_delivery");
+  assert.equal(dashboardValues.join(","), "me,c_delivery");
 });
 
 test("tree and brains overlap so Degraded lands on one server bound", async () => {

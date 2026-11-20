@@ -151,14 +151,19 @@ import { boundFetch } from "/graph/fetch-bound.js";
 
   async function loadBrain() {
     setStatus("Reading your second brain…", "loading");
-    const tree = await getJson("/v1/brain/tree");
+    const [treeResult, brainsResult] = await Promise.all([
+      getJson("/v1/brain/tree").then((value) => ({ ok: true, value }), (err) => ({ ok: false, err })),
+      getJson("/v1/brains").then((value) => ({ ok: true, value }), (err) => ({ ok: false, err })),
+    ]);
+    if (!treeResult.ok) throw treeResult.err;
+    const tree = treeResult.value;
     let listed = { brains: [] };
     let brainsFailed = false;
-    try {
-      listed = await getJson("/v1/brains");
-    } catch (err) {
-      if (err instanceof AuthError) throw err;
+    if (!brainsResult.ok) {
+      if (brainsResult.err instanceof AuthError) throw brainsResult.err;
       brainsFailed = true;
+    } else {
+      listed = brainsResult.value;
     }
     const roots = Array.isArray(tree.roots) ? tree.roots : [];
     const degradedRoots = roots.filter((r) => r.access === "degraded");
@@ -707,6 +712,8 @@ import { boundFetch } from "/graph/fetch-bound.js";
     current = m;
     main.replaceChildren();
     if (!pages.length) {
+      const degradedHere = (brain.degradedRoots || []).some((root) => root.id === ws);
+      if (degradedHere) return;
       main.append(h("div", { class: "empty-state" }, h("h2", { text: "Your second brain has no pages yet" }), h("p", { text: "Add or import notes and this dashboard will shape itself around what they are about." }), h("a", { class: "btn", href: "/brains/me" }, "Open your Personal Brain")));
       return;
     }
@@ -790,7 +797,12 @@ import { boundFetch } from "/graph/fetch-bound.js";
   loadBrain().then((b) => {
     brain = b;
     fillBrainSelect(brainEl, b.cards);
-    for (const root of b.degradedRoots || []) brainEl.append(new Option(root.label, root.id));
+    const have = new Set(Array.from(brainEl.childNodes, (node) => node.value));
+    for (const root of b.degradedRoots || []) {
+      if (have.has(root.id)) continue;
+      have.add(root.id);
+      brainEl.append(new Option(root.label, root.id));
+    }
     const notes = [];
     if (b.capped) notes.push(`Read the first ${MAX_DETAILS} of ${b.capped} pages.`);
     if (b.failed) notes.push(`${plural(b.failed, "page")} could not be read.`);

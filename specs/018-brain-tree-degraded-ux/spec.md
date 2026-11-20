@@ -8,11 +8,11 @@ Follow-up to Inspector's hands-on pass on the tree timeout. The server bound sta
 
 Done when:
 
-- [ ] A brain that is `unavailable` on `GET /v1/brains` and `degraded` on `GET /v1/brain/tree` appears once in the Dashboard picker and once in the Graph picker.
-- [ ] Dashboard and Graph start those two requests together. A hung brain reaches the status `Degraded` on one 2500ms server bound, not on the sum of the two.
-- [ ] The client `boundFetch` bound stays 8000ms.
-- [ ] Choosing a degraded brain shows no empty-state sentence and no empty-state button. The status stays the word `Degraded`.
-- [ ] No new helper text is added.
+- [x] A brain that is `unavailable` on `GET /v1/brains` and `degraded` on `GET /v1/brain/tree` appears once in the Dashboard picker and once in the Graph picker.
+- [x] Dashboard and Graph start those two requests together. A hung brain reaches the status `Degraded` on one 2500ms server bound, not on the sum of the two.
+- [x] The client `boundFetch` bound stays 8000ms.
+- [x] Choosing a degraded brain shows no empty-state sentence and no empty-state button. The status stays the word `Degraded`.
+- [x] No new helper text is added.
 
 ## Requirements
 
