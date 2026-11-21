@@ -52,7 +52,7 @@ async function adminApp(): Promise<Hono<{ Variables: { session: unknown } }>> {
   return api;
 }
 
-function env() {
+function env(seen?: { expiresAt: number | null }) {
   const namespace = {
     jurisdiction() {
       return namespace;
@@ -62,10 +62,13 @@ function env() {
     },
     get() {
       return {
-        gov: async (method: string) => {
+        gov: async (method: string, args?: unknown[]) => {
           if (method === "remember") return null;
-          if (method === "propose")
+          if (method === "propose") {
+            const call = args?.[0] as { payload?: { expiresAt?: number } } | undefined;
+            if (seen) seen.expiresAt = call?.payload?.expiresAt ?? null;
             return { ok: true, change: { id: "chg_nda", status: "pending" }, applied: false };
+          }
           return null;
         },
       };
@@ -74,7 +77,10 @@ function env() {
   return { AUDIT: { fetch: auditFetch() }, TENANT_POLICY: namespace };
 }
 
-async function postNda(expiresAt: string): Promise<{ status: number; error?: string }> {
+async function postNda(
+  expiresAt: string,
+  seen?: { expiresAt: number | null },
+): Promise<{ status: number; error?: string }> {
   const api = await adminApp();
   const res = await api.request(
     "/nda",
@@ -88,7 +94,7 @@ async function postNda(expiresAt: string): Promise<{ status: number; error?: str
         expiresAt,
       }),
     },
-    env(),
+    env(seen),
   );
   const body = (await res.json()) as { error?: string };
   return { status: res.status, error: body.error };
@@ -113,9 +119,30 @@ test("NDA expiry 2025-03-01 is a real day", async () => {
   assert.equal(out.status, 200);
 });
 
+test("NDA expiry 2025-02-29T00:00:00Z is rejected", async () => {
+  const out = await postNda("2025-02-29T00:00:00Z");
+  assert.equal(out.status, 422, `NDA expiry 2025-02-29T00:00:00Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("NDA date-only 2025-03-01 round-trips to that UTC day", async () => {
+  const seen = { expiresAt: null as number | null };
+  const out = await postNda("2025-03-01", seen);
+  assert.equal(out.status, 200);
+  const expected = Date.parse("2025-03-01T00:00:00Z");
+  assert.equal(seen.expiresAt, expected);
+  assert.equal(new Date(expected).toISOString().slice(0, 10), "2025-03-01");
+});
+
 test("audit from 2025-02-29 is rejected", async () => {
   const out = await getAudit("from=2025-02-29");
   assert.equal(out.status, 400, `audit from 2025-02-29 returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("audit from 2025-02-29T00:00:00Z is rejected", async () => {
+  const out = await getAudit("from=2025-02-29T00:00:00Z");
+  assert.equal(out.status, 400, `audit from 2025-02-29T00:00:00Z returns ${out.status}`);
   assert.equal(out.error, "invalid_date");
 });
 
