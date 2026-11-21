@@ -975,7 +975,9 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
     );
     const all = await fetchReceipts(c.env, w.s.tenantId, principal, days);
     if (!all) return refuse(c, 503, "audit_unavailable", "The audit service is not answering");
-    await audit(c, receipt("gov.audit.read", "allow", "Audit viewer read"));
+    const wrote = await audit(c, receipt("gov.audit.read", "allow", "Audit viewer read"));
+    if (!wrote)
+      return refuse(c, 503, "audit_unavailable", "The audit service is not answering");
     const rows = all
       .filter((x) => {
         const t = Date.parse(x.at);
