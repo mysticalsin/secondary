@@ -75,22 +75,50 @@ const text = (v: unknown, max: number): string | null =>
   typeof v === "string" && v.trim() && v.trim().length <= max ? v.trim() : null;
 
 /**
- * A real civil day. Date.parse("2025-02-29") is the same instant as 2025-03-01.
- * packages/contracts has no calendar-day parser, so NDA expiry and the audit bounds share this one.
- * This is the only round trip for that day.
+ * Gregorian leap year. A year divisible by 4 is a leap year, except a century year,
+ * unless that century is divisible by 400. 1900-02-29 is not a day. 2000-02-29 is.
  */
-function realCalendarDay(day: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
-  const parsed = new Date(`${day}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day;
+function gregorianLeap(year: number): boolean {
+  if (year % 400 === 0) return true;
+  if (year % 100 === 0) return false;
+  return year % 4 === 0;
 }
 
-/** Date-only values are UTC midnight, or the end of that UTC day when `end` is set. */
+/**
+ * A real civil day. Date.parse("2025-02-29") is the same instant as 2025-03-01.
+ * packages/contracts has no calendar-day parser, so NDA expiry and the audit bounds share this one.
+ * This is the only round trip for that day. The month and day have to fall on that
+ * Gregorian date, so February has 29 days only in a leap year.
+ */
+function realCalendarDay(day: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const date = Number(match[3]);
+  if (month < 1 || month > 12) return false;
+  const length = [31, gregorianLeap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][
+    month - 1
+  ];
+  return date >= 1 && date <= length;
+}
+
+/**
+ * Date-only values are UTC midnight, or the end of that UTC day when `end` is set.
+ * Owner decision: accept only YYYY-MM-DD and the exact YYYY-MM-DDT00:00:00Z.
+ * The pattern is anchored, and it runs before Date.parse, so a numeric offset,
+ * a bare Z, or any other suffix cannot store the previous UTC day.
+ */
+const ADMIN_DAY = /^(\d{4}-\d{2}-\d{2})$/;
+const ADMIN_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00Z$/;
+
 function parseAdminDate(v: string, end: boolean): number | null {
-  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(v);
-  const day = dateOnly ? v : /^(\d{4}-\d{2}-\d{2})T/.exec(v)?.[1];
+  const dateOnly = ADMIN_DAY.exec(v);
+  const midnight = ADMIN_MIDNIGHT.exec(v);
+  if (!dateOnly && !midnight) return null;
+  const day = (dateOnly ?? midnight)?.[1];
   if (!day || !realCalendarDay(day)) return null;
-  const iso = dateOnly ? `${v}T${end ? "23:59:59.999" : "00:00:00"}Z` : v;
+  const iso = dateOnly ? `${day}T${end ? "23:59:59.999" : "00:00:00"}Z` : v;
   const t = Date.parse(iso);
   return Number.isFinite(t) ? t : null;
 }
