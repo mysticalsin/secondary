@@ -219,6 +219,80 @@ test("audit from 2024-02-29 is a real leap day", async () => {
   assert.equal(out.status, 200);
 });
 
+test("NDA expiry 1900-02-29 is rejected", async () => {
+  const out = await postNda("1900-02-29");
+  assert.equal(out.status, 422, `NDA expiry 1900-02-29 returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("NDA expiry 1900-02-29T00:00:00Z is rejected", async () => {
+  const out = await postNda("1900-02-29T00:00:00Z");
+  assert.equal(out.status, 422, `NDA expiry 1900-02-29T00:00:00Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("audit from 2000-02-29 is a real leap day", async () => {
+  const out = await getAudit("from=2000-02-29");
+  assert.equal(out.status, 200);
+});
+
+test("audit from 2000-02-29T00:00:00Z is a real leap day", async () => {
+  const out = await getAudit("from=2000-02-29T00:00:00Z");
+  assert.equal(out.status, 200);
+});
+
+test("NDA expiry 2025-03-01T00:00:00Z is that UTC midnight", async () => {
+  const seen = { expiresAt: null as number | null };
+  const out = await postNda("2025-03-01T00:00:00Z", seen);
+  assert.equal(out.status, 200);
+  assert.equal(seen.expiresAt, Date.parse("2025-03-01T00:00:00Z"));
+  assert.equal(new Date(seen.expiresAt ?? 0).toISOString().slice(0, 10), "2025-03-01");
+});
+
+test("NDA expiry 2025-03-01T00:00:00+01:00 is rejected", async () => {
+  const seen = { expiresAt: null as number | null };
+  const out = await postNda("2025-03-01T00:00:00+01:00", seen);
+  assert.equal(out.status, 422, `NDA expiry 2025-03-01T00:00:00+01:00 returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+  assert.equal(seen.expiresAt, null);
+});
+
+test("NDA expiry 2025-03-01Z is rejected", async () => {
+  const out = await postNda("2025-03-01Z");
+  assert.equal(out.status, 422, `NDA expiry 2025-03-01Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("NDA expiry 2025-03-01T00:00:00.000Z is rejected", async () => {
+  const out = await postNda("2025-03-01T00:00:00.000Z");
+  assert.equal(out.status, 422, `NDA expiry 2025-03-01T00:00:00.000Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("NDA expiry 2025-03-01T00:00:01Z is rejected", async () => {
+  const out = await postNda("2025-03-01T00:00:01Z");
+  assert.equal(out.status, 422, `NDA expiry 2025-03-01T00:00:01Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("audit from 2025-03-01T00:00:00+01:00 is rejected", async () => {
+  const out = await getAudit("from=2025-03-01T00:00:00%2B01:00");
+  assert.equal(out.status, 400, `audit from 2025-03-01T00:00:00+01:00 returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("audit from 2025-03-01Z is rejected", async () => {
+  const out = await getAudit("from=2025-03-01Z");
+  assert.equal(out.status, 400, `audit from 2025-03-01Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("audit from 2025-03-01T00:00:00.000Z is rejected", async () => {
+  const out = await getAudit("from=2025-03-01T00:00:00.000Z");
+  assert.equal(out.status, 400, `audit from 2025-03-01T00:00:00.000Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
 test("date-only audit bounds stay on the civil day", async () => {
   const out = await getAudit("from=2024-02-29&to=2024-02-29", [
     { receiptId: "before", at: "2024-02-28T23:59:59.999Z" },
