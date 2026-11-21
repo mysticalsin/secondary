@@ -938,10 +938,9 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
     const w = who(c);
     const input = await body(c);
     if (!input) return refuse(c, 400, "invalid_json", "The request body must be a JSON object");
-    const ids =
-      Array.isArray(input.ids) && input.ids.every((x) => Number.isInteger(x))
-        ? (input.ids as number[])
-        : null;
+    const ids = input.ids;
+    if (!Array.isArray(ids) || !ids.every((x) => typeof x === "number" && Number.isInteger(x)))
+      return refuse(c, 400, "invalid_ids", "ids must be an array of integers");
     return c.json({ ok: true, unread: await w.gov.markRead(inboxIds(c), ids, w.now) });
   });
 
