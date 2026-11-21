@@ -92,6 +92,24 @@ function insertPage(db: DatabaseSync, id: string, at: number): void {
   ).run(id, id, id, at);
 }
 
+test("brain caps: a zero limit keeps no row", async () => {
+  const { file, remove } = tempFile();
+  try {
+    const { db, brain } = await openBrain(file);
+    insertPage(db, "visible-page", 1);
+    const changes = brain.brainChangesSince(0, 0, ["visible-page"]);
+    assert.equal(changes.length, 0, `zero cap returned ${changes.length}`);
+    const mod = (await import(storeSpecifier)) as {
+      takeVisible: <T>(rows: readonly T[], visible: (row: T) => boolean, limit: number) => T[];
+    };
+    const kept = mod.takeVisible([{ id: "visible-page" }, { id: "other-page" }], () => true, 0);
+    assert.equal(kept.length, 0, `takeVisible zero cap returned ${kept.length}`);
+    db.close();
+  } finally {
+    remove();
+  }
+});
+
 test("brain caps: 50 newer hidden edits hide visible-page", async () => {
   const { file, remove } = tempFile();
   try {
