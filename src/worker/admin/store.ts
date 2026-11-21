@@ -139,22 +139,6 @@ function changeStatusSql(status: string, now: number): { sql: string; args: SqlS
   return { sql: "status = ?", args: [status] };
 }
 
-/** Effective elevation status. An active row with no end, or an end already reached, reads as expired. */
-function elevationStatusSql(status: string, now: number): { sql: string; args: SqlStorageValue[] } {
-  if (status === "active")
-    return { sql: "status = 'active' AND until IS NOT NULL AND until > ?", args: [now] };
-  if (status === "pending") return { sql: "status = 'pending' AND lapses_at > ?", args: [now] };
-  if (status === "expired")
-    return {
-      sql: `(status = 'expired'
-        OR (status = 'pending' AND lapses_at <= ?)
-        OR (status = 'active' AND (until IS NULL OR until <= ?))
-        OR status NOT IN ('pending', 'active', 'denied', 'ended', 'expired'))`,
-      args: [now, now],
-    };
-  return { sql: "status = ?", args: [status] };
-}
-
 export const CHANGE_TTL_MS = 72 * 3_600_000;
 export const ELEVATION_REQUEST_TTL_MS = 24 * 3_600_000;
 export const MAX_NDA_MS = 365 * 24 * 3_600_000;
@@ -1351,15 +1335,16 @@ export class GovStore {
       where.push("principal_id = ?");
       args.push(principalId);
     }
+    // Stored status only. The clock stays in effectiveStatus, applied by toElevation.
     if (status) {
-      const clause = elevationStatusSql(status, now);
-      where.push(clause.sql);
-      args.push(...clause.args);
+      where.push("status = ?");
+      args.push(status);
     }
     const limit = principalId === null ? 200 : 50;
-    return page(this.sql, "gov_elevations", where, args, "requested_at DESC", limit).map((r) =>
+    const rows = page(this.sql, "gov_elevations", where, args, "requested_at DESC", limit).map((r) =>
       toElevation(r, now),
     );
+    return status ? rows.filter((e) => e.status === status) : rows;
   }
 
   activeElevation(principalId: string, now: number): ElevationRequest | null {
