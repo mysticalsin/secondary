@@ -74,6 +74,28 @@ async function body(c: C): Promise<Record<string, unknown> | null> {
 const text = (v: unknown, max: number): string | null =>
   typeof v === "string" && v.trim() && v.trim().length <= max ? v.trim() : null;
 
+/**
+ * A real civil day. Date.parse("2025-02-29") is the same instant as 2025-03-01.
+ * packages/contracts has no calendar-day parser, so NDA expiry and the audit bounds share this one.
+ */
+function realCalendarDay(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const parsed = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day;
+}
+
+/** Date-only values are UTC midnight, or the end of that UTC day when `end` is set. */
+function parseAdminDate(v: string, end: boolean): number | null {
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const day = dateOnly ? v : /^(\d{4}-\d{2}-\d{2})T/.exec(v)?.[1];
+  if (!day || !realCalendarDay(day)) return null;
+  const iso = dateOnly ? `${v}T${end ? "23:59:59.999" : "00:00:00"}Z` : v;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return null;
+  if (dateOnly && new Date(t).toISOString().slice(0, 10) !== v) return null;
+  return t;
+}
+
 type Intent = Omit<
   Receipt,
   "receiptId" | "at" | "tenantId" | "principalId" | "requestId" | "clientId" | "tool"
@@ -569,10 +591,11 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
       );
     const reason = text(input.reason, MAX_REASON);
     if (!reason) return refuse(c, 422, "reason_required", "Give a reason of up to 200 characters");
-    const expiresAt =
-      typeof input.expiresAt === "string" ? Date.parse(input.expiresAt) : Number.NaN;
-    if (!Number.isFinite(expiresAt))
-      return refuse(c, 422, "expiry_required", "Give an expiry date");
+    const expiryText = typeof input.expiresAt === "string" ? input.expiresAt.trim() : "";
+    if (!expiryText) return refuse(c, 422, "expiry_required", "Give an expiry date");
+    const expiresAt = parseAdminDate(expiryText, false);
+    if (expiresAt === null)
+      return refuse(c, 422, "invalid_date", "Give a real calendar day");
     if (expiresAt <= w.now)
       return refuse(c, 422, "expiry_past", "The expiry must be in the future");
     if (expiresAt > w.now + MAX_NDA_MS)
@@ -958,8 +981,8 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
       return refuse(c, 400, "invalid_action", "Unknown action filter");
     const parse = (v: string | undefined, end: boolean): number | null | "bad" => {
       if (!v) return null;
-      const t = Date.parse(v.length === 10 ? `${v}T${end ? "23:59:59.999" : "00:00:00"}Z` : v);
-      return Number.isFinite(t) ? t : "bad";
+      const t = parseAdminDate(v, end);
+      return t === null ? "bad" : t;
     };
     const from = parse(c.req.query("from"), false);
     const to = parse(c.req.query("to"), true);
