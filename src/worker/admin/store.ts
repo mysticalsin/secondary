@@ -1320,13 +1320,20 @@ export class GovStore {
         refused = true;
         return;
       }
-      for (const row of this.sql
-        .exec("SELECT id, until FROM elevations WHERE principal_id = ?", e.principalId)
-        .toArray()) {
-        const open =
-          effectiveStatus({ status: "active", lapsesAt: 0, until: n(row.until) }, now).tag === "active";
-        if (open) this.sql.exec("UPDATE elevations SET until = ? WHERE id = ?", now, row.id);
-      }
+      // The engine table has one row per window. Close the row this elevation opened, and no other.
+      if (e.until !== null && e.decidedAt !== null)
+        this.sql.exec(
+          `UPDATE elevations SET until = ? WHERE id = (
+             SELECT id FROM elevations
+             WHERE principal_id = ? AND reason = ? AND until = ? AND created_at = ?
+             ORDER BY id LIMIT 1
+           )`,
+          now,
+          e.principalId,
+          e.reason,
+          e.until,
+          e.decidedAt,
+        );
       this.bump();
     });
     if (refused) return fail(409, "not_active", "This elevation is not active");

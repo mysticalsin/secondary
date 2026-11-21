@@ -89,10 +89,12 @@ test("endElevation closes only the targeted window", async () => {
     ).run(otherUntil, NOW);
     const ended = store.endElevation(started.elevation.id, END);
     assert.equal(ended.ok, true);
-    const rows = db.prepare("SELECT reason, until FROM elevations ORDER BY reason").all() as {
-      reason: string;
-      until: number;
-    }[];
+    const rows = (
+      db.prepare("SELECT reason, until FROM elevations ORDER BY reason").all() as {
+        reason: string;
+        until: number;
+      }[]
+    ).map((row) => ({ reason: row.reason, until: row.until }));
     assert.deepEqual(rows, [
       { reason: "direct window", until: otherUntil },
       { reason: "incident", until: END },
