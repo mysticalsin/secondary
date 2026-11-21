@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { publishMode } from "../../state/import-outcome.ts";
 import { quorumConfirmed } from "../../state/quorum.ts";
 import { IMPORT_BODY_BYTES } from "../security.ts";
+import { brainPendingAudit, whenAuditRefused } from "../ops-admin.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, notFound, readObject, sess, text } from "../ux/util.ts";
@@ -92,12 +93,16 @@ export function dataRoutes(_deps: AppDeps): Hono<AppEnv> {
           409,
         );
       if (!quorumConfirmed(step)) {
-        await audit(c, {
-          action: "brain.fields_request",
-          nodeId: b.nodeId,
-          scopeId: b.scope,
-          revision: null,
-        });
+        const refused = whenAuditRefused(
+          await audit(c, {
+            action: "brain.fields_request",
+            nodeId: b.nodeId,
+            scopeId: b.scope,
+            revision: null,
+          }),
+          brainPendingAudit(s, c.get("requestId") ?? null, "brain.fields_request", b.nodeId, b.scope),
+        );
+        if (refused) return refused;
         return c.json(
           { ok: true, status: "pending", needs: "second_person", fields: exposed },
           202,

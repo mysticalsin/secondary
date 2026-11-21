@@ -28,6 +28,7 @@ import { manageAuthority, noticeLabel, scopeDescOf, scopeKey } from "../admin/va
 import { requireOrg, viewOf } from "../auth.ts";
 import { humanIdsOf } from "../human.ts";
 import { scopeOfNode } from "../scope.ts";
+import { brainPendingAudit, whenAuditRefused } from "../ops-admin.ts";
 import { tenantStub } from "../stubs.ts";
 import type { AppDeps, AppEnv } from "../types.ts";
 import { audit, bad, type C, notFound, readObject, sess, text } from "../ux/util.ts";
@@ -355,7 +356,11 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
       .sort((a, z) => a.label.localeCompare(z.label));
 
     const since = s.ctx.now - WEEK;
-    const rows = await b.stub.brainChangesSince(since, 50);
+    const rows = await b.stub.brainChangesSince(
+      since,
+      50,
+      x.visible.map((p) => p.id),
+    );
     const byId = new Map(x.visible.map((p) => [p.id, p]));
     const items = rows.flatMap((row) => {
       const page = byId.get(row.pageId);
@@ -550,12 +555,16 @@ export function brainRoutes(deps: AppDeps): Hono<AppEnv> {
           409,
         );
       if (!quorumConfirmed(step)) {
-        await audit(c, {
-          action: "brain.open_request",
-          nodeId: b.nodeId,
-          scopeId: b.scope,
-          revision: null,
-        });
+        const refused = whenAuditRefused(
+          await audit(c, {
+            action: "brain.open_request",
+            nodeId: b.nodeId,
+            scopeId: b.scope,
+            revision: null,
+          }),
+          brainPendingAudit(s, c.get("requestId") ?? null, "brain.open_request", b.nodeId, b.scope),
+        );
+        if (refused) return refused;
         return c.json({ ok: true, status: "pending", needs: "second_person" }, 202);
       }
     }
@@ -814,12 +823,16 @@ async function setMember(
         409,
       );
     if (!quorumConfirmed(step)) {
-      await audit(c, {
-        action: "brain.role_request",
-        nodeId: b.nodeId,
-        scopeId: b.scope,
-        revision: null,
-      });
+      const refused = whenAuditRefused(
+        await audit(c, {
+          action: "brain.role_request",
+          nodeId: b.nodeId,
+          scopeId: b.scope,
+          revision: null,
+        }),
+        brainPendingAudit(s, c.get("requestId") ?? null, "brain.role_request", b.nodeId, b.scope),
+      );
+      if (refused) return refused;
       return c.json({ ok: true, status: "pending", member: { principalId: pid, role } }, 202);
     }
   }

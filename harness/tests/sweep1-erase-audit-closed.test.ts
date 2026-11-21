@@ -211,7 +211,7 @@ test("erase audit: /append 500 still returns 200 erased", async () => {
     assert.equal(secondText.includes('"status":"erased"') && secondText.includes('"ok":true'), false);
     const firstText = await first.text();
     assert.equal(first.status, 503, firstText);
-    assert.equal(first.status === 202, false);
+    assert.equal(firstText.includes('"ok":true'), false);
     const stored = decodeErasureLedger(readLedger(file) ?? null, SUBJECT);
     assert.equal(stored.status.tag, "completed");
     assert.equal(appends.length > 0, true);

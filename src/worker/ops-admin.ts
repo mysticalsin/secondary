@@ -41,6 +41,85 @@ const envName = (env: Env): string => env.ENVIRONMENT;
 const isProd = (env: Env): boolean => envName(env) === "prod";
 const AUDIT_WAIT_MS = 1_000;
 
+export type PendingAudit = {
+  key: string;
+  tenantId: string;
+  principalId: string;
+  action: string;
+  reason: string;
+  at: string;
+  requestId: string | null;
+  nodeId: string | null;
+  scopeId: string | null;
+  revision: number | null;
+};
+
+const pendingAudits = new Map<string, PendingAudit>();
+
+export function pendingAuditsSnapshot(): PendingAudit[] {
+  return [...pendingAudits.values()];
+}
+
+/** A refused receipt is not a success. The row stays until a later append accepts it. */
+export function whenAuditRefused(
+  accepted: boolean,
+  pending: PendingAudit,
+  body: Record<string, unknown> = {},
+): Response | null {
+  if (accepted) {
+    pendingAudits.delete(pending.key);
+    return null;
+  }
+  pendingAudits.set(pending.key, pending);
+  return Response.json({ error: "audit_unavailable", audit: "pending", ...body }, { status: 503 });
+}
+
+export function brainPendingAudit(
+  s: { tenantId: string; principal: { id: string } },
+  requestId: string | null,
+  action: string,
+  nodeId: string,
+  scopeId: string,
+): PendingAudit {
+  return {
+    key: `${s.tenantId}:${action}:${scopeId}`,
+    tenantId: s.tenantId,
+    principalId: s.principal.id,
+    action,
+    reason: "owner",
+    at: new Date().toISOString(),
+    requestId,
+    nodeId,
+    scopeId,
+    revision: null,
+  };
+}
+
+export async function retryPendingAudits(env: Env): Promise<{ written: number; pending: number }> {
+  let written = 0;
+  for (const row of [...pendingAudits.values()]) {
+    const ok = await appendReceipt(env, {
+      receiptId: newReceiptId(),
+      at: row.at,
+      tenantId: row.tenantId,
+      principalId: row.principalId,
+      action: row.action,
+      nodeId: row.nodeId,
+      scopeId: row.scopeId,
+      decision: "allow",
+      reason: row.reason,
+      revision: row.revision,
+      requestId: row.requestId,
+      clientId: null,
+      tool: null,
+    });
+    if (!ok) continue;
+    pendingAudits.delete(row.key);
+    written += 1;
+  }
+  return { written, pending: pendingAudits.size };
+}
+
 type AuditOutcome = "succeeded" | "refused" | "timed_out";
 
 /** The off path must return even when the audit call does not. */
@@ -251,7 +330,23 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
       );
       if (step.tag === "refused") return c.json({ error: "unknown_step" }, 422);
       if (!quorumConfirmed(step)) {
-        await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`);
+        const refused = whenAuditRefused(
+          await audit(c, s, "rights_erase_request", `erase requested for ${pseudonym}`),
+          {
+            key: `${s.tenantId}:rights_erase_request:${principalId}`,
+            tenantId: s.tenantId,
+            principalId: s.principal.id,
+            action: "rights_erase_request",
+            reason: `erase requested for ${pseudonym}`,
+            at: new Date(now()).toISOString(),
+            requestId: c.get("requestId") ?? null,
+            nodeId: null,
+            scopeId: null,
+            revision: null,
+          },
+          { status: "pending", needs: "second_person" },
+        );
+        if (refused) return refused;
         return c.json({ ok: true, status: "pending", needs: "second_person", pseudonym }, 202);
       }
     }
@@ -259,7 +354,23 @@ export function opsAdminRoutes(deps: AppDeps): Hono<AppEnv> {
     if ("reason" in outcome) return c.json({ error: "erase_disabled" }, 503);
     if (outcome.status !== "completed")
       return c.json({ error: "erase_incomplete", status: outcome.status, step: outcome.step }, 502);
-    await audit(c, s, "rights_erase", `erased ${pseudonym}`);
+    const refused = whenAuditRefused(
+      await audit(c, s, "rights_erase", `erased ${pseudonym}`),
+      {
+        key: `${s.tenantId}:rights_erase:${principalId}`,
+        tenantId: s.tenantId,
+        principalId: s.principal.id,
+        action: "rights_erase",
+        reason: `erased ${pseudonym}`,
+        at: new Date(now()).toISOString(),
+        requestId: c.get("requestId") ?? null,
+        nodeId: null,
+        scopeId: null,
+        revision: null,
+      },
+      { status: "erased" },
+    );
+    if (refused) return refused;
     return c.json({ ok: true, ...outcome, status: "erased" });
   });
 
