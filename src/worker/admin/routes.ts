@@ -655,8 +655,9 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
 
   r.get("/elevation", async (c) => {
     const w = who(c);
-    const mine = await w.gov.listElevations(w.now, w.s.principal.id);
-    const active = mine.find((e) => e.status === "active") ?? null;
+    const active = await w.gov.activeElevation(w.s.principal.id, w.now);
+    const pending =
+      (await w.gov.listElevations(w.now, w.s.principal.id, "pending"))[0] ?? null;
     return c.json({
       eligible: eligibility(w.roles),
       active: active
@@ -667,7 +668,7 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
             secondsLeft: Math.max(0, Math.floor(((active.until ?? 0) - w.now) / 1000)),
           }
         : null,
-      pending: mine.find((e) => e.status === "pending") ?? null,
+      pending,
     });
   });
 

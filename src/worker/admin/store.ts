@@ -105,6 +105,56 @@ const fail = (status: Fail["status"], code: string, message: string): Fail => ({
   status,
 });
 
+/**
+ * One page: the filter is in the WHERE clause, then the limit. A limit taken first
+ * drops an older row that still matches.
+ */
+function page(
+  sql: SqlStorage,
+  table: string,
+  where: readonly string[],
+  args: readonly SqlStorageValue[],
+  order: string,
+  limit: number,
+): Row[] {
+  const clause = where.length ? ` WHERE ${where.join(" AND ")}` : "";
+  return sql
+    .exec(`SELECT * FROM ${table}${clause} ORDER BY ${order} LIMIT ?`, ...args, limit)
+    .toArray() as Row[];
+}
+
+/** Effective governance status. A pending row at or past its expiry reads as expired. */
+function changeStatusSql(status: string, now: number): { sql: string; args: SqlStorageValue[] } {
+  if (status === "pending") return { sql: "status = 'pending' AND expires_at > ?", args: [now] };
+  if (status === "expired")
+    return {
+      sql: "(status = 'expired' OR (status = 'pending' AND expires_at <= ?))",
+      args: [now],
+    };
+  if (status === "unknown")
+    return {
+      sql: "status NOT IN ('pending', 'applied', 'rejected', 'withdrawn', 'expired')",
+      args: [],
+    };
+  return { sql: "status = ?", args: [status] };
+}
+
+/** Effective elevation status. An active row with no end, or an end already reached, reads as expired. */
+function elevationStatusSql(status: string, now: number): { sql: string; args: SqlStorageValue[] } {
+  if (status === "active")
+    return { sql: "status = 'active' AND until IS NOT NULL AND until > ?", args: [now] };
+  if (status === "pending") return { sql: "status = 'pending' AND lapses_at > ?", args: [now] };
+  if (status === "expired")
+    return {
+      sql: `(status = 'expired'
+        OR (status = 'pending' AND lapses_at <= ?)
+        OR (status = 'active' AND (until IS NULL OR until <= ?))
+        OR status NOT IN ('pending', 'active', 'denied', 'ended', 'expired'))`,
+      args: [now, now],
+    };
+  return { sql: "status = ?", args: [status] };
+}
+
 export const CHANGE_TTL_MS = 72 * 3_600_000;
 export const ELEVATION_REQUEST_TTL_MS = 24 * 3_600_000;
 export const MAX_NDA_MS = 365 * 24 * 3_600_000;
@@ -514,28 +564,36 @@ export class GovStore {
   inbox(principalIds: string | readonly string[]): { unread: number; items: Notification[] } {
     const ids = [...new Set([principalIds].flat())];
     const marks = ids.map(() => "?").join(", ");
-    const items = this.sql
-      .exec(
-        `SELECT id, kind, title, ref, at, read_at FROM gov_notifications WHERE principal_id IN (${marks}) ORDER BY id DESC LIMIT 50`,
-        ...ids,
-      )
-      .toArray()
-      .map((r) => ({
-        id: n(r.id),
-        kind: s(r.kind),
-        title: s(r.title),
-        ref: sn(r.ref),
-        at: n(r.at),
-        read: r.read_at !== null,
-      }));
+    const who = `principal_id IN (${marks})`;
     const unread = n(
       this.sql
         .exec(
-          `SELECT COUNT(*) AS c FROM gov_notifications WHERE principal_id IN (${marks}) AND read_at IS NULL`,
+          `SELECT COUNT(*) AS c FROM gov_notifications WHERE ${who} AND read_at IS NULL`,
           ...ids,
         )
         .one().c,
     );
+    const toItem = (r: Row): Notification => ({
+      id: n(r.id),
+      kind: s(r.kind),
+      title: s(r.title),
+      ref: sn(r.ref),
+      at: n(r.at),
+      read: r.read_at !== null,
+    });
+    // The newest 50, plus any older unread row the badge still counts.
+    const recent = page(this.sql, "gov_notifications", [who], ids, "id DESC", 50);
+    const unseen = page(
+      this.sql,
+      "gov_notifications",
+      [who, "read_at IS NULL"],
+      ids,
+      "id DESC",
+      Math.max(unread, 1),
+    );
+    const byId = new Map<number, Notification>();
+    for (const row of [...unseen, ...recent]) byId.set(n(row.id), toItem(row));
+    const items = [...byId.values()].sort((a, b) => b.id - a.id);
     return { unread, items };
   }
 
@@ -603,26 +661,42 @@ export class GovStore {
       mine?: string | null;
     },
   ): Change[] {
-    const rows = this.sql
-      .exec("SELECT * FROM gov_changes ORDER BY proposed_at DESC, id DESC LIMIT 300")
-      .toArray();
+    const where: string[] = [];
+    const args: SqlStorageValue[] = [];
+    if (f.status) {
+      const clause = changeStatusSql(f.status, now);
+      where.push(clause.sql);
+      args.push(...clause.args);
+    }
+    if (f.kinds) {
+      if (f.kinds.length === 0) where.push("0");
+      else {
+        where.push(`kind IN (${f.kinds.map(() => "?").join(", ")})`);
+        args.push(...f.kinds);
+      }
+    }
+    if (f.scopeKeys !== undefined && f.scopeKeys !== null) {
+      const mine = f.mine !== undefined && f.mine !== null ? f.mine : null;
+      if (f.scopeKeys.length === 0 && mine === null) where.push("0");
+      else if (f.scopeKeys.length === 0) {
+        where.push("proposed_by = ?");
+        args.push(mine);
+      } else if (mine !== null) {
+        where.push(`(scope_key IN (${f.scopeKeys.map(() => "?").join(", ")}) OR proposed_by = ?)`);
+        args.push(...f.scopeKeys, mine);
+      } else {
+        where.push(`scope_key IN (${f.scopeKeys.map(() => "?").join(", ")})`);
+        args.push(...f.scopeKeys);
+      }
+    }
+    const rows = page(this.sql, "gov_changes", where, args, "proposed_at DESC, id DESC", 300);
     const requester = new Map(
       this.sql
         .exec("SELECT change_id, principal_id FROM gov_access_requests WHERE change_id IS NOT NULL")
         .toArray()
         .map((r) => [s(r.change_id), s(r.principal_id)] as const),
     );
-    return rows
-      .map((r) => ({ ...toChange(r, now), requestedBy: requester.get(s(r.id)) ?? null }))
-      .filter(
-        (c) =>
-          (!f.status || c.status === f.status) &&
-          (!f.kinds || f.kinds.includes(c.kind)) &&
-          (f.scopeKeys === undefined ||
-            f.scopeKeys === null ||
-            f.scopeKeys.includes(c.scopeKey) ||
-            (f.mine !== undefined && f.mine !== null && c.proposedBy === f.mine)),
-      );
+    return rows.map((r) => ({ ...toChange(r, now), requestedBy: requester.get(s(r.id)) ?? null }));
   }
 
   /**
@@ -1259,27 +1333,30 @@ export class GovStore {
     return { ok: true, elevation: this.getElevation(id, now) as ElevationRequest };
   }
 
-  listElevations(now: number, principalId: string | null): ElevationRequest[] {
-    const rows =
-      principalId === null
-        ? this.sql
-            .exec("SELECT * FROM gov_elevations ORDER BY requested_at DESC LIMIT 200")
-            .toArray()
-        : this.sql
-            .exec(
-              "SELECT * FROM gov_elevations WHERE principal_id = ? ORDER BY requested_at DESC LIMIT 50",
-              principalId,
-            )
-            .toArray();
-    return rows.map((r) => toElevation(r, now));
+  listElevations(
+    now: number,
+    principalId: string | null,
+    status: ElevationStatus | null = null,
+  ): ElevationRequest[] {
+    const where: string[] = [];
+    const args: SqlStorageValue[] = [];
+    if (principalId !== null) {
+      where.push("principal_id = ?");
+      args.push(principalId);
+    }
+    if (status) {
+      const clause = elevationStatusSql(status, now);
+      where.push(clause.sql);
+      args.push(...clause.args);
+    }
+    const limit = principalId === null ? 200 : 50;
+    return page(this.sql, "gov_elevations", where, args, "requested_at DESC", limit).map((r) =>
+      toElevation(r, now),
+    );
   }
 
   activeElevation(principalId: string, now: number): ElevationRequest | null {
-    return (
-      this.listElevations(now, principalId).find(
-        (e) => e.status === "active",
-      ) ?? null
-    );
+    return this.listElevations(now, principalId, "active")[0] ?? null;
   }
 
   // ---- access requests ----
@@ -1337,16 +1414,26 @@ export class GovStore {
     scopeKeys?: string[] | null;
     status?: RequestStatus | null;
   }): AccessRequest[] {
-    return this.sql
-      .exec("SELECT * FROM gov_access_requests ORDER BY created_at DESC, id DESC LIMIT 300")
-      .toArray()
-      .map(toRequest)
-      .filter(
-        (r) =>
-          (!f.principalId || r.principalId === f.principalId) &&
-          (!f.scopeKeys || f.scopeKeys.includes(r.scopeKey)) &&
-          (!f.status || r.status === f.status),
-      );
+    const where: string[] = [];
+    const args: SqlStorageValue[] = [];
+    if (f.principalId) {
+      where.push("principal_id = ?");
+      args.push(f.principalId);
+    }
+    if (f.scopeKeys) {
+      if (f.scopeKeys.length === 0) where.push("0");
+      else {
+        where.push(`scope_key IN (${f.scopeKeys.map(() => "?").join(", ")})`);
+        args.push(...f.scopeKeys);
+      }
+    }
+    if (f.status) {
+      where.push("status = ?");
+      args.push(f.status);
+    }
+    return page(this.sql, "gov_access_requests", where, args, "created_at DESC, id DESC", 300).map(
+      toRequest,
+    );
   }
 
   /** Deny with a reason, or note a decision made elsewhere. Approval goes through approveRequest. */
