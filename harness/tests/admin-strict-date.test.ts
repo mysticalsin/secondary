@@ -17,12 +17,24 @@ register(new URL("../runtime/register-worker-hooks.mjs", import.meta.url).href, 
 /** 2025-02-28T00:00:00.000Z. The rolled value of 2025-02-29 is one day later and inside one year. */
 const NOW = 1_740_700_800_000;
 
-function auditFetch() {
+function auditFetch(rows: { receiptId: string; at: string }[] = []) {
+  const receipts = rows.map((row) => ({
+    receiptId: row.receiptId,
+    at: row.at,
+    tenantId: "tenant_synthetic",
+    principalId: "u_platform_admin",
+    action: "gov.audit.read",
+    decision: "allow",
+    reason: "synthetic",
+    nodeId: null,
+    scopeId: null,
+    revision: null,
+  }));
   return async (input: unknown, init?: { method?: string }) => {
     const method = init?.method ?? "GET";
     if (method === "POST" || String(input).includes("/append"))
       return new Response(null, { status: 202 });
-    return new Response(JSON.stringify({ receipts: [] }), {
+    return new Response(JSON.stringify({ receipts }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -52,7 +64,10 @@ async function adminApp(): Promise<Hono<{ Variables: { session: unknown } }>> {
   return api;
 }
 
-function env(seen?: { expiresAt: number | null }) {
+function env(
+  seen?: { expiresAt: number | null },
+  rows?: { receiptId: string; at: string }[],
+) {
   const namespace = {
     jurisdiction() {
       return namespace;
@@ -74,7 +89,7 @@ function env(seen?: { expiresAt: number | null }) {
       };
     },
   };
-  return { AUDIT: { fetch: auditFetch() }, TENANT_POLICY: namespace };
+  return { AUDIT: { fetch: auditFetch(rows) }, TENANT_POLICY: namespace };
 }
 
 async function postNda(
@@ -100,11 +115,20 @@ async function postNda(
   return { status: res.status, error: body.error };
 }
 
-async function getAudit(query: string): Promise<{ status: number; error?: string }> {
+async function getAudit(
+  query: string,
+  rows: { receiptId: string; at: string }[] = [],
+): Promise<{ status: number; error?: string; ids?: string[] }> {
   const api = await adminApp();
-  const res = await api.request(`/audit?${query}`, { method: "GET" }, env());
+  const res = await api.request(`/audit?${query}`, { method: "GET" }, env(undefined, rows));
   const text = await res.text();
-  const body = text ? (JSON.parse(text) as { error?: string }) : {};
+  const parsed: unknown = text ? JSON.parse(text) : null;
+  if (Array.isArray(parsed))
+    return {
+      status: res.status,
+      ids: parsed.map((row) => String((row as { id?: string }).id ?? "")),
+    };
+  const body = (parsed ?? {}) as { error?: string };
   return { status: res.status, error: body.error };
 }
 
@@ -131,7 +155,27 @@ test("NDA date-only 2025-03-01 round-trips to that UTC day", async () => {
   assert.equal(out.status, 200);
   const expected = Date.parse("2025-03-01T00:00:00Z");
   assert.equal(seen.expiresAt, expected);
-  assert.equal(new Date(expected).toISOString().slice(0, 10), "2025-03-01");
+  assert.equal(new Date(seen.expiresAt ?? 0).toISOString().slice(0, 10), "2025-03-01");
+});
+
+test("NDA expiry 2025-04-31 is rejected", async () => {
+  const out = await postNda("2025-04-31");
+  assert.equal(out.status, 422, `NDA expiry 2025-04-31 returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("NDA expiry 2025-04-31T00:00:00Z is rejected", async () => {
+  const out = await postNda("2025-04-31T00:00:00Z");
+  assert.equal(out.status, 422, `NDA expiry 2025-04-31T00:00:00Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("NDA date-only 2025-04-30 round-trips to that UTC day", async () => {
+  const seen = { expiresAt: null as number | null };
+  const out = await postNda("2025-04-30", seen);
+  assert.equal(out.status, 200);
+  assert.equal(seen.expiresAt, Date.parse("2025-04-30T00:00:00Z"));
+  assert.equal(new Date(seen.expiresAt ?? 0).toISOString().slice(0, 10), "2025-04-30");
 });
 
 test("audit from 2025-02-29 is rejected", async () => {
@@ -158,7 +202,30 @@ test("audit to 2026-04-31 is rejected", async () => {
   assert.equal(out.error, "invalid_date");
 });
 
+test("audit to 2025-04-31 is rejected", async () => {
+  const out = await getAudit("to=2025-04-31");
+  assert.equal(out.status, 400, `audit to 2025-04-31 returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
+test("audit to 2025-04-31T00:00:00Z is rejected", async () => {
+  const out = await getAudit("to=2025-04-31T00:00:00Z");
+  assert.equal(out.status, 400, `audit to 2025-04-31T00:00:00Z returns ${out.status}`);
+  assert.equal(out.error, "invalid_date");
+});
+
 test("audit from 2024-02-29 is a real leap day", async () => {
   const out = await getAudit("from=2024-02-29");
   assert.equal(out.status, 200);
+});
+
+test("date-only audit bounds stay on the civil day", async () => {
+  const out = await getAudit("from=2024-02-29&to=2024-02-29", [
+    { receiptId: "before", at: "2024-02-28T23:59:59.999Z" },
+    { receiptId: "start", at: "2024-02-29T00:00:00.000Z" },
+    { receiptId: "end", at: "2024-02-29T23:59:59.999Z" },
+    { receiptId: "after", at: "2024-03-01T00:00:00.000Z" },
+  ]);
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.ids, ["end", "start"]);
 });
