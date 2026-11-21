@@ -77,6 +77,7 @@ const text = (v: unknown, max: number): string | null =>
 /**
  * A real civil day. Date.parse("2025-02-29") is the same instant as 2025-03-01.
  * packages/contracts has no calendar-day parser, so NDA expiry and the audit bounds share this one.
+ * This is the only round trip for that day.
  */
 function realCalendarDay(day: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
@@ -91,9 +92,7 @@ function parseAdminDate(v: string, end: boolean): number | null {
   if (!day || !realCalendarDay(day)) return null;
   const iso = dateOnly ? `${v}T${end ? "23:59:59.999" : "00:00:00"}Z` : v;
   const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  if (dateOnly && new Date(t).toISOString().slice(0, 10) !== v) return null;
-  return t;
+  return Number.isFinite(t) ? t : null;
 }
 
 type Intent = Omit<
