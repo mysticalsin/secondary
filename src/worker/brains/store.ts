@@ -41,7 +41,8 @@ const CLAIM_LEASE_MS = 2 * CHANGE_TTL_MS;
 
 /**
  * Rows the caller may see, then the cap. A cap taken first hides an older
- * visible row behind newer hidden ones.
+ * visible row behind newer hidden ones. The cap is the integer part of
+ * limit. A non-finite cap, or an integer part below 1, returns no row.
  */
 export function takeVisible<T>(
   rows: readonly T[],
@@ -49,11 +50,12 @@ export function takeVisible<T>(
   limit: number,
 ): T[] {
   const out: T[] = [];
-  if (!Number.isFinite(limit) || limit <= 0) return out;
+  const cap = Math.trunc(limit);
+  if (!Number.isFinite(cap) || cap <= 0) return out;
   for (const row of rows) {
     if (!visible(row)) continue;
     out.push(row);
-    if (out.length >= limit) break;
+    if (out.length >= cap) break;
   }
   return out;
 }
