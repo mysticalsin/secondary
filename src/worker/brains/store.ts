@@ -39,6 +39,27 @@ const SCHEMA_TYPE_KEY = /^[a-z][a-z0-9_]{0,40}$/;
 /** A claim with no governance row is released after two proposal lifetimes, 144 hours. */
 const CLAIM_LEASE_MS = 2 * CHANGE_TTL_MS;
 
+/**
+ * Rows the caller may see, then the cap. A cap taken first hides an older
+ * visible row behind newer hidden ones. The cap is the integer part of
+ * limit. A non-finite cap, or an integer part below 1, returns no row.
+ */
+export function takeVisible<T>(
+  rows: readonly T[],
+  visible: (row: T) => boolean,
+  limit: number,
+): T[] {
+  const out: T[] = [];
+  const cap = Math.trunc(limit);
+  if (!Number.isFinite(cap) || cap <= 0) return out;
+  for (const row of rows) {
+    if (!visible(row)) continue;
+    out.push(row);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 export interface BrainConfig {
   template: TemplateId | null;
   publication: Publication | null;
@@ -758,16 +779,20 @@ export abstract class BrainBase extends WikiBase {
 
   // ---- what changed ----
 
-  brainChangesSince(since: number, limit: number): ChangeRow[] {
-    const rows = this.sql
-      .exec(
-        `SELECT r.page_id AS page_id, MAX(r.revision) AS rev FROM wiki_page_revisions r
-         JOIN wiki_pages p ON p.id = r.page_id AND p.status = 'published' AND p.type != 'journal'
-         WHERE r.at >= ? AND r.hidden_at IS NULL GROUP BY r.page_id ORDER BY MAX(r.at) DESC LIMIT ?`,
-        since,
-        limit,
-      )
-      .toArray();
+  brainChangesSince(since: number, limit: number, visibleIds?: readonly string[]): ChangeRow[] {
+    const allowed = visibleIds === undefined ? null : new Set(visibleIds);
+    const rows = takeVisible(
+      this.sql
+        .exec(
+          `SELECT r.page_id AS page_id, MAX(r.revision) AS rev FROM wiki_page_revisions r
+           JOIN wiki_pages p ON p.id = r.page_id AND p.status = 'published' AND p.type != 'journal'
+           WHERE r.at >= ? AND r.hidden_at IS NULL GROUP BY r.page_id ORDER BY MAX(r.at) DESC`,
+          since,
+        )
+        .toArray(),
+      (row) => allowed === null || allowed.has(row.page_id as string),
+      limit,
+    );
     const out: ChangeRow[] = [];
     for (const row of rows) {
       const id = row.page_id as string;
@@ -808,24 +833,31 @@ export abstract class BrainBase extends WikiBase {
   /**
    * What the Insights views need from this workspace, with no page text: when each published page
    * was written to, the proposals of the window, sources ingested, promotions, valid facts and the
-   * kind of each cited source. Nothing here is policy-filtered: the API keeps only what the caller
-   * may read before it counts or names anything.
+   * kind of each cited source. Page and source ids the caller passes are kept
+   * before the cap. With no ids, the API still drops what this caller may not
+   * read before it counts or names anything.
    */
   brainInsightRaw(
     since: number,
     historyFrom: number,
     citedIds: string[],
     light = false,
+    view?: { pages?: readonly string[]; sources?: readonly string[] },
   ): InsightRaw {
-    const revisions = this.sql
+    const pages = view?.pages === undefined ? null : new Set(view.pages);
+    const revisionRows = this.sql
       .exec(
         `SELECT r.page_id AS page_id, r.at AS at FROM wiki_page_revisions r
          JOIN wiki_pages p ON p.id = r.page_id AND p.status = 'published'
-         WHERE r.at >= ? AND r.hidden_at IS NULL ORDER BY r.at LIMIT 20000`,
+         WHERE r.at >= ? AND r.hidden_at IS NULL ORDER BY r.at DESC`,
         historyFrom,
       )
-      .toArray()
-      .map((r) => ({ pageId: r.page_id as string, at: r.at as number }));
+      .toArray();
+    const revisions = takeVisible(
+      revisionRows,
+      (row) => pages === null || pages.has(row.page_id as string),
+      pages === null ? revisionRows.length : 20_000,
+    ).map((r) => ({ pageId: r.page_id as string, at: r.at as number }));
     if (light)
       return {
         revisions,
@@ -866,13 +898,18 @@ export abstract class BrainBase extends WikiBase {
           reviewed: !!r.reviewed,
         };
       });
-    const ingested = this.sql
+    const sources = view?.sources === undefined ? null : new Set(view.sources);
+    const ingestRows = this.sql
       .exec(
-        "SELECT source_id, ingested_at FROM wiki_sources WHERE ingested_at IS NOT NULL AND ingested_at >= ? LIMIT 2000",
+        "SELECT source_id, ingested_at FROM wiki_sources WHERE ingested_at IS NOT NULL AND ingested_at >= ? ORDER BY ingested_at DESC",
         since,
       )
-      .toArray()
-      .map((r) => ({ sourceId: r.source_id as string, at: r.ingested_at as number }));
+      .toArray();
+    const ingested = takeVisible(
+      ingestRows,
+      (row) => sources === null || sources.has(row.source_id as string),
+      sources === null ? ingestRows.length : 2_000,
+    ).map((r) => ({ sourceId: r.source_id as string, at: r.ingested_at as number }));
     const promotions = this.sql
       .exec("SELECT COUNT(*) AS n FROM wiki_promotions WHERE at >= ?", since)
       .one().n as number;
