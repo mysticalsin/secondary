@@ -74,6 +74,55 @@ async function body(c: C): Promise<Record<string, unknown> | null> {
 const text = (v: unknown, max: number): string | null =>
   typeof v === "string" && v.trim() && v.trim().length <= max ? v.trim() : null;
 
+/**
+ * Gregorian leap year. A year divisible by 4 is a leap year, except a century year,
+ * unless that century is divisible by 400. 1900-02-29 is not a day. 2000-02-29 is.
+ */
+function gregorianLeap(year: number): boolean {
+  if (year % 400 === 0) return true;
+  if (year % 100 === 0) return false;
+  return year % 4 === 0;
+}
+
+/**
+ * A real civil day. Date.parse("2025-02-29") is the same instant as 2025-03-01.
+ * packages/contracts has no calendar-day parser, so NDA expiry and the audit bounds share this one.
+ * This is the only round trip for that day. The month and day have to fall on that
+ * Gregorian date, so February has 29 days only in a leap year.
+ */
+function realCalendarDay(day: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const date = Number(match[3]);
+  if (month < 1 || month > 12) return false;
+  const length = [31, gregorianLeap(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][
+    month - 1
+  ];
+  return date >= 1 && date <= length;
+}
+
+/**
+ * Date-only values are UTC midnight, or the end of that UTC day when `end` is set.
+ * Owner decision: accept only YYYY-MM-DD and the exact YYYY-MM-DDT00:00:00Z.
+ * The pattern is anchored, and it runs before Date.parse, so a numeric offset,
+ * a bare Z, or any other suffix cannot store the previous UTC day.
+ */
+const ADMIN_DAY = /^(\d{4}-\d{2}-\d{2})$/;
+const ADMIN_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00Z$/;
+
+function parseAdminDate(v: string, end: boolean): number | null {
+  const dateOnly = ADMIN_DAY.exec(v);
+  const midnight = ADMIN_MIDNIGHT.exec(v);
+  if (!dateOnly && !midnight) return null;
+  const day = (dateOnly ?? midnight)?.[1];
+  if (!day || !realCalendarDay(day)) return null;
+  const iso = dateOnly ? `${day}T${end ? "23:59:59.999" : "00:00:00"}Z` : v;
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : null;
+}
+
 type Intent = Omit<
   Receipt,
   "receiptId" | "at" | "tenantId" | "principalId" | "requestId" | "clientId" | "tool"
@@ -569,10 +618,11 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
       );
     const reason = text(input.reason, MAX_REASON);
     if (!reason) return refuse(c, 422, "reason_required", "Give a reason of up to 200 characters");
-    const expiresAt =
-      typeof input.expiresAt === "string" ? Date.parse(input.expiresAt) : Number.NaN;
-    if (!Number.isFinite(expiresAt))
-      return refuse(c, 422, "expiry_required", "Give an expiry date");
+    const expiryText = typeof input.expiresAt === "string" ? input.expiresAt.trim() : "";
+    if (!expiryText) return refuse(c, 422, "expiry_required", "Give an expiry date");
+    const expiresAt = parseAdminDate(expiryText, false);
+    if (expiresAt === null)
+      return refuse(c, 422, "invalid_date", "Give a real calendar day");
     if (expiresAt <= w.now)
       return refuse(c, 422, "expiry_past", "The expiry must be in the future");
     if (expiresAt > w.now + MAX_NDA_MS)
@@ -655,8 +705,9 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
 
   r.get("/elevation", async (c) => {
     const w = who(c);
-    const mine = await w.gov.listElevations(w.now, w.s.principal.id);
-    const active = mine.find((e) => e.status === "active") ?? null;
+    const active = await w.gov.activeElevation(w.s.principal.id, w.now);
+    const pending =
+      (await w.gov.listElevations(w.now, w.s.principal.id, "pending"))[0] ?? null;
     return c.json({
       eligible: eligibility(w.roles),
       active: active
@@ -667,7 +718,7 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
             secondsLeft: Math.max(0, Math.floor(((active.until ?? 0) - w.now) / 1000)),
           }
         : null,
-      pending: mine.find((e) => e.status === "pending") ?? null,
+      pending,
     });
   });
 
@@ -937,10 +988,9 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
     const w = who(c);
     const input = await body(c);
     if (!input) return refuse(c, 400, "invalid_json", "The request body must be a JSON object");
-    const ids =
-      Array.isArray(input.ids) && input.ids.every((x) => Number.isInteger(x))
-        ? (input.ids as number[])
-        : null;
+    const ids = input.ids;
+    if (!Array.isArray(ids) || !ids.every((x) => typeof x === "number" && Number.isInteger(x)))
+      return refuse(c, 400, "invalid_ids", "ids must be an array of integers");
     return c.json({ ok: true, unread: await w.gov.markRead(inboxIds(c), ids, w.now) });
   });
 
@@ -958,8 +1008,8 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
       return refuse(c, 400, "invalid_action", "Unknown action filter");
     const parse = (v: string | undefined, end: boolean): number | null | "bad" => {
       if (!v) return null;
-      const t = Date.parse(v.length === 10 ? `${v}T${end ? "23:59:59.999" : "00:00:00"}Z` : v);
-      return Number.isFinite(t) ? t : "bad";
+      const t = parseAdminDate(v, end);
+      return t === null ? "bad" : t;
     };
     const from = parse(c.req.query("from"), false);
     const to = parse(c.req.query("to"), true);
@@ -975,7 +1025,9 @@ export function adminRoutes(_deps: AppDeps): Hono<AppEnv> {
     );
     const all = await fetchReceipts(c.env, w.s.tenantId, principal, days);
     if (!all) return refuse(c, 503, "audit_unavailable", "The audit service is not answering");
-    await audit(c, receipt("gov.audit.read", "allow", "Audit viewer read"));
+    const wrote = await audit(c, receipt("gov.audit.read", "allow", "Audit viewer read"));
+    if (!wrote)
+      return refuse(c, 503, "audit_unavailable", "The audit service is not answering");
     const rows = all
       .filter((x) => {
         const t = Date.parse(x.at);
