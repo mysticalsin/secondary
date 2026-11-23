@@ -123,12 +123,23 @@ import { boundFetch } from "/graph/fetch-bound.js";
     }));
   }
 
-  function fillBrainSelect(select, cards) {
+  function fillBrainPicker(select, cards, extraRoots) {
     const id = chooseBrain(cards);
     select.replaceChildren();
     for (const card of cards) select.append(new Option(card.name, card.id));
-    if (id) select.value = id;
-    return id;
+    const optionsOf = () => Array.from(select.childNodes || []).filter((node) => node instanceof Option);
+    const have = new Set(optionsOf().map((node) => node.value));
+    for (const root of extraRoots || []) {
+      if (!root || typeof root.id !== "string" || root.id === "" || have.has(root.id)) continue;
+      have.add(root.id);
+      const label = typeof root.label === "string" && root.label ? root.label : root.id;
+      select.append(new Option(label, root.id));
+    }
+    const options = optionsOf();
+    let chosen = id && options.some((node) => node.value === id) ? id : "";
+    if (!chosen && options[0]) chosen = options[0].value;
+    if (chosen) select.value = chosen;
+    return chosen;
   }
 
   function syncEmpty(id) {
@@ -195,13 +206,9 @@ import { boundFetch } from "/graph/fetch-bound.js";
         }
       }
     }
-    const chosen = fillBrainSelect(workspaceEl, cards);
-    const have = new Set(Array.from(workspaceEl.childNodes, (node) => node.value));
+    const chosen = fillBrainPicker(workspaceEl, cards, degraded);
     for (const root of degraded) {
       addNode({ id: `ws:${root.id}`, label: root.label, kind: "workspace", ws: root.id, folder: null, degraded: true });
-      if (have.has(root.id)) continue;
-      have.add(root.id);
-      workspaceEl.append(new Option(root.label, root.id));
     }
     renderLegend();
     syncEmpty(chosen);
@@ -843,6 +850,7 @@ import { boundFetch } from "/graph/fetch-bound.js";
   });
 
   workspaceEl.addEventListener("change", () => {
+    select(null);
     autoFit = true;
     syncEmpty(workspaceEl.value);
     renderLegend();

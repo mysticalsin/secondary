@@ -141,12 +141,23 @@ import { boundFetch } from "/graph/fetch-bound.js";
     };
   }
 
-  function fillBrainSelect(select, cards) {
+  function fillBrainPicker(select, cards, extraRoots) {
     const id = chooseBrain(cards);
     select.replaceChildren();
     for (const card of cards) select.append(new Option(card.name, card.id));
-    if (id) select.value = id;
-    return id;
+    const optionsOf = () => Array.from(select.childNodes || []).filter((node) => node instanceof Option);
+    const have = new Set(optionsOf().map((node) => node.value));
+    for (const root of extraRoots || []) {
+      if (!root || typeof root.id !== "string" || root.id === "" || have.has(root.id)) continue;
+      have.add(root.id);
+      const label = typeof root.label === "string" && root.label ? root.label : root.id;
+      select.append(new Option(label, root.id));
+    }
+    const options = optionsOf();
+    let chosen = id && options.some((node) => node.value === id) ? id : "";
+    if (!chosen && options[0]) chosen = options[0].value;
+    if (chosen) select.value = chosen;
+    return chosen;
   }
 
   async function loadBrain() {
@@ -384,7 +395,7 @@ import { boundFetch } from "/graph/fetch-bound.js";
         if (p === person) continue;
         for (const sentence of sentencesOf(p.text)) {
           const low = sentence.toLowerCase();
-          if (low.includes(name) || (first.length > 3 && new RegExp(`\\b${esc(first)}\\b`).test(low) && p.out.includes(person))) about.push({ page: p, sentence });
+          if (low.includes(name) || (first.length > 3 && new RegExp(`\\b${esc(first)}\\b`).test(low) && sameBrainEdges(p, pageSet).out.includes(person))) about.push({ page: p, sentence });
         }
       }
       const own = sentencesOf(person.text).map((sentence) => ({ page: person, sentence }));
@@ -394,7 +405,7 @@ import { boundFetch } from "/graph/fetch-bound.js";
       const tone = all.reduce((n, a) => n + sentiment(a.sentence), 0);
       return {
         page: person,
-        mentions: about.length + person.in.length,
+        mentions: about.length + sameBrainEdges(person, pageSet).in.length,
         rating: rate.length ? rate.reduce((n, r) => n + r.value, 0) / rate.length : null,
         utilization: util.length ? util[util.length - 1].value : null,
         tone,
@@ -412,7 +423,8 @@ import { boundFetch } from "/graph/fetch-bound.js";
     peopleRows.sort((a, b) => b.score - a.score || b.mentions - a.mentions);
 
     const accounts = pages.filter((p) => hasHint(p.folder, ["account", "client", "customer", "company", "deal", "opportunit", "partner", "prospect", "organi"])).map((p) => {
-      const linked = [...new Set([...p.out, ...p.in])];
+      const accountEdges = sameBrainEdges(p, pageSet);
+      const linked = [...new Set([...accountEdges.out, ...accountEdges.in])];
       const risks = linked.filter((x) => hasHint(x.folder, ["risk", "issue"]) || /\brisk|churn|blocked|escalat/i.test(x.text));
       const value = amounts.filter((a) => a.page === p).reduce((n, a) => n + a.value, 0);
       const t = `${p.title} ${p.text}`.toLowerCase();
@@ -674,7 +686,10 @@ import { boundFetch } from "/graph/fetch-bound.js";
           return h("div", { class: "tile" }, ent(p.page), h("span", { class: "muted", text: `${plural(edges.out.length + edges.in.length, "link")}` }));
         }))))) : null,
       h("div", { class: "grid2" },
-        card("Risks", "Each risk with the pages it touches.", m.risks.length ? h("ul", { class: "list" }, m.risks.slice(0, 8).map((r) => h("li", null, ent(r), h("span", { class: "meta" }, [...new Set([...r.in, ...r.out])].slice(0, 3).map((x) => ent(x)))))) : h("p", { class: "empty", text: "No Risk folder yet." })),
+        card("Risks", "Each risk with the pages it touches.", m.risks.length ? h("ul", { class: "list" }, m.risks.slice(0, 8).map((r) => {
+          const riskEdges = sameBrainEdges(r, m.pages);
+          return h("li", null, ent(r), h("span", { class: "meta" }, [...new Set([...riskEdges.in, ...riskEdges.out])].slice(0, 3).map((x) => ent(x))));
+        })) : h("p", { class: "empty", text: "No Risk folder yet." })),
         card("Coming up", "Dates in the next six months found in your notes.", m.upcoming.length ? h("ul", { class: "list" }, m.upcoming.slice(0, 8).map((u) => h("li", null, h("strong", { text: fmtDate(u.t) }), h("p", { text: clip(u.sentence, 140) }), h("span", { class: "meta" }, "in ", ent(u.page))))) : h("p", { class: "empty", text: "No upcoming dates found." })),
       ),
     ];
@@ -796,13 +811,7 @@ import { boundFetch } from "/graph/fetch-bound.js";
 
   loadBrain().then((b) => {
     brain = b;
-    fillBrainSelect(brainEl, b.cards);
-    const have = new Set(Array.from(brainEl.childNodes, (node) => node.value));
-    for (const root of b.degradedRoots || []) {
-      if (have.has(root.id)) continue;
-      have.add(root.id);
-      brainEl.append(new Option(root.label, root.id));
-    }
+    fillBrainPicker(brainEl, b.cards, b.degradedRoots || []);
     const notes = [];
     if (b.capped) notes.push(`Read the first ${MAX_DETAILS} of ${b.capped} pages.`);
     if (b.failed) notes.push(`${plural(b.failed, "page")} could not be read.`);

@@ -17,8 +17,9 @@ const appSource = readFileSync(fileURLToPath(new URL("../../deploy/graph/app.js.
 function fnBody(source: string, name: string): string {
   const at = source.indexOf(`function ${name}(`);
   if (at < 0) return "";
-  const next = source.indexOf("\n  function ", at + 1);
-  return source.slice(at, next < 0 ? source.length : next);
+  const rest = source.slice(at + 1);
+  const next = rest.search(/\n  (?:async )?function /);
+  return next < 0 ? source.slice(at) : source.slice(at, at + 1 + next);
 }
 
 const PRELUDE = `
@@ -152,7 +153,19 @@ const PAGES: Record<string, { markdown: string; links: { id: string; title: stri
   },
 };
 
+function labelOf(node: unknown): string {
+  if (typeof node === "string") return node;
+  if (!node || typeof node !== "object") return "";
+  const item = node as { textContent?: string; childNodes?: unknown[] };
+  if (typeof item.textContent === "string" && item.textContent) return item.textContent;
+  return (item.childNodes || []).map((child) => labelOf(child)).join("");
+}
+
 function textsOf(node: unknown, out: string[] = []): string[] {
+  if (typeof node === "string") {
+    if (node) out.push(node);
+    return out;
+  }
   if (!node || typeof node !== "object") return out;
   const item = node as { textContent?: string; childNodes?: unknown[] };
   if (typeof item.textContent === "string" && item.textContent) out.push(item.textContent);
@@ -169,7 +182,7 @@ function clickLabel(root: unknown, prefix: string): boolean {
     for (const child of item.childNodes || []) walk(child);
   };
   walk(root);
-  const hit = nodes.find((item) => (item.textContent || "").startsWith(prefix));
+  const hit = nodes.find((item) => item.listeners?.click && labelOf(item).startsWith(prefix));
   const click = hit?.listeners?.click;
   if (!click) return false;
   click();
