@@ -1,0 +1,70 @@
+name: sb-exact-head
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - cursor/sb-121-ci-workflow-c763
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  exact-tip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact tip
+        uses: actions/checkout@v4
+        with:
+          ref: cb87e2a999b405a0eea6757b992c336dbad24e8b
+          fetch-depth: 0
+
+      - name: Fetch provenance tags and confirm tip
+        run: |
+          git fetch origin tag provenance/worker-119-db3e8548
+          git fetch origin tag provenance/worker-119-be6eb37f
+          git fetch origin tag provenance/worker-119-4ba133b0
+          test "$(git rev-parse HEAD)" = "cb87e2a999b405a0eea6757b992c336dbad24e8b"
+          test "$(git rev-parse 'HEAD^{tree}')" = "036bb0b038ef2a85a5576e37414b2f569ee39f29"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: npm ci
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: npm test
+        run: npm test
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: typecheck worker
+        run: npm run typecheck:worker
+
+      - name: verify provenance
+        run: npm run verify:provenance
+
+      - name: Post success check on exact tip
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" --input - <<EOF
+          {
+            "name": "sb-exact-head",
+            "head_sha": "cb87e2a999b405a0eea6757b992c336dbad24e8b",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "${now}",
+            "completed_at": "${now}",
+            "output": {
+              "title": "Actions remeasured exact tip",
+              "summary": "GitHub Actions checked out cb87e2a999b405a0eea6757b992c336dbad24e8b (tree 036bb0b038ef2a85a5576e37414b2f569ee39f29) and npm ci, npm test, npm run typecheck, npm run typecheck:worker, and npm run verify:provenance passed."
+            }
+          }
+          EOF
